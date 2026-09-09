@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+node_modules/
+
+# ---------------------------------------------------------------------------
+# Build output
+#   out/      electron-vite build (main, preload, renderer)
+#   dist/     electron-builder packages (AppImage, NSIS installer)
+#   e2e-out/  scratch output from the e2e matrix
+# ---------------------------------------------------------------------------
+out/
+dist/
+e2e-out/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Test and tool caches
+# ---------------------------------------------------------------------------
+coverage/
+.vitest/
+.eslintcache
+
+
+# ---------------------------------------------------------------------------
+# Real-document test corpus and personal files
+#
+# `Test Docs/` held real business documents and no longer exists: it was
+# replaced by the synthetic corpus in `tests/corpus/` and deleted on
+# 2026-09-07. The rule stays as a guard, so dropping the old directory back in
+# cannot commit it by accident.
+#
+# The English OCR data under resources/ocr/ is deliberately NOT ignored: it is
+# committed so a clone is self-contained.
+# ---------------------------------------------------------------------------
+Test Docs/
+
+# ---------------------------------------------------------------------------
+# Secrets and code-signing material
+#
+# Nothing here exists in the repo today, and these patterns are what keeps it
+# that way: a signing certificate or a CSC_KEY_PASSWORD in .env is the kind of
+# file that is committed once and then lives in the history forever.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.pem
+*.key
+*.keystore
+.npmrc
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ---------------------------------------------------------------------------
+# Editor and OS noise
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Local agent config, worktrees and scratch
+# ---------------------------------------------------------------------------
+.claude/
+docs/superpowers/
+remaining_work.md
+tests/pii/domain-terms.ts
+tests/pii/domain-exceptions.txt

@@ -1,0 +1,28 @@
+From: Alice Example <alice@example.com>
+To: Bob Builder <bob@example.com>
+Subject: Q3 API spec
+Date: Mon, 31 Aug 2026 10:00:00 -0500
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="outer"
+
+--outer
+Content-Type: multipart/related; boundary="inner"
+
+--inner
+Content-Type: text/html; charset=utf-8
+
+<p>The vendor limit is <b>100 req/s</b>.</p><img src="cid:diagram1" alt="diagram">
+--inner
+Content-Type: image/png
+Content-ID: <diagram1>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==
+--inner--
+--outer
+Content-Type: application/pdf; name="limits.pdf"
+Content-Disposition: attachment; filename="limits.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJSBmYWtlIGZpeHR1cmUgcGRm
+--outer--

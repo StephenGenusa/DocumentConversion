@@ -1,0 +1,11 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:evt-1
+SUMMARY:Architecture review meeting
+DTSTART:20260901T150000Z
+DTEND:20260901T160000Z
+LOCATION:Conference room four
+DESCRIPTION:Walk through the framing specification together
+END:VEVENT
+END:VCALENDAR

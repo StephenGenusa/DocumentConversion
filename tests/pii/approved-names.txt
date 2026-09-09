@@ -1,0 +1,24 @@
+# "Surname, Given" patterns. Every one must be invented.
+Ashcombe, Nils
+Berlin, Germany
+Braddock, Sunil
+Brandt, Ilva
+Catalogue, Description
+Element, Text
+Excel, Kindle
+Ferrow, Petra
+Halloway, Juno
+History, Code
+Larkspur, Odile
+Mission, Company
+Ostrander, Mireille
+Paris, France
+Quill, Marta
+Roboto, Helvetica
+Sorrel, Devi
+Surname, Given
+Teams, Word
+Thanks, Iris
+Vellum, Iris
+Word, Markdown
+Word, Teams

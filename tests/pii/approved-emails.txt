@@ -1,0 +1,27 @@
+# Every address that may appear. All must be unreachable.
+a@b.example
+a@example.com
+aisle-2@example.com
+alice@example.com
+b@example.com
+bob@example.com
+carol@example.com
+editor@example.com
+hollis.tamm@example.net
+ilva.brandt@example.com
+iris.vellum@example.com
+juno.halloway@example.org
+lesson-notes-1@example.com
+lesson-notes-2@example.com
+marta.quill@example.com
+mireille.ostrander@example.com
+nils.ashcombe@example.com
+not-attached@example.com
+notes@example.com
+odile.larkspur@example.com
+opscenter@example.com
+petra.ferrow@example.com
+pic1@example.com
+sbraddock@example.org
+shelving-1@example.com
+someone@example.com

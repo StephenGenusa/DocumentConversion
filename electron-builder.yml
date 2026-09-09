@@ -1,0 +1,71 @@
+appId: com.docconversion.app
+productName: Document Converter
+directories:
+  buildResources: build
+  output: dist
+files:
+  # An ALLOWLIST, not a denylist.
+  #
+  # This was previously a list of nothing but negations. electron-builder only
+  # replaces its default `**/*` when a POSITIVE pattern is given, so a list of
+  # pure exclusions left the default in force and packaged the entire working
+  # directory — everything the list did not happen to name. `Test Docs/` (the
+  # PII corpus), `.claude/` and `invite0.ics` all shipped inside app.asar of
+  # every build made before 2026-09-07. `.gitignore` has no bearing here:
+  # electron-builder does not read it.
+  #
+  # Name what the app needs; nothing else can leak in by omission.
+  - 'out/**'
+  - 'resources/**'
+  - 'package.json'
+  - 'node_modules/**'
+  - '!**/*.map'
+  - '!**/.vscode/*'
+  - '!**/*.log'
+asarUnpack:
+  - resources/**
+  # tesseract's worker_threads scripts and wasm core cannot load from asar
+  - node_modules/tesseract.js/**
+  - node_modules/tesseract.js-core/**
+  - node_modules/@napi-rs/canvas/**
+  # pdfjs' fake worker is ESM-imported by file URL — must be a real file
+  - node_modules/pdfjs-dist/**
+extraResources:
+  # offline OCR language data -> <resourcesPath>/ocr at runtime
+  - from: resources/ocr
+    to: ocr
+  # console launcher stub for the CLI -> <install>\resources\cli\docconv.cmd
+  - from: scripts/cli
+    to: cli
+win:
+  executableName: DocumentConverter
+  icon: build/icon.ico
+  target:
+    - nsis
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+linux:
+  icon: build/icon.png
+  # Names the .desktop entry after `desktopName` in package.json and writes a
+  # matching StartupWMClass. Without it the entry claimed
+  # `StartupWMClass=Document Converter` while the window's real WM_CLASS was
+  # `docconversion`, so no desktop environment could tie a running window to
+  # its launcher: no icon highlight, no window grouping, a duplicate entry in
+  # the dock. Verified with `xprop WM_CLASS` on the packaged build.
+  syncDesktopName: true
+  target:
+    - AppImage
+  maintainer: electronjs.org
+  category: Office
+appImage:
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false
+# No `publish` block on purpose. Nothing in src/ uses electron-updater or any
+# other updater, and a `publish` entry makes electron-builder write an
+# app-update.yml into the package pointing at that URL. The template's
+# https://example.com/auto-updates is a domain the project does not control,
+# so shipping it would aim update checks at someone else's server. Auto-update
+# is not configured; add a real provider here if and when it is.

@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example Calendar//EN
+BEGIN:VEVENT
+UID:lesson-notes-1@example.com
+DTSTAMP:20260301T090000Z
+DTSTART:20260305T140000Z
+DTEND:20260305T150000Z
+SUMMARY:Study session notes
+DESCRIPTION:<span><b>What makes a study habit stick\, until it doesn't</b>
+ </span\n>\n<span><b>Where the routine actually breaks down</b></span\n>\n
+ <span><b>and a smaller habit to try instead</b></span\n>
+END:VEVENT
+END:VCALENDAR

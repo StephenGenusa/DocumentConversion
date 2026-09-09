@@ -1,0 +1,15 @@
+# Fixtures are compared byte-for-byte by the test suite. Git must not rewrite
+# their line endings: .ics is CRLF by RFC 5545, and normalising it on commit
+# would hand a fresh clone different bytes than the ones the tests were run
+# against — a failure that appears only after cloning, never locally.
+tests/corpus/**   -text
+tests/fixtures/** -text
+
+# Everything else keeps normal text handling.
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf

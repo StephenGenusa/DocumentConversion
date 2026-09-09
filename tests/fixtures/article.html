@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Framing Protocol v2 — Vendor Docs</title></head>
+<body>
+<nav><ul><li><a href="/">Home</a></li><li><a href="/docs">Docs</a></li><li><a href="/pricing">Pricing</a></li></ul></nav>
+<aside class="sidebar"><h3>On this page</h3><ul><li>Overview</li><li>Handshake</li></ul></aside>
+<main>
+<article>
+<h1>Framing Protocol v2</h1>
+<p>The framing protocol version two replaces the legacy length-prefixed format with a
+self-describing frame header. Every frame begins with a four-byte magic sequence followed
+by a variable-length header block encoded as canonical CBOR. Implementations MUST reject
+frames whose magic does not match, and SHOULD log the offending prefix for diagnostics.</p>
+<p>The handshake starts when the client sends a <code>HELLO</code> frame containing its
+supported version range. The server answers with a <code>WELCOME</code> frame that pins
+the negotiated version. If the ranges do not intersect, the server closes the connection
+with a <code>REJECT</code> frame carrying a machine-readable reason code.</p>
+<img src="/img/handshake.png" alt="handshake sequence">
+<p>Flow control uses a credit scheme. Each side grants the peer an initial window of
+sixty-four frames, replenished in batches of sixteen as frames are consumed. Senders MUST
+NOT exceed the granted window; receivers MAY shrink the window by withholding grants but
+MUST NOT revoke credit already granted, because in-flight frames cannot be recalled.</p>
+<p>Checksums are mandatory in version two. The trailer carries a CRC-32C over the header
+and payload. Frames failing the check are discarded silently and a NACK is scheduled on
+the next grant boundary, which keeps the hot path free of retransmission bookkeeping.</p>
+</article>
+</main>
+<footer><p>© 2026 Vendor Inc. — <a href="/legal">Legal</a></p></footer>
+</body>
+</html>

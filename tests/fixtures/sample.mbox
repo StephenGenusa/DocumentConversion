@@ -1,0 +1,13 @@
+From alice@example.com Mon Aug 31 10:00:00 2026
+From: Alice Example <alice@example.com>
+To: Bob Builder <bob@example.com>
+Subject: Vendor throughput
+
+The vendor confirmed sustained throughput of one hundred requests.
+
+From bob@example.com Mon Aug 31 11:00:00 2026
+From: Bob Builder <bob@example.com>
+To: Alice Example <alice@example.com>
+Subject: Re: Vendor throughput
+
+Acknowledged, updating the throttle configuration accordingly.

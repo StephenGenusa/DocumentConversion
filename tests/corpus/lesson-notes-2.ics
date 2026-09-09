@@ -1,0 +1,15 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example Calendar//EN
+BEGIN:VEVENT
+UID:lesson-notes-2@example.com
+DTSTAMP:20260301T090000Z
+DTSTART:20260312T140000Z
+DTEND:20260312T150000Z
+SUMMARY:Household budgeting notes
+DESCRIPTION:<span><b>Where a stack of small subscriptions turns into needl
+ ess overpaying</b></span\n>\n<span><b>How a short monthly review pipeline
+  catches it early</b></span\n>\n<span><b>and where to start this week</b>
+ </span\n>
+END:VEVENT
+END:VCALENDAR

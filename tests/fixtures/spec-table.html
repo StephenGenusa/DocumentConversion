@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>MX7 Register Map — Vendor Docs</title></head>
+<body>
+<nav><ul><li><a href="/">Home</a></li><li><a href="/docs">Docs</a></li><li><a href="/pricing">Pricing</a></li></ul></nav>
+<main>
+<div class="content">
+<h1>MX7 Register Map</h1>
+<p>The MX7 controller exposes its configuration through a bank of memory-mapped registers.
+Every register is thirty-two bits wide and must be accessed with an aligned word access;
+byte and half-word accesses are ignored by the bus bridge and raise no error, which makes
+misaligned drivers fail silently. Read the timing chapter before writing control registers.</p>
+<p>Offsets in the table below are relative to the peripheral base address, which the boot
+ROM publishes in the device tree. Reserved bits read as zero and must be written as zero.
+Writing a one to any reserved bit is undefined behaviour and may latch the block into a
+state that only a full power cycle clears, so drivers should mask before every write.</p>
+<p>Access modes are given as RW for read-write, RO for read-only and W1C for write-one-to-clear.
+A W1C register ignores zero bits, so a driver that reads, modifies and writes back the whole
+word will clear every pending flag, not just the one it meant to acknowledge.</p>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Offset</th><th>Name</th><th>Access</th><th>Reset</th></tr></thead>
+<tbody>
+<tr><td>0x0000</td><td>CTRL</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0004</td><td>STATUS</td><td>RO</td><td>0x0001</td></tr>
+<tr><td>0x0008</td><td>IRQ_FLAGS</td><td>W1C</td><td>0x0000</td></tr>
+<tr><td>0x000c</td><td>IRQ_MASK</td><td>RW</td><td>0xffff</td></tr>
+<tr><td>0x0010</td><td>BAUD_DIV</td><td>RW</td><td>0x0068</td></tr>
+<tr><td>0x0014</td><td>FIFO_TX</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0018</td><td>FIFO_RX</td><td>RO</td><td>0x0000</td></tr>
+<tr><td>0x001c</td><td>FIFO_LVL</td><td>RO</td><td>0x0000</td></tr>
+<tr><td>0x0020</td><td>DMA_SRC</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0024</td><td>DMA_DST</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0028</td><td>DMA_LEN</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x002c</td><td>DMA_CTRL</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0030</td><td>TIMER_LOAD</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0034</td><td>TIMER_VAL</td><td>RO</td><td>0x0000</td></tr>
+<tr><td>0x0038</td><td>TIMER_CTRL</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x003c</td><td>WDOG_LOAD</td><td>RW</td><td>0xffff</td></tr>
+<tr><td>0x0040</td><td>WDOG_KICK</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0044</td><td>PIN_MUX</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0048</td><td>PIN_DRIVE</td><td>RW</td><td>0x0002</td></tr>
+<tr><td>0x004c</td><td>PIN_PULL</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0050</td><td>CLK_SEL</td><td>RW</td><td>0x0001</td></tr>
+<tr><td>0x0054</td><td>CLK_GATE</td><td>RW</td><td>0x0000</td></tr>
+<tr><td>0x0058</td><td>RESET_CAUSE</td><td>W1C</td><td>0x0000</td></tr>
+<tr><td>0x005c</td><td>CHIP_ID</td><td>RO</td><td>0x4d583700</td></tr>
+</tbody>
+</table>
+</div>
+<div class="notes">
+<h2>Reserved ranges</h2>
+<p>Everything from offset 0x0060 to the end of the four kilobyte window is reserved for
+future revisions of this block. Accesses in that range complete without error and return
+zero today, but a later silicon revision may decode them, so drivers must not probe there.</p>
+</div>
+</main>
+<footer><p>© 2026 Vendor Inc. — <a href="/legal">Legal</a></p></footer>
+</body>
+</html>
