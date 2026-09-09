@@ -7,7 +7,7 @@ web page you paste, along with the images on it, and downloading an OCR
 language pack you select.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform: Windows | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)
+![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
 ![Electron 43](https://img.shields.io/badge/electron-43-47848F.svg)
 
 ![The start screen](docs/screenshots/01-start.png)
@@ -36,15 +36,17 @@ Download the release for your platform:
 
 | Platform | File |
 | --- | --- |
-| Windows | `docconversion-<version>-setup.exe` |
-| Linux | `docconversion-<version>.AppImage` |
+| Windows x64 | `docconversion-<version>-setup.exe` |
+| Linux x64 | `docconversion-<version>.AppImage` |
+| macOS x64 | `Document Converter-<version>-mac.zip` |
 
 The builds are **not code signed**. Windows SmartScreen will warn on first run —
 choose *More info* then *Run anyway*. On Linux, mark the AppImage executable
-with `chmod +x` before running it.
+with `chmod +x` before running it. On macOS, Gatekeeper refuses an unsigned app
+on first launch: right-click it and choose *Open*, or clear the quarantine
+attribute with `xattr -d com.apple.quarantine "Document Converter.app"`.
 
-macOS is not built yet. See [what it deliberately does not
-do](#what-it-deliberately-does-not-do).
+The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
 
 ## Screenshots
 
@@ -239,9 +241,12 @@ than plain text. See
 There is deliberately no `publish` section in `electron-builder.yml`, so no
 update endpoint is written into the packaged app.
 
-**Not built for macOS.** Building for macOS requires macOS — `hdiutil` and
-`codesign` have no equivalent elsewhere — and there is no build machine for it
-yet.
+**macOS ships as an unsigned zip only.** The `.app` is cross-built from Linux,
+which is enough for the zip target but not for a `.dmg` (`hdiutil` is macOS-only)
+and not for signing or notarisation (`codesign` likewise). There is no Apple
+Developer certificate and no macOS build machine, so Gatekeeper will always
+challenge it. An arm64 build would need `@napi-rs/canvas-darwin-arm64` installed
+before packaging, for the reason given under Packaging.
 
 **Out of scope.** `.ppt` (the old binary PowerPoint format, with no usable
 JavaScript reader), `.odg`, LaTeX, `.pst` archives, and converting email
@@ -343,17 +348,23 @@ readers.
 ```
 npm run build:win     # NSIS installer -> dist/docconversion-<version>-setup.exe
 npm run build:linux   # AppImage       -> dist/docconversion-<version>.AppImage
+
+# macOS: install the target's Skia first, then package the zip only.
+# A bare `--mac` also tries .dmg, which needs macOS.
+node scripts/native-for-target.mjs darwin-x64
+npx electron-builder --mac zip   # -> dist/Document Converter-<version>-mac.zip
 ```
 
 `files:` in `electron-builder.yml` is an **allowlist**. It was once a list of
 exclusions, which left electron-builder's default `**/*` in force and packaged
 the entire working directory.
 
-Cross-building for Windows from Linux needs the target's native binding —
-`@napi-rs/canvas` ships one per platform and npm installs only the host's, so a
-Windows package built on Linux silently produced PDFs with no images.
-`prebuild:win` fetches it. Building each platform on its own runner is the real
-fix.
+Cross-building needs the target's native binding — `@napi-rs/canvas` ships one
+per platform and npm installs only the host's, so a Windows package built on
+Linux silently produced PDFs with no images. `prebuild:win` fetches it; the
+macOS command above does the same by hand. Installing one target's binding
+removes the previous one, so rebuild a platform after switching. Building each
+platform on its own runner is the real fix.
 
 ## Project layout
 
