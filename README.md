@@ -20,6 +20,7 @@ locally, and the code that does it is in this repository.
 ## Contents
 
 - [Install](#install)
+- [What's new in 1.1](#whats-new-in-11)
 - [What it reads](#what-it-reads)
 - [What it writes](#what-it-writes)
 - [What it is good at](#what-it-is-good-at)
@@ -47,6 +48,22 @@ on first launch: right-click it and choose *Open*, or clear the quarantine
 attribute with `xattr -d com.apple.quarantine "Document Converter.app"`.
 
 The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
+
+## What's new in 1.1
+
+- **OCR language packs install on Windows.** 1.0 refused every pack there with
+  "Unknown OCR language": the check that keeps a pack inside its folder compared
+  the path against a `/`, and Windows paths use `\`.
+- **All 25 OCR languages can be installed.** The checksum table that verifies a
+  download now covers every language in both model sets; 1.0 recorded three.
+  The pack list shows each file's real size.
+- **PDF zoom defaults to 90%.** The on-screen prose size printed a little large
+  at 100%. The app, the CLI's `--scale` and the headless path all start at 0.9.
+- **A horizontal rule starts a new page in PDF output.** `---` in Markdown, a
+  transition in reStructuredText, or the seam between messages in an mbox now
+  breaks the page rather than drawing a line. The rule itself is hidden. Two
+  rules in a row give one break, a closing rule adds no blank page, and a rule
+  that opens the document leaves the first page in place.
 
 ## Screenshots
 
