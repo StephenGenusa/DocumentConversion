@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
+import { join } from 'node:path'
 import { installPack, type PackFetch } from '../../src/ocr/pack-install'
+
+// The installer builds its paths with the platform's separator, so the fake
+// filesystem is addressed the same way: a literal FAST
+// found nothing on Windows while the file was there under backslashes.
+const DIR = '/packs'
+const FAST = join(DIR, 'deu.traineddata')
+const BEST = join(DIR, 'deu.best.traineddata')
 
 const BODY = Buffer.from('pretend traineddata')
 const DIGEST = createHash('sha256').update(BODY).digest('hex')
@@ -33,17 +41,17 @@ describe('installPack', () => {
   it('writes the pack once it verifies', async () => {
     const fs = fakeFs()
     const result = await installPack(
-      { code: 'deu', set: 'fast', dir: '/packs', sha256: DIGEST },
+      { code: 'deu', set: 'fast', dir: DIR, sha256: DIGEST },
       { fetch: ok, fs },
     )
     expect(result.kind).toBe('ok')
-    expect(fs.files.get('/packs/deu.traineddata')).toEqual(BODY)
+    expect(fs.files.get(FAST)).toEqual(BODY)
   })
 
   it('refuses a pack whose checksum does not match', async () => {
     const fs = fakeFs()
     const result = await installPack(
-      { code: 'deu', set: 'fast', dir: '/packs', sha256: 'f'.repeat(64) },
+      { code: 'deu', set: 'fast', dir: DIR, sha256: 'f'.repeat(64) },
       { fetch: ok, fs },
     )
     expect(result.kind).toBe('error')
@@ -53,14 +61,14 @@ describe('installPack', () => {
   it('leaves NOTHING behind when the checksum fails', async () => {
     // A half-installed model is worse than none: the pipeline would load it.
     const fs = fakeFs()
-    await installPack({ code: 'deu', set: 'fast', dir: '/packs', sha256: 'f'.repeat(64) }, { fetch: ok, fs })
+    await installPack({ code: 'deu', set: 'fast', dir: DIR, sha256: 'f'.repeat(64) }, { fetch: ok, fs })
     expect([...fs.files.keys()]).toEqual([])
   })
 
   it('leaves nothing behind when the download fails', async () => {
     const fs = fakeFs()
     const result = await installPack(
-      { code: 'deu', set: 'fast', dir: '/packs', sha256: DIGEST },
+      { code: 'deu', set: 'fast', dir: DIR, sha256: DIGEST },
       { fetch: async () => ({ ok: false, error: 'network unreachable' }), fs },
     )
     expect(result.kind).toBe('error')
@@ -77,24 +85,24 @@ describe('installPack', () => {
         fs.files.set(path, bytes)
       },
     }
-    await installPack({ code: 'deu', set: 'fast', dir: '/packs', sha256: DIGEST }, { fetch: ok, fs: spy })
-    expect(seen[0]).not.toBe('/packs/deu.traineddata')
-    expect(seen[0]).toContain('/packs/')
-    expect(fs.files.has('/packs/deu.traineddata')).toBe(true)
+    await installPack({ code: 'deu', set: 'fast', dir: DIR, sha256: DIGEST }, { fetch: ok, fs: spy })
+    expect(seen[0]).not.toBe(FAST)
+    expect(seen[0]).toContain(join(DIR, ''))
+    expect(fs.files.has(FAST)).toBe(true)
   })
 
   it('keeps the two model sets apart on disk', async () => {
     const fs = fakeFs()
-    await installPack({ code: 'deu', set: 'best', dir: '/packs', sha256: DIGEST }, { fetch: ok, fs })
-    expect(fs.files.has('/packs/deu.best.traineddata')).toBe(true)
-    expect(fs.files.has('/packs/deu.traineddata')).toBe(false)
+    await installPack({ code: 'deu', set: 'best', dir: DIR, sha256: DIGEST }, { fetch: ok, fs })
+    expect(fs.files.has(BEST)).toBe(true)
+    expect(fs.files.has(FAST)).toBe(false)
   })
 
   it('refuses a language it does not know rather than fetching an arbitrary name', async () => {
     // The code becomes both a URL path segment and a filename.
     const fs = fakeFs()
     const result = await installPack(
-      { code: '../../etc/passwd', set: 'fast', dir: '/packs', sha256: DIGEST },
+      { code: '../../etc/passwd', set: 'fast', dir: DIR, sha256: DIGEST },
       { fetch: ok, fs },
     )
     expect(result.kind).toBe('error')
@@ -104,7 +112,7 @@ describe('installPack', () => {
   it('reports cancellation without leaving a file', async () => {
     const fs = fakeFs()
     const result = await installPack(
-      { code: 'deu', set: 'fast', dir: '/packs', sha256: DIGEST },
+      { code: 'deu', set: 'fast', dir: DIR, sha256: DIGEST },
       { fetch: async () => ({ ok: false, error: 'cancelled', cancelled: true }), fs },
     )
     expect(result.kind).toBe('cancelled')

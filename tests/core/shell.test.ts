@@ -194,3 +194,35 @@ describe('print geometry', () => {
     expect(css()).toContain('white-space: pre-wrap')
   })
 })
+
+/**
+ * `---` in markdown is the author marking where one part ends and the next
+ * begins. Printed, it drew as a thin line and the next section ran on under
+ * it; the page break the author meant never happened.
+ */
+describe('a horizontal rule is a page break in print', () => {
+  const ruled = { html: '<h1>One</h1><p>a</p><hr><h1>Two</h1><p>b</p>' }
+
+  it('breaks the page after a rule for the pdf target', () => {
+    const out = renderDocumentShell(ruled, { target: 'pdf' })
+    expect(out).toContain('hr + :not(hr) { break-before: page')
+    expect(out).toContain('hr { display: none; }')
+  })
+
+  it('exempts a rule that opens the document, so the first page is not blank', () => {
+    const out = renderDocumentShell(ruled, { target: 'pdf' })
+    expect(out).toContain('body > hr:first-child + :not(hr) { break-before: auto')
+  })
+
+  it('leaves a document with no rule alone', () => {
+    const out = renderDocumentShell({ html: '<p>plain</p>' }, { target: 'pdf' })
+    expect(out).not.toContain('break-before: page')
+  })
+
+  it('does not touch html, docx or the default shell: a rule still draws on screen', () => {
+    for (const target of ['html', 'docx'] as const) {
+      expect(renderDocumentShell(ruled, { target })).not.toContain('break-before: page')
+    }
+    expect(renderDocumentShell(ruled)).not.toContain('break-before: page')
+  })
+})

@@ -10,6 +10,7 @@ import { ResultView } from './components/ResultView'
 import { BatchResults } from './components/BatchResults'
 import { textToBase64 } from './lib/encoding'
 import { allowedMergeTargets, allowedTargets } from '../../core/target-validity'
+import { DEFAULT_PDF_SCALE } from '../../core/pdf-options'
 import type {
   BatchItemReq,
   BatchRow,
@@ -32,7 +33,7 @@ function App(): React.JSX.Element {
   const [result, setResult] = useState<SaveResult | null>(null)
   const [batch, setBatch] = useState<{ outDir: string; rows: BatchRow[] } | null>(null)
   // Session-persistent so repeated conversions keep the chosen page setup.
-  const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ scale: 1, pageSize: 'Letter', landscape: false })
+  const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false })
   const [slideOptions, setSlideOptions] = useState<SlideOptions>({ splitOn: 'auto' })
   const [ocrLanguage, setOcrLanguage] = useState('eng')
   const [progress, setProgress] = useState<{ stage: string; percent?: number } | null>(null)

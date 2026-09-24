@@ -17,7 +17,7 @@ import { writeMarkdown } from '../../src/core/writers/md'
 import { writeTxt } from '../../src/core/writers/txt'
 import { mergeHubDocuments } from '../../src/core/merge'
 import { mergePdfs } from '../../src/core/pdf-merge'
-import { normalizePdfOptions } from '../../src/core/pdf-options'
+import { normalizePdfOptions, DEFAULT_PDF_SCALE } from '../../src/core/pdf-options'
 import { uniqueName } from '../../src/core/naming'
 import { allowedMergeTargets, allowedTargets } from '../../src/core/target-validity'
 import type { HubDocument, WriteResult } from '../../src/core/types'
@@ -953,7 +953,7 @@ describe('mergePdfs', () => {
 describe('normalizePdfOptions', () => {
   it('empty object → documented defaults', () => {
     expect(normalizePdfOptions({})).toEqual({
-      scale: 1,
+      scale: DEFAULT_PDF_SCALE,
       pageSize: 'Letter',
       landscape: false,
       headerFooter: false,
@@ -962,7 +962,7 @@ describe('normalizePdfOptions', () => {
 
   it.each([null, undefined, 'nope', 42, [], true])('non-object input %p → defaults', (raw) => {
     const o = normalizePdfOptions(raw as unknown)
-    expect(o.scale).toBe(1)
+    expect(o.scale).toBe(DEFAULT_PDF_SCALE)
     expect(o.pageSize).toBe('Letter')
     expect(o.landscape).toBe(false)
     expect(o.headerFooter).toBe(false)
@@ -980,21 +980,21 @@ describe('normalizePdfOptions', () => {
   })
 
   it.each([['abc'], [NaN], [null], [undefined], [{}], [[]], [true]])(
-    'non-numeric scale %p → 1',
+    'non-numeric scale %p → the default',
     (v) => {
-      expect(normalizePdfOptions({ scale: v }).scale).toBe(1)
+      expect(normalizePdfOptions({ scale: v }).scale).toBe(DEFAULT_PDF_SCALE)
     },
   )
 
-  it('a numeric STRING scale is non-numeric → 1', () => {
-    expect(normalizePdfOptions({ scale: '1.5' }).scale).toBe(1)
+  it('a numeric STRING scale is non-numeric → the default', () => {
+    expect(normalizePdfOptions({ scale: '1.5' }).scale).toBe(DEFAULT_PDF_SCALE)
   })
 
   it('treats a non-finite scale as absent rather than clamping it', () => {
     // RULING: Infinity/NaN signal a broken caller, not an intent to zoom to
-    // the limit, so they fall back to the 1.0 default.
-    expect(normalizePdfOptions({ scale: Infinity }).scale).toBe(1)
-    expect(normalizePdfOptions({ scale: -Infinity }).scale).toBe(1)
+    // the limit, so they fall back to the default.
+    expect(normalizePdfOptions({ scale: Infinity }).scale).toBe(DEFAULT_PDF_SCALE)
+    expect(normalizePdfOptions({ scale: -Infinity }).scale).toBe(DEFAULT_PDF_SCALE)
   })
 
   it.each(['Letter', 'A4', 'Legal', 'A3', 'Tabloid'])('whitelisted pageSize %s passes', (p) => {

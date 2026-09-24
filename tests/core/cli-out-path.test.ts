@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { join, resolve } from 'node:path'
 import { resolveOutPath } from '../../src/cli/out-path'
 
 /**
@@ -16,8 +17,11 @@ import { resolveOutPath } from '../../src/cli/out-path'
 const ext = '.pdf'
 
 describe('resolveOutPath', () => {
+  // Where the code joins or resolves, the expectation must too: on Windows
+  // these come back as `C:\docs\report.pdf`, and a literal POSIX string failed
+  // there while the code was right.
   it('writes alongside the input when --out is absent', () => {
-    expect(resolveOutPath({ inputPath: '/docs/report.md', suffix: '', ext })).toBe('/docs/report.pdf')
+    expect(resolveOutPath({ inputPath: '/docs/report.md', suffix: '', ext })).toBe(resolve('/docs/report.pdf'))
   })
 
   it('honours an explicit filename exactly, even when the extension differs', () => {
@@ -53,7 +57,7 @@ describe('resolveOutPath', () => {
   it('derives a name from the input when --out is a directory', () => {
     expect(
       resolveOutPath({ out: '/outdir', outIsDir: true, inputPath: '/docs/report.md', suffix: '', ext }),
-    ).toBe('/outdir/report.pdf')
+    ).toBe(join('/outdir', 'report.pdf'))
   })
 
   it('inserts a multi-part suffix BEFORE the caller’s extension', () => {
@@ -72,6 +76,6 @@ describe('resolveOutPath', () => {
   it('suffixes a directory output the same way', () => {
     expect(
       resolveOutPath({ out: '/outdir', outIsDir: true, inputPath: '/docs/a.md', suffix: '.table-2', ext: '.csv' }),
-    ).toBe('/outdir/a.table-2.csv')
+    ).toBe(join('/outdir', 'a.table-2.csv'))
   })
 })

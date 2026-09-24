@@ -186,6 +186,28 @@ const BASE_CSS = `
   ul, ol { margin: 0 0 1em 1.4em; }
 `
 
+/**
+ * On paper, a horizontal rule is a page break.
+ *
+ * `---` in markdown (and a transition in rst, and the seam between messages
+ * in an mbox) is the author saying "this is where one part ends and the next
+ * begins". Printed, that intent was lost: the rule drew as a thin line and the
+ * next section carried on underneath it. The slide splitter already reads an
+ * `<hr>` as a hard boundary; print does the same.
+ *
+ * The break is put on the element AFTER the rule rather than on the rule
+ * itself, so a rule that closes the document forces nothing, and two rules in
+ * a row are one break, not one break and a blank page. A rule that OPENS the
+ * document (markdown-it renders unsupported YAML front matter as one) is
+ * exempted, or the first page would be empty. The rule itself is hidden: the
+ * page edge is the separator now.
+ */
+const PDF_PRINT_CSS = `
+  hr { display: none; }
+  hr + :not(hr) { break-before: page; page-break-before: always; }
+  body > hr:first-child + :not(hr) { break-before: auto; page-break-before: auto; }
+`
+
 export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): string {
   const title = escapeHtml(doc.title?.trim() || 'Document')
   let body = doc.html
@@ -197,6 +219,7 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
   // figure carries no class, so it is matched on its alt: a cell whose only
   // output is a plot would otherwise leave the block unstyled.
   if (/class="nb-|alt="output image"/.test(body)) css += NB_CSS + notebookPromptCss(body) + '\n'
+  if (opts?.target === 'pdf' && body.includes('<hr')) css += PDF_PRINT_CSS
   if (opts?.target === 'pdf' || opts?.target === 'html') {
     const highlighted = highlightCodeBlocks(body)
     if (highlighted.any) {

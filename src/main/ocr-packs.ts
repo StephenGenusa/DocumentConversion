@@ -74,7 +74,12 @@ export function listPacks(): PackListing[] {
       installed: found !== null,
       source: found?.source,
       set: fast ? 'fast' : best ? 'best' : undefined,
-      size: language.size,
+      // The recorded size is the file's actual length; the catalogue's figure
+      // is an estimate, kept only for a language the table does not know.
+      size: {
+        fast: digestFor(language.code, 'fast')?.size ?? language.size.fast,
+        best: digestFor(language.code, 'best')?.size ?? language.size.best,
+      },
     }
   })
 }
@@ -108,12 +113,11 @@ export function installedCodes(): Array<{ code: string; source: 'bundled' | 'dow
 /**
  * Fetch and install one pack.
  *
- * The checksum comes from the catalogue when it has one. It does NOT have one
- * yet: generating the table means downloading all 25 languages in both model
- * sets and recording their digests, which is a deliberate step and not
- * something to fake with a placeholder. Until that exists the install refuses
- * rather than accepting an unverified model - the alternative is a download
- * that looks verified and is not, which is worse than no feature.
+ * The checksum comes from the generated table, which records every language in
+ * both model sets for the pinned tessdata tag. A language missing from it (the
+ * tag was bumped and the table not regenerated) is refused rather than
+ * installed unverified - a download that looks verified and is not is worse
+ * than no feature. `node scripts/ocr-checksums.mjs` rebuilds the table.
  */
 export async function downloadPack(
   code: string,

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { isKnownLanguage, packFilename, type ModelSet } from './languages'
 
 /**
@@ -28,12 +28,23 @@ import { isKnownLanguage, packFilename, type ModelSet } from './languages'
  *
  * Belt and braces: the catalogue codes are all `[a-z_]+` so none can traverse,
  * and the resolved path is confirmed to stay inside `dir` regardless.
+ *
+ * The containment check compares against the directory plus the PLATFORM
+ * separator. It was written with a literal `/`, and on Windows `resolve`
+ * yields backslashes, so `C:\packs\deu.traineddata` never started with
+ * `C:\packs/` and every language came back null. Installing any pack on
+ * Windows then failed with "Unknown OCR language", and removing one was refused
+ * the same way - the belt rejected exactly the honest paths it was there to
+ * pass.
  */
 export function packPathIn(dir: string, code: string, set: ModelSet): string | null {
   if (!isKnownLanguage(code)) return null
   const path = join(dir, packFilename(code, set))
   const inside = resolve(dir)
-  if (!resolve(path).startsWith(inside + '/') && resolve(path) !== inside) return null
+  // A root directory already ends in its separator; anything else needs one
+  // appended, or `/packs-evil/x` would pass as inside `/packs`.
+  const prefix = inside.endsWith(sep) ? inside : inside + sep
+  if (!resolve(path).startsWith(prefix)) return null
   return path
 }
 

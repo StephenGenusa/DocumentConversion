@@ -28,7 +28,7 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--no-headings]       merge without per-source headings
   [--split <auto|hr|h1|h2>]  where a new slide starts (revealjs target)
   [--table N]           csv/json target: extract only table N
-  [--scale X]           pdf zoom factor 0.1-2.0
+  [--scale X]           pdf zoom factor 0.1-2.0 (default 0.9)
   [--page <size>]       pdf page size (Letter, A4, Legal, A3, Tabloid)
   [--landscape]         pdf landscape orientation
   [--header-footer]     pdf header/footer with title, date, page numbers

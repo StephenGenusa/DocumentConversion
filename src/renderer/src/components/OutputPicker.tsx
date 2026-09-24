@@ -1,5 +1,6 @@
 import type { PdfOptions, PdfPageSize, SlideOptions, TargetFormat } from '../../../preload/types'
 import { isClipboardTarget } from '../../../core/target-validity'
+import { DEFAULT_PDF_SCALE } from '../../../core/pdf-options'
 
 export type { TargetFormat }
 
@@ -112,7 +113,7 @@ export function OutputPicker({
           <label>
             Zoom
             <select
-              value={String(pdfOptions.scale ?? 1)}
+              value={String(pdfOptions.scale ?? DEFAULT_PDF_SCALE)}
               onChange={(e) => onPdfOptionsChange({ ...pdfOptions, scale: Number(e.target.value) })}
             >
               {ZOOM_LEVELS.map((z) => (

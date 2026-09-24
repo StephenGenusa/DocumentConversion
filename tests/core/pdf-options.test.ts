@@ -1,10 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { normalizePdfOptions, PDF_PAGE_SIZES } from '../../src/core/pdf-options'
+import { normalizePdfOptions, PDF_PAGE_SIZES, DEFAULT_PDF_SCALE } from '../../src/core/pdf-options'
 
 describe('normalizePdfOptions', () => {
+  it('defaults to 90%: the shell prose size prints large at 100%', () => {
+    expect(DEFAULT_PDF_SCALE).toBe(0.9)
+  })
+
   it('returns defaults for undefined input', () => {
     expect(normalizePdfOptions(undefined)).toEqual({
-      scale: 1,
+      scale: DEFAULT_PDF_SCALE,
       pageSize: 'Letter',
       landscape: false,
       headerFooter: false,
@@ -12,7 +16,7 @@ describe('normalizePdfOptions', () => {
   })
 
   it('returns defaults for an empty object', () => {
-    expect(normalizePdfOptions({})).toEqual({ scale: 1, pageSize: 'Letter', landscape: false, headerFooter: false })
+    expect(normalizePdfOptions({})).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false, headerFooter: false })
   })
 
   it('passes through valid values', () => {
@@ -42,10 +46,10 @@ describe('normalizePdfOptions', () => {
     expect(normalizePdfOptions({ scale: 0.01 }).scale).toBe(0.1)
   })
 
-  it('falls back to scale 1 for non-numeric scale', () => {
-    expect(normalizePdfOptions({ scale: 'big' }).scale).toBe(1)
-    expect(normalizePdfOptions({ scale: NaN }).scale).toBe(1)
-    expect(normalizePdfOptions({ scale: Infinity }).scale).toBe(1)
+  it('falls back to the default scale for non-numeric scale', () => {
+    expect(normalizePdfOptions({ scale: 'big' }).scale).toBe(DEFAULT_PDF_SCALE)
+    expect(normalizePdfOptions({ scale: NaN }).scale).toBe(DEFAULT_PDF_SCALE)
+    expect(normalizePdfOptions({ scale: Infinity }).scale).toBe(DEFAULT_PDF_SCALE)
   })
 
   it('falls back to Letter for an unknown page size', () => {
@@ -65,7 +69,7 @@ describe('normalizePdfOptions', () => {
   })
 
   it('returns defaults for non-object input', () => {
-    expect(normalizePdfOptions('junk')).toEqual({ scale: 1, pageSize: 'Letter', landscape: false, headerFooter: false })
-    expect(normalizePdfOptions(null)).toEqual({ scale: 1, pageSize: 'Letter', landscape: false, headerFooter: false })
+    expect(normalizePdfOptions('junk')).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false, headerFooter: false })
+    expect(normalizePdfOptions(null)).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false, headerFooter: false })
   })
 })

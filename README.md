@@ -109,9 +109,10 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
 - **txt** — plain text.
 - **md** — Markdown with GitHub-style pipe tables.
 - **docx** — a Word document.
-- **pdf** — rendered by Chromium. Zoom 50–200%, page size (Letter, A4, Legal,
-  A3, Tabloid), orientation, and an optional header and footer with the title,
-  date and page numbers.
+- **pdf** — rendered by Chromium. Zoom 50–200% (90% by default), page size
+  (Letter, A4, Legal, A3, Tabloid), orientation, and an optional header and
+  footer with the title, date and page numbers. A horizontal rule (`---` in
+  Markdown) starts a new page.
 - **html** — one standalone file.
 - **epub** — an e-book. Chapters split on the document's own headings, images
   stored once each, markup written as XHTML because e-book readers require
@@ -284,7 +285,7 @@ checkout, run `npm run cli -- <args>`.
 - Output files are overwritten by default so a script gets a predictable path.
   `--no-clobber` refuses instead.
 - `--scale` must be between 0.1 and 2.0; a value outside that is rejected rather
-  than clamped.
+  than clamped. The default is 0.9.
 - `--table N` picks one table, for csv and json output only.
 - `--split` chooses where a new slide starts, for the `revealjs` target.
 - `--merge` cannot be combined with csv, json or xlsx.
