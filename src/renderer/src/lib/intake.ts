@@ -10,6 +10,8 @@ export interface LoadedPayload {
   detected: SourceFormat
   /** Folder the input came from, when it came from disk. Drives the save dialog. */
   sourceDir?: string
+  /** Token for re-reading the file at convert time, when it has one on disk. */
+  handle?: string
 }
 
 /** How an input that opens in the edit pane is named in the list and on disk. */
@@ -41,6 +43,7 @@ export function createIntake(handlers: IntakeHandlers) {
     detected: DetectResult,
     filename?: string,
     sourceDir?: string,
+    handle?: string,
   ): Promise<void> {
     if (detected.kind === 'unsupported') {
       onNotice(filename ? `${filename}: ${detected.reason}` : detected.reason)
@@ -68,12 +71,12 @@ export function createIntake(handlers: IntakeHandlers) {
       return
     }
     onNotice(null)
-    onLoaded({ filename, base64, detected: detected.format, sourceDir })
+    onLoaded({ filename, base64, detected: detected.format, sourceDir, handle })
   }
 
   async function acceptLoaded(loaded: LoadedInput[] | null): Promise<void> {
     // Main resolved these from real paths, so it already knows their folders.
-    for (const l of loaded ?? []) await accept(l.base64, l.detected, l.filename, l.sourceDir)
+    for (const l of loaded ?? []) await accept(l.base64, l.detected, l.filename, l.sourceDir, l.handle)
   }
 
   async function handleFiles(files: File[]): Promise<void> {
@@ -82,7 +85,10 @@ export function createIntake(handlers: IntakeHandlers) {
       const detected = await window.api.detect({ base64, filename: file.name })
       // A dropped File carries no path of its own; only the preload can say
       // where it came from, and it says '' for one not backed by disk.
-      await accept(base64, detected, file.name, window.api.dirForFile(file) || undefined)
+      // The handle is what lets a later conversion read the file again rather
+      // than reuse the bytes read just above.
+      const handle = await window.api.fileHandle(file)
+      await accept(base64, detected, file.name, window.api.dirForFile(file) || undefined, handle)
     }
   }
 

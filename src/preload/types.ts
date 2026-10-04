@@ -88,6 +88,8 @@ export interface LoadedInput {
   detected: DetectResult
   /** Folder this input came from, when it came from disk. */
   sourceDir?: string
+  /** Token for re-reading the file at convert time, when it has one on disk. */
+  handle?: string
 }
 
 export type SaveResult =
@@ -97,7 +99,10 @@ export type SaveResult =
   | { status: 'error'; code: string; message: string }
 
 export interface BatchItemReq {
+  /** The input's bytes. Empty when `handle` is set: the file is read instead. */
   base64: string
+  /** Token for the file on disk. The main process reads it at convert time. */
+  handle?: string
   filename?: string
   source: SourceFormat
   ocr?: boolean
@@ -139,10 +144,15 @@ export interface Api {
   expandArchive(req: { base64: string; filename: string; sourceDir?: string }): Promise<LoadedInput[]>
   /** Folder a dropped File came from; '' when it is not backed by disk. */
   dirForFile(file: File): string
+  /** Token for re-reading a dropped File later; undefined when it is not backed by disk. */
+  fileHandle(file: File): Promise<string | undefined>
+  /** What the file looks like on disk now; null when it is gone. Compare, do not parse. */
+  fileStamp(handle: string): Promise<string | null>
   loadUriList(uriList: string): Promise<LoadedInput[] | null>
   detectText(text: string): Promise<DetectResult>
   convertAndSave(req: {
     base64: string
+    handle?: string
     filename?: string
     source: SourceFormat
     target: TargetFormat
@@ -179,13 +189,15 @@ export interface Api {
   /** Read an input into hub HTML so it can be opened in the edit pane. */
   fileToHtml(req: {
     base64: string
+    handle?: string
     filename?: string
     source: SourceFormat
     ocr?: boolean
     ocrLanguage?: string
     jobId?: string
   }): Promise<
-    { kind: 'ok'; html: string; title?: string } | { kind: 'error'; code: string; message: string }
+    | { kind: 'ok'; html: string; title?: string; /** Set when read from a file on disk. */ stamp?: string }
+    | { kind: 'error'; code: string; message: string }
   >
   listOcrLanguages(): Promise<OcrLanguageListing[]>
   downloadOcrLanguage(
@@ -197,6 +209,7 @@ export interface Api {
   resizeContent(req: { height?: number; reset?: boolean }): Promise<void>
   convertAndCopy(req: {
     base64: string
+    handle?: string
     filename?: string
     source: SourceFormat
     target: TargetFormat

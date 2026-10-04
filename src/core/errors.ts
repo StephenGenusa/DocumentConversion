@@ -18,6 +18,8 @@ export type ConversionErrorCode =
   | 'rtf-parse-failed'
   | 'image-unsupported'
   | 'merge-empty'
+  /** A file the app was given is no longer on disk to be read. */
+  | 'source-missing'
 
 export class ConversionError extends Error {
   constructor(

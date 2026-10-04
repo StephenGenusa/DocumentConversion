@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, clipboard } from 'electron'
-import { join, dirname } from 'path'
-import { writeFile, readFile } from 'fs/promises'
+import { join, dirname, isAbsolute } from 'path'
+import { writeFile, readFile, stat } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { detect } from '../core/detect'
@@ -12,11 +12,14 @@ import { ConversionError } from '../core/errors'
 import { createJob, cancelJob, finishJob, runBatch, throwIfCancelled, type BatchRow } from './jobs'
 import { clipboardFlavors, mergeToTarget, readForConversion, runConversion } from './conversion'
 import { runCli } from './cli-run'
+import { inputBytes, readHandle, registerPath, stampOf } from './file-handles'
 import { isBinaryTarget } from '../core/target-validity'
 import { expandZipArchive } from '../core/zip-expand'
 
 interface BatchItemPayload {
   base64: string
+  /** Token for the file on disk; when set, the file is read instead of `base64`. */
+  handle?: string
   filename?: string
   source: SourceFormat
   ocrLanguage?: string
@@ -125,12 +128,24 @@ interface LoadedFile {
   base64: string
   detected: DetectResult
   sourceDir?: string
+  /** Token for re-reading this file at convert time; see file-handles.ts. */
+  handle?: string
 }
 
-/** A ZIP expands into its entries; everything else is a single input. */
-async function loadBytes(bytes: Buffer, filename: string, sourceDir?: string): Promise<LoadedFile[]> {
+/**
+ * A ZIP expands into its entries; everything else is a single input.
+ *
+ * `path` is given when the bytes came from a file on disk. A single input then
+ * gets a handle, so a later conversion reads the file again instead of reusing
+ * these bytes. Zip entries get none: an entry has no file of its own to go
+ * back to, so it stays the snapshot it was expanded as.
+ */
+async function loadBytes(bytes: Buffer, filename: string, sourceDir?: string, path?: string): Promise<LoadedFile[]> {
   const detected = detect(bytes, filename)
-  if (detected.kind !== 'archive') return [{ filename, base64: bytes.toString('base64'), detected, sourceDir }]
+  if (detected.kind !== 'archive') {
+    const handle = path ? registerPath(path) : undefined
+    return [{ filename, base64: bytes.toString('base64'), detected, sourceDir, handle }]
+  }
   const entries = await expandZipArchive(bytes)
   // An entry has no folder of its own, so it inherits the archive's.
   return entries.map((entry) => ({
@@ -143,7 +158,7 @@ async function loadBytes(bytes: Buffer, filename: string, sourceDir?: string): P
 
 async function loadPath(path: string): Promise<LoadedFile[]> {
   const bytes = await readFile(path)
-  return loadBytes(bytes, path.split(/[\\/]/).pop() ?? path, dirname(path))
+  return loadBytes(bytes, path.split(/[\\/]/).pop() ?? path, dirname(path), path)
 }
 
 function registerIpc(): void {
@@ -170,6 +185,24 @@ function registerIpc(): void {
     if (paths.length === 0) return null
     return (await Promise.all(paths.map(loadPath))).flat()
   })
+
+  // A dropped File reaches the renderer as bytes with no path. The preload
+  // resolves the path and registers it here, and gets back the token the
+  // renderer keeps. Only a real file is registered.
+  ipcMain.handle('app:register-file', async (_e, { path }: { path: unknown }) => {
+    try {
+      if (typeof path !== 'string' || !isAbsolute(path) || !(await stat(path)).isFile()) return null
+      return registerPath(path)
+    } catch {
+      return null
+    }
+  })
+
+  // Lets the renderer notice that a file open in the edit pane was written
+  // since the pane was loaded from it.
+  ipcMain.handle('app:file-stamp', (_e, { handle }: { handle: unknown }) =>
+    typeof handle === 'string' ? stampOf(handle) : null,
+  )
 
   ipcMain.handle('app:detect-text', async (_e, { text }: { text: string }) => {
     return detect(Buffer.from(text, 'utf8'))
@@ -215,6 +248,7 @@ function registerIpc(): void {
       e,
       {
         base64,
+        handle,
         filename,
         source,
         ocr,
@@ -222,6 +256,7 @@ function registerIpc(): void {
         jobId,
       }: {
         base64: string
+        handle?: string
         filename?: string
         source: SourceFormat
         ocr?: unknown
@@ -238,15 +273,18 @@ function registerIpc(): void {
           }
         : {}
       try {
+        // The stamp goes back with the html: it is what the pane was loaded
+        // from, and what a later change on disk is measured against.
+        const input = handle ? await readHandle(handle) : { bytes: Buffer.from(base64, 'base64'), stamp: undefined }
         const hub = await readForConversion(
-          Buffer.from(base64, 'base64'),
+          input.bytes,
           filename,
           source,
           ocr === true,
           ctx,
           typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
         )
-        return { kind: 'ok' as const, html: hub.html, title: hub.title }
+        return { kind: 'ok' as const, html: hub.html, title: hub.title, stamp: input.stamp }
       } catch (err) {
         const code = err instanceof ConversionError ? err.code : 'read-failed'
         return { kind: 'error' as const, code, message: (err as Error).message }
@@ -316,6 +354,7 @@ function registerIpc(): void {
       e,
       {
         base64,
+        handle,
         filename,
         source,
         target,
@@ -326,6 +365,7 @@ function registerIpc(): void {
         jobId,
       }: {
         base64: string
+        handle?: string
         filename?: string
         source: SourceFormat
         target: TargetFormat
@@ -355,7 +395,7 @@ function registerIpc(): void {
           }
         : {}
       try {
-        const bytes = Buffer.from(base64, 'base64')
+        const bytes = await inputBytes({ base64, handle })
         const opts = { pdf: normalizePdfOptions(pdf), slides: normalizeSlideOptions(slides), ocr: ocr === true, ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined }
         if (target === 'html') {
           // Rich flavor for Word/Teams/Outlook paste targets + plain-text flavor for editors.
@@ -385,6 +425,7 @@ function registerIpc(): void {
       e,
       {
         base64,
+        handle,
         filename,
         source,
         target,
@@ -396,6 +437,7 @@ function registerIpc(): void {
         sourceDir,
       }: {
         base64: string
+        handle?: string
         filename?: string
         source: SourceFormat
         target: TargetFormat
@@ -422,7 +464,7 @@ function registerIpc(): void {
           : {}),
       }
       try {
-        const bytes = Buffer.from(base64, 'base64')
+        const bytes = await inputBytes({ base64, handle })
         const out = await runConversion(bytes, filename, source, target, {
           pdf: normalizePdfOptions(pdf),
           slides: normalizeSlideOptions(slides),
@@ -485,9 +527,11 @@ function registerIpc(): void {
       const slideOpts = normalizeSlideOptions(slides)
       let rows: BatchRow[]
       try {
-        rows = await runBatch(items, target, outDir, { signal, onProgress }, (item, ctx) =>
+        // Read inside the loop: a file that has gone costs its own row, with a
+        // message naming it, and the rest of the batch carries on.
+        rows = await runBatch(items, target, outDir, { signal, onProgress }, async (item, ctx) =>
           runConversion(
-            Buffer.from(item.base64, 'base64'),
+            await inputBytes(item),
             item.filename,
             item.source,
             target,
@@ -534,12 +578,14 @@ function registerIpc(): void {
         : {}
       try {
         const out = await mergeToTarget(
-          items.map((item) => ({
-            bytes: Buffer.from(item.base64, 'base64'),
-            filename: item.filename,
-            source: item.source,
-            ocr: item.ocr === true,
-          })),
+          await Promise.all(
+            items.map(async (item) => ({
+              bytes: await inputBytes(item),
+              filename: item.filename,
+              source: item.source,
+              ocr: item.ocr === true,
+            })),
+          ),
           target,
           { pdf: normalizePdfOptions(pdf), slides: normalizeSlideOptions(slides) },
           headings === true,

@@ -1,6 +1,6 @@
 {
   "name": "docconversion",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Offline document converter: 22 input formats to PDF, Word, Markdown, HTML, EPUB and more, including the clipboard and web pages.",
   "keywords": [
     "document-conversion",
@@ -35,6 +35,7 @@
     "test:e2e": "npm run build:e2e-core && electron tests/e2e/matrix.cjs",
     "cli": "electron . convert",
     "test:cli": "node tests/e2e/cli-smoke.mjs",
+    "test:ui": "node tests/e2e/ui-state.mjs",
     "pii:update": "PII_UPDATE=1 vitest run tests/pii"
   },
   "dependencies": {

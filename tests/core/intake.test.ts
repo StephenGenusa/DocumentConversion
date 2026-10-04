@@ -17,6 +17,7 @@ interface ApiStub {
   sanitizeHtml: ReturnType<typeof vi.fn>
   textToHtml: ReturnType<typeof vi.fn>
   dirForFile: ReturnType<typeof vi.fn>
+  fileHandle: ReturnType<typeof vi.fn>
 }
 
 let api: ApiStub
@@ -73,6 +74,7 @@ beforeEach(() => {
     sanitizeHtml: vi.fn(async (html: string) => `sanitized:${html}`),
     textToHtml: vi.fn(async (text: string, format: string) => `rendered(${format}):${text}`),
     dirForFile: vi.fn(() => '/home/me/docs'),
+    fileHandle: vi.fn(async () => 'handle-1'),
   }
   ;(window as unknown as { api: ApiStub }).api = api
 })
@@ -127,6 +129,55 @@ describe('intake: dropping files', () => {
     await i.onDrop(dropEvent({ files: [fakeFile('bad.ppt', 'x')] }))
     await i.onDrop(dropEvent({ files: [fakeFile('good.md', '# ok')] }))
     expect(notices.at(-1)).toBeNull()
+  })
+})
+
+/**
+ * The handle is what lets a later conversion re-read the file from disk rather
+ * than reuse the bytes captured here. Losing it on the way in would bring back
+ * the stale-output bug without failing anything else.
+ */
+describe('intake: the handle back to the file on disk', () => {
+  it('carries the handle of a dropped file', async () => {
+    await intake().onDrop(dropEvent({ files: [fakeFile('a.md', '# A')] }))
+    expect(loaded[0].handle).toBe('handle-1')
+  })
+
+  it('carries none for a dropped file that is not backed by disk', async () => {
+    api.fileHandle.mockResolvedValue(undefined)
+    await intake().onDrop(dropEvent({ files: [fakeFile('a.md', '# A')] }))
+    expect(loaded[0].handle).toBeUndefined()
+  })
+
+  it('carries the handle the main process issued for a file from the dialog', async () => {
+    api.openFile.mockResolvedValue([
+      { filename: 'a.md', base64: b64('a'), detected: ok('md'), handle: 'from-main' },
+    ] as LoadedInput[])
+    await intake().openDialog()
+    expect(loaded[0].handle).toBe('from-main')
+  })
+
+  it('carries the handle for a file dropped as a uri-list', async () => {
+    api.loadUriList.mockResolvedValue([
+      { filename: 'x.md', base64: b64('# x'), detected: ok('md'), handle: 'from-main' },
+    ] as LoadedInput[])
+    await intake().onDrop(dropEvent({ data: { 'text/uri-list': 'file:///tmp/x.md' } }))
+    expect(loaded[0].handle).toBe('from-main')
+  })
+
+  it("gives a zip's entries none: an entry has no file of its own to go back to", async () => {
+    api.detect.mockResolvedValue({ kind: 'archive' })
+    api.expandArchive.mockResolvedValue([
+      { filename: 'spec.md', base64: b64('# spec'), detected: ok('md') },
+    ] as LoadedInput[])
+    await intake().onDrop(dropEvent({ files: [fakeFile('bundle.zip', 'PK')] }))
+    expect(loaded[0].handle).toBeUndefined()
+  })
+
+  it('gives pasted text none', async () => {
+    api.detectText.mockResolvedValue(ok('csv'))
+    await intake().onPaste(pasteEvent({ 'text/plain': 'a,b\n1,2' }))
+    expect(loaded[0].handle).toBeUndefined()
   })
 })
 

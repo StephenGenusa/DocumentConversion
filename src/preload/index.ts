@@ -40,10 +40,26 @@ const api = {
       return ''
     }
   },
+  /**
+   * A token for re-reading a dropped File at convert time, or undefined when it
+   * is not backed by disk. The path is resolved here and handed straight to
+   * the main process; the page gets the token, never the path.
+   */
+  fileHandle: async (file: File): Promise<string | undefined> => {
+    try {
+      const path = webUtils.getPathForFile(file)
+      if (!path) return undefined
+      return (await ipcRenderer.invoke('app:register-file', { path })) ?? undefined
+    } catch {
+      return undefined
+    }
+  },
+  fileStamp: (handle: string) => ipcRenderer.invoke('app:file-stamp', { handle }),
   loadUriList: (uriList: string) => ipcRenderer.invoke('app:load-uri-list', { uriList }),
   detectText: (text: string) => ipcRenderer.invoke('app:detect-text', { text }),
   convertAndSave: (req: {
     base64: string
+    handle?: string
     filename?: string
     source: SourceFormat
     target: TargetFormat
@@ -61,6 +77,7 @@ const api = {
   loadUrl: (req: { url: string; jobId?: string }) => ipcRenderer.invoke('app:load-url', req),
   fileToHtml: (req: {
     base64: string
+    handle?: string
     filename?: string
     source: string
     ocr?: boolean
@@ -75,6 +92,7 @@ const api = {
   resizeContent: (req: { height?: number; reset?: boolean }) => ipcRenderer.invoke('app:resize-content', req),
   convertAndCopy: (req: {
     base64: string
+    handle?: string
     filename?: string
     source: SourceFormat
     target: TargetFormat

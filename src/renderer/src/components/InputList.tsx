@@ -1,17 +1,8 @@
 import type { SourceFormat } from '../../../preload/types'
 
-export interface ListItem {
-  id: string
-  label: string
-  filename: string
-  source: SourceFormat
-  imageMode: 'embed' | 'ocr'
-  /** Sanitized hub HTML for clipboard/URL inputs (re-openable in the pane). */
-  html?: string
-  base64?: string
-  /** Folder this input came from, when it came from disk; drives the save dialog. */
-  sourceDir?: string
-}
+import type { ListItem } from '../lib/items'
+
+export type { ListItem }
 
 const SHORT: Record<SourceFormat, string> = {
   txt: 'txt',

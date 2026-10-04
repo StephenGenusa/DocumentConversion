@@ -20,6 +20,7 @@ locally, and the code that does it is in this repository.
 ## Contents
 
 - [Install](#install)
+- [What's new in 1.2](#whats-new-in-12)
 - [What's new in 1.1](#whats-new-in-11)
 - [What it reads](#what-it-reads)
 - [What it writes](#what-it-writes)
@@ -48,6 +49,28 @@ on first launch: right-click it and choose *Open*, or clear the quarantine
 attribute with `xattr -d com.apple.quarantine "Document Converter.app"`.
 
 The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
+
+## What's new in 1.2
+
+- **A file is read again every time it is converted.** 1.1 read a file once,
+  when it was added, and converted those bytes from then on: edit the file in
+  another program, convert again, and the output was the old version with
+  nothing to say so. The app now goes back to the disk at each conversion.
+  Pasted text, a fetched page and the entries of a zip have no file to go back
+  to, and stay as they were added.
+- **Edits made in the editor survive a conversion.** Dismissing a result rebuilt
+  the editor from the original text, so the edits were gone and the next
+  conversion quietly produced the original. Cancelling the save dialog lost them
+  the same way. Edits are now stored before any result is shown, whatever the
+  result is.
+- **A file that changes on disk while it is open in the editor is not reloaded
+  behind your back.** Your edits win. A notice says the file changed on disk and
+  offers *Reload from disk* or *Keep my edits*; the conversion uses your edits
+  until you choose.
+- **A file that was moved, renamed or deleted is reported by name** instead of
+  being converted from the bytes it used to have. In a batch it costs its own
+  row and nothing else.
+- **Edit opens a file as it is now**, not as it was when it was added.
 
 ## What's new in 1.1
 
@@ -273,11 +296,13 @@ attachments recursively.
 ## Batch and merge
 
 Load several inputs by dropping more files, or with *Add files* and *Add from
-clipboard*, then choose a mode.
+clipboard*, then choose a mode. Files are read from disk when you convert, not
+when you add them, so a file you changed in the meantime converts as it is now.
 
 - **Batch** converts each input separately into a directory you choose. You get
   a result per file, can retry one that failed, and cancelling marks the rest as
-  cancelled.
+  cancelled. A file that was moved or deleted after it was added fails on its
+  own row, by name, and the rest carry on.
 - **Merge** joins everything into one document. Each source gets a heading with
   its name, which you can turn off, and a page break is always inserted between
   sources.
@@ -354,12 +379,20 @@ a fixture that passes without exercising the property is worse than none.
 ```
 npm run test:e2e -- <outDir> tests/fixtures/sample.docx ...
 npm run build && npm run test:cli
+npm run build && npm run test:ui
 npm run screenshots                 # regenerate docs/screenshots
 ```
 
 The first converts every fixture to every output format inside a real Electron
 main process, then checks the result by reading it back through the app's own
 readers.
+
+`test:ui` drives the real window and checks what it does between two
+conversions: that a file changed on disk is converted as it is now, that a
+deleted file is reported rather than converted from old bytes, and that edits
+made in the pane survive a result being shown and dismissed. On Linux it runs
+under `xvfb-run` when that is installed; anywhere else it uses the real desktop
+and overwrites the clipboard.
 
 ### Packaging
 
@@ -406,9 +439,13 @@ platform on its own runner is the real fix.
 - `src/cli/` — argument parsing and output-path resolution. No side effects.
 - `src/main/` — the Electron main process: IPC handlers, dialogs, conversion
   orchestration, the recognition host, and the headless CLI runner.
+  - `file-handles.ts` — keeps the path of each file the app was given and hands
+    the interface a token for it, so a conversion re-reads the file from disk.
 - `src/preload/` — the typed `window.api` bridge. Context isolation on, Node
   integration off.
 - `src/renderer/` — the React interface.
+  - `lib/items.ts` — the input list, which is the only state that outlives the
+    editor: edits are written back to it before a result is shown.
 - `docs/superpowers/` — design specs and implementation plans.
 
 ## Licence

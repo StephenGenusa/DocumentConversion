@@ -2,23 +2,30 @@ import { useEffect, type MutableRefObject } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { EDITOR_EXTENSIONS } from '../lib/editor-extensions'
 import { EditorToolbar } from './EditorToolbar'
+import type { LiveEdit } from '../lib/items'
 
 /**
  * Formatted preview/edit pane for input that arrives as HTML rather than as a
  * file: rich clipboard content, a fetched web page, and pasted markdown or
  * plain text rendered by its own reader. Receives ONLY sanitized HTML — raw
  * markup must never reach this component. The parent reads the (possibly
- * edited) HTML back through `getHtmlRef`.
+ * edited) HTML back through `liveRef`, which names the item it belongs to so
+ * the parent can never pair one item's id with another pane's content.
+ *
+ * The editor's content lives ONLY here. The parent must read it through
+ * `liveRef` and store it before doing anything that unmounts this component.
  */
 export function ClipboardPane({
+  itemId,
   html,
   sourceLabel,
-  getHtmlRef,
+  liveRef,
   onReset,
 }: {
+  itemId: string
   html: string
   sourceLabel: string
-  getHtmlRef: MutableRefObject<(() => string) | null>
+  liveRef: MutableRefObject<(() => LiveEdit) | null>
   onReset: () => void
 }): React.JSX.Element {
   // Focus the document as soon as the pane opens. Without this the caret stays
@@ -30,11 +37,11 @@ export function ClipboardPane({
   const editor = useEditor({ extensions: EDITOR_EXTENSIONS, content: html, autofocus: 'start' })
 
   useEffect(() => {
-    getHtmlRef.current = () => editor?.getHTML() ?? html
+    liveRef.current = () => ({ id: itemId, html: editor?.getHTML() ?? html })
     return () => {
-      getHtmlRef.current = null
+      liveRef.current = null
     }
-  }, [editor, html, getHtmlRef])
+  }, [editor, html, itemId, liveRef])
 
   return (
     <div className="card clip-pane">
