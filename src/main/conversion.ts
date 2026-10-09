@@ -1,5 +1,6 @@
 import { BrowserWindow, session, type Session } from 'electron'
-import { join } from 'path'
+import { join, sep } from 'path'
+import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
 import { mkdtemp, writeFile, rm } from 'fs/promises'
 import { createConverter } from '../core/convert'
@@ -26,6 +27,54 @@ import type {
   WriteResult,
 } from '../core/types'
 
+/** Temp folders of the renders in progress; the only files a print may load. */
+const renderDirs = new Set<string>()
+
+/**
+ * Whether the print window may load `url`: inline content, or a file inside a
+ * render's own temp folder. A file: URL with a host is refused outright — on
+ * Windows it is a UNC path, and opening one makes an SMB connection that hands
+ * the host the user's NTLM hash.
+ */
+export function printMayLoad(url: string, dirs: Iterable<string> = renderDirs): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.protocol === 'data:' || parsed.protocol === 'blob:' || url === 'about:blank') return true
+  if (parsed.protocol !== 'file:' || parsed.hostname !== '') return false
+  let path: string
+  try {
+    path = fileURLToPath(parsed)
+  } catch {
+    return false
+  }
+  // Windows paths compare case-insensitively; the drive letter alone can differ.
+  const fold = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
+  return [...dirs].some((dir) => fold(path).startsWith(fold(dir + sep)))
+}
+
+/**
+ * The main window's guard: a file: URL with a host is a UNC path on Windows,
+ * and the page is itself served from file:, so its CSP `'self'` would allow
+ * one. Pasted and opened content is meant to reach the editor with embedded
+ * images only; this keeps a reference that slipped past from connecting out.
+ */
+export function blockHostedFileUrls(target: Session): void {
+  target.webRequest.onBeforeRequest((details, callback) => {
+    let hosted = false
+    try {
+      const url = new URL(details.url)
+      hosted = url.protocol === 'file:' && url.hostname !== ''
+    } catch {
+      /* not a URL Chromium will load */
+    }
+    callback({ cancel: hosted })
+  })
+}
+
 /**
  * The print window's own session, with the network switched off.
  *
@@ -40,9 +89,7 @@ let printSession: Session | undefined
 function offlinePrintSession(): Session {
   if (!printSession) {
     printSession = session.fromPartition('docconv-print')
-    printSession.webRequest.onBeforeRequest((details, callback) => {
-      callback({ cancel: !/^(?:file|data|blob|about|devtools|chrome):/i.test(details.url) })
-    })
+    printSession.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !printMayLoad(details.url) }))
   }
   return printSession
 }
@@ -60,6 +107,7 @@ export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Pr
       }
     : {}
   const dir = await mkdtemp(join(tmpdir(), 'docconv-'))
+  renderDirs.add(dir)
   const file = join(dir, 'doc.html')
   await writeFile(file, html, 'utf8')
   const win = new BrowserWindow({
@@ -80,6 +128,7 @@ export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Pr
     return data
   } finally {
     if (!win.isDestroyed()) win.destroy()
+    renderDirs.delete(dir)
     await rm(dir, { recursive: true, force: true })
   }
 }

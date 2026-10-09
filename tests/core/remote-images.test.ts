@@ -120,7 +120,7 @@ describe('resolveRemoteImages', () => {
     expect(d.lookup).not.toHaveBeenCalled()
   })
 
-  it.each(['eml', 'msg', 'mbox'] as const)('never fetches an email\'s remote images (%s)', async (source) => {
+  it.each(['eml', 'msg', 'mbox', 'ics'] as const)('never fetches remote images in mail or an invitation (%s)', async (source) => {
     const d = deps({ 'https://tracker.example/open.gif': PNG })
     const out = await resolveRemoteImages('<img src="https://tracker.example/open.gif" alt="">', source, d)
     expect(d.lookup).not.toHaveBeenCalled()

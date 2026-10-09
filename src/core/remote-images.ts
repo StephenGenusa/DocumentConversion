@@ -21,9 +21,10 @@ const IMAGE_TIMEOUT_MS = 10_000
  * Inputs whose remote images are never fetched. An email's remote images are
  * how its sender learns it was opened — and when, and from where — so a
  * converter must not open it on the user's behalf. Mail clients block them by
- * default for the same reason.
+ * default for the same reason. A calendar invitation arrives by mail and its
+ * HTML description carries the same kind of tracking image.
  */
-const NO_FETCH_SOURCES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['eml', 'msg', 'mbox'])
+const NO_FETCH_SOURCES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['eml', 'msg', 'mbox', 'ics'])
 
 function guardedImageFetcher(deps: GuardedFetchDeps, signal: AbortSignal | undefined, timeoutMs: number): ImageFetcher {
   return async (url) => {

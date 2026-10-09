@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, clipboard } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, clipboard, session } from 'electron'
 import { join, dirname, isAbsolute } from 'path'
 import { writeFile, readFile, stat } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -10,7 +10,7 @@ import type { DetectResult } from '../core/detect'
 import { normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
 import { createJob, cancelJob, finishJob, runBatch, throwIfCancelled, type BatchRow } from './jobs'
-import { clipboardFlavors, mergeToTarget, readForConversion, runConversion } from './conversion'
+import { blockHostedFileUrls, clipboardFlavors, mergeToTarget, readForConversion, runConversion } from './conversion'
 import { runCli } from './cli-run'
 import { inputBytes, readHandle, registerPath, stampOf } from './file-handles'
 import { isBinaryTarget } from '../core/target-validity'
@@ -637,6 +637,7 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+  blockHostedFileUrls(session.defaultSession)
   if (isCli) {
     // Headless: no window; hidden printToPDF windows still work.
     // `--help`/`--version` are their own verb; everything else is `convert <args>`.

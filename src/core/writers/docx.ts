@@ -2,25 +2,32 @@ import HTMLtoDOCX from 'html-to-docx'
 import JSZip from 'jszip'
 import { createHash } from 'node:crypto'
 import { renderDocumentShell } from '../shell'
+import { replaceImages } from '../inline-images'
 import type { HubDocument } from '../types'
 
 /**
  * html-to-docx tries to load every <img> and gives up on the whole document
  * when one cannot be resolved — a book with 90 relative image paths came out
  * as its table of contents and nothing else (6,305 of 306,150 characters).
- * Only data: images are kept. An http(s) one would be fetched by html-to-docx
- * itself, outside the guarded fetcher, and a single dead host failed the whole
- * document; remote images are embedded at read time instead (see
- * resolveRemoteImages). Drop the rest, keeping their alt text so the reader
- * knows something was there.
+ *
+ * Only a well-formed base64 image data URI is kept. html-to-docx fetches any
+ * src that merely CONTAINS an http(s) URL, itself, outside the guarded
+ * fetcher — so `data:,http://…` qualifies too, and its failure path crashes
+ * the whole document ("console.warning is not a function"). Base64 cannot
+ * hold a colon, so nothing kept can look like a URL. Remote images are
+ * embedded at read time instead (see resolveRemoteImages). The rest are
+ * dropped, keeping their alt text so the reader knows something was there.
+ *
+ * Parsed rather than matched, so the src checked is the src html-to-docx's own
+ * parser will read (see replaceImages).
  */
+const SAFE_IMAGE_DATA = /^data:image\/[\w.+-]+;base64,[A-Za-z0-9+/=\s]*$/i
+
 function dropUnresolvableImages(html: string): string {
-  if (!html.includes('<img')) return html
-  return html.replace(/<img\b[^>]*>/gi, (tag) => {
-    const src = /\bsrc="([^"]*)"/i.exec(tag)?.[1] ?? ''
-    if (/^data:/i.test(src)) return tag
-    const alt = /\balt="([^"]*)"/i.exec(tag)?.[1]?.trim()
-    return alt ? `<p>[${alt}]</p>` : ''
+  return replaceImages(html, (src, alt) => {
+    if (SAFE_IMAGE_DATA.test(src)) return null
+    const text = alt?.trim()
+    return text ? `<p>[${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}]</p>` : ''
   })
 }
 

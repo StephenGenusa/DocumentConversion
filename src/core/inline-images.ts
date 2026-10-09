@@ -1,3 +1,9 @@
+import { parseDocument } from 'htmlparser2'
+import { append, removeElement, replaceElement } from 'domutils'
+import { Element } from 'domhandler'
+import render from 'dom-serializer'
+import { imageMime } from './readers/image'
+
 export interface ImageFetcher {
   (url: string): Promise<{ bytes: Buffer; contentType: string }>
 }
@@ -183,14 +189,26 @@ function withSrc(tag: string, uri: string): string {
 }
 
 /**
- * A media type fit to be written into an attribute. The value comes off the
- * wire; `image/png"onerror="…` is a legal Content-Type header and would have
- * closed the attribute early. Anything not shaped like a type/subtype falls
- * back to png, which every consumer sniffs past anyway.
+ * The image type of a fetched body, or null when it is not an image.
+ *
+ * The bytes decide first: a PNG served as text/plain is still a PNG, while a
+ * login page, an error page or a JSON reply served with status 200 is not an
+ * image, whatever its header says — embedded, it showed as the same empty box
+ * a blocked remote image did. Formats without a sniffed signature (svg, avif,
+ * bmp, ico) are taken on the header's word, unless the body opens like markup
+ * when it should not.
+ *
+ * The header value also goes into an attribute, and `image/png"onerror="…` is
+ * a legal Content-Type; only a plain type/subtype shape is ever written.
  */
-function safeMime(contentType: string): string {
-  const mime = contentType.split(';')[0].trim()
-  return /^[\w.+-]+\/[\w.+-]+$/.test(mime) ? mime : 'image/png'
+export function fetchedImageType(contentType: string, bytes: Buffer): string | null {
+  const sniffed = imageMime(bytes)
+  if (sniffed) return sniffed
+  const mime = contentType.split(';')[0].trim().toLowerCase()
+  if (!/^image\/[\w.+-]+$/.test(mime)) return null
+  const head = bytes.toString('utf8', 0, 512).trimStart().toLowerCase()
+  if (mime === 'image/svg+xml') return /^(?:<\?xml|<!--|<!doctype svg|<svg)/.test(head) && head.includes('<svg') ? mime : null
+  return head.startsWith('<') || head.startsWith('{') ? null : mime
 }
 
 /**
@@ -270,8 +288,9 @@ export async function inlineImages(
     for (let e = queue.shift(); e; e = queue.shift()) {
       try {
         const { bytes, contentType } = await fetchImage(e.url!)
-        if (bytes.byteLength <= budget.maxPerImage) {
-          admit(e, `data:${safeMime(contentType)};base64,${bytes.toString('base64')}`, bytes.byteLength)
+        const mime = fetchedImageType(contentType, bytes)
+        if (mime && bytes.byteLength <= budget.maxPerImage) {
+          admit(e, `data:${mime};base64,${bytes.toString('base64')}`, bytes.byteLength)
         }
       } catch {
         // Failed: stays a placeholder.
@@ -293,18 +312,83 @@ export async function inlineImages(
 }
 
 /**
- * A source that would send the reader to the network: absolute http(s), or
- * protocol-relative, which a renderer resolves to one. Relative paths are not
- * remote — they name a file beside the document, and stay the writers' call.
+ * A source that would send the reader to the network.
+ *
+ * Decided by the WHATWG URL parser, resolved the way a rendered page resolves
+ * it (against a local file), because that parser — not a regex — is what
+ * Chromium uses: it strips tabs and newlines anywhere (`ht\tps://`), reads
+ * backslashes as slashes (`\\host\share`), and resolves a protocol-relative
+ * source to the page's scheme. Anything that does not land on a host-less
+ * file: or a data: URL is remote — including `file://host/share`, which on
+ * Windows is an SMB connection that hands the host the user's NTLM hash.
+ * Plain relative paths name a file beside the document and are not remote.
  */
 export function isRemoteImageSrc(src: string): boolean {
-  return /^\s*(?:https?:)?\/\//i.test(src)
+  let url: URL
+  try {
+    url = new URL(src, 'file:///document/')
+  } catch {
+    return false
+  }
+  if (url.protocol === 'data:') return false
+  return url.protocol !== 'file:' || url.hostname !== ''
 }
 
-/** Whether any <img> in the html points at the network. */
+const escapeText = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/**
+ * Rewrite <img> elements as an HTML parser sees them, for the checks that keep
+ * the network out.
+ *
+ * Those checks must agree with whoever acts on the markup next. html-to-docx
+ * parses with htmlparser2 and fetches any src that merely CONTAINS an http(s)
+ * URL, so a regex reading the string can be steered: in
+ * `<img alt='a<b src="data:x"' src="https://evil/x.png">` a string match takes
+ * the data: inside the alt (or no tag at all), while the parser takes the real
+ * src and fetches it. Parsing here, and handing on the re-serialized result,
+ * means the next parser sees exactly the attributes that were checked.
+ *
+ * `replace` gets each image's src ('' when it has none) and decoded alt, and
+ * returns replacement HTML, or null to keep the image. Markup is only
+ * re-serialized when something was replaced.
+ */
+export function replaceImages(html: string, replace: (src: string, alt: string | undefined) => string | null): string {
+  if (!/<img/i.test(html)) return html
+  const dom = parseDocument(html)
+  let changed = false
+  const visit = (nodes: Element['children']): void => {
+    for (const node of [...nodes]) {
+      if (!(node instanceof Element)) continue
+      if (node.name === 'img') {
+        const replacement = replace(node.attribs.src ?? '', node.attribs.alt)
+        if (replacement === null) continue
+        changed = true
+        const fragment = parseDocument(replacement).children
+        if (fragment.length === 0) {
+          removeElement(node)
+          continue
+        }
+        replaceElement(node, fragment[0])
+        for (let i = 1; i < fragment.length; i++) append(fragment[i - 1], fragment[i])
+        continue
+      }
+      visit(node.children)
+    }
+  }
+  visit(dom.children)
+  return changed ? render(dom, { encodeEntities: 'utf8' }) : html
+}
+
+/** Whether any <img> in the html points at the network, as a parser reads it. */
 export function hasRemoteImages(html: string): boolean {
-  if (!/<img\b/i.test(html)) return false
-  return (html.match(IMG_TAG) ?? []).some((tag) => isRemoteImageSrc(attr(tag, 'src') ?? ''))
+  if (!/<img/i.test(html)) return false
+  let found = false
+  replaceImages(html, (src) => {
+    if (isRemoteImageSrc(src)) found = true
+    return null
+  })
+  return found
 }
 
 /**
@@ -316,8 +400,7 @@ export function hasRemoteImages(html: string): boolean {
  * outside the guarded fetcher, or left in an output that claims to stand alone.
  */
 export function dropRemoteImages(html: string): string {
-  if (!hasRemoteImages(html)) return html
-  return html.replace(IMG_TAG, (tag) =>
-    isRemoteImageSrc(attr(tag, 'src') ?? '') ? imagePlaceholder(attr(tag, 'alt')) : tag,
+  return replaceImages(html, (src, alt) =>
+    isRemoteImageSrc(src) ? imagePlaceholder(alt ? escapeText(alt) : undefined) : null,
   )
 }

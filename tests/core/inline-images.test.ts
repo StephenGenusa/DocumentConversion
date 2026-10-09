@@ -4,10 +4,11 @@ import {
   isRemoteImageSrc,
   hasRemoteImages,
   dropRemoteImages,
+  fetchedImageType,
   type ImageFetcher,
 } from '../../src/core/inline-images'
 
-const PNG = Buffer.from('89504e47', 'hex')
+const PNG = Buffer.from('89504e470d0a1a0a', 'hex')
 
 function fetcher(sizes: Record<string, number>): ImageFetcher {
   return vi.fn(async (url: string) => {
@@ -236,5 +237,60 @@ describe('inlineImages concurrency and memory', () => {
     // Largest-first over the whole set: drop b (8), leaving 3 + 3 + 6 = 12.
     expect(out).toContain('[image: b]')
     expect(out.match(/data:image\/png/g)).toHaveLength(3)
+  })
+})
+
+describe('remote images as a URL parser reads them', () => {
+  it('sees through the spellings a regex misses', () => {
+    expect(isRemoteImageSrc('ht\ttps://evil.example/a.png')).toBe(true)
+    expect(isRemoteImageSrc('\\\\evil.example\\share\\a.png')).toBe(true)
+    expect(isRemoteImageSrc('https:\\\\evil.example\\a.png')).toBe(true)
+    expect(isRemoteImageSrc('file://evil.example/share/a.png')).toBe(true)
+    expect(isRemoteImageSrc('ftp://evil.example/a.png')).toBe(true)
+    expect(isRemoteImageSrc('images/a.png')).toBe(false)
+    expect(isRemoteImageSrc('file:///home/me/a.png')).toBe(false)
+  })
+
+  it('drops the src a parser reads, not a src= the string happens to contain', () => {
+    const tag = `<img alt='a<b src="data:x"' src="https://evil.example/x.png">`
+    expect(hasRemoteImages(tag)).toBe(true)
+    const out = dropRemoteImages(`<p>x</p>${tag}<p>y</p>`)
+    expect(out).not.toContain('evil.example')
+    expect(out).toContain('<p>x</p>')
+    expect(out).toContain('<p>y</p>')
+  })
+
+  it('leaves markup untouched when nothing is remote', () => {
+    const html = `<p>a &amp; b</p><img src="local.png" alt="x">`
+    expect(dropRemoteImages(html)).toBe(html)
+  })
+})
+
+describe('fetchedImageType', () => {
+  const png = Buffer.from('89504e470d0a1a0a0000', 'hex')
+  const html = Buffer.from('<!doctype html><html><body>Please sign in</body></html>')
+
+  it('trusts the bytes over the header', () => {
+    expect(fetchedImageType('text/plain', png)).toBe('image/png')
+    expect(fetchedImageType('image/png', html)).toBeNull()
+  })
+
+  it('refuses a page, an error or JSON served with status 200', () => {
+    expect(fetchedImageType('text/html; charset=utf-8', html)).toBeNull()
+    expect(fetchedImageType('application/json', Buffer.from('{"error":"denied"}'))).toBeNull()
+    expect(fetchedImageType('image/x-icon', Buffer.from('{"error":"denied"}'))).toBeNull()
+  })
+
+  it('takes unsniffed image types on the header, and svg only when it is svg', () => {
+    expect(fetchedImageType('image/avif', Buffer.from([0, 0, 0, 0x1c, 0x66, 0x74, 0x79, 0x70]))).toBe('image/avif')
+    expect(fetchedImageType('image/svg+xml', Buffer.from('<?xml version="1.0"?><svg xmlns="x"/>'))).toBe('image/svg+xml')
+    expect(fetchedImageType('image/svg+xml', html)).toBeNull()
+  })
+
+  it('a non-image reply becomes the alt placeholder, not a broken image', async () => {
+    const f: ImageFetcher = async () => ({ bytes: html, contentType: 'text/html' })
+    const out = await inlineImages('<img src="https://e.com/a.png" alt="chart">', 'https://e.com/', f)
+    expect(out).not.toContain('data:')
+    expect(out).toContain('[image: chart]')
   })
 })
