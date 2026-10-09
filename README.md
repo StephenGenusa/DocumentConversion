@@ -2,9 +2,11 @@
 
 Convert documents between 22 input formats and 12 output formats on your own
 machine. Your documents are never uploaded, there is no account and no
-telemetry. The app makes network requests only when you ask it to: fetching a
-web page you paste, along with the images on it, and downloading an OCR
-language pack you select.
+telemetry. The app goes to the network for three things: a web page you ask it
+to fetch, the images a document or a paste refers to by web address (so they
+can be embedded in the output), and an OCR language pack you select. Remote
+images in email and calendar invitations are never fetched. See
+[Images and the network](#images-and-the-network).
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
@@ -20,10 +22,12 @@ locally, and the code that does it is in this repository.
 ## Contents
 
 - [Install](#install)
+- [What's new in 1.3](#whats-new-in-13)
 - [What's new in 1.2](#whats-new-in-12)
 - [What's new in 1.1](#whats-new-in-11)
 - [What it reads](#what-it-reads)
 - [What it writes](#what-it-writes)
+- [Images and the network](#images-and-the-network)
 - [What it is good at](#what-it-is-good-at)
 - [What it deliberately does not do](#what-it-deliberately-does-not-do)
 - [Batch and merge](#batch-and-merge)
@@ -49,6 +53,33 @@ on first launch: right-click it and choose *Open*, or clear the quarantine
 attribute with `xattr -d com.apple.quarantine "Document Converter.app"`.
 
 The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
+
+## What's new in 1.3
+
+- **Pasted images show up.** Copying from a web page puts only the images'
+  addresses on the clipboard, and the editor would not load them, so each one
+  was an empty box. The app now downloads them and embeds them before the
+  editor opens. A progress bar counts them, and *Skip remaining images* opens
+  the editor at once with what has arrived.
+- **A document's web images are embedded in every output.** An `.html` or `.md`
+  file that refers to images by web address now gets those images embedded when
+  it is read, so html, slide and e-book output no longer depends on the website
+  staying up.
+- **A dead image no longer fails a Word document.** An image the Word writer
+  could not download made the whole conversion fail with "console.warning is
+  not a function".
+- **Email and calendar invitations never load remote images.** Those images are
+  how a sender learns a message was opened, and from where. They are replaced
+  by their description, as a mail client does.
+- **Conversion makes no network requests of its own.** The Word writer and the
+  PDF renderer used to fetch remote images themselves, without the checks that
+  keep a document from reaching addresses on your local network. All fetching
+  now goes through one guarded path, and the PDF renderer is cut off from the
+  network entirely.
+- **A larger image budget.** Up to 100 images and 25 MB per document or page,
+  was 20 and 10 MB, downloaded four at a time.
+- **A web page or error served in place of an image is not embedded.** It
+  becomes the image's description instead of a broken picture.
 
 ## What's new in 1.2
 
@@ -124,9 +155,12 @@ Some of those names cover more than one file extension.
 Three inputs are not file formats:
 
 - **The clipboard.** Ctrl+V or *Paste from clipboard*. Formatting from Teams,
-  Word and Outlook survives, including tables, links and images.
+  Word and Outlook survives, including tables, links and images. Images a web
+  page puts on the clipboard by address are downloaded and embedded; see
+  [Images and the network](#images-and-the-network).
 - **A web page address.** Paste a link or use *From URL*. The readable article
-  is extracted with Mozilla Readability and images inlined up to a size budget.
+  is extracted with Mozilla Readability and its images embedded, up to 100
+  images and 25 MB.
   Every redirect hop is checked against private and loopback addresses, so a
   page cannot make the app fetch something on your local network.
 - **A ZIP archive.** Expanded into its convertible entries, each becoming a
@@ -180,10 +214,58 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
 - **json** — one file per table, keyed by the header row when there is one.
 - **xlsx** — one workbook, one sheet per table.
 
+No output refers to the network: every image is embedded in the file, or
+replaced by its description.
+
 There is also a *Convert to clipboard* button, which puts both a rich HTML and a
 plain text version on the clipboard. It is hidden for outputs whose bytes are
 not text (Word, PDF, EPUB, Excel, Kindle), and for slide decks, which are a
 complete HTML document with about 240 KB of JavaScript inlined.
+
+## Images and the network
+
+A document can refer to an image by web address instead of containing it: a
+saved web page, a Markdown file with `![chart](https://…)`, a paste from a
+browser. The app downloads such images when the input is read and embeds them,
+so the editor shows them and every output carries them. This is **on by
+default** and applies to:
+
+- a file you open or drop, whatever its format;
+- a paste, from Ctrl+V or *Paste from clipboard*;
+- a web page fetched with *From URL*;
+- the command line, which reads inputs the same way.
+
+Opening a document that refers to remote images therefore contacts the servers
+that host them, which tells those servers your IP address and that the
+document was opened. There is no setting to turn this off. Two exceptions are
+built in:
+
+- **Email and calendar invitations** (`.eml`, `.msg`, `.mbox`, `.ics`) never
+  have their remote images fetched. Senders use them to learn that a message
+  was opened, so they are replaced by their description, as a mail client does.
+- **Relative paths** (`images/fig.png`) name a file beside the document, not a
+  web address, and are left as they are.
+
+Every download goes through the same checks as *From URL*:
+
+- Only `http` and `https`. Each redirect hop is checked, and an address on your
+  local network or loopback is refused, so a document cannot make the app reach
+  your router, a printer or a service on your own machine.
+- Up to 100 images, 2 MB each and 25 MB in total per input, four at a time,
+  with 10 seconds allowed per image. When the total is exceeded the largest
+  images are dropped first.
+- The body must actually be an image. A login page, an error page or a JSON
+  reply sent in place of an image is not embedded.
+
+An image that cannot be fetched, is over budget, or is skipped becomes its
+description, such as `[image: quarterly chart]`. A paste shows its progress
+("Fetched 3 of 12 images"); *Skip remaining images* opens the editor straight
+away with the images that have arrived. During a conversion the usual *Cancel*
+applies.
+
+The writers never fetch anything themselves. Any remote reference still present
+when a document is written is replaced by its description, and the window that
+renders PDF output has no network access at all.
 
 ## What it is good at
 
