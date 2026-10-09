@@ -481,23 +481,8 @@ and overwrites the clipboard.
 ```
 npm run build:win     # NSIS installer -> dist/docconversion-<version>-setup.exe
 npm run build:linux   # AppImage       -> dist/docconversion-<version>.AppImage
-
-# macOS: install the target's Skia first, then package the zip only.
-# A bare `--mac` also tries .dmg, which needs macOS.
-node scripts/native-for-target.mjs darwin-x64
-npx electron-builder --mac zip   # -> dist/Document Converter-<version>-mac.zip
+npm run build:mac     # zip            -> dist/Document Converter-<version>-mac.zip
 ```
-
-`files:` in `electron-builder.yml` is an **allowlist**. It was once a list of
-exclusions, which left electron-builder's default `**/*` in force and packaged
-the entire working directory.
-
-Cross-building needs the target's native binding — `@napi-rs/canvas` ships one
-per platform and npm installs only the host's, so a Windows package built on
-Linux silently produced PDFs with no images. `prebuild:win` fetches it; the
-macOS command above does the same by hand. Installing one target's binding
-removes the previous one, so rebuild a platform after switching. Building each
-platform on its own runner is the real fix.
 
 ## Project layout
 

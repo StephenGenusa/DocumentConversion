@@ -14,7 +14,9 @@
  *
  *   node scripts/native-for-target.mjs win32-x64-msvc
  *
- * Wired to `prebuild:win`, so `npm run build:win` cannot forget. Building each
+ * Wired to `prebuild:win`, `prebuild:mac` and `prebuild:linux`, so no
+ * `npm run build:<platform>` can forget — and since installing one target's
+ * binding can remove another, every platform checks its own, in any order. Building each
  * platform on its own CI runner would make this unnecessary — that is the real
  * fix, and this is the guard until it exists.
  */
