@@ -230,6 +230,16 @@ describe('guardedFetch', () => {
     })
   })
 
+  it('honours a caller signal that was already aborted before the call', async () => {
+    // A listener never sees an abort that already happened; without checking
+    // `aborted`, every fetch after a cancel ran to its full timeout.
+    const d = deps({ 'https://example.com/a': () => new Response('ok') })
+    const outer = new AbortController()
+    outer.abort()
+    await guardedFetch('https://example.com/a', d, { signal: outer.signal }).catch(() => undefined)
+    expect(d.calls[0]?.init.signal?.aborted).toBe(true)
+  })
+
   it('gives up after too many redirects', async () => {
     const d = deps({ 'https://example.com/loop': () => redirect('https://example.com/loop') })
     await expect(guardedFetch('https://example.com/loop', d)).rejects.toMatchObject({ code: 'fetch-failed' })

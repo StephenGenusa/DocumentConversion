@@ -189,6 +189,9 @@ export async function guardedFetch(
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const onOuterAbort = (): void => controller.abort()
   opts?.signal?.addEventListener('abort', onOuterAbort, { once: true })
+  // A signal that fired before this call never fires again, so the listener
+  // alone would let a cancelled job's later fetches each run to the timeout.
+  if (opts?.signal?.aborted) controller.abort()
 
   try {
     let url: URL
