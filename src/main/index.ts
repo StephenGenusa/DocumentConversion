@@ -28,14 +28,13 @@ interface BatchItemPayload {
 }
 import { downloadPack, listPacks, removePack } from './ocr-packs'
 import { normalizeSlideOptions } from '../core/slides'
-import { sanitizeToHub } from '../core/allowlist'
 import { renderEditableText } from '../core/text-intake'
 import { defaultSavePath, defaultSaveDir, rememberDir, rememberSaveDir } from './save-location'
 import { shouldUseHtmlFlavor } from '../core/paste-flavors'
+import { pastedHtmlToHub } from '../core/remote-images'
 import { loadUrl } from '../core/readers/url'
-import { lookup as dnsLookup } from 'node:dns/promises'
 import type { ReadContext } from '../core/types'
-import type { GuardedFetchDeps } from '../core/net/guarded-fetch'
+import { urlFetchDeps } from './net'
 
 // CLI mode: `DocumentConverter convert ...` (packaged, argv[1]) or
 // `electron <app-path> convert ...` (dev, argv[2]).
@@ -52,11 +51,6 @@ if (isCli) {
   // font quirks. Both went to stderr on every run, so any script treating
   // stderr as failure misfired on a successful conversion.
   process.noDeprecation = true
-}
-
-const urlFetchDeps: GuardedFetchDeps = {
-  fetch: (url, init) => globalThis.fetch(url, init),
-  lookup: async (host) => (await dnsLookup(host, { all: true })).map((r) => r.address),
 }
 
 // Grow-to-fit is suppressed once the user resizes manually (spec §F0: no snap-back).
@@ -211,18 +205,43 @@ function registerIpc(): void {
   ipcMain.handle('app:cancel', (_e, { jobId }: { jobId: string }) => cancelJob(jobId))
 
   // Clipboard intake: HTML is sanitized HERE, before the renderer ever parses it.
-  ipcMain.handle('app:read-clipboard', () => {
+  /** Progress and Skip for a paste whose images are being fetched. */
+  const pasteContext = (e: Electron.IpcMainInvokeEvent, jobId?: string): ReadContext =>
+    jobId
+      ? {
+          signal: createJob(jobId),
+          onProgress: (stage, percent) => {
+            if (!e.sender.isDestroyed()) e.sender.send('app:progress', { jobId, stage, percent })
+          },
+        }
+      : {}
+
+  ipcMain.handle('app:read-clipboard', async (e, { jobId }: { jobId?: string } = {}) => {
     const html = clipboard.readHTML()
     const text = clipboard.readText()
     // Same rule as a Ctrl+V paste, so the button and the keystroke agree.
-    if (shouldUseHtmlFlavor(html ?? '', text ?? '')) return { kind: 'html' as const, html: sanitizeToHub(html) }
+    if (shouldUseHtmlFlavor(html ?? '', text ?? '')) {
+      try {
+        return { kind: 'html' as const, html: await pastedHtmlToHub(html, urlFetchDeps, pasteContext(e, jobId)) }
+      } finally {
+        if (jobId) finishJob(jobId)
+      }
+    }
     const image = clipboard.readImage()
     if (!image.isEmpty()) return { kind: 'image' as const }
     if (text && text.trim()) return { kind: 'text' as const, text }
     return { kind: 'empty' as const }
   })
 
-  ipcMain.handle('app:sanitize-html', (_e, { html }: { html: string }) => sanitizeToHub(html))
+  // Pasted images arrive as remote URLs the edit pane's CSP will not load, so
+  // they are fetched and embedded here; see pastedHtmlToHub.
+  ipcMain.handle('app:sanitize-html', async (e, { html, jobId }: { html: string; jobId?: string }) => {
+    try {
+      return await pastedHtmlToHub(html, urlFetchDeps, pasteContext(e, jobId))
+    } finally {
+      if (jobId) finishJob(jobId)
+    }
+  })
 
   // Pasted text that opens in the edit pane is rendered HERE, by the same
   // reader the conversion would use, and sanitized before the renderer parses

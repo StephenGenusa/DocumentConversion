@@ -144,7 +144,9 @@ interface ExtractedImage {
  * the document leaves its container — so writing an epub is the one place that
  * has to reverse it. Identity is the image bytes, never the URI: a logo
  * repeated in every chapter must be stored once, exactly as the docx writer
- * already does. Remote references are left alone; they still resolve.
+ * already does. No remote reference reaches here: they are embedded or
+ * dropped at read time, since an EPUB must declare remote resources and most
+ * readers will not load them anyway.
  */
 export function extractImages(nodes: AnyNode[]): ExtractedImage[] {
   const byHash = new Map<string, ExtractedImage>()

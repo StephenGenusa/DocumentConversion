@@ -8,11 +8,24 @@ export interface InlineBudget {
   maxTotal: number
 }
 
+/**
+ * The budget for images fetched over the network: a fetched page, a paste, and
+ * a document's remote images at read time.
+ *
+ * Every one of those is something the user chose — a page they asked for,
+ * content they copied from a page their browser had already loaded — so the
+ * count is not a defence against anyone; memory is bounded by maxTotal (see
+ * inlineImages) and time by the per-image timeout and the user's Cancel.
+ * A hundred covers a long illustrated article; 25 MB is a few dozen photos.
+ */
 export const DEFAULT_INLINE_BUDGET: InlineBudget = {
-  maxImages: 20,
+  maxImages: 100,
   maxPerImage: 2 * 1024 * 1024,
-  maxTotal: 10 * 1024 * 1024,
+  maxTotal: 25 * 1024 * 1024,
 }
+
+/** Images downloaded at once. Enough to hide latency, few enough to be polite to one host. */
+const FETCH_CONCURRENCY = 4
 
 /**
  * Generous, because it is only there to stop the tag text itself from being the
@@ -22,12 +35,20 @@ export const DEFAULT_INLINE_BUDGET: InlineBudget = {
 const ARCHIVE_MAX_IMAGES = 1000
 
 /**
+ * The least an archive is allowed, however small the file. Not tied to
+ * DEFAULT_INLINE_BUDGET: an honest file carries about a byte of image per
+ * byte of file, so twice its size covers it and this floor only matters for a
+ * tiny file — which is exactly the bomb's shape. Raising it lets a 40 KB file
+ * expand to that many megabytes of hub.
+ */
+const ARCHIVE_MIN_TOTAL = 10 * 1024 * 1024
+
+/**
  * The budget for images that arrive inside the source file — a pptx or docx zip
  * — rather than over the network.
  *
- * DEFAULT_INLINE_BUDGET is the ceiling a fetched web page gets, and an archive
- * may never be allowed less than that; what it may be allowed *more* of is
- * bounded by the file the user actually opened. Every real document in the
+ * Every archive gets at least ARCHIVE_MIN_TOTAL; what it may be allowed *more*
+ * of is bounded by the file the user actually opened. Every real document in the
  * corpus carries between 0.93 and 0.99 bytes of decoded image per byte of file
  * (photographs and screenshots are already compressed, so the zip barely shrinks
  * them), while the intake this exists for — a 39 KB deck of twelve 3 MB
@@ -35,15 +56,14 @@ const ARCHIVE_MAX_IMAGES = 1000
  * every honest document untouched and still refuses the bomb.
  *
  * Counts and per-image caps are deliberately NOT taken from
- * DEFAULT_INLINE_BUDGET: its 20 images and 10 MB total are the right price for
- * fetching attacker-chosen URLs one network round trip at a time, but applied to
- * a zip they would strip 63 of the 83 figures out of the corpus training manual
- * and 40 of the 60 out of another — degrading ordinary documents, which is the
- * one thing this guard must not do. Inside an archive the bytes are the only
- * cost, so the total is what is policed.
+ * DEFAULT_INLINE_BUDGET: they are set for network fetches, where each image is
+ * a round trip, and applied to a zip they would strip figures out of ordinary
+ * documents (the corpus training manual carries 83, a deck 60) — degrading
+ * them, which is the one thing this guard must not do. Inside an archive the
+ * bytes are the only cost, so the total is what is policed.
  */
 export function archiveInlineBudget(sourceByteLength: number): InlineBudget {
-  const maxTotal = Math.max(DEFAULT_INLINE_BUDGET.maxTotal, sourceByteLength * 2)
+  const maxTotal = Math.max(ARCHIVE_MIN_TOTAL, sourceByteLength * 2)
   // The total already bounds any single image; a second, smaller per-image cap
   // would only drop the one big photograph a legitimate document is allowed.
   return { maxImages: ARCHIVE_MAX_IMAGES, maxPerImage: maxTotal, maxTotal }
@@ -190,6 +210,12 @@ export function imagePlaceholder(text?: string, display: 'block' | 'inline' = 'b
  * Fetch each <img> (through the caller's guarded fetcher) and inline it as a
  * data URI. Over-budget or failed images degrade to alt-text placeholders;
  * when the TOTAL exceeds the budget, the largest images are evicted first.
+ *
+ * Fetches run FETCH_CONCURRENCY at a time, and eviction happens as each image
+ * lands rather than after the last one: holding every image until the end
+ * made peak memory maxImages × maxPerImage (200 MB at a hundred images) for a
+ * result that may only keep maxTotal. Now it never holds more than maxTotal
+ * plus the images in flight.
  */
 export async function inlineImages(
   html: string,
@@ -197,56 +223,66 @@ export async function inlineImages(
   fetchImage: ImageFetcher,
   budget: InlineBudget = DEFAULT_INLINE_BUDGET,
   onProgress?: (stage: string, percent?: number) => void,
+  /** Which sources to touch; the rest are left exactly as they are. */
+  select: (src: string) => boolean = () => true,
 ): Promise<string> {
-  const tags = [...new Set(html.match(IMG_TAG) ?? [])]
   interface Entry {
     tag: string
     alt?: string
+    url?: string
     dataUri?: string
     size: number
   }
   const entries: Entry[] = []
-  let fetched = 0
-
-  for (const tag of tags) {
+  let wanted = 0
+  for (const tag of new Set(html.match(IMG_TAG) ?? [])) {
     const src = attr(tag, 'src')
-    const alt = attr(tag, 'alt')
-    if (!src || src.startsWith('data:')) continue
-    if (fetched >= budget.maxImages) {
-      entries.push({ tag, alt, size: 0 })
-      continue
-    }
-    fetched++
-    onProgress?.(`Fetching image ${fetched}`, undefined)
-    let resolved: string
+    if (!src || src.startsWith('data:') || !select(src)) continue
+    const entry: Entry = { tag, alt: attr(tag, 'alt'), size: 0 }
+    entries.push(entry)
+    if (wanted >= budget.maxImages) continue
     try {
-      resolved = new URL(src, baseUrl).href
+      entry.url = new URL(src, baseUrl).href
+      wanted++
     } catch {
-      entries.push({ tag, alt, size: 0 })
-      continue
-    }
-    try {
-      const { bytes, contentType } = await fetchImage(resolved)
-      if (bytes.byteLength > budget.maxPerImage) {
-        entries.push({ tag, alt, size: 0 })
-        continue
-      }
-      const mime = safeMime(contentType)
-      entries.push({ tag, alt, dataUri: `data:${mime};base64,${bytes.toString('base64')}`, size: bytes.byteLength })
-    } catch {
-      entries.push({ tag, alt, size: 0 })
+      // Unresolvable: stays a placeholder.
     }
   }
 
-  // Largest-first eviction until the total inlined bytes fit the budget.
-  let total = entries.reduce((n, e) => n + e.size, 0)
-  const bySize = [...entries].sort((a, b) => b.size - a.size)
-  for (const e of bySize) {
-    if (total <= budget.maxTotal) break
-    if (e.dataUri) {
-      total -= e.size
-      e.dataUri = undefined
+  const queue = entries.filter((e) => e.url)
+  let total = 0
+  let done = 0
+  const admit = (e: Entry, dataUri: string, size: number): void => {
+    e.dataUri = dataUri
+    e.size = size
+    total += size
+    // Largest-first, possibly the one just admitted.
+    while (total > budget.maxTotal) {
+      let largest: Entry | undefined
+      for (const x of entries) if (x.dataUri && (!largest || x.size > largest.size)) largest = x
+      if (!largest) break
+      total -= largest.size
+      largest.dataUri = undefined
+      largest.size = 0
     }
+  }
+  const worker = async (): Promise<void> => {
+    for (let e = queue.shift(); e; e = queue.shift()) {
+      try {
+        const { bytes, contentType } = await fetchImage(e.url!)
+        if (bytes.byteLength <= budget.maxPerImage) {
+          admit(e, `data:${safeMime(contentType)};base64,${bytes.toString('base64')}`, bytes.byteLength)
+        }
+      } catch {
+        // Failed: stays a placeholder.
+      }
+      done++
+      onProgress?.(`Fetched ${done} of ${wanted} image${wanted === 1 ? '' : 's'}`, (done / wanted) * 100)
+    }
+  }
+  if (wanted > 0) {
+    onProgress?.(`Fetching ${wanted} image${wanted === 1 ? '' : 's'}`, 0)
+    await Promise.all(Array.from({ length: Math.min(FETCH_CONCURRENCY, wanted) }, worker))
   }
 
   let out = html
@@ -254,4 +290,34 @@ export async function inlineImages(
     out = out.split(e.tag).join(e.dataUri ? withSrc(e.tag, e.dataUri) : imagePlaceholder(e.alt))
   }
   return out
+}
+
+/**
+ * A source that would send the reader to the network: absolute http(s), or
+ * protocol-relative, which a renderer resolves to one. Relative paths are not
+ * remote — they name a file beside the document, and stay the writers' call.
+ */
+export function isRemoteImageSrc(src: string): boolean {
+  return /^\s*(?:https?:)?\/\//i.test(src)
+}
+
+/** Whether any <img> in the html points at the network. */
+export function hasRemoteImages(html: string): boolean {
+  if (!/<img\b/i.test(html)) return false
+  return (html.match(IMG_TAG) ?? []).some((tag) => isRemoteImageSrc(attr(tag, 'src') ?? ''))
+}
+
+/**
+ * Every remote <img> becomes its alt-text placeholder, without a request.
+ *
+ * For inputs whose images must not be fetched at all (an email's remote images
+ * are how senders learn it was opened), and as the last word before a writer:
+ * anything still remote there would be fetched by html-to-docx or Chromium
+ * outside the guarded fetcher, or left in an output that claims to stand alone.
+ */
+export function dropRemoteImages(html: string): string {
+  if (!hasRemoteImages(html)) return html
+  return html.replace(IMG_TAG, (tag) =>
+    isRemoteImageSrc(attr(tag, 'src') ?? '') ? imagePlaceholder(attr(tag, 'alt')) : tag,
+  )
 }

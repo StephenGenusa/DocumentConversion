@@ -14,6 +14,9 @@ import { stripXmlIllegal } from './allowlist'
 import { stripSpeakerNotes } from './speaker-notes'
 import { SLIDE_TARGETS } from './types'
 import { createWriters, type Writer } from './writers'
+import { dropRemoteImages } from './inline-images'
+import { resolveRemoteImages } from './remote-images'
+import type { GuardedFetchDeps } from './net/guarded-fetch'
 
 export interface Converter {
   convert(
@@ -29,7 +32,15 @@ export interface Converter {
   write(hub: HubDocument, target: TargetFormat, opts?: ConvertOptions): Promise<WriteResult>
 }
 
-export function createConverter(render: RenderHtmlToPdf): Converter {
+export interface ConverterDeps {
+  /**
+   * Network access for embedding a document's remote images at read time.
+   * Without it nothing is fetched and those images become their alt text.
+   */
+  fetchImages?: GuardedFetchDeps
+}
+
+export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {}): Converter {
   const writers: Record<TargetFormat, Writer> = createWriters(render)
 
   async function read(src: SourceInput, source: SourceFormat, ctx?: ReadContext): Promise<HubDocument> {
@@ -41,6 +52,9 @@ export function createConverter(render: RenderHtmlToPdf): Converter {
       // writers emit XML, which refuses these characters outright.
       hub.html = stripXmlIllegal(hub.html)
       if (hub.title) hub.title = stripXmlIllegal(hub.title)
+      // Embedded here, at the one boundary every reader's output passes, so
+      // that the edit pane and every writer see data URIs only.
+      hub.html = await resolveRemoteImages(hub.html, source, deps.fetchImages, ctx)
       return hub
     } catch (err) {
       if (err instanceof ConversionError) throw err
@@ -51,7 +65,9 @@ export function createConverter(render: RenderHtmlToPdf): Converter {
   async function write(hub: HubDocument, target: TargetFormat, opts?: ConvertOptions): Promise<WriteResult> {
     try {
       // The OCR recovery and merge paths build a hub without passing read().
-      hub.html = stripXmlIllegal(hub.html)
+      // A remote image still here would be fetched by the docx and pdf
+      // writers outside the guarded fetcher, so it is dropped, never fetched.
+      hub.html = dropRemoteImages(stripXmlIllegal(hub.html))
       // Speaker notes round-trip the hub and the editor, but they are not body
       // content: no ordinary writer should emit them. Dropped once here rather
       // than in each writer, for the same reason the XML-illegal strip lives at

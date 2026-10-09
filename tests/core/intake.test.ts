@@ -263,9 +263,41 @@ describe('intake: dropped text and uri-lists', () => {
 describe('intake: pasting', () => {
   it('prefers the formatted flavor and sanitizes it before the editor sees it', async () => {
     await intake().onPaste(pasteEvent({ 'text/html': '<p>rich</p>', 'text/plain': 'rich' }))
-    expect(api.sanitizeHtml).toHaveBeenCalledWith('<p>rich</p>')
+    expect(api.sanitizeHtml).toHaveBeenCalledWith('<p>rich</p>', undefined)
     expect(clipboardHtml).toEqual(['sanitized:<p>rich</p>'])
     expect(loaded).toHaveLength(0)
+  })
+
+  it('runs a rich paste as a job, so its image fetching has progress and Skip', async () => {
+    const jobs: (string | undefined)[] = []
+    const withJobs = createIntake({
+      onLoaded: (p) => loaded.push(p),
+      onClipboard: (html) => clipboardHtml.push(html),
+      onUrl: (url) => urls.push(url),
+      onNotice: (n) => notices.push(n),
+      runPasteJob: (work) => {
+        jobs.push('job-1')
+        return work('job-1')
+      },
+    })
+    await withJobs.onPaste(pasteEvent({ 'text/html': '<p>rich</p>', 'text/plain': 'rich' }))
+    expect(api.sanitizeHtml).toHaveBeenCalledWith('<p>rich</p>', 'job-1')
+    expect(clipboardHtml).toEqual(['sanitized:<p>rich</p>'])
+    expect(jobs).toEqual(['job-1'])
+  })
+
+  it('runs the paste button as a job too', async () => {
+    api.readClipboard.mockResolvedValue({ kind: 'html', html: '<p>x</p>' })
+    const withJobs = createIntake({
+      onLoaded: (p) => loaded.push(p),
+      onClipboard: (html) => clipboardHtml.push(html),
+      onUrl: (url) => urls.push(url),
+      onNotice: (n) => notices.push(n),
+      runPasteJob: (work) => work('job-2'),
+    })
+    await withJobs.pasteFromClipboard()
+    expect(api.readClipboard).toHaveBeenCalledWith('job-2')
+    expect(clipboardHtml).toEqual(['<p>x</p>'])
   })
 
   it('falls back to the plain flavor when there is no HTML flavor', async () => {
@@ -331,13 +363,13 @@ describe('intake: pasting', () => {
     await intake().onPaste(
       pasteEvent({ 'text/html': '<p>rich <b>text</b></p>', 'text/plain': 'rich text' }),
     )
-    expect(api.sanitizeHtml).toHaveBeenCalledWith('<p>rich <b>text</b></p>')
+    expect(api.sanitizeHtml).toHaveBeenCalledWith('<p>rich <b>text</b></p>', undefined)
     expect(api.textToHtml).not.toHaveBeenCalled()
   })
 
   it('uses the HTML flavor when there is no plain flavor to fall back to', async () => {
     await intake().onPaste(pasteEvent({ 'text/html': '<span>only html</span>' }))
-    expect(api.sanitizeHtml).toHaveBeenCalledWith('<span>only html</span>')
+    expect(api.sanitizeHtml).toHaveBeenCalledWith('<span>only html</span>', undefined)
   })
 
   it('gives pasted text no folder of its own', async () => {

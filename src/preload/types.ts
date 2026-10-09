@@ -181,8 +181,9 @@ export interface Api {
   }): Promise<SaveResult>
   cancel(jobId: string): Promise<void>
   onProgress(cb: (p: ProgressEvent) => void): () => void
-  readClipboard(): Promise<ClipboardContent>
-  sanitizeHtml(html: string): Promise<string>
+  /** `jobId` gives a paste with web images progress and Skip (via `cancel`). */
+  readClipboard(jobId?: string): Promise<ClipboardContent>
+  sanitizeHtml(html: string, jobId?: string): Promise<string>
   /** Render pasted md/txt to sanitized hub HTML for the edit pane. */
   textToHtml(text: string, format: string): Promise<string>
   loadUrl(req: { url: string; jobId?: string }): Promise<UrlLoadResponse>

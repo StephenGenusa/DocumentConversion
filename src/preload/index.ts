@@ -71,8 +71,8 @@ const api = {
   convertBatch: (req: unknown) => ipcRenderer.invoke('app:convert-batch', req),
   convertMerge: (req: unknown) => ipcRenderer.invoke('app:convert-merge', req),
   cancel: (jobId: string) => ipcRenderer.invoke('app:cancel', { jobId }),
-  readClipboard: () => ipcRenderer.invoke('app:read-clipboard'),
-  sanitizeHtml: (html: string) => ipcRenderer.invoke('app:sanitize-html', { html }),
+  readClipboard: (jobId?: string) => ipcRenderer.invoke('app:read-clipboard', { jobId }),
+  sanitizeHtml: (html: string, jobId?: string) => ipcRenderer.invoke('app:sanitize-html', { html, jobId }),
   textToHtml: (text: string, format: string) => ipcRenderer.invoke('app:text-to-html', { text, format }),
   loadUrl: (req: { url: string; jobId?: string }) => ipcRenderer.invoke('app:load-url', req),
   fileToHtml: (req: {

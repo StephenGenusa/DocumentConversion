@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import JSZip from 'jszip'
 import { readPptx } from '../../src/core/readers/pptx'
 import { readDocx, replaceUninlinedImages } from '../../src/core/readers/docx'
-import { archiveInlineBudget, DEFAULT_INLINE_BUDGET, OVER_BUDGET } from '../../src/core/inline-images'
+import { archiveInlineBudget, OVER_BUDGET } from '../../src/core/inline-images'
 
 /**
  * A PNG the size we ask for. The header is real (imageMime and mammoth's
@@ -96,9 +96,11 @@ function bomb(kind: 'pptx' | 'docx'): Promise<Buffer> {
 }
 
 describe('archiveInlineBudget', () => {
-  it('never allows an archive less than a web page gets', () => {
+  it('gives even a tiny archive a 10 MB floor, and no more', () => {
+    // The floor is all a bomb gets, so it is pinned rather than borrowed from
+    // the network budget, which is free to grow.
     const budget = archiveInlineBudget(1024)
-    expect(budget.maxTotal).toBe(DEFAULT_INLINE_BUDGET.maxTotal)
+    expect(budget.maxTotal).toBe(10 * MB)
   })
 
   it('scales with the source file, which honest documents never outgrow', () => {

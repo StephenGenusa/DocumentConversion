@@ -36,6 +36,8 @@ function App(): React.JSX.Element {
   const [slideOptions, setSlideOptions] = useState<SlideOptions>({ splitOn: 'auto' })
   const [ocrLanguage, setOcrLanguage] = useState('eng')
   const [progress, setProgress] = useState<{ stage: string; percent?: number } | null>(null)
+  /** What stopping the current job means: a paste keeps what it has fetched. */
+  const [cancelLabel, setCancelLabel] = useState('Cancel')
   const [notice, setNotice] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const jobRef = useRef<string | null>(null)
@@ -127,6 +129,7 @@ function App(): React.JSX.Element {
 
   async function onUrl(url: string): Promise<void> {
     setBusy(true)
+    setCancelLabel('Cancel')
     const jobId = crypto.randomUUID()
     jobRef.current = jobId
     try {
@@ -156,7 +159,14 @@ function App(): React.JSX.Element {
     }
   }
 
-  const intakeCore = createIntake({ onLoaded, onClipboard, onUrl: (url) => void onUrl(url), onNotice: setNotice })
+  const intakeCore = createIntake({
+    onLoaded,
+    onClipboard,
+    onUrl: (url) => void onUrl(url),
+    onNotice: setNotice,
+    // Stopping a paste skips the images still downloading; what has arrived is kept.
+    runPasteJob: (work) => withJob(work, 'Skip remaining images'),
+  })
   const intake: Intake = { ...intakeCore, submitUrl: (url) => void onUrl(url) }
 
   function reset(): void {
@@ -232,8 +242,9 @@ function App(): React.JSX.Element {
     )
   }
 
-  async function withJob<T>(fn: (jobId: string) => Promise<T>): Promise<T> {
+  async function withJob<T>(fn: (jobId: string) => Promise<T>, label = 'Cancel'): Promise<T> {
     setBusy(true)
+    setCancelLabel(label)
     const jobId = crypto.randomUUID()
     jobRef.current = jobId
     try {
@@ -544,7 +555,7 @@ function App(): React.JSX.Element {
               {progress.percent != null ? ` — ${Math.round(progress.percent)}%` : ''}
             </span>
             <button className="btn" onClick={() => jobRef.current && window.api.cancel(jobRef.current)}>
-              Cancel
+              {cancelLabel}
             </button>
           </div>
         )}

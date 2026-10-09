@@ -8,14 +8,17 @@ import type { HubDocument } from '../types'
  * html-to-docx tries to load every <img> and gives up on the whole document
  * when one cannot be resolved — a book with 90 relative image paths came out
  * as its table of contents and nothing else (6,305 of 306,150 characters).
- * Only data: and http(s) images can ever work here; drop the rest, keeping
- * their alt text so the reader knows something was there.
+ * Only data: images are kept. An http(s) one would be fetched by html-to-docx
+ * itself, outside the guarded fetcher, and a single dead host failed the whole
+ * document; remote images are embedded at read time instead (see
+ * resolveRemoteImages). Drop the rest, keeping their alt text so the reader
+ * knows something was there.
  */
 function dropUnresolvableImages(html: string): string {
   if (!html.includes('<img')) return html
   return html.replace(/<img\b[^>]*>/gi, (tag) => {
     const src = /\bsrc="([^"]*)"/i.exec(tag)?.[1] ?? ''
-    if (/^(data|https?):/i.test(src)) return tag
+    if (/^data:/i.test(src)) return tag
     const alt = /\balt="([^"]*)"/i.exec(tag)?.[1]?.trim()
     return alt ? `<p>[${alt}]</p>` : ''
   })

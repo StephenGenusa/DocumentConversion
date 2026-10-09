@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, session, type Session } from 'electron'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { mkdtemp, writeFile, rm } from 'fs/promises'
@@ -15,6 +15,7 @@ import { looksLikeHeader, rowsToHtmlTable } from '../core/readers/csv'
 import { extractPdfPageLines, pdfPagesToHub, type PdfPageSource } from '../core/readers/pdf'
 import type { OcrPage } from '../ocr/pipeline'
 import { advisePageFit } from '../core/page-fit'
+import { urlFetchDeps } from './net'
 import type {
   ConvertOptions,
   HubDocument,
@@ -24,6 +25,27 @@ import type {
   TargetFormat,
   WriteResult,
 } from '../core/types'
+
+/**
+ * The print window's own session, with the network switched off.
+ *
+ * The page it prints is built from documents, and Chromium would otherwise
+ * fetch anything they reference — with no SSRF guard, no size limit, and from
+ * the user's own address. Remote images are embedded or dropped before a
+ * writer runs (see resolveRemoteImages), so nothing legitimate is lost; this
+ * is what keeps a reference that slipped past that, in a style or a srcset,
+ * from going out. An in-memory partition, so the main window is untouched.
+ */
+let printSession: Session | undefined
+function offlinePrintSession(): Session {
+  if (!printSession) {
+    printSession = session.fromPartition('docconv-print')
+    printSession.webRequest.onBeforeRequest((details, callback) => {
+      callback({ cancel: !/^(?:file|data|blob|about|devtools|chrome):/i.test(details.url) })
+    })
+  }
+  return printSession
+}
 
 export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Promise<Buffer> {
   const { scale, pageSize, landscape, headerFooter, headerText } = opts ?? normalizePdfOptions(undefined)
@@ -42,7 +64,7 @@ export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Pr
   await writeFile(file, html, 'utf8')
   const win = new BrowserWindow({
     show: false,
-    webPreferences: { sandbox: true, javascript: false, webSecurity: true },
+    webPreferences: { sandbox: true, javascript: false, webSecurity: true, session: offlinePrintSession() },
   })
   win.webContents.on('will-navigate', (e) => e.preventDefault())
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -62,7 +84,7 @@ export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Pr
   }
 }
 
-export const converter = createConverter(renderHtmlToPdf)
+export const converter = createConverter(renderHtmlToPdf, { fetchImages: urlFetchDeps })
 
 /**
  * OCR pages to one hub document.

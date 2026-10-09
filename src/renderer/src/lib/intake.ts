@@ -29,6 +29,11 @@ export interface IntakeHandlers {
   onClipboard: (sanitizedHtml: string, source?: PaneSource) => void
   onUrl: (url: string) => void
   onNotice: (message: string | null) => void
+  /**
+   * Runs a paste as a job, so fetching its web images shows progress and can
+   * be skipped. Without it a paste still works, just without either.
+   */
+  runPasteJob?: <T>(work: (jobId: string | undefined) => Promise<T>) => Promise<T>
 }
 
 /**
@@ -37,6 +42,7 @@ export interface IntakeHandlers {
  */
 export function createIntake(handlers: IntakeHandlers) {
   const { onLoaded, onClipboard, onUrl, onNotice } = handlers
+  const runPasteJob = handlers.runPasteJob ?? (<T,>(work: (jobId: string | undefined) => Promise<T>) => work(undefined))
 
   async function accept(
     base64: string,
@@ -139,7 +145,7 @@ export function createIntake(handlers: IntakeHandlers) {
     const html = e.clipboardData.getData('text/html')
     const plain = e.clipboardData.getData('text/plain')
     if (shouldUseHtmlFlavor(html, plain)) {
-      onClipboard(await window.api.sanitizeHtml(html))
+      onClipboard(await runPasteJob((jobId) => window.api.sanitizeHtml(html, jobId)))
       return
     }
     await handleText(plain)
@@ -150,7 +156,7 @@ export function createIntake(handlers: IntakeHandlers) {
   }
 
   async function pasteFromClipboard(): Promise<void> {
-    const content = await window.api.readClipboard()
+    const content = await runPasteJob((jobId) => window.api.readClipboard(jobId))
     switch (content.kind) {
       case 'html':
         return onClipboard(content.html)

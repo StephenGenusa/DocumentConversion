@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { inlineImages, type ImageFetcher } from '../../src/core/inline-images'
+import {
+  inlineImages,
+  isRemoteImageSrc,
+  hasRemoteImages,
+  dropRemoteImages,
+  type ImageFetcher,
+} from '../../src/core/inline-images'
 
 const PNG = Buffer.from('89504e47', 'hex')
 
@@ -153,5 +159,82 @@ describe('inlineImages: attribute parsing edge cases', () => {
     const out = await inlineImages(html, 'https://e.com/', fetcher({}))
     expect(out).not.toContain('<b>')
     expect(out).toContain('&lt;b&gt;bold&lt;/b&gt; &amp; co')
+  })
+})
+
+describe('remote images', () => {
+  it('counts http(s) and protocol-relative sources as remote, and nothing else', () => {
+    expect(isRemoteImageSrc('https://e.com/a.png')).toBe(true)
+    expect(isRemoteImageSrc('HTTP://e.com/a.png')).toBe(true)
+    expect(isRemoteImageSrc('//cdn.e.com/a.png')).toBe(true)
+    expect(isRemoteImageSrc('images/a.png')).toBe(false)
+    expect(isRemoteImageSrc('/abs/a.png')).toBe(false)
+    expect(isRemoteImageSrc('data:image/png;base64,AA==')).toBe(false)
+  })
+
+  it('drops only remote images, to their alt text, without a request', () => {
+    const html = '<img src="https://t.example/pixel.gif" alt="logo"><img src="local.png" alt="kept">'
+    const out = dropRemoteImages(html)
+    expect(out).toContain('[image: logo]')
+    expect(out).not.toContain('t.example')
+    expect(out).toContain('<img src="local.png" alt="kept">')
+  })
+
+  it('reads the real src, not a src= inside the alt', () => {
+    expect(hasRemoteImages('<img alt="see src=https://x.example/a.png" src="local.png">')).toBe(false)
+  })
+
+  it('leaves unselected sources alone when inlining', async () => {
+    const html = '<img src="rel.png" alt="r"><img src="https://e.com/a.png">'
+    const f = fetcher({ 'https://e.com/a.png': 5 })
+    const out = await inlineImages(html, 'https://e.com/', f, undefined, undefined, isRemoteImageSrc)
+    expect(out).toContain('<img src="rel.png" alt="r">')
+    expect(out).toContain('data:image/png;base64,')
+    expect(f).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('inlineImages concurrency and memory', () => {
+  it('downloads four at a time, never more', async () => {
+    let inFlight = 0
+    let peak = 0
+    const f: ImageFetcher = async () => {
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await new Promise((r) => setTimeout(r, 5))
+      inFlight--
+      return { bytes: Buffer.alloc(10, 1), contentType: 'image/png' }
+    }
+    const html = Array.from({ length: 12 }, (_, i) => `<img src="https://e.com/${i}.png">`).join('')
+    const out = await inlineImages(html, 'https://e.com/', f)
+    expect(peak).toBe(4)
+    expect(out.match(/data:image\/png/g)).toHaveLength(12)
+  })
+
+  it('evicts down to the total budget and reports progress to completion', async () => {
+    const f: ImageFetcher = async () => ({ bytes: Buffer.alloc(100, 1), contentType: 'image/png' })
+    const progress: number[] = []
+    const html = Array.from({ length: 20 }, (_, i) => `<img src="https://e.com/${i}.png" alt="i${i}">`).join('')
+    const budget = { maxImages: 100, maxPerImage: 1000, maxTotal: 250 }
+    const out = await inlineImages(html, 'https://e.com/', f, budget, (_stage, p) => {
+      if (p != null) progress.push(p)
+    })
+    expect(out.match(/data:image\/png/g)).toHaveLength(2)
+    expect(out.match(/\[image: i\d+\]/g)).toHaveLength(18)
+    expect(progress.at(-1)).toBe(100)
+  })
+
+  it('keeps the same images the old fetch-everything-then-evict pass kept', async () => {
+    const sizes: Record<string, number> = {
+      'https://e.com/a.png': 3,
+      'https://e.com/b.png': 8,
+      'https://e.com/c.png': 3,
+      'https://e.com/d.png': 6,
+    }
+    const html = Object.keys(sizes).map((u, i) => `<img src="${u}" alt="${'abcd'[i]}">`).join('')
+    const out = await inlineImages(html, 'https://e.com/', fetcher(sizes), { maxImages: 10, maxPerImage: 100, maxTotal: 12 })
+    // Largest-first over the whole set: drop b (8), leaving 3 + 3 + 6 = 12.
+    expect(out).toContain('[image: b]')
+    expect(out.match(/data:image\/png/g)).toHaveLength(3)
   })
 })
