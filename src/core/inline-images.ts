@@ -318,10 +318,10 @@ export async function inlineImages(
  * it (against a local file), because that parser — not a regex — is what
  * Chromium uses: it strips tabs and newlines anywhere (`ht\tps://`), reads
  * backslashes as slashes (`\\host\share`), and resolves a protocol-relative
- * source to the page's scheme. Anything that does not land on a host-less
- * file: or a data: URL is remote — including `file://host/share`, which on
- * Windows is an SMB connection that hands the host the user's NTLM hash.
- * Plain relative paths name a file beside the document and are not remote.
+ * source to the page's scheme. Anything that does not land on a local
+ * file: or a data: URL is remote — including a UNC share (see isUncFileUrl),
+ * which on Windows is an SMB connection that hands the host the user's NTLM
+ * hash. Plain relative paths name a file beside the document and are not remote.
  */
 export function isRemoteImageSrc(src: string): boolean {
   let url: URL
@@ -331,7 +331,20 @@ export function isRemoteImageSrc(src: string): boolean {
     return false
   }
   if (url.protocol === 'data:') return false
-  return url.protocol !== 'file:' || url.hostname !== ''
+  return url.protocol !== 'file:' || isUncFileUrl(url)
+}
+
+/**
+ * A file: URL that Windows opens as a network share.
+ *
+ * A host is the obvious form (`file://host/share`), but not the only one: the
+ * URL parser keeps `file:////host/share` — and a relative `////host/share`
+ * resolved against a file: page — as an EMPTY host with a path of
+ * `//host/share`, and Windows reads that path as `\\host\share`. Checking the
+ * host alone let that form through. A local path never starts with `//`.
+ */
+export function isUncFileUrl(url: URL): boolean {
+  return url.protocol === 'file:' && (url.hostname !== '' || url.pathname.startsWith('//'))
 }
 
 const escapeText = (text: string): string =>

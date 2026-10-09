@@ -31,10 +31,28 @@ describe('printMayLoad', () => {
 
   it('refuses a file: URL with a host, which on Windows is UNC and leaks NTLM', () => {
     expect(printMayLoad('file://attacker.example/share/x.png', dirs)).toBe(false)
+    expect(printMayLoad('file:////attacker.example/share/x.png', dirs)).toBe(false)
   })
 
   it('refuses local files outside the render folder', () => {
     expect(printMayLoad(pathToFileURL('/etc/passwd').href, dirs)).toBe(false)
     expect(printMayLoad(pathToFileURL(`${dir}-sibling/x.png`).href, dirs)).toBe(false)
+  })
+})
+
+describe('blockHostedFileUrls', () => {
+  it('cancels both UNC spellings and lets local files through', async () => {
+    const { blockHostedFileUrls } = await import('../../src/main/conversion')
+    let listener: ((d: { url: string }, cb: (r: { cancel: boolean }) => void) => void) | undefined
+    blockHostedFileUrls({ webRequest: { onBeforeRequest: (l: typeof listener) => (listener = l) } } as never)
+    const cancelled = (url: string): boolean => {
+      let result = false
+      listener!({ url }, (r) => (result = r.cancel))
+      return result
+    }
+    expect(cancelled('file://evil.example/share/x.png')).toBe(true)
+    expect(cancelled('file:////evil.example/share/x.png')).toBe(true)
+    expect(cancelled('file:///home/me/app/index.html')).toBe(false)
+    expect(cancelled('https://example.com/')).toBe(false)
   })
 })

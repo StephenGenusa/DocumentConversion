@@ -17,6 +17,7 @@ import { extractPdfPageLines, pdfPagesToHub, type PdfPageSource } from '../core/
 import type { OcrPage } from '../ocr/pipeline'
 import { advisePageFit } from '../core/page-fit'
 import { urlFetchDeps } from './net'
+import { isUncFileUrl } from '../core/inline-images'
 import type {
   ConvertOptions,
   HubDocument,
@@ -44,7 +45,7 @@ export function printMayLoad(url: string, dirs: Iterable<string> = renderDirs): 
     return false
   }
   if (parsed.protocol === 'data:' || parsed.protocol === 'blob:' || url === 'about:blank') return true
-  if (parsed.protocol !== 'file:' || parsed.hostname !== '') return false
+  if (parsed.protocol !== 'file:' || isUncFileUrl(parsed)) return false
   let path: string
   try {
     path = fileURLToPath(parsed)
@@ -57,21 +58,20 @@ export function printMayLoad(url: string, dirs: Iterable<string> = renderDirs): 
 }
 
 /**
- * The main window's guard: a file: URL with a host is a UNC path on Windows,
+ * The main window's guard: a UNC file: URL (see isUncFileUrl) on Windows,
  * and the page is itself served from file:, so its CSP `'self'` would allow
  * one. Pasted and opened content is meant to reach the editor with embedded
  * images only; this keeps a reference that slipped past from connecting out.
  */
 export function blockHostedFileUrls(target: Session): void {
   target.webRequest.onBeforeRequest((details, callback) => {
-    let hosted = false
+    let unc = false
     try {
-      const url = new URL(details.url)
-      hosted = url.protocol === 'file:' && url.hostname !== ''
+      unc = isUncFileUrl(new URL(details.url))
     } catch {
       /* not a URL Chromium will load */
     }
-    callback({ cancel: hosted })
+    callback({ cancel: unc })
   })
 }
 

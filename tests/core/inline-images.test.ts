@@ -246,6 +246,10 @@ describe('remote images as a URL parser reads them', () => {
     expect(isRemoteImageSrc('\\\\evil.example\\share\\a.png')).toBe(true)
     expect(isRemoteImageSrc('https:\\\\evil.example\\a.png')).toBe(true)
     expect(isRemoteImageSrc('file://evil.example/share/a.png')).toBe(true)
+    // Empty host, path '//host/share': Windows opens it as \\host\share.
+    expect(isRemoteImageSrc('file:////evil.example/share/a.png')).toBe(true)
+    expect(isRemoteImageSrc('////evil.example/share/a.png')).toBe(true)
+    expect(isRemoteImageSrc('file:///\\evil.example\share\a.png')).toBe(true)
     expect(isRemoteImageSrc('ftp://evil.example/a.png')).toBe(true)
     expect(isRemoteImageSrc('images/a.png')).toBe(false)
     expect(isRemoteImageSrc('file:///home/me/a.png')).toBe(false)
