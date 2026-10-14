@@ -1,4 +1,7 @@
 import MarkdownIt from 'markdown-it'
+import type StateInline from 'markdown-it/lib/rules_inline/state_inline.mjs'
+import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs'
+import { full as emoji } from 'markdown-it-emoji'
 import { parseHTML } from 'linkedom'
 import { sanitizeToHub } from '../allowlist'
 import { notesToHub } from '../speaker-notes'
@@ -16,6 +19,117 @@ import type { HubDocument, SourceInput } from '../types'
 // tags the hub has no model for (center, spoiler, details) while keeping their
 // text, instead of printing their angle brackets at the reader.
 const md = new MarkdownIt({ html: true, linkify: true, typographer: false })
+
+/*
+ * GitHub-flavoured Markdown that markdown-it core does not read. Each one
+ * produces markup the hub already has, so nothing here widens the allowlist,
+ * and the Markdown writer turns each back into the same syntax.
+ */
+
+// `:tada:` -> 🎉, GitHub's full shortcode set. Emoticon shortcuts are OFF:
+// GitHub leaves `:)` as typed, and a converter silently rewriting an author's
+// punctuation into pictures is a fidelity loss, not a feature.
+md.use(emoji, { shortcuts: {} })
+
+const isSpace = (code: number): boolean => code === 0x20 || code === 0x09 || code === 0x0a || Number.isNaN(code)
+
+/**
+ * `~text~`: strikethrough with ONE tilde, as GitHub reads it. markdown-it
+ * only knows `~~text~~`, and the Markdown writer used to emit the single form,
+ * so a struck word written out and read back came back with its tildes.
+ *
+ * GitHub's flanking rule keeps prose safe: the struck text may not start or
+ * end with whitespace, so "about ~5 and ~10 people" and "~/docs and ~/src"
+ * stay as written. It must close on the same line, and a tilde that is half
+ * of a `~~` is the other rule's business. Code spans and links inside are
+ * stepped over whole, so a tilde in `code` never closes one.
+ */
+md.inline.ruler.after('strikethrough', 'single_tilde', (state: StateInline, silent: boolean) => {
+  const start = state.pos
+  const max = state.posMax
+  const src = state.src
+  if (src.charCodeAt(start) !== 0x7e || src.charCodeAt(start + 1) === 0x7e || src.charCodeAt(start - 1) === 0x7e) return false
+  if (silent || start + 2 >= max || isSpace(src.charCodeAt(start + 1))) return false
+  state.pos = start + 1
+  let found = false
+  while (state.pos < max) {
+    if (src.charCodeAt(state.pos) === 0x7e) {
+      found = true
+      break
+    }
+    state.md.inline.skipToken(state)
+  }
+  const end = state.pos
+  const inner = src.slice(start + 1, end)
+  if (!found || inner === '' || inner.includes('\n') || isSpace(src.charCodeAt(end - 1)) || src.charCodeAt(end + 1) === 0x7e) {
+    state.pos = start
+    return false
+  }
+  state.posMax = end
+  state.pos = start + 1
+  state.push('s_open', 's', 1).markup = '~'
+  state.md.inline.tokenize(state)
+  state.push('s_close', 's', -1).markup = '~'
+  state.pos = end + 1
+  state.posMax = max
+  return true
+})
+
+/**
+ * `- [ ] todo` / `- [x] done` -> "☐ todo" / "☑ done".
+ *
+ * The hub has no checkbox (an <input> is a form control, not content), so the
+ * state is kept as the ballot-box characters every output can show; the
+ * Markdown writer turns a leading ☐/☑ back into `[ ]`/`[x]`. After text_join,
+ * so `[ ]` (which the link rule splits at the bracket) is one text token.
+ */
+md.core.ruler.after('text_join', 'task_lists', (state: StateCore) => {
+  const t = state.tokens
+  for (let i = 2; i < t.length; i++) {
+    if (t[i].type !== 'inline' || t[i - 1].type !== 'paragraph_open' || t[i - 2].type !== 'list_item_open') continue
+    const first = t[i].children?.[0]
+    if (!first || first.type !== 'text') continue
+    const box = /^\[([ xX])\] /.exec(first.content)
+    if (box) first.content = `${box[1] === ' ' ? '☐' : '☑'} ${first.content.slice(box[0].length)}`
+  }
+})
+
+const ALERT = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\n|$)/i
+
+/**
+ * `> [!NOTE]` and its four siblings -> a quote whose first paragraph is a bold
+ * "Note". The marker must be alone on the quote's first line, as on GitHub;
+ * an unknown type stays a plain quote. Run on block tokens, before inline
+ * parsing, so the label is ordinary `**Note**` and the rest of the paragraph
+ * is parsed as the paragraph it now is.
+ */
+md.core.ruler.after('block', 'github_alerts', (state: StateCore) => {
+  const t = state.tokens
+  for (let i = 0; i + 2 < t.length; i++) {
+    if (t[i].type !== 'blockquote_open' || t[i + 1].type !== 'paragraph_open' || t[i + 2].type !== 'inline') continue
+    const marker = ALERT.exec(t[i + 2].content)
+    if (!marker) continue
+    const label = marker[1][0].toUpperCase() + marker[1].slice(1).toLowerCase()
+    const para = t[i + 1]
+    const open = new state.Token('paragraph_open', 'p', 1)
+    const inline = new state.Token('inline', '', 0)
+    const close = new state.Token('paragraph_close', 'p', -1)
+    for (const tok of [open, inline, close]) {
+      tok.block = true
+      tok.level = para.level
+      tok.map = para.map
+    }
+    inline.level = para.level + 1
+    inline.content = `**${label}**`
+    inline.children = []
+    const rest = t[i + 2].content.slice(marker[0].length)
+    if (rest.trim() === '') t.splice(i + 1, 3, open, inline, close)
+    else {
+      t[i + 2].content = rest
+      t.splice(i + 1, 0, open, inline, close)
+    }
+  }
+})
 
 /**
  * Hand a math span through untouched.

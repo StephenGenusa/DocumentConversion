@@ -12,6 +12,14 @@ const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' }
 td.use([tables, strikethrough])
 // No Markdown syntax for these; GitHub and most renderers accept the HTML.
 td.keep(['sup', 'sub'])
+// turndown-plugin-gfm writes `~text~`, which only GitHub-style readers take;
+// `~~` is read by all of them, this app's own reader included. Added after
+// the plugin, so it is the rule turndown tries first.
+td.addRule('strikethroughDouble', {
+  // A function, not a tag list: <strike> is obsolete and not in the DOM's tag-name types.
+  filter: (node) => ['DEL', 'S', 'STRIKE'].includes(node.nodeName),
+  replacement: (content) => `~~${content}~~`,
+})
 
 /**
  * Unicode private-use area: never appears in real content, ignored by turndown.
@@ -129,10 +137,53 @@ function restoreTables(markdown: string, rendered: string[]): string {
   })
 }
 
+const ALERT_LABELS: Record<string, string> = {
+  Note: 'NOTE',
+  Tip: 'TIP',
+  Important: 'IMPORTANT',
+  Warning: 'WARNING',
+  Caution: 'CAUTION',
+}
+
+/**
+ * The GitHub syntax the reader turned into plain markup, put back.
+ *
+ *   `*   ☐ todo`              ->  `*   [ ] todo`     (a ballot box opening an item)
+ *   `> **Note**` opening a quote  ->  `> [!NOTE]`
+ *
+ * The reader writes both from that syntax and nothing else does, so the
+ * round trip is exact. Line-based, after turndown, and never inside a fenced
+ * code block, where those lines are someone's literal text.
+ */
+function restoreGithubSyntax(markdown: string): string {
+  let fence: string | null = null
+  const lines = markdown.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const opener = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
+    if (fence) {
+      if (opener && opener[0] === fence[0] && opener.length >= fence.length) fence = null
+      continue
+    }
+    if (opener) {
+      fence = opener
+      continue
+    }
+    const task = /^(\s*(?:[*+-]|\d+[.)])\s+)([☐☑]) /.exec(line)
+    if (task) {
+      lines[i] = `${task[1]}${task[2] === '☐' ? '[ ]' : '[x]'} ${line.slice(task[0].length)}`
+      continue
+    }
+    const alert = /^> \*\*(Note|Tip|Important|Warning|Caution)\*\*\s*$/.exec(line)
+    if (alert && !(lines[i - 1] ?? '').startsWith('>')) lines[i] = `> [!${ALERT_LABELS[alert[1]]}]`
+  }
+  return lines.join('\n')
+}
+
 export async function writeMarkdown(doc: HubDocument): Promise<Buffer> {
   // Strip any stray sentinel from the source so it cannot be mistaken for one
   // of ours. It is a private-use codepoint, so this never touches real content.
   const html = doc.html.includes(TABLE_SENTINEL) ? doc.html.split(TABLE_SENTINEL).join('') : doc.html
   const { prose, tableMarkdown } = extractTablesForMarkdown(html)
-  return Buffer.from(restoreTables(td.turndown(prose), tableMarkdown), 'utf8')
+  return Buffer.from(restoreGithubSyntax(restoreTables(td.turndown(prose), tableMarkdown)), 'utf8')
 }
