@@ -63,9 +63,14 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-# No `publish` block on purpose. Nothing in src/ uses electron-updater or any
-# other updater, and a `publish` entry makes electron-builder write an
-# app-update.yml into the package pointing at that URL. The template's
-# https://example.com/auto-updates is a domain the project does not control,
-# so shipping it would aim update checks at someone else's server. Auto-update
-# is not configured; add a real provider here if and when it is.
+# Explicitly null, not absent. Nothing in src/ uses electron-updater or any
+# other updater, and any publish configuration makes electron-builder write an
+# app-update.yml into the package pointing at it. Leaving the key out was
+# meant to prevent that and did not: with no `publish` key electron-builder
+# infers a GitHub provider from the git remote, and every build carried
+# `provider: github, owner: StephenGenusa, repo: DocumentConversion` in
+# resources/app-update.yml. (The template's https://example.com/auto-updates,
+# removed earlier, was a domain the project does not control.) `null` is the
+# only value that turns publishing off. Auto-update is not configured; replace
+# this with a real provider if and when it is.
+publish: null
