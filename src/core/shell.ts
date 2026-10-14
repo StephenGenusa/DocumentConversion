@@ -2,10 +2,43 @@ import hljs from 'highlight.js/lib/common'
 import { footnotesForOutput } from './footnotes'
 import dockerfile from 'highlight.js/lib/languages/dockerfile'
 import powershell from 'highlight.js/lib/languages/powershell'
+// Beyond lib/common, each a few KB; see EXT_TO_LANG in code-langs.ts.
+import scala from 'highlight.js/lib/languages/scala'
+import groovy from 'highlight.js/lib/languages/groovy'
+import dart from 'highlight.js/lib/languages/dart'
+import haskell from 'highlight.js/lib/languages/haskell'
+import elixir from 'highlight.js/lib/languages/elixir'
+import erlang from 'highlight.js/lib/languages/erlang'
+import clojure from 'highlight.js/lib/languages/clojure'
+import fsharp from 'highlight.js/lib/languages/fsharp'
+import ocaml from 'highlight.js/lib/languages/ocaml'
+import julia from 'highlight.js/lib/languages/julia'
+import vbscript from 'highlight.js/lib/languages/vbscript'
+import dos from 'highlight.js/lib/languages/dos'
+import cmake from 'highlight.js/lib/languages/cmake'
+import protobuf from 'highlight.js/lib/languages/protobuf'
+import x86asm from 'highlight.js/lib/languages/x86asm'
+import nginx from 'highlight.js/lib/languages/nginx'
 import type { HubDocument, TargetFormat } from './types'
 
 hljs.registerLanguage('dockerfile', dockerfile)
 hljs.registerLanguage('powershell', powershell)
+hljs.registerLanguage('scala', scala)
+hljs.registerLanguage('groovy', groovy)
+hljs.registerLanguage('dart', dart)
+hljs.registerLanguage('haskell', haskell)
+hljs.registerLanguage('elixir', elixir)
+hljs.registerLanguage('erlang', erlang)
+hljs.registerLanguage('clojure', clojure)
+hljs.registerLanguage('fsharp', fsharp)
+hljs.registerLanguage('ocaml', ocaml)
+hljs.registerLanguage('julia', julia)
+hljs.registerLanguage('vbscript', vbscript)
+hljs.registerLanguage('dos', dos)
+hljs.registerLanguage('cmake', cmake)
+hljs.registerLanguage('protobuf', protobuf)
+hljs.registerLanguage('x86asm', x86asm)
+hljs.registerLanguage('nginx', nginx)
 
 export interface ShellOptions {
   /** Target the shell is being rendered for — enables target-specific fidelity (e.g. code highlighting for pdf/html). */
@@ -24,6 +57,8 @@ const HLJS_CSS = `
   .hljs-section, .hljs-name { color: #0550ae; font-weight: 600; }
   .hljs-addition { background: #dafbe1; }
   .hljs-deletion { background: #ffebe9; }
+  /* A printed review reads by whole lines: colour the line, not just its text. */
+  .language-diff .hljs-addition, .language-diff .hljs-deletion { display: inline-block; width: 100%; }
 `
 
 /**

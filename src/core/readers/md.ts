@@ -145,6 +145,20 @@ md.renderer.rules.footnote_close = () => '</li>\n'
 // The plugin's ↩ back-link: writers make their own, where the format links.
 md.renderer.rules.footnote_anchor = () => ''
 
+/**
+ * ```` ```{r setup, echo=FALSE} ```` and ```` ```{.python} ````: the chunk and
+ * attribute fences of R Markdown, Quarto and pandoc. The language is the
+ * first word inside the braces; the chunk options are R's business, not the
+ * document's. Without this the code was highlighted as the language "{r".
+ */
+md.core.ruler.after('block', 'chunk_fences', (state: StateCore) => {
+  for (const tok of state.tokens) {
+    if (tok.type !== 'fence') continue
+    const chunk = /^\{\s*\.?([A-Za-z][\w+-]*)[^}]*\}/.exec(tok.info.trim())
+    if (chunk) tok.info = chunk[1].toLowerCase()
+  }
+})
+
 const ALERT = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\n|$)/i
 
 /**
@@ -347,6 +361,41 @@ export function stripFrontMatter(text: string): { body: string; title?: string }
   return { body: lines.slice(close + 1).join('\n'), ...(title ? { title } : {}) }
 }
 
+const CALLOUT = /\.callout-(note|tip|important|warning|caution)\b/i
+
+/**
+ * Quarto's `:::` divs, for .qmd and .Rmd files. A callout
+ * (`::: {.callout-warning}`) becomes the GitHub alert of the same name, so it
+ * reads, prints and writes back the same way an alert does; any other div
+ * (columns, margins, panels) is layout, so its fence lines go and its content
+ * stays. Fenced code is passed through untouched.
+ */
+export function quartoDivs(text: string): string {
+  const out: string[] = []
+  const open: boolean[] = [] // true for a callout
+  let fence: string | null = null
+  for (const line of text.split('\n')) {
+    const tick = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
+    if (!fence) {
+      const opener = /^:{3,}\s*(\{[^}]*\}|[\w.-]+)\s*$/.exec(line)
+      if (opener) {
+        const callout = CALLOUT.exec(opener[1])
+        if (callout) out.push(`${'> '.repeat(open.filter(Boolean).length)}> [!${callout[1].toUpperCase()}]`)
+        open.push(!!callout)
+        continue
+      }
+      if (/^:{3,}\s*$/.test(line) && open.length > 0) {
+        open.pop()
+        continue
+      }
+    }
+    if (tick) fence = fence ? (tick[0] === fence[0] && tick.length >= fence.length ? null : fence) : tick
+    const depth = open.filter(Boolean).length
+    out.push(depth === 0 ? line : `${'> '.repeat(depth)}${line}`.trimEnd())
+  }
+  return out.join('\n')
+}
+
 export interface MarkdownOptions {
   /**
    * Read a leading YAML block as front matter. On for a whole file or a paste;
@@ -357,7 +406,8 @@ export interface MarkdownOptions {
 
 export async function readMarkdown(src: SourceInput, _ctx?: unknown, opts: MarkdownOptions = {}): Promise<HubDocument> {
   const text = src.bytes.toString('utf8').replace(/^\uFEFF/, '')
-  const { body, title } = opts.frontMatter === false ? { body: text } : stripFrontMatter(text)
+  const { body: unfenced, title } = opts.frontMatter === false ? { body: text } : stripFrontMatter(text)
+  const body = /\.(rmd|qmd)$/i.test(src.filename ?? '') ? quartoDivs(unfenced) : unfenced
   const html = stripUnresolvableImageSrc(md.render(body, {}))
   // Notes are lifted BEFORE sanitising: the sanitiser drops comments, so a
   // `<!-- notes: ... -->` left until after it would simply be gone.

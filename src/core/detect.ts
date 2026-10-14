@@ -1,5 +1,5 @@
 import type { SourceFormat } from './types'
-import { codeFormatFromFilename } from './code-langs'
+import { codeFormatFromFilename, codeNameFromFilename } from './code-langs'
 import { imageMime } from './readers/image'
 
 export type DetectResult =
@@ -22,6 +22,14 @@ const EXT_MAP = new Map<string, SourceFormat>(
     text: 'txt',
     md: 'md',
     markdown: 'md',
+    mdown: 'md',
+    mkd: 'md',
+    mkdn: 'md',
+    mdwn: 'md',
+    markdn: 'md',
+    // R Markdown and Quarto: Markdown with code chunks (see readers/md.ts).
+    rmd: 'md',
+    qmd: 'md',
     docx: 'docx',
     pdf: 'pdf',
     html: 'html',
@@ -269,6 +277,7 @@ export function detect(bytes: Buffer, filename?: string): DetectResult {
     // .zip is an acquisition method, not a SourceFormat, so it is matched here
     // rather than through the extension map (an empty zip has no PK\x03\x04).
     if (/\.zip$/i.test(filename.trim())) return archive()
+    if (codeNameFromFilename(filename)) return ok('code')
     const byExt = detectByExtension(filename)
     if (byExt) {
       // The extension normally wins, but it can lie — a Word 97 file saved as

@@ -6,6 +6,7 @@ alice@example.com
 b@example.com
 bob@example.com
 carol@example.com
+dev@example.com
 editor@example.com
 hollis.tamm@example.net
 ilva.brandt@example.com

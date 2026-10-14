@@ -10,6 +10,7 @@ Ferrow, Petra
 Halloway, Juno
 History, Code
 Larkspur, Odile
+Markdown, Quarto
 Menlo, Consolas
 Mission, Company
 Node, Extension
