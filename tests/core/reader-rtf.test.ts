@@ -61,3 +61,32 @@ describe('readRtf (paragraphs + inline formatting + real tables; lists still deg
     })
   })
 })
+
+/**
+ * Word writes character formatting as groups, `{\b bold}`, not as toggles
+ * (`\b bold\b0`). rtf-parser restyled every span with its PARENT group's style
+ * when the group closed, so all of it was lost: bold, italic, underline,
+ * superscript. The fixture above uses toggles, which is why this went unseen.
+ */
+describe('readRtf keeps formatting set inside a group', () => {
+  it('keeps bold, italic and underline from {\\b …} groups', async () => {
+    const rtf = '{\\rtf1\\ansi plain {\\b bold} {\\i italic} {\\ul under} {\\b\\i both} after\\par}'
+    const html = (await readRtf({ bytes: Buffer.from(rtf), filename: 'g.rtf' })).html
+    expect(html).toContain('<strong>bold</strong>')
+    expect(html).toContain('<em>italic</em>')
+    expect(html).toContain('<u>under</u>')
+    expect(html).toMatch(/<(em|strong)><(em|strong)>both<\/(em|strong)><\/(em|strong)>/)
+    expect(html).toMatch(/after/)
+    expect(html).not.toContain('<strong>plain')
+    expect(html).not.toContain('after</strong>')
+  })
+
+  it('keeps nested groups, and lets the outer formatting resume after them', async () => {
+    const rtf = '{\\rtf1\\ansi {\\b outer {\\i inner} again} done\\par}'
+    const html = (await readRtf({ bytes: Buffer.from(rtf), filename: 'g.rtf' })).html
+    expect(html).toContain('<strong>outer </strong>')
+    expect(html).toMatch(/<em><strong>inner<\/strong><\/em>|<strong><em>inner<\/em><\/strong>/)
+    expect(html).toContain('<strong> again</strong>')
+    expect(html).not.toContain('<strong> done')
+  })
+})

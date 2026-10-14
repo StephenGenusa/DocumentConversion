@@ -1,8 +1,35 @@
 // @ts-ignore -- @iarna/rtf-to-html ships no types; resolution differs between tsconfigs
 import rtfToHTML from '@iarna/rtf-to-html'
+// @ts-ignore -- rtf-parser ships no types; see keepGroupStyles below.
+import RTFGroup from 'rtf-parser/rtf-group.js'
 import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import type { HubDocument, SourceInput } from '../types'
+
+/**
+ * Keep the formatting a span was given inside its own group.
+ *
+ * rtf-parser styles a span when it is added to the group it was read in,
+ * then MOVES it into the parent group when that group closes, through the
+ * same addContent, which styles it again with the parent's style. Everything
+ * set inside the group was overwritten: `{\\b bold}` arrived as plain text,
+ * and so did italic, underline and superscript. Word writes nearly all run
+ * formatting that way; only toggles (`\\b bold\\b0`) survived.
+ *
+ * A node is styled once, where it was read, and moved as it is after that.
+ * The second pass also converted an already-resolved font and colour as if
+ * they were table indices, so skipping it is right for those too.
+ */
+const STYLED = Symbol('rtf-styled')
+const originalAddContent = RTFGroup.prototype.addContent
+RTFGroup.prototype.addContent = function (this: { content: unknown[] }, node: Record<symbol, boolean>) {
+  if (node[STYLED]) {
+    this.content.push(node)
+    return
+  }
+  originalAddContent.call(this, node)
+  node[STYLED] = true
+}
 
 /**
  * Recorded fidelity (phase-3 spike, 2026-08-31; tables added 2026-08-31):
