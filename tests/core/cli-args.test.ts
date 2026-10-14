@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseArgs, USAGE } from '../../src/cli/args'
+import { parseArgs, checkFlagScope, FLAG_SCOPES, USAGE } from '../../src/cli/args'
 import { TARGET_FORMATS } from '../../src/core/types'
 
 const ok = (argv: string[]) => {
@@ -133,5 +133,40 @@ describe('--split', () => {
     const r = parseArgs(['a.md', '--to', 'revealjs'])
     expect(r.kind).toBe('ok')
     if (r.kind === 'ok') expect(r.req.split).toBeUndefined()
+  })
+})
+
+/**
+ * Spec 2a: a command-line flag scoped to some targets or inputs. A STRICT
+ * flag that cannot apply exits 2; the flags that predate the rule are not
+ * strict and are still ignored, as they always were, so no script breaks.
+ */
+describe('flag scope', () => {
+  const scopes = [
+    { flag: '--strict-thing', targets: ['pdf' as const], strict: true },
+    { flag: '--input-thing', inputs: ['json' as const], strict: true },
+    { flag: '--legacy-thing', targets: ['pdf' as const], strict: false },
+  ]
+
+  it('rejects a strict flag the target cannot use', () => {
+    expect(checkFlagScope(['--strict-thing'], 'docx', ['md'], scopes)).toMatch(/--strict-thing.*pdf/)
+    expect(checkFlagScope(['--strict-thing'], 'pdf', ['md'], scopes)).toBeNull()
+  })
+
+  it('rejects a strict flag no input can use', () => {
+    expect(checkFlagScope(['--input-thing'], 'csv', ['md', 'docx'], scopes)).toMatch(/--input-thing/)
+    expect(checkFlagScope(['--input-thing'], 'csv', ['md', 'json'], scopes)).toBeNull()
+  })
+
+  it('still ignores a legacy flag the target cannot use', () => {
+    expect(checkFlagScope(['--legacy-thing'], 'docx', ['md'], scopes)).toBeNull()
+  })
+
+  it('keeps today\'s flags non-strict: --table, --split, --scale, --page, --landscape, --header-footer', () => {
+    for (const flag of ['--table', '--split', '--scale', '--page', '--landscape', '--header-footer']) {
+      const scope = FLAG_SCOPES.find((s) => s.flag === flag)
+      expect(scope, flag).toBeDefined()
+      expect(scope!.strict, flag).toBe(false)
+    }
   })
 })

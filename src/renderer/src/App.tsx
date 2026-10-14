@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { appliedOptions, type ControlInput } from './lib/controls'
 import { DropZone } from './components/DropZone'
 import { createIntake, type LoadedPayload, type PaneSource } from './lib/intake'
 import type { Intake } from './lib/intake-types'
@@ -267,8 +268,7 @@ function App(): React.JSX.Element {
         const payload = {
           ...req,
           target,
-          pdf: target === 'pdf' ? pdfOptions : undefined,
-          slides: target === 'revealjs' ? slideOptions : undefined,
+          ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions }),
           jobId,
         }
         const res =
@@ -282,8 +282,7 @@ function App(): React.JSX.Element {
         const res = await window.api.convertMerge({
           items: list.map((i) => toRequest(i, ocrLanguage)),
           target,
-          pdf: target === 'pdf' ? pdfOptions : undefined,
-          slides: target === 'revealjs' ? slideOptions : undefined,
+          ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions }),
           headings,
           jobId,
         })
@@ -295,8 +294,7 @@ function App(): React.JSX.Element {
       const res = await window.api.convertBatch({
         items: list.map((i) => toRequest(i, ocrLanguage)),
         target,
-        pdf: target === 'pdf' ? pdfOptions : undefined,
-        slides: target === 'revealjs' ? slideOptions : undefined,
+        ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions }),
         jobId,
       })
       if (res.status === 'batch') showBatch({ outDir: res.outDir, rows: res.rows })
@@ -312,8 +310,7 @@ function App(): React.JSX.Element {
       const res = await window.api.convertBatch({
         items: [toRequest(item, ocrLanguage)],
         target,
-        pdf: target === 'pdf' ? pdfOptions : undefined,
-        slides: target === 'revealjs' ? slideOptions : undefined,
+        ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions }),
         jobId,
         outDir,
       })
@@ -397,6 +394,8 @@ function App(): React.JSX.Element {
   // `items`, not the live pane: validity depends only on WHETHER an input is
   // html, which opening it in the pane already recorded. Rendering must not
   // read the pane.
+  // What the visibility rules (lib/controls.ts) look at, per input.
+  const controlInputs: ControlInput[] = items.map((i) => ({ source: i.source, imageMode: i.imageMode }))
   const validityInputs = items.map((i) => ({
     format: (i.html !== undefined ? 'html' : i.source) as SourceFormat,
     imageMode: i.imageMode,
@@ -525,6 +524,7 @@ function App(): React.JSX.Element {
               onSlideOptionsChange={setSlideOptions}
               onPdfOptionsChange={setPdfOptions}
               allowed={allowed}
+              inputs={controlInputs}
               restrictionLabel={restrictor}
               copyHidden={items.length > 1}
             />

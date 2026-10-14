@@ -1,4 +1,5 @@
 import type { SourceFormat } from '../../../preload/types'
+import { showsInput } from '../lib/controls'
 
 import type { ListItem } from '../lib/items'
 
@@ -77,7 +78,7 @@ export function InputList({
             <span className="input-list__name" title={item.label}>
               {item.label}
             </span>
-            {item.source === 'image' && (
+            {showsInput('imageMode', { source: item.source }) && (
               <select
                 aria-label={`How to handle the image ${item.label}`}
                 value={item.imageMode}

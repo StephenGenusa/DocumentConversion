@@ -1,4 +1,5 @@
 import { OcrLanguagePicker } from './OcrLanguagePicker'
+import { showsInput } from '../lib/controls'
 import type { SourceFormat } from '../../../preload/types'
 
 const LABELS: Record<SourceFormat, string> = {
@@ -100,7 +101,7 @@ export function InputCard({
           ))}
         </select>
       </label>
-      {source === 'image' && onImageModeChange && (
+      {showsInput('imageMode', { source }) && onImageModeChange && (
         <div className="card__row">
           <span className="card__label">Image mode</span>
           <div className="chips" style={{ margin: 0 }}>
@@ -123,7 +124,7 @@ export function InputCard({
           </div>
         </div>
       )}
-      {source === 'image' && imageMode === 'ocr' && onOcrLanguageChange && (
+      {showsInput('ocrLanguage', { source, imageMode }) && onOcrLanguageChange && (
         <OcrLanguagePicker value={ocrLanguage ?? 'eng'} onChange={onOcrLanguageChange} />
       )}
     </div>

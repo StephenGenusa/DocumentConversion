@@ -1,4 +1,5 @@
 import type { PdfOptions, PdfPageSize, SlideOptions, TargetFormat } from '../../../preload/types'
+import { showsOutput, type ControlInput } from '../lib/controls'
 import { isClipboardTarget } from '../../../core/target-validity'
 import { DEFAULT_PDF_SCALE } from '../../../core/pdf-options'
 
@@ -47,6 +48,7 @@ export function OutputPicker({
   slideOptions,
   onSlideOptionsChange,
   allowed,
+  inputs = [],
   restrictionLabel,
   copyHidden,
 }: {
@@ -60,6 +62,8 @@ export function OutputPicker({
   slideOptions: SlideOptions
   onSlideOptionsChange: (o: SlideOptions) => void
   allowed?: TargetFormat[]
+  /** What the inputs are, for controls that show only when an input has content they act on. */
+  inputs?: ControlInput[]
   restrictionLabel?: string
   copyHidden?: boolean
 }): React.JSX.Element {
@@ -87,7 +91,7 @@ export function OutputPicker({
           </button>
         ))}
       </div>
-      {target === 'revealjs' && (
+      {showsOutput('slideSplit', target, inputs) && (
         <div className="pdf-options">
           <label>
             New slide at
@@ -108,7 +112,7 @@ export function OutputPicker({
           </span>
         </div>
       )}
-      {target === 'pdf' && (
+      {showsOutput('pdfOptions', target, inputs) && (
         <div className="pdf-options">
           <label>
             Zoom

@@ -38,6 +38,48 @@ Exit codes: 0 all succeeded, 1 any failed, 2 bad usage.`
 
 const usage = (message: string): ParseResult => ({ kind: 'usage', message: `${message}\n\n${USAGE}` })
 
+/**
+ * Which targets or inputs a flag is for (spec 2a, the command-line side of
+ * "show only what applies"). A STRICT flag that cannot apply is a usage
+ * error, exit 2. The flags that predate this rule are not strict: they have
+ * always been ignored when they do not apply, and a script that passes one
+ * anyway must keep working.
+ */
+export interface FlagScope {
+  flag: string
+  targets?: TargetFormat[]
+  inputs?: SourceFormat[]
+  strict: boolean
+}
+
+export const FLAG_SCOPES: FlagScope[] = [
+  { flag: '--table', targets: ['csv', 'json'], strict: false },
+  { flag: '--split', targets: ['revealjs'], strict: false },
+  { flag: '--scale', targets: ['pdf'], strict: false },
+  { flag: '--page', targets: ['pdf'], strict: false },
+  { flag: '--landscape', targets: ['pdf'], strict: false },
+  { flag: '--header-footer', targets: ['pdf'], strict: false },
+]
+
+/** The usage message for the first strict flag that cannot apply, or null. */
+export function checkFlagScope(
+  flags: string[],
+  target: TargetFormat,
+  inputFormats: SourceFormat[],
+  scopes: FlagScope[] = FLAG_SCOPES,
+): string | null {
+  for (const scope of scopes) {
+    if (!scope.strict || !flags.includes(scope.flag)) continue
+    if (scope.targets && !scope.targets.includes(target)) {
+      return `${scope.flag} applies only to ${scope.targets.join(', ')} output, not ${target}`
+    }
+    if (scope.inputs && !inputFormats.some((f) => scope.inputs!.includes(f))) {
+      return `${scope.flag} applies only to ${scope.inputs.join(', ')} input, and no input is one`
+    }
+  }
+  return null
+}
+
 export function parseArgs(argv: string[]): ParseResult {
   const req: CliRequest = {
     inputs: [],

@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { basename, dirname, resolve } from 'path'
 import { app } from 'electron'
-import { parseArgs, USAGE } from '../cli/args'
+import { parseArgs, USAGE, checkFlagScope } from '../cli/args'
 import { mergeToTarget, runConversion } from './conversion'
 import { detect } from '../core/detect'
 import { allowedTargets } from '../core/target-validity'
@@ -85,6 +85,13 @@ export async function runCli(argv: string[]): Promise<number> {
     }
   }
   if (loaded.length === 0) return 1
+
+  // A strict flag that no target or input here can use is a usage error.
+  const misplaced = checkFlagScope(argv, req.to, loaded.map((f) => f.source))
+  if (misplaced) {
+    console.error(`${misplaced}\n\n${USAGE}`)
+    return 2
+  }
 
   const bytesFor = (f: LoadedInputFile): Promise<Buffer> => (f.bytes ? Promise.resolve(f.bytes) : readFile(f.path))
 
