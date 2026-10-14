@@ -210,7 +210,7 @@ export async function readIpynb(src: SourceInput): Promise<HubDocument> {
   for (const cell of cells) {
     const source = joinSource(cell.source ?? cell.input)
     if (cell.cell_type === 'markdown') {
-      if (source.trim()) sections.push((await readMarkdown({ bytes: Buffer.from(source, 'utf8') })).html)
+      if (source.trim()) sections.push((await readMarkdown({ bytes: Buffer.from(source, 'utf8') }, undefined, { frontMatter: false })).html)
       continue
     }
     if (cell.cell_type === 'code') {

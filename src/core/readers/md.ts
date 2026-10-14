@@ -135,9 +135,66 @@ export function stripUnresolvableImageSrc(html: string): string {
   }
 }
 
-export async function readMarkdown(src: SourceInput): Promise<HubDocument> {
-  const html = stripUnresolvableImageSrc(md.render(src.bytes.toString('utf8')))
+/** The lines a front-matter block may hold: anything else means it is not one. */
+const FRONT_MATTER_LINE = /^(?:\s*|#.*|[A-Za-z0-9_][\w .-]*:(?:\s.*)?|[ \t].*|- .*)$/
+const KEY_LINE = /^[A-Za-z0-9_][\w .-]*:/
+const MAX_FRONT_MATTER_LINES = 200
+
+/** A scalar YAML value: quotes removed and their escapes undone. Block scalars are not read. */
+function yamlScalar(raw: string): string | undefined {
+  const v = raw.trim()
+  if (v === '' || v === '|' || v === '>' || /^[|>][+-]?\d*$/.test(v)) return undefined
+  if (v.length >= 2 && v.startsWith("'") && v.endsWith("'")) return v.slice(1, -1).replace(/''/g, "'")
+  if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) return v.slice(1, -1).replace(/\\(["\\])/g, '$1')
+  return v.replace(/\s+#.*$/, '')
+}
+
+/**
+ * YAML front matter, removed before markdown-it sees it.
+ *
+ * Unrecognised, markdown-it read the opening `---` as a rule and the last
+ * `key: value` line plus the closing `---` as a setext heading, so a file's
+ * metadata arrived as `<hr><h2>title: Hello\nauthor: me</h2>`.
+ *
+ * Recognised only when it cannot be anything else: the file's very first line
+ * is `---`, a `---` or `...` closes it within 200 lines, at least one line is
+ * `key: value`, and every line between is blank, a comment, `key: value`, an
+ * indented continuation or a `- ` list item. A rule followed by prose fails
+ * the last test and stays a rule. Only a scalar `title:` is read; there is no
+ * YAML parser here, and everything else in the block is discarded.
+ */
+export function stripFrontMatter(text: string): { body: string; title?: string } {
+  const lines = text.split(/\r?\n/)
+  if (lines[0]?.trimEnd() !== '---') return { body: text }
+  let close = -1
+  for (let i = 1; i < lines.length && i <= MAX_FRONT_MATTER_LINES; i++) {
+    const line = lines[i].trimEnd()
+    if (line === '---' || line === '...') {
+      close = i
+      break
+    }
+    if (!FRONT_MATTER_LINE.test(lines[i])) return { body: text }
+  }
+  const block = lines.slice(1, close)
+  if (close < 0 || !block.some((l) => KEY_LINE.test(l))) return { body: text }
+  const titleLine = block.find((l) => /^title:/.test(l))
+  const title = titleLine === undefined ? undefined : yamlScalar(titleLine.slice('title:'.length))
+  return { body: lines.slice(close + 1).join('\n'), ...(title ? { title } : {}) }
+}
+
+export interface MarkdownOptions {
+  /**
+   * Read a leading YAML block as front matter. On for a whole file or a paste;
+   * off for a notebook cell, where a leading `---` is an author's rule.
+   */
+  frontMatter?: boolean
+}
+
+export async function readMarkdown(src: SourceInput, _ctx?: unknown, opts: MarkdownOptions = {}): Promise<HubDocument> {
+  const text = src.bytes.toString('utf8').replace(/^\uFEFF/, '')
+  const { body, title } = opts.frontMatter === false ? { body: text } : stripFrontMatter(text)
+  const html = stripUnresolvableImageSrc(md.render(body))
   // Notes are lifted BEFORE sanitising: the sanitiser drops comments, so a
   // `<!-- notes: ... -->` left until after it would simply be gone.
-  return { html: escapeQuotesInText(sanitizeToHub(notesToHub(html))) }
+  return { html: escapeQuotesInText(sanitizeToHub(notesToHub(html))), ...(title ? { title } : {}) }
 }
