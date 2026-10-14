@@ -147,7 +147,8 @@ describe('mergeToTarget — document targets', () => {
 
   it('fails the whole merge — with no partial document — when one input cannot be read', async () => {
     const { mergeToTarget } = await conversion()
-    const bad: MergeItem = { bytes: Buffer.from('{}'), filename: 'b.json', source: 'json', ocr: false }
+    // A Word file that is not a zip: unreadable whatever reader is added later.
+    const bad: MergeItem = { bytes: Buffer.from('{}'), filename: 'b.docx', source: 'docx', ocr: false }
     const settled = await mergeToTarget([txtItem('a.txt', 'A'), bad, txtItem('c.txt', 'C')], 'md', {}, false, {})
       .then((value) => ({ kind: 'resolved' as const, value }))
       .catch((err: { code?: string; message: string }) => ({ kind: 'rejected' as const, err }))

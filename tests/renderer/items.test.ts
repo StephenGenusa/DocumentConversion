@@ -114,3 +114,15 @@ describe('a file changed on disk after it was opened in the pane', () => {
     expect(markDiskState(kept, 's3').staleStamp).toBe('s3')
   })
 })
+
+describe('toRequest and JSON records', () => {
+  const base = { id: '1', label: 'r.json', filename: 'r.json', imageMode: 'embed' as const, base64: 'e30=' }
+  it('sends the table/text choice for a JSON input, defaulting to table', () => {
+    expect(toRequest({ ...base, source: 'json' }, 'eng').jsonAs).toBe('table')
+    expect(toRequest({ ...base, source: 'json', jsonAs: 'text' }, 'eng').jsonAs).toBe('text')
+  })
+  it('sends nothing about JSON for other inputs', () => {
+    expect(toRequest({ ...base, source: 'md' }, 'eng')).not.toHaveProperty('jsonAs')
+  })
+})
+

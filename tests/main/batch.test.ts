@@ -100,7 +100,8 @@ describe('runBatch', () => {
 
   it('keeps going after one input fails, and records why', async () => {
     const { jobs, conversion } = await mods()
-    const bad = { bytes: Buffer.from('{}'), filename: 'b.json', source: 'json' as const, ocr: false }
+    // A Word file that is not a zip: unreadable whatever reader is added later.
+    const bad = { bytes: Buffer.from('{}'), filename: 'b.docx', source: 'docx' as const, ocr: false }
     const rows = await jobs.runBatch(
       [txt('a.txt', 'Alpha'), bad, txt('c.txt', 'Gamma')],
       'md',

@@ -41,6 +41,7 @@ export function InputList({
   onRemove,
   onEdit,
   onImageModeChange,
+  onJsonAsChange,
   onAddFile,
   onAddClipboard,
   onClear,
@@ -54,6 +55,7 @@ export function InputList({
   onRemove: (id: string) => void
   onEdit: (id: string) => void
   onImageModeChange: (id: string, m: 'embed' | 'ocr') => void
+  onJsonAsChange?: (id: string, v: 'table' | 'text') => void
   onAddFile: () => void
   onAddClipboard: () => void
   onClear: () => void
@@ -86,6 +88,16 @@ export function InputList({
               >
                 <option value="embed">Embed</option>
                 <option value="ocr">OCR</option>
+              </select>
+            )}
+            {showsInput('jsonAs', { source: item.source, jsonTable: item.jsonTable }) && onJsonAsChange && (
+              <select
+                aria-label={`How to read the JSON ${item.label}`}
+                value={item.jsonAs ?? 'table'}
+                onChange={(e) => onJsonAsChange(item.id, e.target.value as 'table' | 'text')}
+              >
+                <option value="table">Table</option>
+                <option value="text">Formatted JSON</option>
               </select>
             )}
             {/* Offered for every input, not only those that already carry hub

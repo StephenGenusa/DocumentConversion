@@ -36,6 +36,7 @@ function App(): React.JSX.Element {
   const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false })
   const [slideOptions, setSlideOptions] = useState<SlideOptions>({ splitOn: 'auto' })
   const [ocrLanguage, setOcrLanguage] = useState('eng')
+  const [jsonAsDefault, setJsonAsDefault] = useState<'table' | 'text'>('table')
   const [progress, setProgress] = useState<{ stage: string; percent?: number } | null>(null)
   /** What stopping the current job means: a paste keeps what it has fetched. */
   const [cancelLabel, setCancelLabel] = useState('Cancel')
@@ -121,7 +122,16 @@ function App(): React.JSX.Element {
       base64: p.base64,
       sourceDir: p.sourceDir,
       handle: p.handle,
+      jsonTable: p.jsonTable,
+      // The last choice made this session is the default for inputs added later.
+      jsonAs: jsonAsDefault,
     })
+  }
+
+  /** Table or formatted JSON, for one input; remembered as the session's default. */
+  function setJsonAs(id: string, value: 'table' | 'text'): void {
+    setJsonAsDefault(value)
+    updateItem(id, { jsonAs: value })
   }
 
   function onClipboard(html: string, source: PaneSource = { label: 'Clipboard', filename: 'Clipboard' }): void {
@@ -226,6 +236,7 @@ function App(): React.JSX.Element {
         source: item.source,
         ocr: item.source === 'image' && item.imageMode === 'ocr',
         ocrLanguage,
+        ...(item.source === 'json' ? { jsonAs: item.jsonAs ?? 'table' } : {}),
         jobId,
       }),
     )
@@ -237,7 +248,7 @@ function App(): React.JSX.Element {
     setItems((prev) =>
       prev.map((i) =>
         i.id === id
-          ? { ...i, html: result.html, diskStamp: result.stamp, staleStamp: undefined, rev: (i.rev ?? 0) + 1 }
+          ? { ...i, html: result.html, diskStamp: result.stamp, staleStamp: undefined, rev: (i.rev ?? 0) + 1, limited: result.limited }
           : i,
       ),
     )
@@ -375,6 +386,7 @@ function App(): React.JSX.Element {
           source: item.source,
           ocr: item.source === 'image' && item.imageMode === 'ocr',
           ocrLanguage,
+          ...(item.source === 'json' ? { jsonAs: item.jsonAs ?? 'table' } : {}),
           jobId,
         }),
       )
@@ -383,7 +395,9 @@ function App(): React.JSX.Element {
         return
       }
       // The stamp is what a later change on disk is measured against.
-      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, html: result.html, diskStamp: result.stamp } : i)))
+      setItems((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, html: result.html, diskStamp: result.stamp, limited: result.limited } : i)),
+      )
     }
     setEditingId(id)
     window.api.resizeContent({ height: PANE_HEIGHT })
@@ -395,7 +409,7 @@ function App(): React.JSX.Element {
   // html, which opening it in the pane already recorded. Rendering must not
   // read the pane.
   // What the visibility rules (lib/controls.ts) look at, per input.
-  const controlInputs: ControlInput[] = items.map((i) => ({ source: i.source, imageMode: i.imageMode }))
+  const controlInputs: ControlInput[] = items.map((i) => ({ source: i.source, imageMode: i.imageMode, jsonTable: i.jsonTable }))
   const validityInputs = items.map((i) => ({
     format: (i.html !== undefined ? 'html' : i.source) as SourceFormat,
     imageMode: i.imageMode,
@@ -468,6 +482,10 @@ function App(): React.JSX.Element {
                 ocrLanguage={ocrLanguage}
                 onOcrLanguageChange={setOcrLanguage}
                 onEdit={() => void editItem(single.id)}
+                jsonTable={single.jsonTable}
+                jsonAs={single.jsonAs ?? 'table'}
+                onJsonAsChange={(v) => setJsonAs(single.id, v)}
+                editedLimited={single.html !== undefined && single.limited === true}
               />
             ) : (
               <InputList
@@ -480,6 +498,7 @@ function App(): React.JSX.Element {
                 onRemove={removeItem}
                 onEdit={editItem}
                 onImageModeChange={(id, m) => updateItem(id, { imageMode: m })}
+                onJsonAsChange={setJsonAs}
                 onAddFile={() => void intake.openDialog()}
                 onAddClipboard={() => void intake.pasteFromClipboard()}
                 onClear={reset}

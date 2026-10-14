@@ -18,6 +18,7 @@ import type { OcrPage } from '../ocr/pipeline'
 import { advisePageFit } from '../core/page-fit'
 import { urlFetchDeps } from './net'
 import { isUncFileUrl } from '../core/inline-images'
+import { TABLE_TARGETS } from '../core/types'
 import type {
   ConvertOptions,
   HubDocument,
@@ -237,7 +238,16 @@ export async function runConversion(
     const copied = await untilCancelled(mergePdfs([{ bytes, name: filename }]), ctx.signal)
     return { parts: [{ suffix: '', bytes: copied }] }
   }
-  const hub = await readForConversion(bytes, filename, source, opts.ocr === true, ctx, opts.ocrLanguage)
+  const readCtx: ReadContext = opts.jsonAs ? { ...ctx, jsonAs: opts.jsonAs } : ctx
+  // A record source exported to a table format goes row by row, every row,
+  // and never through the hub (see core/records.ts).
+  if (TABLE_TARGETS.includes(target)) {
+    const rows = await untilCancelled(converter.readRows({ bytes, filename }, source, readCtx), ctx.signal)
+    if (rows) {
+      return untilCancelled(converter.writeRows(rows, target, { signal: ctx.signal, onProgress: ctx.onProgress }), ctx.signal)
+    }
+  }
+  const hub = await readForConversion(bytes, filename, source, opts.ocr === true, readCtx, opts.ocrLanguage)
   // Cancel between read and write: the read cannot be unwound, but nothing
   // downstream — writing, and the file the caller would save — must happen.
   throwIfCancelled(ctx.signal)
@@ -281,6 +291,7 @@ export interface MergeItem {
   filename?: string
   source: SourceFormat
   ocr: boolean
+  jsonAs?: 'table' | 'text'
 }
 
 /**
@@ -312,7 +323,7 @@ export async function mergeToTarget(
         continue
       }
       ctx.onProgress?.(`Rendering ${name} (${i + 1} of ${items.length})`)
-      const hub = await readForConversion(item.bytes, item.filename, item.source, item.ocr, ctx)
+      const hub = await readForConversion(item.bytes, item.filename, item.source, item.ocr, item.jsonAs ? { ...ctx, jsonAs: item.jsonAs } : ctx)
       const withHeading = headings
         ? { ...hub, html: `<h1 class="doc-title">${escapeHtml(hub.sourceName ?? name)}</h1>\n${hub.html}` }
         : hub
@@ -327,7 +338,7 @@ export async function mergeToTarget(
     throwIfCancelled(ctx.signal)
     const item = items[i]
     ctx.onProgress?.(`Reading ${item.filename ?? `document ${i + 1}`} (${i + 1} of ${items.length})`)
-    hubs.push(await readForConversion(item.bytes, item.filename, item.source, item.ocr, ctx))
+    hubs.push(await readForConversion(item.bytes, item.filename, item.source, item.ocr, item.jsonAs ? { ...ctx, jsonAs: item.jsonAs } : ctx))
   }
   throwIfCancelled(ctx.signal)
   return untilCancelled(converter.write(mergeHubDocuments(hubs, { headings }), target, opts), ctx.signal)

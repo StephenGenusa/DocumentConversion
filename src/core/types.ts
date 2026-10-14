@@ -44,6 +44,7 @@ export type SourceFormat =
   | 'ics'
   | 'asciidoc'
   | 'rst'
+  | 'json'
 
 export const TARGET_FORMATS: TargetFormat[] = [
   'txt',
@@ -118,6 +119,7 @@ export const SOURCE_FORMATS: SourceFormat[] = [
   'ics',
   'asciidoc',
   'rst',
+  'json',
 ]
 
 export const EXTENSIONS: Record<TargetFormat, string> = {
@@ -143,6 +145,11 @@ export interface HubDocument {
   sourceName?: string
   /** Dominant code language, when source is 'code'. */
   language?: string
+  /**
+   * A record source cut to PRINT_RECORD_LIMIT for printing (see records.ts).
+   * The editor tells the user an edited copy holds only these records.
+   */
+  limited?: boolean
 }
 
 export interface SourceInput {
@@ -155,9 +162,11 @@ export interface ReadContext {
   ocr?: boolean
   signal?: AbortSignal
   onProgress?: (stage: string, percent?: number) => void
+  /** JSON records: as a table (the default) or as formatted JSON text. */
+  jsonAs?: 'table' | 'text'
   /** Non-fatal suggestions surfaced to the user (e.g. "this would fit landscape"). */
   onAdvice?: (
-    kind: 'landscape' | 'doc-tables' | 'doc-lists' | 'doc-images',
+    kind: 'landscape' | 'doc-tables' | 'doc-lists' | 'doc-images' | 'reformatted' | 'records-limited' | 'record-error',
     message: string,
     suggestion?: { pageSize: PdfPageSize; landscape: boolean },
   ) => void
@@ -207,6 +216,8 @@ export interface ConvertOptions {
   /** Which language OCR should recognise with. Defaults to the bundled English. */
   ocrLanguage?: string
   slides?: SlideOptions
+  /** Per input: JSON records as a table or as formatted text. Copied into the read context. */
+  jsonAs?: 'table' | 'text'
 }
 
 export type RenderHtmlToPdf = (html: string, opts?: PdfRenderOptions) => Promise<Buffer>

@@ -50,6 +50,7 @@ export async function runCli(argv: string[]): Promise<number> {
     }),
     slides: { splitOn: req.split ?? 'auto' },
     ocr: req.ocr,
+    ...(req.jsonAs ? { jsonAs: req.jsonAs } : {}),
   }
 
   let failed = 0
@@ -138,6 +139,7 @@ export async function runCli(argv: string[]): Promise<number> {
           bytes: await bytesFor(f),
           filename: basename(f.path),
           source: f.source,
+          ...(req.jsonAs ? { jsonAs: req.jsonAs } : {}),
           ocr: req.ocr,
         })),
       )
@@ -176,7 +178,8 @@ export async function runCli(argv: string[]): Promise<number> {
           const flags = suggestion
             ? ` Try: --page ${suggestion.pageSize}${suggestion.landscape ? ' --landscape' : ''}`
             : ''
-          console.error(`NOTE ${basename(f.path)}: ${message}.${flags}`)
+          // Some advice already ends its sentence; don't print "..".
+          console.error(`NOTE ${basename(f.path)}: ${message}${/[.!?]$/.test(message) ? '' : '.'}${flags}`)
         },
       })
       const parts = selectTable(out.parts)

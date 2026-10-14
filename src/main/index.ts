@@ -7,6 +7,7 @@ import { detect } from '../core/detect'
 import { allFileUrisToPaths } from '../core/uri'
 import { EXTENSIONS, TABLE_TARGETS, type SourceFormat, type TargetFormat } from '../core/types'
 import type { DetectResult } from '../core/detect'
+import { jsonIsTable } from '../core/readers/json'
 import { normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
 import { createJob, cancelJob, finishJob, runBatch, throwIfCancelled, type BatchRow } from './jobs'
@@ -25,6 +26,7 @@ interface BatchItemPayload {
   ocrLanguage?: string
   ocr?: unknown
   sourceDir?: string
+  jsonAs?: unknown
 }
 import { downloadPack, listPacks, removePack } from './ocr-packs'
 import { normalizeSlideOptions } from '../core/slides'
@@ -72,6 +74,21 @@ const FILTERS: Record<TargetFormat, { name: string; extensions: string[] }> = {
   csv: { name: 'CSV', extensions: ['csv'] },
   json: { name: 'JSON', extensions: ['json'] },
   xlsx: { name: 'Excel workbook', extensions: ['xlsx'] },
+}
+
+/**
+ * Detection, plus what the input card needs to know before anything is
+ * converted: whether a JSON file reads as a table, which decides whether the
+ * Table / Formatted JSON choice is shown (spec 2a, V2).
+ */
+function detectWithHints(bytes: Buffer, filename?: string): DetectResult {
+  const d = detect(bytes, filename)
+  return d.kind === 'ok' && d.format === 'json' ? { ...d, jsonTable: jsonIsTable(bytes, filename) } : d
+}
+
+/** A request's jsonAs, if it is one of the two values the reader knows. */
+function jsonAsOf(value: unknown): 'table' | 'text' | undefined {
+  return value === 'table' || value === 'text' ? value : undefined
 }
 
 function baseName(filename?: string): string {
@@ -142,7 +159,7 @@ interface LoadedFile {
  * back to, so it stays the snapshot it was expanded as.
  */
 async function loadBytes(bytes: Buffer, filename: string, sourceDir?: string, path?: string): Promise<LoadedFile[]> {
-  const detected = detect(bytes, filename)
+  const detected = detectWithHints(bytes, filename)
   if (detected.kind !== 'archive') {
     const handle = path ? registerPath(path) : undefined
     return [{ filename, base64: bytes.toString('base64'), detected, sourceDir, handle }]
@@ -152,7 +169,7 @@ async function loadBytes(bytes: Buffer, filename: string, sourceDir?: string, pa
   return entries.map((entry) => ({
     filename: entry.filename,
     base64: entry.bytes.toString('base64'),
-    detected: detect(entry.bytes, entry.filename),
+    detected: detectWithHints(entry.bytes, entry.filename),
     sourceDir,
   }))
 }
@@ -177,7 +194,7 @@ function registerIpc(): void {
   )
 
   ipcMain.handle('app:detect', async (_e, { base64, filename }: { base64: string; filename?: string }) => {
-    return detect(Buffer.from(base64, 'base64'), filename)
+    return detectWithHints(Buffer.from(base64, 'base64'), filename)
   })
 
   // Some Linux file managers drop `text/uri-list` instead of File objects.
@@ -279,6 +296,7 @@ function registerIpc(): void {
         source,
         ocr,
         ocrLanguage,
+        jsonAs,
         jobId,
       }: {
         base64: string
@@ -287,9 +305,11 @@ function registerIpc(): void {
         source: SourceFormat
         ocr?: unknown
         ocrLanguage?: unknown
+        jsonAs?: unknown
         jobId?: string
       },
     ) => {
+      const readAs = jsonAsOf(jsonAs)
       const ctx: ReadContext = jobId
         ? {
             signal: createJob(jobId),
@@ -298,6 +318,7 @@ function registerIpc(): void {
             },
           }
         : {}
+      if (readAs) ctx.jsonAs = readAs
       try {
         // The stamp goes back with the html: it is what the pane was loaded
         // from, and what a later change on disk is measured against.
@@ -310,7 +331,9 @@ function registerIpc(): void {
           ctx,
           typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
         )
-        return { kind: 'ok' as const, html: hub.html, title: hub.title, stamp: input.stamp }
+        // `limited`: a record source cut to the print limit, so an edited copy
+        // holds only those records; the card says so.
+        return { kind: 'ok' as const, html: hub.html, title: hub.title, stamp: input.stamp, limited: hub.limited === true }
       } catch (err) {
         const code = err instanceof ConversionError ? err.code : 'read-failed'
         return { kind: 'error' as const, code, message: (err as Error).message }
@@ -388,6 +411,7 @@ function registerIpc(): void {
         slides,
         ocr,
         ocrLanguage,
+        jsonAs,
         jobId,
       }: {
         base64: string
@@ -399,6 +423,7 @@ function registerIpc(): void {
         slides?: unknown
         ocr?: unknown
         ocrLanguage?: unknown
+        jsonAs?: unknown
         jobId?: string
       },
     ) => {
@@ -422,7 +447,13 @@ function registerIpc(): void {
         : {}
       try {
         const bytes = await inputBytes({ base64, handle })
-        const opts = { pdf: normalizePdfOptions(pdf), slides: normalizeSlideOptions(slides), ocr: ocr === true, ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined }
+        const opts = {
+          pdf: normalizePdfOptions(pdf),
+          slides: normalizeSlideOptions(slides),
+          ocr: ocr === true,
+          ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
+          jsonAs: jsonAsOf(jsonAs),
+        }
         if (target === 'html') {
           // Rich flavor for Word/Teams/Outlook paste targets + plain-text flavor for editors.
           const flavors = await clipboardFlavors(bytes, filename, source, opts, ctx)
@@ -459,6 +490,7 @@ function registerIpc(): void {
         slides,
         ocr,
         ocrLanguage,
+        jsonAs,
         jobId,
         sourceDir,
       }: {
@@ -471,6 +503,7 @@ function registerIpc(): void {
         slides?: unknown
         ocr?: unknown
         ocrLanguage?: unknown
+        jsonAs?: unknown
         jobId?: string
         sourceDir?: string
       },
@@ -496,6 +529,7 @@ function registerIpc(): void {
           slides: normalizeSlideOptions(slides),
           ocr: ocr === true,
           ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
+          jsonAs: jsonAsOf(jsonAs),
         }, ctx)
         const defaultPath = defaultSavePath(sourceDir, baseName(filename) + EXTENSIONS[target])
         const save = await dialog.showSaveDialog({ defaultPath, filters: [FILTERS[target]] })
@@ -561,7 +595,7 @@ function registerIpc(): void {
             item.filename,
             item.source,
             target,
-            { pdf: pdfOpts, slides: slideOpts, ocr: item.ocr === true, ocrLanguage: item.ocrLanguage },
+            { pdf: pdfOpts, slides: slideOpts, ocr: item.ocr === true, ocrLanguage: item.ocrLanguage, jsonAs: jsonAsOf(item.jsonAs) },
             ctx,
           ),
         )
@@ -610,6 +644,7 @@ function registerIpc(): void {
               filename: item.filename,
               source: item.source,
               ocr: item.ocr === true,
+              jsonAs: jsonAsOf(item.jsonAs),
             })),
           ),
           target,

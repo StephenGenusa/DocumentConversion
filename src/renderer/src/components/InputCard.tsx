@@ -44,6 +44,7 @@ const TEXT_OVERRIDES: SourceFormat[] = [
   'ics',
   'asciidoc',
   'rst',
+  'json',
 ]
 
 export function InputCard({
@@ -56,8 +57,18 @@ export function InputCard({
   onOcrLanguageChange,
   onImageModeChange,
   onEdit,
+  jsonTable,
+  jsonAs = 'table',
+  onJsonAsChange,
+  editedLimited,
 }: {
   filename?: string
+  /** JSON that reads as a table of records. */
+  jsonTable?: boolean
+  jsonAs?: 'table' | 'text'
+  onJsonAsChange?: (v: 'table' | 'text') => void
+  /** The pane holds an edited copy read cut to the print limit. */
+  editedLimited?: boolean
   source: SourceFormat
   onSourceChange: (f: SourceFormat) => void
   onReset: () => void
@@ -126,6 +137,35 @@ export function InputCard({
       )}
       {showsInput('ocrLanguage', { source, imageMode }) && onOcrLanguageChange && (
         <OcrLanguagePicker value={ocrLanguage ?? 'eng'} onChange={onOcrLanguageChange} />
+      )}
+      {showsInput('jsonAs', { source, jsonTable }) && onJsonAsChange && (
+        <div className="card__row">
+          <span className="card__label">Read as</span>
+          <div className="chips" style={{ margin: 0 }}>
+            <button
+              className={`chip${jsonAs === 'table' ? ' chip--active' : ''}`}
+              aria-pressed={jsonAs === 'table'}
+              onClick={() => onJsonAsChange('table')}
+              title="One row per record: ready for CSV, JSON and Excel"
+            >
+              Table
+            </button>
+            <button
+              className={`chip${jsonAs === 'text' ? ' chip--active' : ''}`}
+              aria-pressed={jsonAs === 'text'}
+              onClick={() => onJsonAsChange('text')}
+              title="The JSON itself, indented and highlighted"
+            >
+              Formatted JSON
+            </button>
+          </div>
+        </div>
+      )}
+      {editedLimited && (
+        <p className="card__note">
+          This edited copy holds the first 5,000 records. Exporting it to CSV, JSON or Excel writes only those; to export
+          every record, remove it and add the file again without opening it in the editor.
+        </p>
       )}
     </div>
   )

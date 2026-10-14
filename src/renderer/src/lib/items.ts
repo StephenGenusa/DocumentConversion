@@ -27,6 +27,12 @@ export interface ListItem {
   staleStamp?: string
   /** Bumped when `html` is replaced from outside the pane, to rebuild the editor. */
   rev?: number
+  /** JSON that reads as a table of records (decides whether the choice is shown). */
+  jsonTable?: boolean
+  /** The user's choice for JSON records. */
+  jsonAs?: 'table' | 'text'
+  /** The pane's copy was read cut to the print limit (records.ts). */
+  limited?: boolean
 }
 
 /** What the open edit pane holds right now. */
@@ -61,6 +67,7 @@ export function toRequest(item: ListItem, ocrLanguage: string): BatchItemReq {
     ocr: item.source === 'image' && item.imageMode === 'ocr',
     ocrLanguage,
     sourceDir: item.sourceDir,
+    ...(item.source === 'json' ? { jsonAs: item.jsonAs ?? 'table' } : {}),
   }
 }
 

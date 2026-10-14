@@ -20,10 +20,12 @@ import type { SourceFormat, TargetFormat } from '../../../core/types'
 export interface ControlInput {
   source: SourceFormat
   imageMode?: 'embed' | 'ocr'
+  /** JSON that reads as a table of records. */
+  jsonTable?: boolean
 }
 
 export type OutputControl = 'pdfOptions' | 'slideSplit'
-export type InputControl = 'imageMode' | 'ocrLanguage'
+export type InputControl = 'imageMode' | 'ocrLanguage' | 'jsonAs'
 
 const OUTPUT_RULES: Record<OutputControl, (target: TargetFormat, inputs: ControlInput[]) => boolean> = {
   pdfOptions: (target) => target === 'pdf',
@@ -33,6 +35,8 @@ const OUTPUT_RULES: Record<OutputControl, (target: TargetFormat, inputs: Control
 const INPUT_RULES: Record<InputControl, (input: ControlInput) => boolean> = {
   imageMode: (input) => input.source === 'image',
   ocrLanguage: (input) => input.source === 'image' && input.imageMode === 'ocr',
+  // Only where there is a choice: JSON that is records. Other JSON is a listing either way.
+  jsonAs: (input) => input.source === 'json' && input.jsonTable === true,
 }
 
 export function showsOutput(control: OutputControl, target: TargetFormat, inputs: ControlInput[]): boolean {

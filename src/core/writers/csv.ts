@@ -12,7 +12,7 @@ import type { ConvertOptions, HubDocument, WriteResult } from '../types'
  */
 export const extractTables = (html: string): string[][][] => tableGrid(html, { fillRowspan: true })
 
-function csvCell(value: string): string {
+export function csvCell(value: string): string {
   return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 

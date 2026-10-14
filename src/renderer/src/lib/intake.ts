@@ -12,6 +12,8 @@ export interface LoadedPayload {
   sourceDir?: string
   /** Token for re-reading the file at convert time, when it has one on disk. */
   handle?: string
+  /** JSON that reads as a table of records. */
+  jsonTable?: boolean
 }
 
 /** How an input that opens in the edit pane is named in the list and on disk. */
@@ -63,7 +65,7 @@ export function createIntake(handlers: IntakeHandlers) {
       let added = 0
       for (const entry of entries) {
         if (entry.detected.kind !== 'ok') continue
-        onLoaded({ filename: entry.filename, base64: entry.base64, detected: entry.detected.format, sourceDir })
+        onLoaded({ filename: entry.filename, base64: entry.base64, detected: entry.detected.format, sourceDir, jsonTable: entry.detected.jsonTable })
         added++
       }
       const skipped = entries.length - added
@@ -77,7 +79,7 @@ export function createIntake(handlers: IntakeHandlers) {
       return
     }
     onNotice(null)
-    onLoaded({ filename, base64, detected: detected.format, sourceDir, handle })
+    onLoaded({ filename, base64, detected: detected.format, sourceDir, handle, jsonTable: detected.jsonTable })
   }
 
   async function acceptLoaded(loaded: LoadedInput[] | null): Promise<void> {

@@ -13,7 +13,7 @@ import type { ConvertOptions, HubDocument, WriteResult } from '../types'
  * only when the text round-trips exactly, so identifiers like "0302" or
  * "1.50" keep the form the document gave them.
  */
-function typed(value: string): string | number {
+export function typed(value: string): string | number {
   const trimmed = value.trim()
   if (trimmed === '' || trimmed.length > 15) return value
   const n = Number(trimmed)
@@ -24,7 +24,7 @@ function typed(value: string): string | number {
  * The key each column would be given: the header cell, or a positional name
  * when the header left it blank.
  */
-function keysFor(header: string[], width: number): string[] {
+export function keysFor(header: string[], width: number): string[] {
   const keys: string[] = []
   for (let i = 0; i < width; i++) keys.push(header[i] || `column${i + 1}`)
   return keys

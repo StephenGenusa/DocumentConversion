@@ -16,6 +16,10 @@ import { SLIDE_TARGETS } from './types'
 import { createWriters, type Writer } from './writers'
 import { dropRemoteImages } from './inline-images'
 import { resolveRemoteImages } from './remote-images'
+import { getRowReader } from './readers'
+import { writeRows, type RowWriteOptions } from './writers/rows'
+import type { RowSource } from './records'
+import { TABLE_TARGETS } from './types'
 import { normalizeFootnotes } from './footnotes'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
 
@@ -31,6 +35,13 @@ export interface Converter {
   read(src: SourceInput, source: SourceFormat, ctx?: ReadContext): Promise<HubDocument>
   /** Write an already-built hub document (used by the OCR recovery path and merge). */
   write(hub: HubDocument, target: TargetFormat, opts?: ConvertOptions): Promise<WriteResult>
+  /**
+   * A record source's rows, for a table target: every record, never via the
+   * hub. Null when the source is not records (or has no row reader).
+   */
+  readRows(src: SourceInput, source: SourceFormat, ctx?: ReadContext): Promise<RowSource[] | null>
+  /** csv/json/xlsx from row sources. */
+  writeRows(sources: RowSource[], target: TargetFormat, opts?: RowWriteOptions): Promise<WriteResult>
 }
 
 export interface ConverterDeps {
@@ -95,7 +106,25 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
     read,
     write,
     async convert(src, source, target, opts, ctx) {
-      return write(await read(src, source, ctx), target, opts)
+      const readCtx = opts?.jsonAs ? { ...ctx, jsonAs: opts.jsonAs } : ctx
+      if (TABLE_TARGETS.includes(target)) {
+        const rows = await this.readRows(src, source, readCtx)
+        if (rows) return writeRows(rows, target, { signal: ctx?.signal, onProgress: ctx?.onProgress })
+      }
+      return write(await read(src, source, readCtx), target, opts)
+    },
+    async readRows(src, source, ctx) {
+      const reader = getRowReader(source)
+      if (!reader) return null
+      try {
+        return await reader(src, ctx)
+      } catch (err) {
+        if (err instanceof ConversionError) throw err
+        throw new ConversionError('read-failed', `Could not read ${source}: ${(err as Error).message}`)
+      }
+    },
+    writeRows(sources, target, opts) {
+      return writeRows(sources, target, opts)
     },
   }
 }

@@ -48,7 +48,7 @@ export type SourceFormat =
   | 'rst'
 
 export type DetectResult =
-  | { kind: 'ok'; format: SourceFormat }
+  | { kind: 'ok'; format: SourceFormat; /** JSON that reads as a table of records. */ jsonTable?: boolean }
   | { kind: 'archive' }
   | { kind: 'unsupported'; reason: string }
 
@@ -110,6 +110,8 @@ export interface BatchItemReq {
   sourceDir?: string
   /** Which OCR language to recognise with, when ocr is set. */
   ocrLanguage?: string
+  /** JSON records: as a table or as formatted text. */
+  jsonAs?: 'table' | 'text'
 }
 
 export interface BatchRow {
@@ -195,9 +197,18 @@ export interface Api {
     source: SourceFormat
     ocr?: boolean
     ocrLanguage?: string
+    jsonAs?: 'table' | 'text'
     jobId?: string
   }): Promise<
-    | { kind: 'ok'; html: string; title?: string; /** Set when read from a file on disk. */ stamp?: string }
+    | {
+        kind: 'ok'
+        html: string
+        title?: string
+        /** Set when read from a file on disk. */
+        stamp?: string
+        /** A record source cut to the print limit: an edited copy holds only these records. */
+        limited?: boolean
+      }
     | { kind: 'error'; code: string; message: string }
   >
   listOcrLanguages(): Promise<OcrLanguageListing[]>

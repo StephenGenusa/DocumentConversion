@@ -22,6 +22,8 @@ import { readOdp } from './odp'
 import { readIcs } from './ics'
 import { readAsciidoc } from './asciidoc'
 import { readRst } from './rst'
+import { readJson, readJsonRows } from './json'
+import type { RowSource } from '../records'
 
 export type Reader = (src: SourceInput, ctx?: ReadContext) => Promise<HubDocument>
 
@@ -48,6 +50,7 @@ const registered: Partial<Record<SourceFormat, Reader>> = {
   ics: readIcs,
   asciidoc: readAsciidoc,
   rst: readRst,
+  json: readJson,
 }
 
 export function getReader(format: SourceFormat): Reader {
@@ -55,3 +58,19 @@ export function getReader(format: SourceFormat): Reader {
   if (!reader) throw new ConversionError('read-failed', `No reader available for "${format}" yet`)
   return reader
 }
+
+/**
+ * Record sources' row readers, for csv/json/xlsx export without the hub
+ * (see records.ts). Null from a reader means "not records after all", and
+ * the ordinary hub path is taken.
+ */
+export type RowReader = (src: SourceInput, ctx?: ReadContext) => Promise<RowSource[] | null>
+
+const rowReaders: Partial<Record<SourceFormat, RowReader>> = {
+  json: readJsonRows,
+}
+
+export function getRowReader(source: SourceFormat): RowReader | undefined {
+  return rowReaders[source]
+}
+

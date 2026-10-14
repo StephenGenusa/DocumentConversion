@@ -3,7 +3,7 @@ import { codeFormatFromFilename, codeNameFromFilename } from './code-langs'
 import { imageMime } from './readers/image'
 
 export type DetectResult =
-  | { kind: 'ok'; format: SourceFormat }
+  | { kind: 'ok'; format: SourceFormat; /** JSON that reads as a table of records (added by the main process). */ jsonTable?: boolean }
   | { kind: 'archive' }
   | { kind: 'unsupported'; reason: string }
 
@@ -30,6 +30,11 @@ const EXT_MAP = new Map<string, SourceFormat>(
     // R Markdown and Quarto: Markdown with code chunks (see readers/md.ts).
     rmd: 'md',
     qmd: 'md',
+    // JSON records and JSON Lines (readers/json.ts). .jsonc and .json5 are
+    // code: comments and bare words rule out a table.
+    json: 'json',
+    jsonl: 'json',
+    ndjson: 'json',
     docx: 'docx',
     pdf: 'pdf',
     html: 'html',

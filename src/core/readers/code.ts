@@ -1,6 +1,8 @@
 import { escapeHtml } from '../shell'
 import { languageForFilename } from '../code-langs'
-import type { HubDocument, SourceInput } from '../types'
+import type { HubDocument, ReadContext, SourceInput } from '../types'
+import { needsReformat, reindentJson } from '../json-tokens'
+import { reindentXml } from '../xml-indent'
 
 interface DiffSection {
   title: string
@@ -42,8 +44,32 @@ export function diffSections(text: string): { preamble: string; files: DiffSecti
   return { preamble: lines.slice(0, starts[0].at).join('\n').trim(), files }
 }
 
+/**
+ * A minified JSON or XML file re-indented so it can be read (spec D5). Only
+ * when it cannot be read as written (see needsReformat): a file someone laid
+ * out by hand is theirs. The re-indenting never re-serialises values, and a
+ * file it cannot make sense of is shown as it is.
+ */
+function readable(text: string, language: string, ctx?: ReadContext): string {
+  if ((language !== 'json' && language !== 'xml') || !needsReformat(text)) return text
+  const pretty = language === 'json' ? reindentJson(text) : reindentXml(text)
+  if (pretty === null) return text
+  ctx?.onAdvice?.('reformatted', 'The file was minified; it is shown re-indented so it can be read. Nothing in it was changed.')
+  return pretty
+}
+
+/** A whole file as one highlighted listing under its name. */
+export function codeListing(name: string, text: string, language: string, ctx?: ReadContext): HubDocument {
+  const body = readable(text, language, ctx)
+  return {
+    html: `<h1>${escapeHtml(name)}</h1>\n<pre><code class="language-${language}">${escapeHtml(body)}</code></pre>`,
+    title: name,
+    language,
+  }
+}
+
 /** "Print this file for review": one fenced block, filename as heading. */
-export async function readCode(src: SourceInput): Promise<HubDocument> {
+export async function readCode(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
   const filename = src.filename ?? 'code'
   const language = languageForFilename(filename) ?? 'plaintext'
   // Strip the BOM and normalize CRLF; a literal CR leaks into docx/txt output.
@@ -58,5 +84,5 @@ export async function readCode(src: SourceInput): Promise<HubDocument> {
     for (const f of sections.files) parts.push(`<h2>${escapeHtml(f.title)}</h2>`, block('diff', f.body))
     return { html: parts.join('\n'), title: name, language }
   }
-  return { html: `${heading}\n${block(language, text)}`, title: name, language }
+  return codeListing(name, text, language, ctx)
 }

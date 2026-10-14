@@ -10,6 +10,8 @@ export interface CliRequest {
   table?: number
   scale?: number
   page?: string
+  /** JSON records as a table or as formatted text. */
+  jsonAs?: 'table' | 'text'
   /** Where a new slide starts, for the revealjs target. */
   split?: 'auto' | 'hr' | 'h1' | 'h2'
   landscape: boolean
@@ -33,6 +35,7 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--landscape]         pdf landscape orientation
   [--header-footer]     pdf header/footer with title, date, page numbers
   [--ocr]               OCR scanned PDFs and images (English)
+  [--json-as <table|text>]  JSON records: a table (default) or formatted JSON
   [--no-clobber]        fail instead of overwriting existing outputs
 Exit codes: 0 all succeeded, 1 any failed, 2 bad usage.`
 
@@ -59,6 +62,8 @@ export const FLAG_SCOPES: FlagScope[] = [
   { flag: '--page', targets: ['pdf'], strict: false },
   { flag: '--landscape', targets: ['pdf'], strict: false },
   { flag: '--header-footer', targets: ['pdf'], strict: false },
+  // Flags from 1.4 on are strict.
+  { flag: '--json-as', inputs: ['json'], strict: true },
 ]
 
 /** The usage message for the first strict flag that cannot apply, or null. */
@@ -153,6 +158,13 @@ export function parseArgs(argv: string[]): ParseResult {
         const match = rules.find((r) => r === v.toLowerCase())
         if (!match) return usage(`--split must be one of ${rules.join(', ')} (got ${v})`)
         req.split = match
+        break
+      }
+      case '--json-as': {
+        const v = takeValue(arg, i)
+        if (v !== 'table' && v !== 'text') return usage('--json-as needs table or text')
+        req.jsonAs = v
+        i++
         break
       }
       case '--merge':
