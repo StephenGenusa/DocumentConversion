@@ -1,4 +1,5 @@
 import sanitizeHtml from 'sanitize-html'
+import { FOOTNOTE_LABEL } from './footnotes'
 
 /**
  * Single source of truth for what the hub allows. The TipTap editor schema
@@ -48,6 +49,11 @@ export const HUB_TAGS = [
   'aside',
 ]
 
+function keepValidLabel(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
+  const { 'data-fn': label, ...rest } = attribs
+  return { tagName, attribs: label !== undefined && FOOTNOTE_LABEL.test(label) ? { ...rest, 'data-fn': label } : rest }
+}
+
 export function hubSanitizeOptions(): sanitizeHtml.IOptions {
   return {
     allowedTags: HUB_TAGS,
@@ -58,7 +64,13 @@ export function hubSanitizeOptions(): sanitizeHtml.IOptions {
       th: ['colspan', 'rowspan'],
       code: ['class'],
       pre: ['class'],
+      // Footnotes (src/core/footnotes.ts). Structural attributes are allowed
+      // only where an editor node models them, and only with a valid value:
+      // see transformTags below.
+      sup: ['data-fn'],
+      li: ['data-fn'],
     },
+    transformTags: { sup: keepValidLabel, li: keepValidLabel },
     // Text inside these is metadata or code, not content: without this the
     // <title> of an HTML page leaked into the body above its own <h1>.
     nonTextTags: ['script', 'style', 'textarea', 'option', 'title', 'head', 'noframes'],

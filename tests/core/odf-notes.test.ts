@@ -143,14 +143,21 @@ describe('odfText annotations', () => {
   })
 })
 
+/**
+ * A whole document's notes now use the hub's footnote model
+ * (src/core/footnotes.ts): a reference where the citation stood, and one
+ * notes list at the end. The bracketed form above remains odfText's own,
+ * for text read outside a document.
+ */
 describe('readOdt with notes and comments', () => {
-  it('renders a footnote as inline mark plus trailing body, and drops the comment', async () => {
+  it('renders a footnote as a reference and a note, and drops the comment', async () => {
     const bytes = await odt(
       `<text:p>The catalogue record${note('1', 'See appendix B for ratings.')} is rated for 400 V.</text:p>` +
         `<text:p>Price is ${annotation('Bob', '2026-02-03T10:00:00', 'Check this with finance')}ten dollars.</text:p>`,
     )
     const hub = await readOdt({ bytes, filename: 'notes.odt' })
-    expect(hub.html).toContain('<p>The catalogue record [1] is rated for 400 V. [1] See appendix B for ratings.</p>')
+    expect(hub.html).toContain('<p>The catalogue record<sup data-fn="1">1</sup> is rated for 400 V.</p>')
+    expect(hub.html).toContain('<li data-fn="1"><p>See appendix B for ratings.</p></li>')
     expect(hub.html).toContain('<p>Price is ten dollars.</p>')
     expect(hub.html).not.toContain('Bob')
     expect(hub.html).not.toContain('finance')
@@ -164,15 +171,16 @@ describe('readOdt with notes and comments', () => {
     const hub = await readOdt({ bytes, filename: 'notes.odt' })
 
     const txt = (await writeTxt(hub)).toString('utf8')
-    expect(txt).toContain('The catalogue record [1] is rated for 400 V. [1] See appendix B for ratings.')
+    expect(txt).toContain('The catalogue record[1] is rated for 400 V.')
+    expect(txt).toMatch(/1\. See appendix B for ratings\./)
     expect(txt).toContain('Price is ten dollars.')
     expect(txt).not.toContain('Bob')
     expect(txt).not.toContain('finance')
 
-    // The md writer escapes the brackets so the mark can never be read as a
-    // link reference; `\[1\]` renders as a literal "[1]".
+    // A real Markdown footnote now, not escaped brackets.
     const md = (await writeMarkdown(hub)).toString('utf8')
-    expect(md).toContain('The catalogue record \\[1\\] is rated for 400 V. \\[1\\] See appendix B for ratings.')
+    expect(md).toContain('The catalogue record[^1] is rated for 400 V.')
+    expect(md).toContain('[^1]: See appendix B for ratings.')
     expect(md).toContain('Price is ten dollars.')
     expect(md).not.toContain('Bob')
     expect(md).not.toContain('finance')
@@ -186,8 +194,10 @@ describe('readOdt with notes and comments', () => {
         `<text:p>Plain ${annotation('Bob', '2026-01-01', 'secret')}text</text:p>`,
     )
     const hub = await readOdt({ bytes, filename: 'mixed.odt' })
-    expect(hub.html).toContain('<h1>Ratings [1] [1] heading note</h1>')
-    expect(hub.html).toContain('<li>Item [2] text [2] item note</li>')
+    expect(hub.html).toContain('<h1>Ratings<sup data-fn="1">1</sup></h1>')
+    expect(hub.html).toContain('<li>Item<sup data-fn="2">2</sup> text</li>')
+    expect(hub.html).toContain('<li data-fn="1"><p>heading note</p></li><li data-fn="2"><p>item note</p></li>')
+    expect(hub.title).toBe('Ratings')
     expect(hub.html).toContain('<p>Plain text</p>')
     expect(hub.html).not.toContain('secret')
     expect(hub.html).not.toContain('Bob')
@@ -212,7 +222,8 @@ describe('readOdt with notes and comments', () => {
         `</table:table-row></table:table>`,
     )
     const hub = await readOdt({ bytes, filename: 'cells.odt' })
-    expect(hub.html).toContain('<td>Cell [3] value [3] cell note</td>')
+    expect(hub.html).toContain('<td>Cell<sup data-fn="1">1</sup> value</td>')
+    expect(hub.html).toContain('<li data-fn="1"><p>cell note</p></li>')
     expect(hub.html).not.toContain('Cell3')
     expect(hub.html).toContain('<td>Plain text</td>')
     expect(hub.html).not.toContain('secret')
@@ -266,7 +277,8 @@ describe('readOdp with slide comments', () => {
     )
     const hub = await readOdp({ bytes, filename: 'deck.odp' })
     expect(hub.html).toContain('<h2>Ratings</h2>')
-    expect(hub.html).toContain('<p>Rated [1] at 400 V today. [1] per appendix B</p>')
+    expect(hub.html).toContain('<p>Rated<sup data-fn="1">1</sup> at 400 V today.</p>')
+    expect(hub.html).toContain('<li data-fn="1"><p>per appendix B</p></li>')
     expect(hub.html).not.toContain('Rated1')
     expect(hub.html).not.toContain('double-check')
     expect(hub.html).not.toContain('Bob')

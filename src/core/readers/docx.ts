@@ -10,6 +10,9 @@ import {
   type ImageLedger,
 } from '../inline-images'
 import type { HubDocument, SourceInput } from '../types'
+import { parseDocument } from 'htmlparser2'
+import { Element, type AnyNode, type ParentNode } from 'domhandler'
+import render from 'dom-serializer'
 
 /**
  * Which tables mark their first row as a header, in document order.
@@ -457,6 +460,88 @@ export function replaceUninlinedImages(html: string): string {
   })
 }
 
+/**
+ * Word footnotes and endnotes in the hub's model (src/core/footnotes.ts).
+ *
+ * mammoth writes a note as `<sup><a href="#footnote-1" id="footnote-ref-1">[1]</a></sup>`
+ * and a list of `<li id="footnote-1">…<a href="#footnote-ref-1">↑</a></li>`;
+ * endnotes the same with `endnote-`. The hub has no internal links, so those
+ * arrived as the text "[1]" and a list ending in a stray "↑". Footnote N
+ * becomes label `N`, endnote N `eN`; the ↑ back-link goes (writers make their
+ * own); the lists become one notes list, numbered later from first reference.
+ */
+export function wordNotesToHub(html: string): string {
+  if (!/href="#(?:foot|end)note-\d+"/.test(html)) return html
+  const root = parseDocument(html)
+  const label = (kind: string, n: string): string => (kind === 'foot' ? n : `e${n}`)
+  const items: Element[] = []
+  const lists = new Set<Element>()
+  const walk = (nodes: AnyNode[]): void => {
+    for (const node of [...nodes]) {
+      if (!(node instanceof Element)) continue
+      const ref = node.name === 'sup' ? refTarget(node) : null
+      if (ref) {
+        node.attribs = { 'data-fn': label(ref[1], ref[2]) }
+        node.children = []
+        setText(node, ref[2])
+        continue
+      }
+      const note = node.name === 'li' ? /^(foot|end)note-(\d+)$/.exec(node.attribs.id ?? '') : null
+      if (note) {
+        node.attribs = { 'data-fn': label(note[1], note[2]) }
+        dropBackLinks(node)
+        items.push(node)
+        if (node.parent instanceof Element && node.parent.name === 'ol') lists.add(node.parent)
+        continue
+      }
+      walk(node.children as AnyNode[])
+    }
+  }
+  walk(root.children as AnyNode[])
+  for (const ol of lists) {
+    const parent = ol.parent as ParentNode | null
+    if (!parent) continue
+    parent.children.splice(parent.children.indexOf(ol), 1)
+  }
+  if (items.length > 0) {
+    const ol = new Element('ol', {}, items)
+    for (const li of items) li.parent = ol
+    root.children.push(ol)
+  }
+  return render(root.children, { encodeEntities: 'utf8' })
+}
+
+function refTarget(sup: Element): RegExpExecArray | null {
+  const kids = sup.children.filter((c) => !(c.type === 'text' && !(c as { data: string }).data.trim()))
+  const a = kids.length === 1 && kids[0] instanceof Element && kids[0].name === 'a' ? kids[0] : null
+  return a ? /^#(foot|end)note-(\d+)$/.exec(a.attribs.href ?? '') : null
+}
+
+function setText(el: Element, text: string): void {
+  const t = parseDocument(text).children
+  el.children = t
+  for (const c of t) c.parent = el
+}
+
+/** Remove the ↑ link back to the reference, and the space mammoth puts before it. */
+function dropBackLinks(li: Element): void {
+  const visit = (el: Element): void => {
+    el.children = el.children.filter((c) => {
+      if (c instanceof Element && c.name === 'a' && /^#(?:foot|end)note-ref-\d+$/.test(c.attribs.href ?? '')) return false
+      if (c instanceof Element) visit(c)
+      return true
+    })
+    const last = el.children[el.children.length - 1] as { type?: string; data?: string } | undefined
+    if (last?.type === 'text' && typeof last.data === 'string') last.data = last.data.replace(/\s+$/, '')
+    el.children.forEach((c, i) => {
+      c.parent = el
+      c.prev = el.children[i - 1] ?? null
+      c.next = el.children[i + 1] ?? null
+    })
+  }
+  visit(li)
+}
+
 export async function readDocx(src: SourceInput): Promise<HubDocument> {
   const ledger = createImageLedger(archiveInlineBudget(src.bytes.byteLength))
   const [{ value }, flags, header, numIds] = await Promise.all([
@@ -468,5 +553,5 @@ export async function readDocx(src: SourceInput): Promise<HubDocument> {
   const html = keepTabsVisible(
     mergeInterruptedOrderedLists(promoteHeaderRows(replaceUninlinedImages(value), flags), numIds),
   )
-  return withHeaderTitle(html, header)
+  return withHeaderTitle(wordNotesToHub(html), header)
 }

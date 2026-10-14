@@ -1304,12 +1304,60 @@ function convert(rtf: string): Promise<string> {
   })
 }
 
+/**
+ * Where a lifted footnote stood. Plain ASCII, like tableToken, because it
+ * must come through both RTF paths as text: a \\uN escape is folded to its
+ * fallback character on the way.
+ */
+const NOTE_MARK = (i: number): string => `zZrTfNoTe${i}Zz`
+const NOTE_MARK_RE = /zZrTfNoTe(\d+)Zz/g
+
+/**
+ * Take every `{\\footnote …}` group out of the stream, leaving a marker.
+ *
+ * Read in place, a footnote's text ran into its sentence ("Claim The source
+ * note.. More text."), and inside a table the group was skipped and the note
+ * lost. Its body is read on its own instead, and becomes a note in the hub's
+ * model (src/core/footnotes.ts). An endnote is a \\footnote with \\ftnalt
+ * and is treated the same.
+ */
+function liftRtfFootnotes(rtf: string): { rtf: string; notes: string[] } {
+  const notes: string[] = []
+  let out = ''
+  let i = 0
+  const opener = /\{(?:\\\*)?\\footnote\b/g
+  for (let m = opener.exec(rtf); m; m = opener.exec(rtf)) {
+    // groupEnd returns the position AFTER the group's closing brace.
+    const end = groupEnd(rtf, m.index)
+    out += rtf.slice(i, m.index) + NOTE_MARK(notes.length)
+    notes.push(rtf.slice(m.index + m[0].length, rtf[end - 1] === '}' ? end - 1 : end))
+    i = end
+    opener.lastIndex = i
+  }
+  return notes.length ? { rtf: out + rtf.slice(i), notes } : { rtf, notes }
+}
+
 /** Convert a raw RTF string to hub HTML (also used for .msg plain-RTF bodies). */
 export async function rtfStringToHubHtml(rtf: string): Promise<string> {
   if (!rtf.trimStart().startsWith('{\\rtf')) {
     throw new ConversionError('rtf-parse-failed', 'Not an RTF document')
   }
-  const stripped = stripPictures(rtf)
+  const lifted = liftRtfFootnotes(stripPictures(rtf))
+  const main = await rtfBodyToHubHtml(lifted.rtf)
+  if (lifted.notes.length === 0) return main
+  // Each note body is a fragment of the same document: read it the same way.
+  const bodies: string[] = []
+  // The closing \\par makes the body a paragraph; without one it renders as nothing.
+  for (const note of lifted.notes) bodies.push(await rtfBodyToHubHtml(`{\\rtf1\\ansi ${note}\\par}`))
+  const html = main.replace(NOTE_MARK_RE, (_m, n: string) => {
+    const label = String(Number(n) + 1)
+    return `<sup data-fn="${label}">${label}</sup>`
+  })
+  const items = bodies.map((b, i) => `<li data-fn="${i + 1}">${b.trim() || '<p></p>'}</li>`)
+  return `${html}<ol>${items.join('')}</ol>`
+}
+
+async function rtfBodyToHubHtml(stripped: string): Promise<string> {
   const segmented = segmentTables(stripped)
   let full: string
   try {

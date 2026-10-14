@@ -114,6 +114,31 @@ const NOTE_FALLBACK_MARK = '*'
  * escapes them to `\[1\]` so the mark cannot be read as a link reference).
  * Endnotes take the same shape; their citation already distinguishes them.
  */
+/**
+ * While a whole document is being read, its notes go here instead: the
+ * citation becomes a marker the reader turns into a reference in the hub's
+ * footnote model (src/core/footnotes.ts), and the bodies become its notes
+ * list. The bracketed text above is for odfText on its own, outside a
+ * document. Set only inside collectOdfNotes, around synchronous work.
+ */
+let documentNotes: string[] | null = null
+const NOTE_REF = (i: number): string => `zOdFnOtE${i}Zz`
+
+export function collectOdfNotes(build: () => string): string {
+  const notes: string[] = []
+  documentNotes = notes
+  let html: string
+  try {
+    html = build()
+  } finally {
+    documentNotes = null
+  }
+  if (notes.length === 0) return html
+  const body = html.replace(/zOdFnOtE(\d+)Zz/g, (_m, i: string) => `<sup data-fn="${Number(i) + 1}">${Number(i) + 1}</sup>`)
+  const items = notes.map((text, i) => `<li data-fn="${i + 1}"><p>${escapeHtml(text)}</p></li>`)
+  return `${body}\n<ol>${items.join('')}</ol>`
+}
+
 function liftOdfNotes(xml: string, notes: string[]): string {
   return replaceElements(stripOdfComments(xml), ['text:note'], (note) => {
     const citation = /<text:note-citation\b[^>]*>([\s\S]*?)<\/text:note-citation>/.exec(note.inner)?.[1] ?? ''
@@ -127,6 +152,10 @@ function liftOdfNotes(xml: string, notes: string[]): string {
       : ''
     // Recurse: a note body may itself hold a comment that must not survive.
     const body = odfInline(liftOdfNotes(bodyXml, notes))
+    if (documentNotes) {
+      documentNotes.push(body)
+      return NOTE_REF(documentNotes.length - 1)
+    }
     if (body !== '') notes.push(`[${mark}] ${body}`)
     return ` [${mark}] `
   })

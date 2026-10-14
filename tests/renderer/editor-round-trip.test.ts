@@ -37,6 +37,18 @@ describe('the editor round-trips what the hub allows', () => {
     expect(roundTrip('<p>x<sup>2</sup> H<sub>2</sub>O</p>')).toBe('<p>x<sup>2</sup> H<sub>2</sub>O</p>')
   })
 
+  it('keeps footnotes exactly: references, labels and the notes list', () => {
+    const html =
+      '<p>A claim<sup data-fn="smith2020">1</sup> and<sup data-fn="2">2</sup>.</p>' +
+      '<ol><li data-fn="smith2020"><p>Smith, 2020.</p></li><li data-fn="2"><p>One.</p><p>Two.</p></li></ol>'
+    expect(roundTrip(html)).toBe(html)
+  })
+
+  it('leaves an ordinary numbered list and plain superscript as they are', () => {
+    expect(roundTrip('<ol><li><p>one</p></li></ol>')).toBe('<ol><li><p>one</p></li></ol>')
+    expect(roundTrip('<p>x<sup>2</sup></p>')).toBe('<p>x<sup>2</sup></p>')
+  })
+
   it.each(
     HUB_TAGS.filter((t) => !['span', 'div', 'br', 'thead', 'tbody', 'tr', 'td', 'th', 'li'].includes(t)),
   )('models %s, so the editor cannot silently drop it', (tag) => {

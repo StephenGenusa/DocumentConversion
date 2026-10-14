@@ -8,6 +8,7 @@ import render from 'dom-serializer'
 import { renderDocumentShell } from '../shell'
 import { replaceImages } from '../inline-images'
 import { ownRows } from '../table-grid'
+import { footnotesForOutput } from '../footnotes'
 import type { HubDocument } from '../types'
 
 /**
@@ -329,7 +330,7 @@ export function flattenForDocx(source: string): string {
 
 export async function writeDocx(doc: HubDocument): Promise<Buffer> {
   const html = renderDocumentShell(
-    { ...doc, html: unwrapSpans(flattenForDocx(dropUnresolvableImages(doc.html))) },
+    { ...doc, html: unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain')))) },
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)

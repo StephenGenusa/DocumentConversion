@@ -16,6 +16,7 @@ import { SLIDE_TARGETS } from './types'
 import { createWriters, type Writer } from './writers'
 import { dropRemoteImages } from './inline-images'
 import { resolveRemoteImages } from './remote-images'
+import { normalizeFootnotes } from './footnotes'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
 
 export interface Converter {
@@ -52,6 +53,8 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // writers emit XML, which refuses these characters outright.
       hub.html = stripXmlIllegal(hub.html)
       if (hub.title) hub.title = stripXmlIllegal(hub.title)
+      // Notes numbered by first reference, once, as the document arrives.
+      hub.html = normalizeFootnotes(hub.html, { reorder: true })
       // Embedded here, at the one boundary every reader's output passes, so
       // that the edit pane and every writer see data URIs only.
       hub.html = await resolveRemoteImages(hub.html, source, deps.fetchImages, ctx)
@@ -68,6 +71,9 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // A remote image still here would be fetched by the docx and pdf
       // writers outside the guarded fetcher, so it is dropped, never fetched.
       hub.html = dropRemoteImages(stripXmlIllegal(hub.html))
+      // Edited, merged and OCR hubs reach here without read(): one notes list,
+      // last, numbered as the notes stand (the editor showed that numbering).
+      hub.html = normalizeFootnotes(hub.html)
       // Speaker notes round-trip the hub and the editor, but they are not body
       // content: no ordinary writer should emit them. Dropped once here rather
       // than in each writer, for the same reason the XML-illegal strip lives at

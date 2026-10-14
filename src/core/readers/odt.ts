@@ -1,6 +1,6 @@
 import { escapeHtml } from '../shell'
 import { scanElements } from '../ooxml'
-import { appendOdfList, loadOdfContent, odfText, type ListRun } from './odf-common'
+import { collectOdfNotes, appendOdfList, loadOdfContent, odfText, type ListRun } from './odf-common'
 import type { HubDocument, SourceInput } from '../types'
 
 /**
@@ -65,38 +65,43 @@ export function renderOdfTable(tableXml: string): string | null {
  */
 export async function readOdt(src: SourceInput): Promise<HubDocument> {
   const xml = await loadOdfContent(src.bytes, 'text document')
-  const body = /<office:text\b[^>]*>([\s\S]*)<\/office:text>/.exec(xml)?.[1] ?? xml
-  const parts: string[] = []
   let title: string | undefined
+  const html = collectOdfNotes(() => {
+    const body = /<office:text\b[^>]*>([\s\S]*)<\/office:text>/.exec(xml)?.[1] ?? xml
+    const parts: string[] = []
 
-  // Walk headings, paragraphs, lists and tables in document order. Tables and
-  // lists are matched here so their inner paragraphs are consumed with them —
-  // otherwise the same scan sweeps them up as loose top-level paragraphs. The
-  // scan must honour nesting: a lazy regex closes an outer <text:list> on its
-  // first nested </text:list>.
-  let lastList: ListRun = null
-  for (const block of scanElements(body, ['text:h', 'text:p', 'text:list', 'table:table'])) {
-    if (block.name === 'table:table') {
+    // Walk headings, paragraphs, lists and tables in document order. Tables and
+    // lists are matched here so their inner paragraphs are consumed with them —
+    // otherwise the same scan sweeps them up as loose top-level paragraphs. The
+    // scan must honour nesting: a lazy regex closes an outer <text:list> on its
+    // first nested </text:list>.
+    let lastList: ListRun = null
+    for (const block of scanElements(body, ['text:h', 'text:p', 'text:list', 'table:table'])) {
+      if (block.name === 'table:table') {
+        lastList = null
+        const table = renderOdfTable(block.inner)
+        if (table) parts.push(table)
+        continue
+      }
+      if (block.name === 'text:list') {
+        lastList = appendOdfList(parts, block.xml, block.inner, lastList)
+        continue
+      }
       lastList = null
-      const table = renderOdfTable(block.inner)
-      if (table) parts.push(table)
-      continue
+      const text = odfText(block.inner)
+      if (text === '') continue
+      if (block.name === 'text:h') {
+        const level = Math.min(6, Math.max(1, Number(/<text:h\b[^>]*\boutline-level="(\d+)"/.exec(block.xml)?.[1] ?? 1)))
+        title ??= text
+        parts.push(`<h${level}>${escapeHtml(text)}</h${level}>`)
+      } else {
+        parts.push(`<p>${escapeHtml(text)}</p>`)
+      }
     }
-    if (block.name === 'text:list') {
-      lastList = appendOdfList(parts, block.xml, block.inner, lastList)
-      continue
-    }
-    lastList = null
-    const text = odfText(block.inner)
-    if (text === '') continue
-    if (block.name === 'text:h') {
-      const level = Math.min(6, Math.max(1, Number(/<text:h\b[^>]*\boutline-level="(\d+)"/.exec(block.xml)?.[1] ?? 1)))
-      title ??= text
-      parts.push(`<h${level}>${escapeHtml(text)}</h${level}>`)
-    } else {
-      parts.push(`<p>${escapeHtml(text)}</p>`)
-    }
-  }
 
-  return { html: parts.join('\n'), title: title ?? src.filename?.split(/[\\/]/).pop() }
+    return parts.join('\n')
+  })
+  // A heading's note mark is a reference in the body, not part of the title.
+  title = title?.replace(/zOdFnOtE\d+Zz/g, '').trim() || undefined
+  return { html, title: title ?? src.filename?.split(/[\\/]/).pop() }
 }

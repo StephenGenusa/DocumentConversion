@@ -1,4 +1,5 @@
 import hljs from 'highlight.js/lib/common'
+import { footnotesForOutput } from './footnotes'
 import dockerfile from 'highlight.js/lib/languages/dockerfile'
 import powershell from 'highlight.js/lib/languages/powershell'
 import type { HubDocument, TargetFormat } from './types'
@@ -184,6 +185,10 @@ const BASE_CSS = `
     break-inside: avoid;
   }
   ul, ol { margin: 0 0 1em 1.4em; }
+  sup.fnref a { text-decoration: none; }
+  .footnotes { margin-top: 2.5em; border-top: 1px solid #ddd; font-size: .92em; }
+  .footnotes h2 { font-size: 1.1em; }
+  a.fnback { text-decoration: none; }
 `
 
 /**
@@ -221,6 +226,8 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
   if (/class="nb-|alt="output image"/.test(body)) css += NB_CSS + notebookPromptCss(body) + '\n'
   if (opts?.target === 'pdf' && body.includes('<hr')) css += PDF_PRINT_CSS
   if (opts?.target === 'pdf' || opts?.target === 'html') {
+    // Linked notes: the anchors are made here, from labels the hub owns.
+    body = footnotesForOutput(body, 'links')
     const highlighted = highlightCodeBlocks(body)
     if (highlighted.any) {
       body = highlighted.html

@@ -24,7 +24,7 @@ export function createWriters(render: RenderHtmlToPdf): Record<TargetFormat, Wri
     txt: single(writeTxt),
     md: single(writeMarkdown),
     html: single(writeHtml),
-    epub: single(writeEpub),
+    epub: single((doc) => writeEpub(doc)),
     revealjs: single(writeRevealJs),
     azw3: single(writeAzw3),
     azw4: single(createAzw4Writer(render)),

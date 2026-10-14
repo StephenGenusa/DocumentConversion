@@ -180,6 +180,31 @@ function restoreGithubSyntax(markdown: string): string {
   return lines.join('\n')
 }
 
+/**
+ * Footnotes back to `[^label]`: the reference where it stood, the definitions
+ * at the end. A note of several paragraphs indents the rest by four spaces,
+ * as Markdown requires. Labels are already safe for this (FOOTNOTE_LABEL).
+ */
+td.addRule('footnoteRef', {
+  filter: (node) => node.nodeName === 'SUP' && !!node.getAttribute('data-fn'),
+  replacement: (_content, node) => `[^${(node as HTMLElement).getAttribute('data-fn')}]`,
+})
+const isNotesList = (node: HTMLElement): boolean => {
+  if (node.nodeName !== 'OL') return false
+  const items = Array.from(node.children)
+  return items.length > 0 && items.every((c) => c.nodeName === 'LI' && !!c.getAttribute('data-fn'))
+}
+td.addRule('footnoteList', {
+  filter: (node) => isNotesList(node),
+  replacement: (_content, node) => {
+    const defs = Array.from((node as HTMLElement).children).map((li) => {
+      const [first, ...rest] = td.turndown((li as HTMLElement).innerHTML).split('\n')
+      return [`[^${li.getAttribute('data-fn')}]: ${first}`, ...rest.map((l) => (l === '' ? '' : `    ${l}`))].join('\n')
+    })
+    return `\n\n${defs.join('\n\n')}\n\n`
+  },
+})
+
 export async function writeMarkdown(doc: HubDocument): Promise<Buffer> {
   // Strip any stray sentinel from the source so it cannot be mistaken for one
   // of ours. It is a private-use codepoint, so this never touches real content.

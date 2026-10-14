@@ -23,7 +23,7 @@ import {
  * editor schema is required to model all of them, and anything outside it would
  * be a control that silently loses its effect on the way out. So the toolbar
  * covers headings, both list kinds, blockquote, inline code and code blocks,
- * links, tables, rules and the seven inline marks — and nothing else.
+ * links, tables, rules, footnotes and the seven inline marks — and nothing else.
  *
  * Headings stop at 3 for authoring. h4–h6 are in the hub and round-trip
  * untouched when they arrive in pasted content; they are simply not worth five
@@ -201,6 +201,8 @@ export function EditorToolbar({ editor }: { editor: Editor | null }): React.JSX.
         chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
       ),
       icon('Horizontal rule', <IconRule />, false, () => chain().setHorizontalRule().run()),
+      // A reference at the cursor and its note at the end, with the cursor in the note.
+      icon('Insert footnote', <span className="tb-fn">fn</span>, false, () => chain().insertFootnote().run()),
     ],
     [
       { ...icon('Undo', <IconUndo />, false, () => chain().undo().run()), off: !state.canUndo },

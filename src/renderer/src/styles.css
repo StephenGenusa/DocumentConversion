@@ -158,3 +158,9 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .ocr-lang select { border: 1px solid #d4d4d8; border-radius: 8px; background: #fff; font: inherit; font-size: .85rem; padding: .25rem .4rem; }
 .ocr-lang__status { color: #71717a; font-size: .8rem; }
 .ocr-lang__notice { flex-basis: 100%; color: #b45309; background: #fef3c7; border-radius: 8px; padding: .3rem .6rem; font-size: .8rem; }
+.tb-fn { font-size: .75rem; font-style: italic; letter-spacing: .02em; }
+/* Footnotes in the editor: the notes list (an <ol> whose items carry labels)
+   sits under a "Notes" divider, as the outputs show it. */
+.clip-pane__editor ol:has(> li[data-fn]) { border-top: 1px solid #e4e4e7; margin-top: 1.5rem; padding-top: .4rem; font-size: .92em; }
+.clip-pane__editor ol:has(> li[data-fn])::before { content: 'Notes'; display: block; margin: 0 0 .3rem -1.4em; font-weight: 600; font-size: .85rem; color: #71717a; }
+.clip-pane__editor sup[data-fn] { color: #4f46e5; cursor: default; }

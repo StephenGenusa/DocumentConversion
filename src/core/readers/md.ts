@@ -2,6 +2,8 @@ import MarkdownIt from 'markdown-it'
 import type StateInline from 'markdown-it/lib/rules_inline/state_inline.mjs'
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs'
 import { full as emoji } from 'markdown-it-emoji'
+import footnote from 'markdown-it-footnote'
+import { safeLabel } from '../footnotes'
 import { parseHTML } from 'linkedom'
 import { sanitizeToHub } from '../allowlist'
 import { notesToHub } from '../speaker-notes'
@@ -93,6 +95,55 @@ md.core.ruler.after('text_join', 'task_lists', (state: StateCore) => {
     if (box) first.content = `${box[1] === ' ' ? '☐' : '☑'} ${first.content.slice(box[0].length)}`
   }
 })
+
+/*
+ * Footnotes, in the hub's model (src/core/footnotes.ts): `[^smith2020]` keeps
+ * its label so Markdown written back out says `[^smith2020]` again. Without
+ * the plugin, markdown-it read `[^1]: text` as a LINK DEFINITION and the
+ * note's text was gone.
+ */
+md.use(footnote)
+
+interface FootnoteEnv {
+  footnotes?: { refs?: Record<string, number>; list?: { label?: string; count: number }[] }
+  hubLabels?: Map<number, string>
+  hubTaken?: Set<string>
+}
+
+// The plugin builds its notes list from REFERENCES, so a definition nothing
+// points at was dropped with no trace. Register those last, in the order they
+// were written, before the plugin assembles the list.
+md.core.ruler.before('footnote_tail', 'footnote_keep_unreferenced', (state: StateCore) => {
+  const fn = (state.env as FootnoteEnv).footnotes
+  if (!fn?.refs) return
+  fn.list ??= []
+  for (const key of Object.keys(fn.refs)) {
+    if (fn.refs[key] !== -1) continue
+    fn.refs[key] = fn.list.length
+    fn.list.push({ label: key.slice(1), count: 0 })
+  }
+})
+
+/** The hub label for note `id`: the author's, made safe; an inline ^[…] note gets one. */
+function hubLabel(env: FootnoteEnv, id: number): string {
+  env.hubLabels ??= new Map()
+  env.hubTaken ??= new Set()
+  let label = env.hubLabels.get(id)
+  if (label === undefined) {
+    label = safeLabel(env.footnotes?.list?.[id]?.label ?? `note-${id + 1}`, env.hubTaken)
+    env.hubLabels.set(id, label)
+  }
+  return label
+}
+
+md.renderer.rules.footnote_ref = (tokens, idx, _o, env) =>
+  `<sup data-fn="${hubLabel(env, tokens[idx].meta.id)}">${tokens[idx].meta.id + 1}</sup>`
+md.renderer.rules.footnote_block_open = () => '<ol>\n'
+md.renderer.rules.footnote_block_close = () => '</ol>\n'
+md.renderer.rules.footnote_open = (tokens, idx, _o, env) => `<li data-fn="${hubLabel(env, tokens[idx].meta.id)}">`
+md.renderer.rules.footnote_close = () => '</li>\n'
+// The plugin's ↩ back-link: writers make their own, where the format links.
+md.renderer.rules.footnote_anchor = () => ''
 
 const ALERT = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\n|$)/i
 
@@ -307,7 +358,7 @@ export interface MarkdownOptions {
 export async function readMarkdown(src: SourceInput, _ctx?: unknown, opts: MarkdownOptions = {}): Promise<HubDocument> {
   const text = src.bytes.toString('utf8').replace(/^\uFEFF/, '')
   const { body, title } = opts.frontMatter === false ? { body: text } : stripFrontMatter(text)
-  const html = stripUnresolvableImageSrc(md.render(body))
+  const html = stripUnresolvableImageSrc(md.render(body, {}))
   // Notes are lifted BEFORE sanitising: the sanitiser drops comments, so a
   // `<!-- notes: ... -->` left until after it would simply be gone.
   return { html: escapeQuotesInText(sanitizeToHub(notesToHub(html))), ...(title ? { title } : {}) }

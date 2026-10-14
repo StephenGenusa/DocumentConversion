@@ -1,5 +1,6 @@
 import { compile } from 'html-to-text'
 import type { HubDocument } from '../types'
+import { footnotesForOutput } from '../footnotes'
 
 interface ImgElement {
   attribs?: Record<string, string>
@@ -45,5 +46,5 @@ const toText = compile({
 })
 
 export async function writeTxt(doc: HubDocument): Promise<Buffer> {
-  return Buffer.from(toText(doc.html), 'utf8')
+  return Buffer.from(toText(footnotesForOutput(doc.html, 'text')), 'utf8')
 }

@@ -2,12 +2,30 @@ import { ConversionError } from '../errors'
 import { resolveExport } from '../interop'
 import { escapeHtml } from '../shell'
 import type { HubDocument, SourceInput } from '../types'
+import { safeLabel } from '../footnotes'
 
 interface RstNode {
   type: string
   value?: string
   depth?: number
   children?: RstNode[]
+}
+
+/**
+ * Footnotes collected while rendering (see rstNotesToHub). Set only for the
+ * duration of one synchronous render() call in readRst.
+ */
+interface RstNotes {
+  refs: string[]
+  defs: { raw: string; text: string }[]
+}
+let rstNotes: RstNotes | null = null
+const REF_MARK = (i: number): string => `\uE060${i}\uE061`
+/** `.. [1] text`, `.. [#] text`, `.. [#name] text`, `.. [*] text`: restructured parses these as comments. */
+const NOTE_DEF = /^\[(#[\w-]*|\d+|\*)\]\s+([\s\S]*)$/
+
+function rawText(node: RstNode): string {
+  return (node.value ?? '') + (node.children ?? []).map(rawText).join(' ')
 }
 
 /** Render the restructured AST; unknown node types fall through to their children. */
@@ -33,6 +51,16 @@ function render(node: RstNode, depth = 0): string {
       return `<em>${kids()}</em>`
     case 'literal':
       return `<code>${kids()}</code>`
+    case 'footnote_reference':
+      if (!rstNotes) return kids()
+      rstNotes.refs.push(rawText(node).trim())
+      return REF_MARK(rstNotes.refs.length - 1)
+    case 'comment': {
+      const def = rstNotes ? NOTE_DEF.exec(rawText(node).replace(/\s+/g, ' ').trim()) : null
+      if (!def || !rstNotes) return kids()
+      rstNotes.defs.push({ raw: def[1], text: def[2] })
+      return ''
+    }
     case 'literal_block':
       return `<pre><code>${escapeHtml(node.value ?? '')}${kids()}</code></pre>`
     case 'bullet_list':
@@ -751,7 +779,16 @@ export async function readRst(src: SourceInput): Promise<HubDocument> {
   // document once per table made a document with many tables quadratic in the
   // number of tables on top of its size. It also means a cell whose own text
   // spells a marker is left alone, because a replacement is never rescanned.
-  const html = render(tree)
+  rstNotes = { refs: [], defs: [] }
+  let rendered: string
+  let notes: RstNotes
+  try {
+    rendered = render(tree)
+  } finally {
+    notes = rstNotes
+    rstNotes = null
+  }
+  const html = rstNotesToHub(rendered, notes)
     .replace(/<p><\/p>/g, '')
     .replace(TABLE_TOKEN, (m, inParagraph: string | undefined, bare: string | undefined) => {
       const table = lifted.tables[Number(inParagraph ?? bare)]
@@ -760,3 +797,37 @@ export async function readRst(src: SourceInput): Promise<HubDocument> {
   const title = /<h1>([^<]*)<\/h1>/.exec(html)?.[1]?.trim()
   return { html, title: title || src.filename?.split(/[\\/]/).pop() }
 }
+
+/**
+ * reStructuredText footnotes in the hub's model (src/core/footnotes.ts).
+ *
+ * restructured 0.0.11 parses a reference `[1]_` as a footnote_reference but a
+ * definition `.. [1] text` as a COMMENT, which rendered as loose text. Labels
+ * are paired the way docutils pairs them: `[1]` and `[#name]` by name, the
+ * anonymous auto-numbered `[#]` and the symbol `[*]` in order of appearance.
+ */
+function rstNotesToHub(html: string, notes: RstNotes): string {
+  if (notes.refs.length === 0 && notes.defs.length === 0) return html
+  const taken = new Set<string>()
+  const keyed = (raws: string[]): string[] => {
+    const seen: Record<string, number> = { '#': 0, '*': 0 }
+    return raws.map((raw) => (raw === '#' || raw === '*' ? `${raw}${++seen[raw]}` : raw))
+  }
+  const labels = new Map<string, string>()
+  const labelFor = (key: string): string => {
+    let label = labels.get(key)
+    if (!label) {
+      const base = key.startsWith('#') && key.length > 1 && !/^#\d+$/.test(key) ? key.slice(1) : key.startsWith('#') ? `auto-${key.slice(1)}` : key.startsWith('*') ? `symbol-${key.slice(1)}` : key
+      label = safeLabel(base, taken)
+      labels.set(key, label)
+    }
+    return label
+  }
+  const refKeys = keyed(notes.refs)
+  const defKeys = keyed(notes.defs.map((d) => d.raw))
+  const body = html.replace(/\uE060(\d+)\uE061/g, (_m, i: string) => `<sup data-fn="${labelFor(refKeys[Number(i)])}">${Number(i) + 1}</sup>`)
+  if (notes.defs.length === 0) return body
+  const items = notes.defs.map((d, i) => `<li data-fn="${labelFor(defKeys[i])}"><p>${escapeHtml(d.text)}</p></li>`)
+  return `${body}<ol>${items.join('')}</ol>`
+}
+

@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { footnotesForOutput } from '../footnotes'
 import { createHash, randomUUID } from 'node:crypto'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode } from 'domhandler'
@@ -185,7 +186,7 @@ function toXhtml(nodes: AnyNode[]): string {
 
 function chapterDocument(title: string, body: string): string {
   return `<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="${NS}" xml:lang="en">
+<html xmlns="${NS}" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
 <head><meta charset="utf-8"/><title>${escapeHtml(title)}</title>
 <link rel="stylesheet" type="text/css" href="style.css"/></head>
 <body>
@@ -264,17 +265,55 @@ ${spine}
 </package>`
 }
 
-export async function writeEpub(doc: HubDocument): Promise<Buffer> {
-  const dom = parseDocument(doc.html)
+/**
+ * Point every in-book link at the chapter file that holds its target.
+ *
+ * The only in-book links are the writer's own footnote anchors (the hub has
+ * none), and a reference and its note are routinely in different chapters
+ * once the book is split, so a bare `#fn-x` would look in the wrong file.
+ */
+function linkAcrossChapters(parts: { file: string; nodes: AnyNode[] }[]): void {
+  const fileOf = new Map<string, string>()
+  const walk = (nodes: AnyNode[], visit: (el: Element) => void): void => {
+    for (const n of nodes) {
+      if (!(n instanceof Element)) continue
+      visit(n)
+      walk(n.children as AnyNode[], visit)
+    }
+  }
+  for (const p of parts) walk(p.nodes, (el) => el.attribs.id && fileOf.set(el.attribs.id, p.file))
+  for (const p of parts) {
+    walk(p.nodes, (el) => {
+      const href = el.name === 'a' ? el.attribs.href : undefined
+      if (!href?.startsWith('#')) return
+      const file = fileOf.get(href.slice(1))
+      if (file && file !== p.file) el.attribs.href = `${file}${href}`
+    })
+  }
+}
+
+export interface EpubOptions {
+  /**
+   * How footnotes are written. EPUB readers pop up `noteref` links; the AZW3
+   * writer, which repackages this EPUB, resolves no links between chapter
+   * files, so it asks for plain numbers instead.
+   */
+  notes?: 'epub' | 'plain'
+}
+
+export async function writeEpub(doc: HubDocument, opts: EpubOptions = {}): Promise<Buffer> {
+  const dom = parseDocument(footnotesForOutput(doc.html, opts.notes ?? 'epub'))
   const nodes = unwrapContainers(dom.children as AnyNode[])
   const images = extractImages(nodes)
   const chapters = splitChapters(nodes)
-  const parts = (chapters.length > 0 ? chapters : [{ title: 'Document', nodes }]).map((c, i) => ({
+  const split = (chapters.length > 0 ? chapters : [{ title: 'Document', nodes }]).map((c, i) => ({
     id: `ch${i + 1}`,
     file: `ch${String(i + 1).padStart(3, '0')}.xhtml`,
     title: c.title,
-    body: toXhtml(c.nodes),
+    nodes: c.nodes,
   }))
+  linkAcrossChapters(split)
+  const parts = split.map(({ nodes: chapterNodes, ...p }) => ({ ...p, body: toXhtml(chapterNodes) }))
 
   const uid = randomUUID()
   const title = doc.title?.trim() || 'Document'

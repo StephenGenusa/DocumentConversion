@@ -1,4 +1,5 @@
 import { splitSlides, type SplitOn } from '../slides'
+import { footnotesForOutput } from '../footnotes'
 import { escapeHtml } from '../shell'
 import { REVEAL_CSS, REVEAL_JS, REVEAL_NOTES_PLUGIN, REVEAL_VERSION } from '../assets/reveal.generated'
 import type { ConvertOptions, HubDocument } from '../types'
@@ -26,7 +27,8 @@ function notesMarkup(notes: string[]): string {
 }
 
 export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
-  const slides = splitSlides(doc.html, { splitOn: (opts?.slides?.splitOn as SplitOn) ?? 'auto' })
+  // A deck has no notes pane of its own; the notes are the last slide's text.
+  const slides = splitSlides(footnotesForOutput(doc.html, 'plain'), { splitOn: (opts?.slides?.splitOn as SplitOn) ?? 'auto' })
   const title = doc.title?.trim() || doc.sourceName?.trim() || 'Presentation'
 
   /*

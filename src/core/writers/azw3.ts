@@ -27,7 +27,7 @@ function chapterBody(xhtml: string): string {
 }
 
 export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
-  const epub = await writeEpub(doc)
+  const epub = await writeEpub(doc, { notes: 'plain' })
   const zip = await JSZip.loadAsync(epub)
 
   const chapterFiles = Object.keys(zip.files)
