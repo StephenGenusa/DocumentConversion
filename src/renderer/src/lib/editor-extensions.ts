@@ -1,6 +1,8 @@
 import StarterKit from '@tiptap/starter-kit'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import Image from '@tiptap/extension-image'
+import Superscript from '@tiptap/extension-superscript'
+import Subscript from '@tiptap/extension-subscript'
 import { Node } from '@tiptap/core'
 import type { Extensions } from '@tiptap/core'
 
@@ -38,5 +40,8 @@ export const EDITOR_EXTENSIONS: Extensions = [
   TableHeader,
   TableCell,
   Image.configure({ allowBase64: true }),
+  // sup and sub are in HUB_TAGS; StarterKit models neither.
+  Superscript,
+  Subscript,
   SpeakerNotes,
 ]

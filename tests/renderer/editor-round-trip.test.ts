@@ -31,6 +31,12 @@ describe('the editor round-trips what the hub allows', () => {
     expect(out).toContain('after')
   })
 
+  it('keeps superscript and subscript as themselves, not as plain text', () => {
+    // The generic check below only asks that SOME tag survives, and <p>
+    // would pass it after a <sup> had been dropped.
+    expect(roundTrip('<p>x<sup>2</sup> H<sub>2</sub>O</p>')).toBe('<p>x<sup>2</sup> H<sub>2</sub>O</p>')
+  })
+
   it.each(
     HUB_TAGS.filter((t) => !['span', 'div', 'br', 'thead', 'tbody', 'tr', 'td', 'th', 'li'].includes(t)),
   )('models %s, so the editor cannot silently drop it', (tag) => {

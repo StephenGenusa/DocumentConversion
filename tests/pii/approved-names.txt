@@ -17,6 +17,7 @@ Paris, France
 Quill, Marta
 Roboto, Helvetica
 Sorrel, Devi
+Superscript, Subscript
 Surname, Given
 Teams, Word
 Thanks, Iris

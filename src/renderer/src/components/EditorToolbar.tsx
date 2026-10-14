@@ -23,7 +23,7 @@ import {
  * editor schema is required to model all of them, and anything outside it would
  * be a control that silently loses its effect on the way out. So the toolbar
  * covers headings, both list kinds, blockquote, inline code and code blocks,
- * links, tables, rules and the five inline marks — and nothing else.
+ * links, tables, rules and the seven inline marks — and nothing else.
  *
  * Headings stop at 3 for authoring. h4–h6 are in the hub and round-trip
  * untouched when they arrive in pasted content; they are simply not worth five
@@ -73,6 +73,8 @@ export function EditorToolbar({ editor }: { editor: Editor | null }): React.JSX.
       italic: !!e?.isActive('italic'),
       underline: !!e?.isActive('underline'),
       strike: !!e?.isActive('strike'),
+      superscript: !!e?.isActive('superscript'),
+      subscript: !!e?.isActive('subscript'),
       code: !!e?.isActive('code'),
       bulletList: !!e?.isActive('bulletList'),
       orderedList: !!e?.isActive('orderedList'),
@@ -174,6 +176,13 @@ export function EditorToolbar({ editor }: { editor: Editor | null }): React.JSX.
       ),
       mark('Strikethrough', <span className="tb-s">S</span>, state.strike, () =>
         chain().toggleStrike().run(),
+      ),
+      // One or the other: raising subscript text makes it superscript, not both.
+      mark('Superscript', <span className="tb-sup">x<sup>2</sup></span>, state.superscript, () =>
+        chain().unsetSubscript().toggleSuperscript().run(),
+      ),
+      mark('Subscript', <span className="tb-sub">x<sub>2</sub></span>, state.subscript, () =>
+        chain().unsetSuperscript().toggleSubscript().run(),
       ),
       icon('Inline code', <IconCode />, state.code, () => chain().toggleCode().run()),
     ],

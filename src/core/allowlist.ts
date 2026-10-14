@@ -35,6 +35,11 @@ export const HUB_TAGS = [
   'u',
   's',
   'br',
+  // Content, not presentation: x² is not x2, H₂O is not H2O, and a footnote
+  // reference run into its word reads as a typo. Without these the sanitiser
+  // kept the text and dropped the meaning, for every reader that sanitises.
+  'sup',
+  'sub',
   'span',
   'div',
   // Speaker notes. Without this the sanitiser stripped the tag and kept its

@@ -1,7 +1,10 @@
-// @ts-ignore -- @iarna/rtf-to-html ships no types; resolution differs between tsconfigs
-import rtfToHTML from '@iarna/rtf-to-html'
+// @ts-ignore -- rtf-parser ships no types; resolution differs between tsconfigs
+import parseRtf from 'rtf-parser'
 // @ts-ignore -- rtf-parser ships no types; see keepGroupStyles below.
 import RTFGroup from 'rtf-parser/rtf-group.js'
+// @ts-ignore -- @iarna/rtf-to-html ships no types. Its renderer is imported on
+// its own so the parsed document can be mended first (see markSubscripts).
+import renderRtfDocument from '@iarna/rtf-to-html/rtf-to-html.js'
 import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import type { HubDocument, SourceInput } from '../types'
@@ -207,6 +210,8 @@ interface Run {
   b: boolean
   i: boolean
   u: boolean
+  /** \super / \sub; absent is the baseline. */
+  va?: 'super' | 'sub'
   /** A hard break inside a cell (\par or \line). */
   br?: boolean
   /**
@@ -287,6 +292,7 @@ interface CharState {
   b: boolean
   i: boolean
   u: boolean
+  va?: 'super' | 'sub'
   hidden: boolean
   /** \ucN — how many fallback characters follow a \uN escape. */
   uc: number
@@ -426,6 +432,8 @@ function renderRuns(runs: Run[]): string {
     // Tabs and newlines inside a cell are layout, not content.
     let text = escapeHtml(run.text.replace(/[\t\r\n]+/g, ' '))
     if (text === '') continue
+    if (run.va === 'super') text = `<sup>${text}</sup>`
+    if (run.va === 'sub') text = `<sub>${text}</sub>`
     if (run.u) text = `<u>${text}</u>`
     if (run.i) text = `<em>${text}</em>`
     if (run.b) text = `<strong>${text}</strong>`
@@ -737,12 +745,13 @@ export function extractTables(rtf: string): { rtf: string; tables: string[] } {
       last.html === undefined &&
       last.b === state.b &&
       last.i === state.i &&
-      last.u === state.u
+      last.u === state.u &&
+      last.va === state.va
     ) {
       last.text += text
       return
     }
-    runs.push({ text, b: state.b, i: state.i, u: state.u })
+    runs.push({ text, b: state.b, i: state.i, u: state.u, ...(state.va ? { va: state.va } : {}) })
   }
 
   const pushBreak = (): void => {
@@ -969,6 +978,13 @@ export function extractTables(rtf: string): { rtf: string; tables: string[] } {
           case 'ulnone':
             state.u = false
             continue
+          case 'super':
+          case 'sub':
+            state.va = cw
+            continue
+          case 'nosupersub':
+            state.va = undefined
+            continue
           case 'v':
             state.hidden = param !== 0
             continue
@@ -976,6 +992,7 @@ export function extractTables(rtf: string): { rtf: string; tables: string[] } {
             state.b = false
             state.i = false
             state.u = false
+            state.va = undefined
             state.hidden = false
             continue
           case 'pard':
@@ -1227,11 +1244,63 @@ function promoteHeadings(html: string): string {
   )
 }
 
+/** Private-use marks around subscript text, through @iarna/rtf-to-html and back. */
+const SUB_OPEN = '\uE020'
+const SUB_CLOSE = '\uE021'
+
+interface RtfNode {
+  value?: unknown
+  style?: { valign?: string }
+  content?: RtfNode[]
+}
+
+/**
+ * Subscript, mended on its way through @iarna/rtf-to-html.
+ *
+ * rtf-parser reads \sub correctly (valign 'sub'), but rtf-to-html 1.1.0's
+ * renderer writes <sup> for it as well as for \super, so H₂O came out H²O.
+ * That went unseen while the hub dropped both tags. So each subscript run's
+ * text is wrapped in private-use marks and its valign cleared before
+ * rendering, and the marks become <sub> afterwards; superscript is left to
+ * the library, which gets that one right.
+ *
+ * A paragraph whose spans are all subscript carries valign 'sub' too (the
+ * parser lifts shared span styles onto it), and spans in one group can share
+ * a single style object. So every subscript node is found FIRST and changed
+ * after; clearing as the walk goes would hide the spans that come next.
+ */
+function markSubscripts(doc: RtfNode): RtfNode {
+  const subs: RtfNode[] = []
+  const walk = (node: RtfNode): void => {
+    if (node.style?.valign === 'sub') subs.push(node)
+    for (const child of node.content ?? []) walk(child)
+  }
+  walk(doc)
+  for (const node of subs) {
+    if (typeof node.value === 'string') node.value = SUB_OPEN + node.value + SUB_CLOSE
+  }
+  for (const node of subs) node.style = { ...node.style, valign: 'normal' }
+  return doc
+}
+
+function unmarkSubscripts(html: string): string {
+  return html
+    .split(SUB_CLOSE + SUB_OPEN)
+    .join('')
+    .replace(new RegExp(`${SUB_OPEN}([\\s\\S]*?)${SUB_CLOSE}`, 'g'), '<sub>$1</sub>')
+    .replace(new RegExp(`[${SUB_OPEN}${SUB_CLOSE}]`, 'g'), '')
+}
+
 function convert(rtf: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    rtfToHTML.fromString(rtf, (err: Error | null, html: string) =>
-      err ? reject(err) : resolve(html),
-    )
+    parseRtf.string(rtf, (err: Error | null, doc: RtfNode) => {
+      if (err) return reject(err)
+      try {
+        resolve(unmarkSubscripts(renderRtfDocument(markSubscripts(doc))))
+      } catch (e) {
+        reject(e)
+      }
+    })
   })
 }
 

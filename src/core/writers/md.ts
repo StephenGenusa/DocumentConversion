@@ -10,6 +10,8 @@ import type { HubDocument } from '../types'
 
 const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 td.use([tables, strikethrough])
+// No Markdown syntax for these; GitHub and most renderers accept the HTML.
+td.keep(['sup', 'sub'])
 
 /**
  * Unicode private-use area: never appears in real content, ignored by turndown.
