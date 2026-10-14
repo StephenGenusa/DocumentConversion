@@ -30,7 +30,10 @@ const work = mkdtempSync(join(tmpdir(), 'docconv-ui-'))
 const profile = mkdtempSync(join(tmpdir(), 'docconv-ui-profile-'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-const appArgs = [ROOT, `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`]
+const MAIN_INSPECT_PORT = 9456
+// --inspect opens the MAIN process to the Node inspector: window titles live
+// there, not in any page the DevTools protocol can see.
+const appArgs = [`--inspect=${MAIN_INSPECT_PORT}`, ROOT, `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`]
 const headless = process.platform === 'linux' && spawnSync('which', ['xvfb-run']).status === 0
 // Its own process group: xvfb-run is a shell script, and signalling only it
 // leaves Electron and the X server behind.
@@ -119,6 +122,48 @@ async function waitFor(expression, what) {
   throw new Error(`never happened: ${what}`)
 }
 
+/** A one-off DevTools-protocol session on any target (a page, or the main process). */
+async function session(wsUrl) {
+  const sock = new WebSocket(wsUrl)
+  await new Promise((r, j) => {
+    sock.onopen = r
+    sock.onerror = j
+  })
+  let n = 0
+  const waiting = new Map()
+  sock.onmessage = (m) => {
+    const d = JSON.parse(m.data)
+    if (d.id && waiting.has(d.id)) {
+      waiting.get(d.id)(d)
+      waiting.delete(d.id)
+    }
+  }
+  return {
+    send: (method, params = {}) =>
+      new Promise((r) => {
+        const id = ++n
+        waiting.set(id, r)
+        sock.send(JSON.stringify({ id, method, params }))
+      }),
+    close: () => sock.close(),
+  }
+}
+
+/** Evaluate in the Electron main process. */
+async function mainEval(expression) {
+  const targets = await (await fetch(`http://127.0.0.1:${MAIN_INSPECT_PORT}/json/list`)).json()
+  const s = await session(targets[0].webSocketDebuggerUrl)
+  try {
+    const res = await s.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
+    if (res.result?.exceptionDetails) throw new Error(JSON.stringify(res.result.exceptionDetails).slice(0, 300))
+    return res.result?.result?.value
+  } finally {
+    s.close()
+  }
+}
+const windowTitles = () =>
+  mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().map((w) => w.getTitle())`)
+
 /* --------------------------------- UI helpers --------------------------------- */
 
 const EDITOR = `document.querySelector('.clip-pane__editor .ProseMirror')`
@@ -184,6 +229,47 @@ function check(name, ok, detail) {
 
 try {
   await waitFor(`!!document.querySelector('.dropzone')`, 'the app to load')
+
+  // The window title carries the version; the page's own <title> must not replace it.
+  const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
+  let titles = await windowTitles()
+  check('the window title shows the version', titles.includes(`Document Converter ${version}`), JSON.stringify(titles))
+
+  // About opens from the start screen, in its own window, with Chromium's 20 MB of notices collapsed.
+  const opened = Date.now()
+  await click('About and licences')
+  let about
+  for (let i = 0; i < 100 && !about; i++) {
+    await sleep(100)
+    about = (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find((t) => t.type === 'page' && t.title.startsWith('About '))
+  }
+  check('About opens in its own window', about?.title === `About Document Converter ${version}`, JSON.stringify(about?.title))
+  if (about) {
+    console.log(`note  About window appeared after ${Date.now() - opened} ms`)
+    // JavaScript is off in that window, so ask the DOM domain, not Runtime.
+    const s = await session(about.webSocketDebuggerUrl)
+    // The target is listed as soon as <title> is parsed, before the rest of
+    // the page; the Chromium section is last, so wait for it before asking.
+    let doc
+    const q = async (selector) => (await s.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector })).result?.nodeId ?? 0
+    let chromium = 0
+    for (let i = 0; i < 50 && !chromium; i++) {
+      doc = (await s.send('DOM.getDocument', { depth: 0 })).result
+      chromium = await q('details.chromium')
+      if (!chromium) await sleep(100)
+    }
+    console.log(`note  About page fully loaded after ${Date.now() - opened} ms`)
+    const openChromium = await q('details.chromium[open]')
+    const components = await q('details:not(.chromium)')
+    const navNode = await q('nav')
+    const nav = navNode ? (await s.send('DOM.getOuterHTML', { nodeId: navNode })).result?.outerHTML : ''
+    s.close()
+    check('About lists the third-party components', components > 0 && !/Third-party software \(0\)/.test(nav), nav)
+    check('the Chromium notices are there and start collapsed', chromium > 0 && openChromium === 0, { chromium, openChromium })
+    titles = await windowTitles()
+    check('the About window title shows the version too', titles.includes(`About Document Converter ${version}`), JSON.stringify(titles))
+    await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith('About '))?.close()`)
+  }
 
   // A file is read from disk at every conversion, not once when it is added.
   const live = join(work, 'live.md')

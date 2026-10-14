@@ -1,0 +1,13 @@
+{
+  "//": "Packages whose package.json does not state a usable SPDX licence. Each entry records what the licence actually is and where that was read. Remove an entry when the package goes; the build fails on an override that matches nothing.",
+  "packages": {
+    "indexof": {
+      "license": "MIT",
+      "note": "No licence field or file; its Readme.md states \"License: MIT\"."
+    },
+    "duck": {
+      "license": "BSD-2-Clause",
+      "note": "package.json says \"BSD\"; the LICENSE it ships is the BSD 2-Clause text."
+    }
+  }
+}

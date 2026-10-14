@@ -221,4 +221,6 @@ export interface Api {
   }): Promise<SaveResult>
   reveal(path: string): Promise<void>
   openPath(path: string): Promise<void>
+  /** Help → About: the version and every licence notice, in its own window. */
+  openAbout(): Promise<void>
 }

@@ -35,6 +35,9 @@ import { pastedHtmlToHub } from '../core/remote-images'
 import { loadUrl } from '../core/readers/url'
 import type { ReadContext } from '../core/types'
 import { urlFetchDeps } from './net'
+import { appTitle } from './app-identity'
+import { installAppMenu } from './menu'
+import { openAboutWindow } from './about-window'
 
 // CLI mode: `DocumentConverter convert ...` (packaged, argv[1]) or
 // `electron <app-path> convert ...` (dev, argv[2]).
@@ -83,6 +86,7 @@ function createWindow(): void {
     height: 640,
     minWidth: 560,
     minHeight: 480,
+    title: appTitle(),
     show: false,
     autoHideMenuBar: true,
     icon,
@@ -93,6 +97,9 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+
+  // The page's own <title> would replace the version-bearing one on load.
+  mainWindow.on('page-title-updated', (e) => e.preventDefault())
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -628,6 +635,8 @@ function registerIpc(): void {
     },
   )
 
+  ipcMain.handle('app:open-about', () => openAboutWindow())
+
   ipcMain.handle('app:reveal', async (_e, { path }: { path: string }) => {
     shell.showItemInFolder(path)
   })
@@ -652,6 +661,7 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.docconversion.app')
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
   registerIpc()
+  installAppMenu(() => void openAboutWindow())
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

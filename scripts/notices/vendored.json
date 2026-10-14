@@ -1,0 +1,18 @@
+{
+  "//": "Components that ship without being a production npm package or a bundled import. Each entry is reviewed by hand. `package` reads version and licence files from node_modules/<package>; `licenseFrom` names one file instead.",
+  "components": [
+    {
+      "name": "reveal.js",
+      "package": "reveal.js",
+      "license": "MIT",
+      "note": "Inlined into the app (src/core/assets/reveal.generated.ts) and into every slide deck it writes."
+    },
+    {
+      "name": "Tesseract OCR English trained data (eng.traineddata)",
+      "version": "4.0.0",
+      "license": "Apache-2.0",
+      "licenseFrom": "node_modules/tesseract.js-core/LICENSE",
+      "note": "Trained data from the Tesseract OCR project (github.com/tesseract-ocr/tessdata), distributed by tessdata.projectnaptha.com; shipped in resources/ocr. Language packs downloaded later are the same data set under the same licence."
+    }
+  ]
+}

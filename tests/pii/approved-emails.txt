@@ -10,6 +10,7 @@ editor@example.com
 hollis.tamm@example.net
 ilva.brandt@example.com
 iris.vellum@example.com
+jane@example.com
 juno.halloway@example.org
 lesson-notes-1@example.com
 lesson-notes-2@example.com

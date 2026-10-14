@@ -81,3 +81,6 @@ remaining_work.md
 tests/pii/domain-terms.ts
 tests/pii/domain-exceptions.txt
 resume.sh
+
+# Generated licence notices (scripts/build-notices.mjs), rebuilt by every build
+resources/notices/

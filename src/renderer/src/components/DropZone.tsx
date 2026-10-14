@@ -97,6 +97,15 @@ export function DropZone({
           </button>
         </form>
       )}
+      {/*
+        The menu bar is hidden until Alt on Windows and Linux, so Help → About
+        would go unfound without a way in from here.
+      */}
+      <p className="dropzone__about">
+        <button type="button" className="link-button" onClick={() => void window.api.openAbout()}>
+          About and licences
+        </button>
+      </p>
     </div>
   )
 }

@@ -109,6 +109,7 @@ const api = {
   },
   reveal: (path: string) => ipcRenderer.invoke('app:reveal', { path }),
   openPath: (path: string) => ipcRenderer.invoke('app:open-path', { path }),
+  openAbout: () => ipcRenderer.invoke('app:open-about'),
 }
 
 if (process.contextIsolated) {
