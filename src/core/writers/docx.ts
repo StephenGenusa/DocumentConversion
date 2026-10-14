@@ -1,8 +1,13 @@
 import HTMLtoDOCX from 'html-to-docx'
 import JSZip from 'jszip'
 import { createHash } from 'node:crypto'
+import { parseDocument } from 'htmlparser2'
+import { textContent } from 'domutils'
+import { Element, type AnyNode } from 'domhandler'
+import render from 'dom-serializer'
 import { renderDocumentShell } from '../shell'
 import { replaceImages } from '../inline-images'
+import { ownRows } from '../table-grid'
 import type { HubDocument } from '../types'
 
 /**
@@ -144,9 +149,187 @@ function unwrapSpans(html: string): string {
   return html.replace(/<\/?span\b[^>]*>/gi, '')
 }
 
+const BLOCK = new Set([
+  'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'table', 'thead', 'tbody',
+  'tfoot', 'tr', 'td', 'th', 'pre', 'blockquote', 'hr', 'div', 'aside',
+])
+
+const isElement = (node: AnyNode): node is Element => node instanceof Element
+const isBlock = (node: AnyNode): boolean => isElement(node) && BLOCK.has(node.name)
+const holdsBlock = (el: Element): boolean => el.children.some((c) => isElement(c) && (BLOCK.has(c.name) || holdsBlock(c)))
+const serialize = (nodes: AnyNode | AnyNode[]): string => render(nodes, { encodeEntities: 'utf8' })
+
+/** Inside a cell or list item: the containers html-to-docx loses content in. */
+function contained(el: Element): boolean {
+  for (let p = el.parent; p; p = p.parent) {
+    if (isElement(p) && (p.name === 'td' || p.name === 'th' || p.name === 'li')) return true
+  }
+  return false
+}
+
+/**
+ * The same nodes as a run of blocks: each stretch of inline content between
+ * blocks becomes its own paragraph, so text either side of a block cannot run
+ * together once its container is gone.
+ */
+function asBlocks(nodes: AnyNode[]): string {
+  let out = ''
+  let run: AnyNode[] = []
+  const flush = (): void => {
+    if (run.length && textContent(run).trim()) out += `<p>${serialize(run).trim()}</p>`
+    run = []
+  }
+  for (const node of nodes) {
+    if (isBlock(node)) {
+      flush()
+      out += serialize(node)
+    } else run.push(node)
+  }
+  flush()
+  return out
+}
+
+/**
+ * A table nested in a cell, as paragraphs. A row of plain cells is one
+ * paragraph with the cells separated by ` | `, the marker the .doc reader
+ * already uses for a cell boundary it cannot rebuild a grid from. A row whose
+ * cells hold blocks keeps those blocks, cell after cell, in order. Empty cells
+ * are dropped rather than leaving `a |  | b`.
+ */
+function flattenTable(table: Element): string {
+  return ownRows(table)
+    .map((row) => {
+      const cells = row.children.filter((c): c is Element => isElement(c) && (c.name === 'td' || c.name === 'th'))
+      if (cells.some(holdsBlock)) return cells.map((c) => asBlocks(c.children)).join('')
+      const parts = cells.filter((c) => textContent(c).trim()).map((c) => serialize(c.children).trim())
+      return parts.length ? `<p>${parts.join(' | ')}</p>` : ''
+    })
+    .join('')
+}
+
+/**
+ * Put `fresh` in place of `count` children of `parent` from `at`, relinking
+ * every sibling. Done by hand because domutils' replaceElement leaves the
+ * replacement's old sibling pointers in place, and appending after it then
+ * follows them into the fragment it came from, reordering the pieces.
+ */
+function splice(parent: { children: AnyNode[] }, at: number, count: number, fresh: AnyNode[]): void {
+  parent.children.splice(at, count, ...fresh)
+  parent.children.forEach((child, i) => {
+    child.parent = parent as Element
+    child.prev = parent.children[i - 1] ?? null
+    child.next = parent.children[i + 1] ?? null
+  })
+}
+
+function replaceWith(el: Element, fragment: string): void {
+  const parent = el.parent
+  if (!parent) return
+  splice(parent, parent.children.indexOf(el), 1, [...parseDocument(fragment).children])
+  el.parent = null
+}
+
+function elementsOf(nodes: AnyNode[], name: string, out: Element[] = []): Element[] {
+  for (const node of nodes) {
+    if (!isElement(node)) continue
+    if (node.name === name) out.push(node)
+    elementsOf(node.children, name, out)
+  }
+  return out
+}
+
+/** Blocks html-to-docx keeps after other content in a list item. */
+const KEPT_IN_ITEM = new Set(['ul', 'ol', 'pre', 'blockquote', 'table', 'hr', 'aside'])
+const HEADING = /^h[1-6]$/
+
+/**
+ * A list item's paragraphs as one run of inline text, a blank line apart.
+ *
+ * html-to-docx keeps only the FIRST paragraph-like piece of a list item: in
+ * `<li><p>one</p><p>two</p></li>`, "two" is never written, and the same goes
+ * for text followed by a <p>, <div> or heading. Inline text broken with <br>
+ * survives, and so do a nested list, code block or quote after a paragraph.
+ * So each stretch of paragraphs becomes inline content joined by two <br>
+ * (Word shows a blank line, the nearest thing to a paragraph break inside
+ * one item); a heading keeps its emphasis as <strong>. The blocks that
+ * survive are left where they are.
+ */
+function joinItemParagraphs(li: Element): string | null {
+  const pieces: string[][] = [[]]
+  let inline: AnyNode[] = []
+  const flushInline = (): void => {
+    if (inline.length && textContent(inline).trim()) pieces[pieces.length - 1].push(serialize(inline).trim())
+    inline = []
+  }
+  for (const node of li.children) {
+    if (!isElement(node) || !BLOCK.has(node.name)) {
+      inline.push(node)
+      continue
+    }
+    flushInline()
+    if (KEPT_IN_ITEM.has(node.name)) {
+      pieces.push([serialize(node)], [])
+      continue
+    }
+    const inner = serialize(node.children).trim()
+    if (inner) pieces[pieces.length - 1].push(HEADING.test(node.name) ? `<strong>${inner}</strong>` : inner)
+  }
+  flushInline()
+  // Nothing to join: the library already writes an item of one paragraph.
+  if (!pieces.some((run) => run.length > 1)) return null
+  return pieces
+    .map((run) => (run.length === 1 && /^<(ul|ol|pre|blockquote|table|hr|aside)\b/i.test(run[0]) ? run[0] : run.join('<br><br>')))
+    .join('')
+}
+
+/**
+ * html-to-docx writes NOTHING for some content inside table cells and list
+ * items, and nothing says so: the page around it arrives and it does not.
+ * Measured against html-to-docx 1.8.0:
+ *
+ *   <td><table>…</table></td>        a table nested in a cell (or th, or li)
+ *   <td><div><p>…</p></div></td>     a div holding blocks in a cell (or li)
+ *   <li><p>one</p><p>two</p></li>    every paragraph of an item after the first
+ *
+ * A div of inline text survives, as do a paragraph, list, quote or code block
+ * in a cell. One old-style page, laid out as a table with a navigation table
+ * in the sidebar and the article in a div beside it, came out with 49 of its
+ * ~1,700 characters: the menu and the footer, and none of the article.
+ *
+ * Word itself nests tables fine; the library does not. So a nested table is
+ * flattened into paragraphs, a block-holding div in a cell or item is
+ * unwrapped, and an item's paragraphs are joined (see joinItemParagraphs),
+ * keeping every word in its order at the cost of the inner grid. Innermost
+ * first, so a table inside a table inside a cell arrives as blocks before its
+ * parent is flattened. Untouched, and unparsed, when there is no table and no
+ * list.
+ */
+export function flattenForDocx(source: string): string {
+  if (!/<(table|li)\b/i.test(source)) return source
+  const dom = parseDocument(source)
+  let changed = false
+  for (const table of elementsOf(dom.children, 'table').reverse()) {
+    if (!contained(table)) continue
+    replaceWith(table, flattenTable(table))
+    changed = true
+  }
+  for (const div of elementsOf(dom.children, 'div').reverse()) {
+    if (!contained(div) || !holdsBlock(div)) continue
+    replaceWith(div, asBlocks(div.children))
+    changed = true
+  }
+  for (const li of elementsOf(dom.children, 'li').reverse()) {
+    const joined = joinItemParagraphs(li)
+    if (joined === null) continue
+    splice(li, 0, li.children.length, [...parseDocument(joined).children])
+    changed = true
+  }
+  return changed ? serialize(dom.children) : source
+}
+
 export async function writeDocx(doc: HubDocument): Promise<Buffer> {
   const html = renderDocumentShell(
-    { ...doc, html: unwrapSpans(dropUnresolvableImages(doc.html)) },
+    { ...doc, html: unwrapSpans(flattenForDocx(dropUnresolvableImages(doc.html))) },
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)
