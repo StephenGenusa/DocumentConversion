@@ -250,11 +250,15 @@ try {
     const s = await session(about.webSocketDebuggerUrl)
     // The target is listed as soon as <title> is parsed, before the rest of
     // the page; the Chromium section is last, so wait for it before asking.
-    let doc
-    const q = async (selector) => (await s.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector })).result?.nodeId ?? 0
+    // Each query fetches the document afresh: when the 20 MB page finishes
+    // loading, DevTools replaces its document and every node id handed out
+    // before is void, so a query on an old id finds nothing.
+    const q = async (selector) => {
+      const doc = (await s.send('DOM.getDocument', { depth: 0 })).result
+      return (await s.send('DOM.querySelector', { nodeId: doc.root.nodeId, selector })).result?.nodeId ?? 0
+    }
     let chromium = 0
     for (let i = 0; i < 50 && !chromium; i++) {
-      doc = (await s.send('DOM.getDocument', { depth: 0 })).result
       chromium = await q('details.chromium')
       if (!chromium) await sleep(100)
     }
@@ -262,7 +266,9 @@ try {
     const openChromium = await q('details.chromium[open]')
     const components = await q('details:not(.chromium)')
     const navNode = await q('nav')
-    const nav = navNode ? (await s.send('DOM.getOuterHTML', { nodeId: navNode })).result?.outerHTML : ''
+    const navDoc = (await s.send('DOM.getDocument', { depth: 0 })).result
+    const navId = (await s.send('DOM.querySelector', { nodeId: navDoc.root.nodeId, selector: 'nav' })).result?.nodeId ?? 0
+    const nav = navNode && navId ? (await s.send('DOM.getOuterHTML', { nodeId: navId })).result?.outerHTML : ''
     s.close()
     check('About lists the third-party components', components > 0 && !/Third-party software \(0\)/.test(nav), nav)
     check('the Chromium notices are there and start collapsed', chromium > 0 && openChromium === 0, { chromium, openChromium })
