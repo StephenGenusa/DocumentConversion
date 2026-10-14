@@ -37,14 +37,24 @@ const BINARY_EXT =
  * The guard has to work in a directory that is not a repository, so it cannot
  * ask git which files count. Reading .gitignore keeps one list in one place:
  * whatever the project excludes from version control is what this skips.
+ *
+ * .git/info/exclude is read too, for the same reason: a file excluded there is
+ * one git will not offer for commit, so it is no more a leak risk than a
+ * .gitignored one. It is local to one clone and never committed, so another
+ * clone, or CI, has none and scans everything. Its rules are applied FIRST so
+ * that .gitignore wins a conflict, which is git's own precedence. In a worktree
+ * .git is a file rather than a directory; the read then fails and only
+ * .gitignore applies.
  */
 function ignoreMatcher(): (rel: string, isDir: boolean) => boolean {
   const rules: { re: RegExp; negate: boolean; dirOnly: boolean; anchored: boolean }[] = []
   let text = ''
-  try {
-    text = readFileSync('.gitignore', 'utf8')
-  } catch {
-    /* no ignore file; everything below is then in scope */
+  for (const file of ['.git/info/exclude', '.gitignore']) {
+    try {
+      text += readFileSync(file, 'utf8') + '\n'
+    } catch {
+      /* no such file; whatever it would have excluded stays in scope */
+    }
   }
   for (let line of text.split('\n')) {
     line = line.trim()
@@ -53,7 +63,11 @@ function ignoreMatcher(): (rel: string, isDir: boolean) => boolean {
     if (negate) line = line.slice(1)
     const dirOnly = line.endsWith('/')
     if (dirOnly) line = line.slice(0, -1)
-    const anchored = line.includes('/')
+    // A leading slash anchors the pattern to the root, as any inner slash
+    // does; it is not part of the path being matched.
+    const rooted = line.startsWith('/')
+    if (rooted) line = line.slice(1)
+    const anchored = rooted || line.includes('/')
     const body = line
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')
       .replace(/\*/g, '[^/]*')
