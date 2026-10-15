@@ -111,8 +111,8 @@ function baseName(filename?: string): string {
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 820,
-    height: 640,
+    width: 1040,
+    height: 700,
     minWidth: 560,
     minHeight: 480,
     title: appTitle(),
