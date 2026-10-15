@@ -2,6 +2,10 @@
 import parseRtf from 'rtf-parser'
 // @ts-ignore -- rtf-parser ships no types; see keepGroupStyles below.
 import RTFGroup from 'rtf-parser/rtf-group.js'
+// @ts-ignore -- rtf-parser ships no types; see ctrl$up/ctrl$dn below.
+import RTFInterpreter from 'rtf-parser/rtf-interpreter.js'
+// @ts-ignore -- rtf-parser ships no types; see the finisher below.
+import RTFParagraph from 'rtf-parser/rtf-paragraph.js'
 // @ts-ignore -- @iarna/rtf-to-html ships no types. Its renderer is imported on
 // its own so the parsed document can be mended first (see markSubscripts).
 import renderRtfDocument from '@iarna/rtf-to-html/rtf-to-html.js'
@@ -32,6 +36,46 @@ RTFGroup.prototype.addContent = function (this: { content: unknown[] }, node: Re
   }
   originalAddContent.call(this, node)
   node[STYLED] = true
+}
+
+/**
+ * Read `\\upN` and `\\dnN` as superscript and subscript.
+ *
+ * They raise or lower text by N half-points, the positional way of writing
+ * x² and H₂O that older exporters still use. rtf-parser has no handler for
+ * either, so the digit came out on the baseline: "mc2", "H2O". The offset
+ * itself is layout; what it means is the same as `\\super`/`\\sub`, so it is
+ * read as those, and `\\up0`/`\\dn0` (back to the baseline) as `\\nosupersub`.
+ */
+interface Interpreter {
+  group: { style: Record<string, unknown> }
+  groupStack: unknown[]
+  doc: { content: unknown[]; addContent: (node: unknown) => void }
+  cmd$groupEnd: () => void
+}
+const interpreter = RTFInterpreter.prototype as Record<string, (this: Interpreter, param?: number) => void>
+interpreter.ctrl$up = function (param) {
+  this.group.style.valign = param === 0 ? 'normal' : 'super'
+}
+interpreter.ctrl$dn = function (param) {
+  this.group.style.valign = param === 0 ? 'normal' : 'sub'
+}
+
+/**
+ * Close the last paragraph when the file does not.
+ *
+ * rtf-parser gathers a paragraph's spans into it when it meets `\\par`, and
+ * the renderer draws paragraphs only, so text after the last `\\par` was left
+ * loose and dropped: a file ending without one lost its last paragraph, and
+ * `{\\rtf1 Only words}` read as empty. The finisher unwinds any open groups
+ * first, so by the time the stray spans are gathered they are all at the top.
+ */
+const originalFinisher = interpreter.finisher
+interpreter.finisher = function () {
+  while (this.groupStack.length) this.cmd$groupEnd()
+  const last = this.doc.content[this.doc.content.length - 1]
+  if (last !== undefined && !(last instanceof RTFParagraph)) this.doc.addContent(new RTFParagraph())
+  originalFinisher.call(this)
 }
 
 /**
@@ -984,6 +1028,11 @@ export function extractTables(rtf: string): { rtf: string; tables: string[] } {
             continue
           case 'nosupersub':
             state.va = undefined
+            continue
+          // Raised or lowered by N half-points; see ctrl$up/ctrl$dn at the top.
+          case 'up':
+          case 'dn':
+            state.va = param === 0 ? undefined : cw === 'up' ? 'super' : 'sub'
             continue
           case 'v':
             state.hidden = param !== 0

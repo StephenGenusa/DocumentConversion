@@ -90,3 +90,22 @@ describe('readRtf keeps formatting set inside a group', () => {
     expect(html).not.toContain('<strong> done')
   })
 })
+
+/**
+ * rtf-parser collects a paragraph's spans when it meets `\par`, so text after
+ * the last one was never collected: a file that does not end in `\par` lost
+ * its last paragraph, and a one-line file lost everything.
+ */
+describe('readRtf keeps a last paragraph with no closing \\par', () => {
+  it('keeps the text after the last \\par', async () => {
+    const rtf = '{\\rtf1\\ansi First line\\par Last {\\b line}}'
+    const html = (await readRtf({ bytes: Buffer.from(rtf), filename: 'g.rtf' })).html
+    expect(html).toContain('<p>First line</p>')
+    expect(html).toMatch(/<p>Last <strong>line<\/strong><\/p>/)
+  })
+
+  it('keeps a file that has no \\par at all', async () => {
+    const html = (await readRtf({ bytes: Buffer.from('{\\rtf1 Only words}'), filename: 'g.rtf' })).html
+    expect(html).toContain('<p>Only words</p>')
+  })
+})

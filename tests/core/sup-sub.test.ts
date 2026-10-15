@@ -64,11 +64,33 @@ describe('superscript and subscript', () => {
       expect(html).toContain('a<sup>b</sup>cd')
     })
 
-    it('reads them inside a table cell', async () => {
+    it('reads \\super and \\sub inside a table cell', async () => {
       const rtf =
         '{\\rtf1\\ansi\\trowd\\cellx2000\\cellx4000 x{\\super 2}\\cell H{\\sub 2}O\\cell\\row}'
       const html = (await readRtf(bytes(rtf))).html
       expect(html).toContain('x<sup>2</sup>')
+      expect(html).toContain('H<sub>2</sub>O')
+    })
+
+    // \upN / \dnN raise or lower by N half-points: the older, positional way
+    // of writing the same thing, still produced by some exporters.
+    it('reads \\up and \\dn as superscript and subscript', async () => {
+      const html = (await readRtf(bytes('{\\rtf1 E = mc{\\up6 2}, H{\\dn4 2}O}'))).html
+      expect(html).toContain('mc<sup>2</sup>')
+      expect(html).toContain('H<sub>2</sub>O')
+      expect(html).not.toContain('H<sup>2</sup>')
+    })
+
+    it('ends them at \\up0 and \\dn0', async () => {
+      const html = (await readRtf(bytes('{\\rtf1\\ansi a{\\up6 b\\up0 c}d e{\\dn6 f\\dn0 g}h\\par}'))).html
+      expect(html).toContain('a<sup>b</sup>cd')
+      expect(html).toContain('e<sub>f</sub>gh')
+    })
+
+    it('reads \\up and \\dn inside a table cell', async () => {
+      const rtf = '{\\rtf1\\ansi\\trowd\\cellx2000\\cellx4000 x{\\up6 2}y\\up0\\cell H{\\dn4 2}O\\cell\\row}'
+      const html = (await readRtf(bytes(rtf))).html
+      expect(html).toContain('x<sup>2</sup>y')
       expect(html).toContain('H<sub>2</sub>O')
     })
   })
