@@ -38,6 +38,12 @@ export const EXTH = {
   rights: 109,
   source: 112,
   asin: 113,
+  /** KF8: how many resource records (pictures) follow firstImageIndex. */
+  resourceCount: 125,
+  /** 0-based resource index of the cover picture. */
+  coverOffset: 201,
+  /** 0: the cover is a real picture, not one the reader made up. */
+  hasFakeCover: 203,
   cdeType: 501,
   updatedTitle: 503,
   language: 524,
@@ -45,6 +51,12 @@ export const EXTH = {
 
 export function exthString(type: number, value: string): ExthRecord {
   return { type, data: Buffer.from(value, 'utf8') }
+}
+
+export function exthUint(type: number, value: number): ExthRecord {
+  const data = Buffer.alloc(4)
+  data.writeUInt32BE(value >>> 0, 0)
+  return { type, data }
 }
 
 /**

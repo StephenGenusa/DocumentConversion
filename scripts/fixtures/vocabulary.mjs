@@ -474,4 +474,11 @@ export const READING_ROOM = {
   pageAfter: 'Volunteers keep the plan current whenever shelving moves.',
   iconIntro: 'A small marker shows quiet seating:',
   iconAlt: 'Quiet seating marker',
+  albumTitle: 'Reading room album',
+  albumIntro: 'Photographs and plans of the reading room, gathered for the volunteer handbook.',
+  photoAlt: 'Morning light across the periodicals',
+  photoAfter: 'The windows face east, so mornings are brightest beside the periodicals.',
+  webpAlt: 'Media shelves after refitting',
+  flowIntro: 'Returned volumes reach the shelves in three steps:',
+  flow: ['Returned', 'Sorted', 'Reshelved'],
 }

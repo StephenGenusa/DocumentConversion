@@ -99,6 +99,43 @@ async function main() {
   out.svgHostile = pngSize(await host.render({ kind: 'svg', source: HOSTILE_SVG, display: true, format: 'png' }))
   out.svgNotOne = (await host.render({ kind: 'svg', source: '<note/>', display: true, format: 'png' })).error ?? null
 
+  // Pictures (kind `picture`, Kindle): decoded in the page, re-encoded to fit.
+  {
+    const { createCanvas } = require('@napi-rs/canvas')
+    const canvas = (w, h, alpha) => {
+      const c = createCanvas(w, h)
+      const g = c.getContext('2d')
+      const d = g.createImageData(w, h)
+      const noise = require('crypto').randomBytes(w * h * 3)
+      for (let i = 0, j = 0; i < d.data.length; i += 4, j += 3) {
+        d.data[i] = noise[j]
+        d.data[i + 1] = noise[j + 1]
+        d.data[i + 2] = noise[j + 2]
+        d.data[i + 3] = alpha && (i >> 2) % 2 ? 0 : 255
+      }
+      g.putImageData(d, 0, 0)
+      return c
+    }
+    const uri = (mime, buf) => `data:${mime};base64,${Buffer.from(buf).toString('base64')}`
+    const picture = async (source, maxBytes) => {
+      const r = await host.render({ kind: 'picture', source, display: true, format: 'png', fit: { maxBytes } })
+      if (r.error) return { error: r.error }
+      const data = r.png ?? r.jpeg
+      const bytes = Buffer.from(data, 'base64')
+      return { type: r.png ? 'png' : 'jpeg', bytes: bytes.length, width: r.width, height: r.height, magicOk: r.png ? bytes[0] === 0x89 : bytes[0] === 0xff && bytes[1] === 0xd8 }
+    }
+    const opaque = canvas(300, 200, false)
+    out.pictureWebp = await picture(uri('image/webp', opaque.toBuffer('image/webp')), 5 * 1024 * 1024)
+    out.pictureShrunk = await picture(uri('image/png', opaque.toBuffer('image/png')), 20000)
+    out.pictureAlpha = await picture(uri('image/png', canvas(200, 200, true).toBuffer('image/png')), 30000)
+    // A PNG Skia crashes on in-process (a 3x1 picture from a Word file); here it costs at most the page.
+    const SKIA_CRASH = 'iVBORw0KGgoAAAANSUhEUgAAAAMAAAABCAYAAACczIWkAAAAEklEQVR4nGNgYGD4z8DA8B8ABQ0CAmXEU2sAAAAASUVORK5CYII='
+    out.pictureSkiaCrash = await picture(`data:image/png;base64,${SKIA_CRASH}`, 5 * 1024 * 1024)
+    out.pictureGarbage = await picture(uri('image/webp', Buffer.from('RIFF0000WEBPnot a picture at all')), 5 * 1024 * 1024)
+    out.pictureTiff = await picture(uri('image/tiff', Buffer.from('49492a0008000000', 'hex')), 5 * 1024 * 1024)
+    out.pictureAfter = await picture(uri('image/webp', canvas(20, 10, false).toBuffer('image/webp')), 5 * 1024 * 1024)
+  }
+
   const broken = await png('flowchart TD\n  A -->')
   out.broken = broken.error ?? null
   const unknown = await host.render({ kind: 'dot', source: 'digraph { a -> b }', display: true, format: 'png' })

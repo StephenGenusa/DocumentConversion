@@ -26,12 +26,10 @@ import type { TargetFormat } from './types'
  */
 
 /**
- * Targets that get PNG copies of SVG images. azw3 is left out for now,
- * against the spec (D10): its writer stores no image records at all (see
- * draw-blocks.ts RENDER_TARGETS), so a PNG there would be lost just as the
- * SVG is. It joins this list when the writer embeds images.
+ * Targets that get PNG copies of SVG images: Word, and Kindle (azw3), whose
+ * image records hold JPEG, PNG or GIF only (kindle-pictures.ts).
  */
-const RASTER_TARGETS: ReadonlySet<TargetFormat> = new Set(['docx'])
+const RASTER_TARGETS: ReadonlySet<TargetFormat> = new Set(['docx', 'azw3'])
 
 /** What each target is called in a notice. */
 const TARGET_NAMES: Partial<Record<TargetFormat, string>> = { docx: 'Word', azw3: 'Kindle' }
@@ -328,8 +326,10 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
         : prepareSvgForRaster(svg, {
             width: attrPx(el.attribs.width),
             height: attrPx(el.attribs.height),
-            maxWidth: target === 'docx' ? DOCX_MAX_WIDTH : undefined,
-            maxHeight: target === 'docx' ? DOCX_MAX_HEIGHT : undefined,
+            // Kindle takes Word's page too: a picture the size of a page, drawn
+            // at twice that, is sharp on any Kindle screen and stays small.
+            maxWidth: DOCX_MAX_WIDTH,
+            maxHeight: DOCX_MAX_HEIGHT,
           })
     if (svg !== null && Buffer.byteLength(svg, 'utf8') > maxBytes) {
       failed(number, `it is over ${Math.round(maxBytes / (1024 * 1024))} MB`)

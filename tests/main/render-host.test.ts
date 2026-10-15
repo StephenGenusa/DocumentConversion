@@ -18,6 +18,8 @@ const ROOT = resolve(__dirname, '..', '..')
 const PAGE_DIR = join(ROOT, 'resources', 'render')
 const hasDisplay = process.platform !== 'linux' || Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY)
 
+type Picture = { error?: string; type?: 'png' | 'jpeg'; bytes?: number; width?: number; height?: number; magicOk?: boolean }
+
 interface HarnessResult {
   fatal?: string
   timings: Record<string, number>
@@ -38,6 +40,13 @@ interface HarnessResult {
   svgImage: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
   svgHostile: { width?: number; height?: number; error?: string; magic?: string }
   svgNotOne: string | null
+  pictureWebp: Picture
+  pictureShrunk: Picture
+  pictureAlpha: Picture
+  pictureSkiaCrash: Picture
+  pictureGarbage: Picture
+  pictureTiff: Picture
+  pictureAfter: Picture
   order: string[]
   cancelled: string
   timeout: string | null
@@ -128,6 +137,23 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     expect(result.svgHostile).toMatchObject({ width: 40, height: 20, magic: 'PNG' })
     expect(result.requests.some((r) => r.url.includes('127.0.0.1'))).toBe(false)
     expect(result.svgNotOne).toBe('it is not a readable SVG')
+  })
+
+  it('re-encodes a picture a Kindle cannot store: WebP to JPEG, PNG with transparency kept as PNG, each under its size', () => {
+    expect(result.pictureWebp).toEqual({ type: 'jpeg', bytes: expect.any(Number), width: 300, height: 200, magicOk: true })
+    expect(result.pictureShrunk).toMatchObject({ type: 'jpeg', magicOk: true })
+    expect(result.pictureShrunk.bytes).toBeLessThanOrEqual(20000)
+    expect(result.pictureAlpha).toMatchObject({ type: 'png', magicOk: true })
+    expect(result.pictureAlpha.bytes).toBeLessThanOrEqual(30000)
+    expect(result.pictureAlpha.width).toBeLessThan(200)
+  })
+
+  it('decodes pictures only in the page: a malformed one costs an answer, never the app', () => {
+    // Whatever the page made of it, the host is still answering afterwards.
+    expect(result.pictureSkiaCrash.error ?? result.pictureSkiaCrash.type).toBeTruthy()
+    expect(result.pictureGarbage.error).toBeTruthy()
+    expect(result.pictureTiff.error).toBe('it is not a picture this app reads')
+    expect(result.pictureAfter).toMatchObject({ type: 'jpeg', width: 20, height: 10, magicOk: true })
   })
 
   it('serves a repeated request from the cache', () => {

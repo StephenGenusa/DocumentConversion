@@ -61,9 +61,13 @@ export function hubFeatures(html: string): HubFeatures {
 /**
  * What the render host draws. `svg` is not a hub block: it is an SVG image a
  * document already carries, which the host only rasterises, for the targets
- * that cannot show SVG (spec D10, svg-images.ts). The editor never asks for it.
+ * that cannot show SVG (spec D10, svg-images.ts). `picture` is a raster
+ * image the document carries, decoded and re-encoded as PNG or JPEG for a
+ * target that cannot store its format or its size (Kindle,
+ * kindle-pictures.ts): decoding happens in the host's sandboxed page, never
+ * in the main process. The editor asks for neither.
  */
-export type RenderKind = BlockKind | 'svg'
+export type RenderKind = BlockKind | 'svg' | 'picture'
 /** The kinds a hub block is drawn as: what the editor and draw-blocks.ts ask for. */
 export type BlockKind = 'mermaid' | 'dot' | 'math'
 export type RenderFormat = 'png' | 'svg'
@@ -73,8 +77,8 @@ export type RenderFormat = 'png' | 'svg'
  * and is SVG unless PNG is asked for. azw4 is a PDF inside, so it follows
  * the pdf choice. Word is always PNG: html-to-docx would store an SVG as
  * media Word cannot show, which is also why every SVG image a document
- * carries gets a PNG copy for Word (svg-images.ts). (azw3 would be PNG too,
- * once its writer embeds pictures at all.)
+ * carries gets a PNG copy for Word (svg-images.ts). Kindle (azw3) is PNG
+ * always too: a KF8 image record holds JPEG, PNG or GIF.
  */
 export const SVG_TARGETS: ReadonlySet<TargetFormat> = new Set(['pdf', 'html', 'revealjs', 'epub', 'azw4'])
 
@@ -90,18 +94,25 @@ export interface RenderRequest {
   /** Display (a block of its own) or inline (math only). */
   display: boolean
   format: RenderFormat
+  /**
+   * `picture` only: the largest the answer may be, in bytes. The host keeps
+   * PNG for a picture with transparency, JPEG otherwise, lowering JPEG
+   * quality and then the size until it fits. `format` is ignored.
+   */
+  fit?: { maxBytes: number }
 }
 
 /**
  * A drawing, or why there is none. Sizes are CSS px (1ex = 8px). A PNG is
- * drawn at twice that size, so it stays sharp when printed or zoomed. `png`
- * is base64 without a data: prefix; `svg` is markup the host has already
- * sanitised (svg-sanitize.ts). `baseline` (inline math only) is how far the
+ * drawn at twice that size, so it stays sharp when printed or zoomed (a
+ * `picture`'s size is its pixels, as re-encoded). `png` and `jpeg` (a
+ * `picture` only) are base64 without a data: prefix; `svg` is markup the
+ * host has already sanitised (svg-sanitize.ts). `baseline` (inline math only) is how far the
  * text baseline sits above the picture's bottom edge, in px: the picture is
  * lowered by that much to sit on the line.
  */
 export type RenderResult =
-  | { png?: string; svg?: string; width: number; height: number; baseline?: number }
+  | { png?: string; svg?: string; jpeg?: string; width: number; height: number; baseline?: number }
   | { error: string }
 
 export interface RenderBlocksOptions {
@@ -133,6 +144,9 @@ export const MAX_SOURCE_BYTES = 100 * 1024
  * megabytes, and it is the file itself, not a few lines of text.
  */
 export const MAX_SVG_IMAGE_BYTES = 5 * 1024 * 1024
+
+/** The largest raster picture re-encoded (kind `picture`), in bytes before base64. */
+export const MAX_PICTURE_BYTES = 30 * 1024 * 1024
 
 /**
  * Whether a document with these features has something a conversion draws

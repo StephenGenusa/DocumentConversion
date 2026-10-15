@@ -148,6 +148,81 @@
     return url.slice(url.indexOf(',') + 1)
   }
 
+  /** Bytes of a base64 data URL's payload. */
+  function payloadBytes(url) {
+    var b64 = url.slice(url.indexOf(',') + 1)
+    var pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0
+    return { b64: b64, bytes: (b64.length * 3) / 4 - pad }
+  }
+
+  /**
+   * A raster picture (a data: URL the main process built from the document's
+   * bytes) decoded here, in the sandbox, and re-encoded to fit `maxBytes`:
+   * PNG when it has transparency (scaled down until it fits), JPEG otherwise
+   * (quality lowered, then scaled down). Answers the base64, its type and
+   * its size in pixels.
+   */
+  async function reencode(src, maxBytes) {
+    var img = new Image()
+    img.src = src
+    await img.decode()
+    var width = img.naturalWidth
+    var height = img.naturalHeight
+    if (!(width > 0 && height > 0)) throw new Error('the picture has no size')
+    var s0 = Math.min(1, MAX_SIDE / width, MAX_SIDE / height)
+    var full = document.createElement('canvas')
+    full.width = Math.max(1, Math.round(width * s0))
+    full.height = Math.max(1, Math.round(height * s0))
+    var fctx = full.getContext('2d', { willReadFrequently: true })
+    fctx.drawImage(img, 0, 0, full.width, full.height)
+    var data = fctx.getImageData(0, 0, full.width, full.height).data
+    var alpha = false
+    for (var i = 3; i < data.length; i += 4) {
+      if (data[i] !== 255) {
+        alpha = true
+        break
+      }
+    }
+    function encode(scale, quality) {
+      var c = full
+      if (scale < 1 || !alpha) {
+        c = document.createElement('canvas')
+        c.width = Math.max(1, Math.round(full.width * scale))
+        c.height = Math.max(1, Math.round(full.height * scale))
+        var g = c.getContext('2d')
+        if (!alpha) {
+          // JPEG has no transparency; what shows through is white, as on a page.
+          g.fillStyle = '#ffffff'
+          g.fillRect(0, 0, c.width, c.height)
+        }
+        g.drawImage(full, 0, 0, c.width, c.height)
+      }
+      var out = payloadBytes(alpha ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', quality))
+      return { data: out.b64, bytes: out.bytes, mime: alpha ? 'image/png' : 'image/jpeg', width: c.width, height: c.height }
+    }
+    var scale = 1
+    var out
+    if (alpha) {
+      for (;;) {
+        out = encode(scale, 0)
+        if (out.bytes <= maxBytes) return out
+        if (scale < 0.05) throw new Error('it cannot be made small enough')
+        scale *= 0.8
+      }
+    }
+    var qualities = [0.92, 0.85, 0.75, 0.65]
+    for (var q = 0; q < qualities.length; q++) {
+      out = encode(1, qualities[q])
+      if (out.bytes <= maxBytes) return out
+    }
+    for (;;) {
+      scale *= 0.8
+      if (scale < 0.05) throw new Error('it cannot be made small enough')
+      out = encode(scale, 0.75)
+      if (out.bytes <= maxBytes) return out
+    }
+  }
+
   /** Every call answers { ok, value } or { ok: false, error }, never throws across the boundary. */
   function answer(promise) {
     return promise.then(
@@ -168,6 +243,9 @@
     },
     rasterize: function (svg, width, height, scale) {
       return answer(rasterize(svg, width, height, scale))
+    },
+    reencode: function (src, maxBytes) {
+      return answer(reencode(src, maxBytes))
     },
   }
 })()

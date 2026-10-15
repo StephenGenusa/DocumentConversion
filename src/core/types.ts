@@ -279,8 +279,8 @@ export interface ConvertOptions {
   read?: ReadOptions
   /**
    * Diagrams as SVG or PNG (spec B3, B4), where the target takes SVG
-   * (pdf, html, revealjs, epub, azw4); SVG when not given. Word is always
-   * PNG. Ignored where nothing is drawn.
+   * (pdf, html, revealjs, epub, azw4); SVG when not given. Word and Kindle
+   * (azw3) are always PNG. Ignored where nothing is drawn.
    */
   renderedFormat?: RenderFormat
 }

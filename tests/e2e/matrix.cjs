@@ -24,9 +24,59 @@ const { createSqliteHost } = require('../../out/e2e/sqlite-host.js')
 // The app's render host (spec B5), so diagrams are drawn as they are in the app.
 const { createRenderHost } = require('../../out/e2e/render-host.js')
 const JSZip = require('jszip')
+// An independent KF8 reader, for reading AZW3 output back (pictures included).
+// ESM only, whatever its "require" export says, so imported when first used.
+const kf8Reader = () => import('@lingo-reader/mobi-parser')
 
-/** Targets that draw a document's Mermaid diagrams (spec B3; azw3 not yet, see core/draw-blocks.ts). */
-const DRAWING_TARGETS = ['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx']
+/** Targets that draw a document's Mermaid diagrams (spec B3; Word and Kindle as PNG). */
+const DRAWING_TARGETS = ['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx', 'azw3']
+
+function imageKind(buf) {
+  if (buf[0] === 0x89 && buf.toString('latin1', 1, 4) === 'PNG') return 'png'
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpeg'
+  if (buf.toString('latin1', 0, 4) === 'GIF8') return 'gif'
+  return 'other'
+}
+
+/**
+ * Read an AZW3 back: its text through mobi-parser, which resolves every
+ * kindle:embed to a file it writes, and record 0's picture fields (first
+ * resource, EXTH 125 count, EXTH 201 cover) read directly.
+ */
+async function readAzw3(out) {
+  const dir = await mkdtemp(join(tmpdir(), 'docconv-azw3-'))
+  try {
+    const file = join(dir, 'book.azw3')
+    await writeFile(file, out)
+    const { initKf8File } = await kf8Reader()
+    const kf8 = await initKf8File(file, dir)
+    let html = ''
+    const pictures = []
+    for (const item of kf8.getSpine()) {
+      const ch = kf8.loadChapter(item.id)
+      html += ch ? ch.html : ''
+      for (const m of (ch ? ch.html : '').matchAll(/<img[^>]+src="([^"]+)"/g)) pictures.push(await readFile(m[1]))
+    }
+    const count = out.readUInt16BE(76)
+    const offsets = Array.from({ length: count }, (_, i) => out.readUInt32BE(78 + i * 8))
+    const r0 = out.subarray(offsets[0], offsets[1])
+    const exth = new Map()
+    let at = 16 + r0.readUInt32BE(20)
+    const n = r0.readUInt32BE(at + 8)
+    at += 12
+    for (let i = 0; i < n; i++) {
+      const len = r0.readUInt32BE(at + 4)
+      if (len === 12) exth.set(r0.readUInt32BE(at), r0.readUInt32BE(at + 8))
+      at += len
+    }
+    const first = r0.readUInt32BE(16 + 92)
+    const record = (i) => out.subarray(offsets[i], i + 1 < count ? offsets[i + 1] : out.length)
+    const cover = exth.has(201) ? record(first + exth.get(201)) : undefined
+    return { html, pictures, resources: first === 0xffffffff ? 0 : exth.get(125), cover }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
 
 /** Targets the app can also read back; others are verified by shape only. */
 function readerFor(format) {
@@ -123,6 +173,8 @@ async function main() {
     const hasDiagrams = hubText.includes('<pre><code class="language-mermaid">')
     // SVG images (an .svg input, or an SVG <img> in a page): Word gets PNG copies (spec D10).
     const hasSvgImages = /src="data:image\/svg\+xml/i.test(hubText)
+    // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
+    const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp)[;,]/i.test(hubText)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
 
     /**
@@ -188,6 +240,19 @@ async function main() {
             rec.note = `${svgItems.length} SVG items`
           }
         }
+        let azw3Html
+        if (target === 'azw3') {
+          // Pictures survive: every <img> resolves to a JPEG, PNG or GIF
+          // record; diagrams and SVG images arrive as PNG; a diagram is never the cover.
+          const book = await readAzw3(out)
+          if (book.pictures.some((p) => imageKind(p) === 'other')) throw new Error('azw3 has a picture that is not JPEG, PNG or GIF')
+          if ((hasDiagrams || hasSvgImages || hasRasterImages) && book.pictures.length === 0) throw new Error('azw3 lost its pictures')
+          if ((hasDiagrams || hasSvgImages) && !book.pictures.some((p) => imageKind(p) === 'png')) throw new Error('azw3 has no PNG for its diagrams or SVG images')
+          if (/svg/i.test(book.html.replace(/<img[^>]*>/g, ''))) throw new Error('azw3 text still holds SVG')
+          if (book.cover && hasDiagrams && !hasSvgImages && !hasRasterImages) throw new Error('a diagram is the azw3 cover')
+          rec.note = `${book.pictures.length} pictures, ${book.resources ?? 0} resources${book.cover ? ', cover' : ''}`
+          azw3Html = book.html
+        }
         if (hasSvgImages && target === 'docx') {
           const zip = await JSZip.loadAsync(out)
           const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
@@ -197,10 +262,11 @@ async function main() {
           rec.note = `${media.length} PNG media for SVG images`
         }
         const reader = readerFor(target)
-        if (reader) {
-          // Round-trip: read the output back with the app's reader and check probe words survive.
-          const back = await reader({ bytes: out, filename: outName })
-          const backText = back.html.replace(/<[^>]+>/g, ' ').toLowerCase()
+        if (reader || azw3Html !== undefined) {
+          // Round-trip: read the output back with the app's reader (an AZW3
+          // with mobi-parser, above) and check probe words survive.
+          const backHtml = reader ? (await reader({ bytes: out, filename: outName })).html : azw3Html
+          const backText = backHtml.replace(/<[^>]+>/g, ' ').toLowerCase()
           // Table extraction keeps only table cells, so document prose is expected to be absent.
           const missing = TABLE_TARGETS.includes(target)
             ? []

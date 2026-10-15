@@ -27,6 +27,7 @@ import { normalizeFootnotes } from './footnotes'
 import { hubFeatures, type RenderBlocks } from './rendered-blocks'
 import { drawBlocks } from './draw-blocks'
 import { rasterizeSvgImages, sanitizeSvgImages } from './svg-images'
+import { kindlePictures } from './kindle-pictures'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
 
 export interface Converter {
@@ -144,8 +145,10 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
         onAdvice: ctx?.onAdvice,
       }
       const drawn = await drawBlocks(notesFree, target, drawCtx)
-      // PNG copies of the document's SVG images for Word (spec D10).
-      const html = await rasterizeSvgImages(drawn, target, drawCtx)
+      // PNG copies of the document's SVG images for Word and Kindle (spec D10).
+      const rasterised = await rasterizeSvgImages(drawn, target, drawCtx)
+      // Pictures a Kindle cannot store as they are, re-encoded (AZW3 only).
+      const html = await kindlePictures(rasterised, target, drawCtx)
       return await writers[target](html === hub.html ? hub : { ...hub, html }, opts)
     } catch (err) {
       if (err instanceof ConversionError) throw err

@@ -172,6 +172,19 @@ if (existsSync(join(work, 'plan.docx'))) {
   }
 }
 
+// And to Kindle as a PNG picture record the text points at (kindle:embed).
+run('svg->azw3 has a PNG picture', [svgIn, '--to', 'azw3', '--out', join(work, 'plan.azw3')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'plan.azw3')],
+})
+if (existsSync(join(work, 'plan.azw3'))) {
+  const book = readFileSync(join(work, 'plan.azw3'))
+  if (!book.includes(Buffer.from('kindle:embed:0001?mime=image/png')) || !book.includes(Buffer.from('\x89PNG', 'latin1')) || book.includes(Buffer.from('svg+xml'))) {
+    failures++
+    console.log('FAIL  plan.azw3 has no PNG picture, or still holds SVG')
+  }
+}
+
 // content sanity
 if (existsSync(join(work, 'spec.html'))) {
   const html = readFileSync(join(work, 'spec.html'), 'utf8')

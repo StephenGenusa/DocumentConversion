@@ -26,7 +26,14 @@ import {
  */
 export function renderCacheKey(req: RenderRequest, engineVersion: string): string {
   return createHash('sha256')
-    .update(JSON.stringify([req.kind, req.display, req.format, req.source, engineVersion]))
+    .update(
+      JSON.stringify(
+        // `fit` only where it is given, so every earlier key stays as it was.
+        req.fit
+          ? [req.kind, req.display, req.format, req.source, engineVersion, req.fit.maxBytes]
+          : [req.kind, req.display, req.format, req.source, engineVersion],
+      ),
+    )
     .digest('hex')
 }
 
@@ -37,15 +44,10 @@ export const RENDER_LIMITS = {
 
 /**
  * Targets that draw blocks (spec B3). md and txt keep the source with its
- * delimiters; the table targets have no place for a picture.
- *
- * azw3 is left out for now, against the spec: its writer stores no image
- * records at all (record 0 says firstImageIndex 0xffffffff), so every
- * picture in an AZW3, a document's own included, is a reference to nothing.
- * A diagram drawn there would be lost; kept as source it can be read. It
- * joins this list when the writer embeds images.
+ * delimiters; the table targets have no place for a picture. Word and
+ * Kindle (azw3) take no SVG, so they are drawn as PNG (renderedFormatFor).
  */
-const RENDER_TARGETS: ReadonlySet<TargetFormat> = new Set(['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx'])
+const RENDER_TARGETS: ReadonlySet<TargetFormat> = new Set(['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx', 'azw3'])
 
 /** Whether `target` draws diagrams (true) or keeps them as source. */
 export function rendersBlocks(target: TargetFormat): boolean {

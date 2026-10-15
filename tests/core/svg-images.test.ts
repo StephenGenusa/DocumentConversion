@@ -258,9 +258,9 @@ describe('sanitizeSvgImages (spec B6 for every SVG image a document carries)', (
   })
 })
 
-describe('rasterizeSvgImages (spec D10): PNG copies of SVG images for Word', () => {
-  it('rasterises for Word only (Kindle AZW3 embeds no images at all yet)', () => {
-    for (const t of TARGET_FORMATS) expect(rasterizesSvgImages(t), t).toBe(t === 'docx')
+describe('rasterizeSvgImages (spec D10): PNG copies of SVG images for Word and Kindle', () => {
+  it('rasterises for Word and Kindle (AZW3) only', () => {
+    for (const t of TARGET_FORMATS) expect(rasterizesSvgImages(t), t).toBe(t === 'docx' || t === 'azw3')
   })
 
   it('replaces each SVG <img> with a PNG of it, sized as shown, keeping the alt', async () => {
@@ -345,7 +345,7 @@ describe('rasterizeSvgImages (spec D10): PNG copies of SVG images for Word', () 
   it('leaves every other target, and a document with no renderer, untouched', async () => {
     const { render, calls } = fakeRenderer()
     const html = `<p>${img(SVG)}</p>`
-    for (const t of TARGET_FORMATS.filter((t) => t !== 'docx')) {
+    for (const t of TARGET_FORMATS.filter((t) => t !== 'docx' && t !== 'azw3')) {
       expect(await rasterizeSvgImages(html, t, { renderBlocks: render })).toBe(html)
     }
     expect(await rasterizeSvgImages(html, 'docx', {})).toBe(html)

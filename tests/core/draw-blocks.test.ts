@@ -30,8 +30,8 @@ function fakeRenderer(): { render: RenderBlocks; calls: RenderRequest[][] } {
   return { render, calls }
 }
 
-/** azw3 is not one yet: its writer embeds no images (see RENDER_TARGETS). */
-const DRAWING_TARGETS: TargetFormat[] = ['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx']
+/** Every target with a place for a picture; Word and Kindle get PNG. */
+const DRAWING_TARGETS: TargetFormat[] = ['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx', 'azw3']
 
 describe('drawBlocks (spec B3, B7) with a fake renderer', () => {
   it('draws for every picture target, and for no other', () => {
@@ -57,7 +57,7 @@ describe('drawBlocks (spec B3, B7) with a fake renderer', () => {
     )
   })
 
-  it('draws in the format each target takes: the choice for pdf, html, revealjs, epub and azw4, PNG for Word', async () => {
+  it('draws in the format each target takes: the choice for pdf, html, revealjs, epub and azw4, PNG for Word and Kindle', async () => {
     const matrix: Record<string, Record<string, 'svg' | 'png' | undefined>> = {}
     for (const t of DRAWING_TARGETS) {
       matrix[t] = {}
@@ -77,6 +77,7 @@ describe('drawBlocks (spec B3, B7) with a fake renderer', () => {
       epub: svgCapable,
       azw4: svgCapable,
       docx: { undefined: 'png', svg: 'png', png: 'png' },
+      azw3: { undefined: 'png', svg: 'png', png: 'png' },
     })
   })
 
@@ -95,10 +96,10 @@ describe('drawBlocks (spec B3, B7) with a fake renderer', () => {
     expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Diagram 1 could not be drawn: the engine gave no picture')
   })
 
-  it('leaves md, txt, azw3 and the table targets untouched, without asking the renderer', async () => {
+  it('leaves md, txt and the table targets untouched, without asking the renderer', async () => {
     const { render, calls } = fakeRenderer()
     const html = block('mermaid', 'graph LR\nA--&gt;B')
-    for (const t of ['md', 'txt', 'azw3', 'csv', 'json', 'xlsx'] as TargetFormat[]) {
+    for (const t of ['md', 'txt', 'csv', 'json', 'xlsx'] as TargetFormat[]) {
       expect(await drawBlocks(html, t, { renderBlocks: render })).toBe(html)
     }
     expect(calls).toHaveLength(0)

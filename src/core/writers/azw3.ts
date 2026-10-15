@@ -2,7 +2,8 @@ import JSZip from 'jszip'
 import { writeEpub } from './epub'
 import { buildPalmDb } from './palmdb'
 import { buildCncx, buildFdst, buildIndex, type IndexEntry } from './kf8-index'
-import { EXTH, buildRecord0, exthString, splitTextRecords, TEXT_RECORD_SIZE } from './mobi-header'
+import { EXTH, buildRecord0, exthString, exthUint, splitTextRecords, TEXT_RECORD_SIZE, type ExthRecord } from './mobi-header'
+import { kindleFallback } from '../kindle-pictures'
 import type { HubDocument } from '../types'
 
 /**
@@ -15,6 +16,16 @@ import type { HubDocument } from '../types'
  * reimplemented, which is what makes this cheap and what keeps the two outputs
  * consistent.
  *
+ * Pictures: the EPUB's image files become KF8 resource records, after the
+ * text and the indices, and each <img> points at its record as
+ * `kindle:embed:XXXX?mime=...` (XXXX = the 1-based resource number in base
+ * 32, as kindlegen and calibre write it). Before that every picture is made
+ * one a Kindle stores - JPEG, PNG or GIF, under the size limit - by
+ * Converter.write() (kindle-pictures.ts); any other still here becomes its
+ * alt text. The EPUB writer's cover (never a drawn diagram) is named in
+ * EXTH 201. No thumbnail (EXTH 202): a Kindle makes its own from the cover,
+ * and making one would mean decoding the picture here.
+ *
  * The text is stored uncompressed. PalmDOC LZ77 would shrink it, but every
  * modern reader handles uncompressed text and an incorrect compressor produces
  * a file that opens and shows nothing - a poor trade for a first version.
@@ -26,9 +37,38 @@ function chapterBody(xhtml: string): string {
   return body.trim()
 }
 
+interface Resources {
+  records: Buffer[]
+  /** The EPUB's `images/<name>` to the reference that replaces it. */
+  refs: Map<string, string>
+  cover?: number
+}
+
+/** kindle:embed numbers are 1-based, base 32, four digits at least. */
+function embedRef(index: number, mime: string): string {
+  return `kindle:embed:${(index + 1).toString(32).toUpperCase().padStart(4, '0')}?mime=${mime}`
+}
+
+/** The EPUB's pictures, in manifest order, as resource records. */
+async function resourcesOf(zip: JSZip): Promise<Resources> {
+  const opf = (await zip.file('OEBPS/content.opf')?.async('string')) ?? ''
+  const out: Resources = { records: [], refs: new Map() }
+  for (const m of opf.matchAll(/<item id="[^"]*" href="images\/([^"]+)" media-type="(image\/[^"]+)"( properties="cover-image")?\/>/g)) {
+    const bytes = await zip.file(`OEBPS/images/${m[1]}`)?.async('nodebuffer')
+    if (!bytes) continue
+    const index = out.records.length
+    out.records.push(bytes)
+    out.refs.set(`images/${m[1]}`, embedRef(index, m[2]))
+    if (m[3]) out.cover = index
+  }
+  return out
+}
+
 export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
-  const epub = await writeEpub(doc, { notes: 'plain' })
+  const html = kindleFallback(doc.html)
+  const epub = await writeEpub(html === doc.html ? doc : { ...doc, html }, { notes: 'plain' })
   const zip = await JSZip.loadAsync(epub)
+  const resources = await resourcesOf(zip)
 
   const chapterFiles = Object.keys(zip.files)
     .filter((n) => /\.x?html$/i.test(n) && !/nav|toc/i.test(n))
@@ -36,7 +76,14 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
   const chapters = await Promise.all(
     chapterFiles.map(async (name) => chapterBody(await zip.files[name].async('string'))),
   )
-  const bodies = chapters.length > 0 ? chapters : ['<p></p>']
+  const bodies = (chapters.length > 0 ? chapters : ['<p></p>']).map((body) =>
+    resources.records.length === 0
+      ? body
+      : body.replace(/(<img\b[^>]*?\bsrc=")(images\/[^"]+)"/g, (whole, head: string, src: string) => {
+          const ref = resources.refs.get(src)
+          return ref ? `${head}${ref}"` : whole
+        }),
+  )
 
   /*
    * Build the flow, recording where each chapter's skeleton and body land.
@@ -118,12 +165,21 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
   /*
    * Record indices are assigned before record 0 is built, because record 0 has
    * to name them. Order: 0 = header, then text, then FDST, skeleton index,
-   * fragment index, then EOF.
+   * fragment index, then the pictures, then EOF. Pictures last but for EOF,
+   * so a reader walking resources from firstImageIndex meets nothing else.
    */
   const firstNonBook = 1 + textRecords.length
   const fdstIndex = firstNonBook
   const skeletonIndex = fdstIndex + 1
   const fragmentIndex = skeletonIndex + skelRecords.length
+  const firstResource = fragmentIndex + fragRecords.length
+  const hasResources = resources.records.length > 0
+
+  const pictureExth: ExthRecord[] = []
+  if (hasResources) pictureExth.push(exthUint(EXTH.resourceCount, resources.records.length))
+  if (resources.cover !== undefined) {
+    pictureExth.push(exthUint(EXTH.coverOffset, resources.cover), exthUint(EXTH.hasFakeCover, 0))
+  }
 
   const title = doc.title?.trim() || doc.sourceName?.trim() || 'Untitled'
   const record0 = buildRecord0({
@@ -132,7 +188,7 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
     textLength: text.length,
     textRecordCount: textRecords.length,
     firstNonBookIndex: firstNonBook,
-    firstImageIndex: 0xffffffff,
+    firstImageIndex: hasResources ? firstResource : 0xffffffff,
     fdstIndex,
     fdstCount: 1,
     skeletonIndex,
@@ -144,6 +200,7 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
       // without it a Kindle files it under Docs and loses the cover.
       exthString(EXTH.cdeType, 'EBOK'),
       exthString(EXTH.language, 'en'),
+      ...pictureExth,
     ],
   })
 
@@ -151,6 +208,14 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
     name: title.replace(/[^\x20-\x7e]/g, '_'),
     type: 'BOOK',
     creator: 'MOBI',
-    records: [record0, ...textRecords, fdst, ...skelRecords, ...fragRecords, Buffer.from('\0', 'latin1')],
+    records: [
+      record0,
+      ...textRecords,
+      fdst,
+      ...skelRecords,
+      ...fragRecords,
+      ...resources.records,
+      Buffer.from('\0', 'latin1'),
+    ],
   })
 }

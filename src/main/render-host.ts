@@ -5,13 +5,17 @@ import { fileURLToPath } from 'url'
 import { renderCacheKey } from '../core/draw-blocks'
 import { sanitizeSvg } from '../core/svg-sanitize'
 import { svgIntrinsicSize } from '../core/svg-images'
-import { MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
+import { MAX_PICTURE_BYTES, MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
 
 /**
  * The render host (spec B5): one hidden window that draws diagrams (and, in
  * later steps, formulas) from vendored engines, for conversions now and for
  * the editor (render-ipc.ts). It also makes PNG copies of the SVG images a
- * document carries, for Word (kind `svg`, spec D10; core/svg-images.ts).
+ * document carries, for Word and Kindle (kind `svg`, spec D10;
+ * core/svg-images.ts), and re-encodes raster pictures a Kindle cannot store
+ * as they are (kind `picture`, core/kindle-pictures.ts): a picture is
+ * decoded only here, in the sandboxed page, so a malformed one can at worst
+ * crash that page, never the app.
  *
  *   window      hidden, sandboxed, context-isolated, no preload, JavaScript
  *               on (the engines are scripts). Created on first need, closed
@@ -44,10 +48,23 @@ import { MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBlocks, type RenderKi
  * scripts/build-render-assets.mjs. `svg` has no engine: an SVG image is only
  * rasterised by the page (spec D10); bump its version if that changes.
  */
-export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = { mermaid: '11.12.0', svg: 'raster-1' }
+export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = { mermaid: '11.12.0', svg: 'raster-1', picture: 'reencode-1' }
 
-/** The largest source of each kind: a diagram's text, or a whole SVG image. */
-const maxSourceBytes = (kind: RenderKind): number => (kind === 'svg' ? MAX_SVG_IMAGE_BYTES : MAX_SOURCE_BYTES)
+/** The largest source of each kind: a diagram's text, a whole SVG image, or a picture's data: URL. */
+const maxSourceBytes = (kind: RenderKind): number =>
+  kind === 'svg' ? MAX_SVG_IMAGE_BYTES : kind === 'picture' ? Math.ceil(MAX_PICTURE_BYTES / 3) * 4 + 64 : MAX_SOURCE_BYTES
+
+/** A picture's source: a base64 data: URL of a raster image type, nothing else. */
+const PICTURE_SOURCE = /^data:image\/(?:png|jpeg|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/]+=*$/
+
+/** What a re-encoded picture must start with, by type. */
+function isEncoded(b64: string, mime: string): boolean {
+  if (!/^[A-Za-z0-9+/]+=*$/.test(b64)) return false
+  const head = Buffer.from(b64.slice(0, 16), 'base64')
+  if (mime === 'image/png') return head[0] === 0x89 && head.toString('latin1', 1, 4) === 'PNG'
+  if (mime === 'image/jpeg') return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff
+  return false
+}
 
 /** The engine files the page may load, by kind. */
 const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.min.js' }
@@ -146,7 +163,9 @@ class Lru {
   }
   set(key: string, value: RenderResult): void {
     const bytes =
-      'error' in value ? value.error.length * 2 : (value.png?.length ?? 0) + (value.svg?.length ?? 0) * 2 + 64
+      'error' in value
+        ? value.error.length * 2
+        : (value.png?.length ?? 0) + (value.jpeg?.length ?? 0) + (value.svg?.length ?? 0) * 2 + 64
     if (bytes > this.maxBytes) return
     const old = this.map.get(key)
     if (old) {
@@ -328,6 +347,25 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
       return { result: { png: png.value, width, height }, cacheable: true }
     }
     try {
+      if (req.kind === 'picture') {
+        draws++
+        const maxBytes = req.fit?.maxBytes
+        if (!PICTURE_SOURCE.test(req.source)) return { result: { error: 'it is not a picture this app reads' }, cacheable: true }
+        if (typeof maxBytes !== 'number' || !(maxBytes > 0)) return { result: { error: 'no size to fit' }, cacheable: true }
+        const out = await call<Answer<{ data: string; mime: string; width: number; height: number }>>(
+          w,
+          'reencode',
+          [req.source, maxBytes],
+          left(),
+        )
+        if (!out.ok) return { result: { error: out.error }, cacheable: true }
+        const { data, mime, width, height } = out.value ?? ({} as Record<string, never>)
+        if (typeof data !== 'string' || typeof mime !== 'string' || !isEncoded(data, mime) || !isSize(width) || !isSize(height)) {
+          return { result: { error: 'the picture could not be made' }, cacheable: false }
+        }
+        if (Math.floor((data.length * 3) / 4) > maxBytes + 2) return { result: { error: 'the picture could not be made small enough' }, cacheable: false }
+        return { result: mime === 'image/png' ? { png: data, width, height } : { jpeg: data, width, height }, cacheable: true }
+      }
       if (req.kind === 'svg') {
         // An SVG image (spec D10): no engine, only the rasteriser. Sanitised
         // here too, whatever core did, and sized from its own root.
