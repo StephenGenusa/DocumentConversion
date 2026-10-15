@@ -141,11 +141,13 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       const drawCtx = {
         renderBlocks: deps.renderBlocks,
         format: opts?.renderedFormat,
+        svgImagesAsPng: opts?.svgImagesAsPng,
         signal: ctx?.signal,
         onAdvice: ctx?.onAdvice,
       }
       const drawn = await drawBlocks(notesFree, target, drawCtx)
-      // PNG copies of the document's SVG images for Word and Kindle (spec D10).
+      // PNG copies of the document's SVG images for Word and Kindle (spec
+      // D10), and for HTML that is to be pasted (FOR_PASTING).
       const rasterised = await rasterizeSvgImages(drawn, target, drawCtx)
       // Pictures a Kindle cannot store as they are, re-encoded (AZW3 only).
       const html = await kindlePictures(rasterised, target, drawCtx)

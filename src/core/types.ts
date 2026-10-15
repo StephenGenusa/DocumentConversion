@@ -283,6 +283,12 @@ export interface ConvertOptions {
    * (azw3) are always PNG. Ignored where nothing is drawn.
    */
   renderedFormat?: RenderFormat
+  /**
+   * PNG copies of the document's SVG images for a target that would keep
+   * them as SVG (spec D10's Word rule, for HTML that will be pasted into Word
+   * or Outlook: see FOR_PASTING). Word and Kindle get them anyway.
+   */
+  svgImagesAsPng?: boolean
 }
 
 export type RenderHtmlToPdf = (html: string, opts?: PdfRenderOptions) => Promise<Buffer>

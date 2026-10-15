@@ -74,10 +74,20 @@ export const DOCX_MAX_WIDTH = 624
 /** A B1 diagram block, in the exact form the hub writes it (rendered-blocks.ts). */
 const DIAGRAM_BLOCK_SOURCE = /<pre><code class="language-(mermaid|dot)">([\s\S]*?)<\/code><\/pre>/g
 
+/**
+ * The options for HTML put on the clipboard (Convert to clipboard): what
+ * Word and Outlook (and Teams) show when it is pasted. They take no SVG data URI
+ * from pasted HTML, so diagrams are drawn as PNG and the document's own SVG
+ * images get PNG copies, whatever was chosen for an HTML file.
+ */
+export const FOR_PASTING = { renderedFormat: 'png', svgImagesAsPng: true } as const
+
 export interface DrawContext {
   renderBlocks?: RenderBlocks
   /** The choice made; renderedFormatFor decides what each target gets. */
   format?: RenderFormat
+  /** SVG images as PNG even where the target shows SVG (ConvertOptions.svgImagesAsPng). */
+  svgImagesAsPng?: boolean
   signal?: AbortSignal
   onAdvice?: (kind: 'render-failed', message: string) => void
 }

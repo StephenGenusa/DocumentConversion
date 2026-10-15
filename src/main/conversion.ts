@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
 import { mkdtemp, writeFile, rm } from 'fs/promises'
 import { createConverter } from '../core/convert'
+import { FOR_PASTING } from '../core/draw-blocks'
 import { getReader } from '../core/readers'
 import { normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
@@ -282,7 +283,8 @@ export async function runConversion(
 
 /**
  * The two flavours "copy as HTML" puts on the clipboard: rich, for Word, Teams
- * and Outlook paste targets, and plain, for editors. One read serves both.
+ * and Outlook paste targets (FOR_PASTING), and plain, for editors. One read
+ * serves both.
  * This used to be two full conversions, and the second ran with no signal at
  * all — so a cancel during it was ignored, the clipboard was overwritten and
  * the reply said "copied". A large PDF was also read twice.
@@ -297,7 +299,9 @@ export async function clipboardFlavors(
   throwIfCancelled(ctx.signal)
   const hub = await readForConversion(bytes, filename, source, opts.ocr === true, ctx, opts.ocrLanguage)
   throwIfCancelled(ctx.signal)
-  const html = await untilCancelled(converter.write(hub, 'html', opts, ctx), ctx.signal)
+  // PNG diagrams and PNG copies of SVG images, whatever was chosen: Word and
+  // Outlook do not show SVG from pasted HTML (FOR_PASTING).
+  const html = await untilCancelled(converter.write(hub, 'html', { ...opts, ...FOR_PASTING }, ctx), ctx.signal)
   const text = await untilCancelled(converter.write(hub, 'txt', opts, ctx), ctx.signal)
   throwIfCancelled(ctx.signal)
   return { html: html.parts[0].bytes.toString('utf8'), text: text.parts[0].bytes.toString('utf8') }

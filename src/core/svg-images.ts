@@ -4,7 +4,7 @@ import { Element, type ChildNode } from 'domhandler'
 import { removeElement, replaceElement } from 'domutils'
 import serialize from 'dom-serializer'
 import { sanitizeSvg } from './svg-sanitize'
-import { DOCX_MAX_WIDTH, type DrawContext } from './draw-blocks'
+import { DOCX_MAX_WIDTH, rendersBlocks, type DrawContext } from './draw-blocks'
 import { imagePlaceholder } from './inline-images'
 import { MAX_SVG_IMAGE_BYTES, type RenderResult } from './rendered-blocks'
 import type { TargetFormat } from './types'
@@ -284,17 +284,23 @@ function oneLine(text: string): string {
  * with its alt kept. A picture that cannot be made becomes its alt text,
  * with a notice; so do the pictures over the limit, with one notice.
  *
+ * Also for any picture target when `ctx.svgImagesAsPng` asks (HTML for the
+ * clipboard, FOR_PASTING), at the same Word-page sizes, since Word is where
+ * it is pasted.
+ *
  * Without a renderer (core used on its own), or for another target, the
  * HTML is returned untouched; the docx writer then turns any SVG it is
  * still given into its alt text.
  */
 export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx: DrawContext): Promise<string> {
   const render = ctx.renderBlocks
-  if (!render || !rasterizesSvgImages(target) || !HAS_SVG_IMAGE.test(html)) return html
+  // Asked for (pasting) only where a picture has a place: never for txt or md.
+  const asked = ctx.svgImagesAsPng === true && rendersBlocks(target)
+  if (!render || !(rasterizesSvgImages(target) || asked) || !HAS_SVG_IMAGE.test(html)) return html
   const dom = parseDocument(html)
   const images = svgImages(dom.children)
   if (images.length === 0) return html
-  const name = TARGET_NAMES[target] ?? target
+  const name = TARGET_NAMES[target] ?? (asked ? 'pasting' : target)
   const failed = (n: number, why: string): void =>
     ctx.onAdvice?.('render-failed', `SVG image ${n} could not be converted for ${name}: ${why}`)
 

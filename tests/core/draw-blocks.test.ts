@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import JSZip from 'jszip'
-import { drawBlocks, RENDER_LIMITS, renderCacheKey, rendersBlocks } from '../../src/core/draw-blocks'
+import { drawBlocks, FOR_PASTING, RENDER_LIMITS, renderCacheKey, rendersBlocks } from '../../src/core/draw-blocks'
 import { createConverter } from '../../src/core/convert'
 import { renderedFormatFor, type RenderBlocks, type RenderRequest, type RenderResult } from '../../src/core/rendered-blocks'
 import { TARGET_FORMATS, type TargetFormat } from '../../src/core/types'
@@ -291,7 +291,7 @@ describe('Converter.write draws diagrams through ConverterDeps.renderBlocks', ()
     const hub = await conv.read({ bytes: edited, filename: 'Clipboard' }, 'html')
     // The two flavours clipboardFlavors writes. The rich one is always PNG:
     // Word and Outlook do not take an SVG data URI from pasted HTML.
-    const rich = (await conv.write(hub, 'html', { renderedFormat: 'png' })).parts[0].bytes.toString('utf8')
+    const rich = (await conv.write(hub, 'html', { ...FOR_PASTING })).parts[0].bytes.toString('utf8')
     const plain = (await conv.write(hub, 'txt')).parts[0].bytes.toString('utf8')
     expect(rich).toContain(`src="data:image/png;base64,${PNG}"`)
     expect(rich).not.toContain('A --&gt; B')

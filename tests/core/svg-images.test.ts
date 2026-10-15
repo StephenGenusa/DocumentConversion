@@ -15,6 +15,7 @@ import {
   svgIntrinsicSize,
 } from '../../src/core/svg-images'
 import { createConverter } from '../../src/core/convert'
+import { FOR_PASTING } from '../../src/core/draw-blocks'
 import { allowedTargets } from '../../src/core/target-validity'
 import { TARGET_FORMATS } from '../../src/core/types'
 import type { RenderBlocks, RenderRequest, RenderResult } from '../../src/core/rendered-blocks'
@@ -349,6 +350,41 @@ describe('rasterizeSvgImages (spec D10): PNG copies of SVG images for Word and K
       expect(await rasterizeSvgImages(html, t, { renderBlocks: render })).toBe(html)
     }
     expect(await rasterizeSvgImages(html, 'docx', {})).toBe(html)
+    expect(calls).toHaveLength(0)
+  })
+})
+
+describe('Convert to clipboard: SVG images go as PNG, which Word and Outlook show when pasted', () => {
+  it('HTML with FOR_PASTING has PNG copies and no SVG; the HTML file itself keeps its SVG', async () => {
+    const { render, calls } = fakeRenderer()
+    const conv = createConverter(pdf, { renderBlocks: render })
+    const hub = await conv.read({ bytes: fixture('reading-room-page.html'), filename: 'reading-room-page.html' }, 'html')
+    // What clipboardFlavors writes: the rich flavour and the plain one.
+    const rich = (await conv.write(hub, 'html', { ...FOR_PASTING })).parts[0].bytes.toString('utf8')
+    const plain = (await conv.write(hub, 'txt', { ...FOR_PASTING })).parts[0].bytes.toString('utf8')
+    expect((rich.match(/<img[^>]+src="data:image\/png;base64,/g) ?? []).length).toBe(2)
+    expect(rich).not.toContain('svg+xml')
+    expect(plain).not.toContain('<img')
+    // Two pictures, asked for once each; the txt flavour asked for nothing.
+    expect(calls.flat().map((r) => `${r.kind}:${r.format}`)).toEqual(['svg:png', 'svg:png'])
+    const file = (await conv.write(hub, 'html')).parts[0].bytes.toString('utf8')
+    expect(file).toContain('src="data:image/svg+xml;base64,')
+    expect(calls).toHaveLength(1)
+  })
+
+  it('names the clipboard in a notice when a picture cannot be converted', async () => {
+    const render: RenderBlocks = async (reqs) => reqs.map(() => ({ error: 'it is not a readable SVG' }))
+    const onAdvice = vi.fn()
+    await rasterizeSvgImages(`<p>${img(SVG)}</p>`, 'html', { renderBlocks: render, onAdvice, svgImagesAsPng: true })
+    expect(onAdvice).toHaveBeenCalledWith('render-failed', 'SVG image 1 could not be converted for pasting: it is not a readable SVG')
+  })
+
+  it('asks nothing for a target with no place for a picture, even when asked', async () => {
+    const { render, calls } = fakeRenderer()
+    const html = `<p>${img(SVG)}</p>`
+    for (const t of ['txt', 'md', 'csv'] as const) {
+      expect(await rasterizeSvgImages(html, t, { renderBlocks: render, svgImagesAsPng: true })).toBe(html)
+    }
     expect(calls).toHaveLength(0)
   })
 })

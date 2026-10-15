@@ -547,6 +547,13 @@ try {
     await waitFor(`document.querySelector('.clip-pane__editor img[src^="data:image/svg+xml"]').naturalWidth > 0`, 'the SVG to be drawn')
     const shown = await js(`(() => { const i=document.querySelector('.clip-pane__editor img[src^="data:image/svg+xml"]'); return { w: i.naturalWidth, h: i.naturalHeight, svgInPage: !!document.querySelector('.clip-pane__editor svg') } })()`)
     check('the editor shows the SVG as an image', shown.w === 480 && shown.h === 300 && !shown.svgInPage, JSON.stringify(shown))
+    // Converted to the clipboard as HTML, the picture goes as a PNG: Word and Outlook show no pasted SVG.
+    await click('HTML')
+    await click('Convert to clipboard')
+    await waitFor(resultIsUp, 'a result')
+    const pasted = await mainEval(`(() => { const { clipboard } = process.mainModule.require('electron'); return clipboard.readHTML() })()`)
+    check('converted to the clipboard, the SVG is a PNG picture and no SVG is left', /<img[^>]+src="data:image\/png;base64,/.test(pasted) && !pasted.includes('svg+xml'), pasted.slice(0, 200))
+    await dismiss()
     const svgInputs = await js(`window.api.loadUriList(${JSON.stringify(pathToFileURL(plan).href)})`)
     const svgOut = join(work, 'svg-out')
     mkdirSync(svgOut)

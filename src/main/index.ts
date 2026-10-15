@@ -505,9 +505,8 @@ function registerIpc(): void {
         }
         if (target === 'html') {
           // Rich flavor for Word/Teams/Outlook paste targets + plain-text flavor for editors.
-          // Diagrams go as PNG whatever is chosen: those apps do not show an
-          // SVG data URI from pasted HTML.
-          const flavors = await clipboardFlavors(bytes, filename, source, { ...opts, renderedFormat: 'png' }, ctx)
+          // Diagrams and SVG images go as PNG whatever is chosen (clipboardFlavors).
+          const flavors = await clipboardFlavors(bytes, filename, source, opts, ctx)
           clipboard.write(flavors)
           return { status: 'copied' as const }
         }
