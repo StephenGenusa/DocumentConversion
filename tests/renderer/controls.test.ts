@@ -51,7 +51,7 @@ describe('input controls', () => {
 
 describe('the edited-copy note', () => {
   it('uses the SQLite wording for a database, and the records wording otherwise', () => {
-    expect(editedCopyNote('sqlite')).toBe('Edited copy: tables are limited to 5,000 rows. Discard edits to export every row.')
+    expect(editedCopyNote('sqlite')).toBe('This edited copy holds the first 5,000 rows of each table. Exporting it to CSV, JSON or Excel writes only those; to export every row, remove it and add the file again without opening it in the editor.')
     expect(editedCopyNote('json')).toMatch(/^This edited copy holds the first 5,000 records\./)
     expect(editedCopyNote('vcard')).toBe(editedCopyNote('json'))
   })

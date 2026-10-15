@@ -81,7 +81,10 @@ export function appliedReadOptions(source: SourceFormat, read: ReadOptions = {})
  * exporting it writes only those.
  */
 export function editedCopyNote(source: SourceFormat): string {
-  if (source === 'sqlite') return 'Edited copy: tables are limited to 5,000 rows. Discard edits to export every row.'
+  if (source === 'sqlite') return (
+      'This edited copy holds the first 5,000 rows of each table. Exporting it to CSV, JSON or Excel writes only those; ' +
+      'to export every row, remove it and add the file again without opening it in the editor.'
+    )
   return (
     'This edited copy holds the first 5,000 records. Exporting it to CSV, JSON or Excel writes only those; to export ' +
     'every record, remove it and add the file again without opening it in the editor.'
