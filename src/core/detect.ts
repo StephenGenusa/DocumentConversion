@@ -60,6 +60,9 @@ const EXT_MAP = new Map<string, SourceFormat>(
     // Contacts. A .vcf is also the genomics Variant Call Format: see detect().
     vcf: 'vcard',
     vcard: 'vcard',
+    dj: 'djot',
+    djot: 'djot',
+    textile: 'textile',
     // mammoth reads macro-enabled Word documents like any other .docx.
     docm: 'docx',
     ipynb: 'ipynb',

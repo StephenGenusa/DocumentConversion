@@ -32,6 +32,8 @@ const SHORT: Record<SourceFormat, string> = {
   subtitles: 'vtt',
   opml: 'opml',
   vcard: 'vcf',
+  djot: 'dj',
+  textile: 'textile',
 }
 
 export function InputList({

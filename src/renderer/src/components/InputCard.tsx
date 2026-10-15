@@ -29,6 +29,8 @@ const LABELS: Record<SourceFormat, string> = {
   subtitles: 'Subtitles / transcript',
   opml: 'Outline (.opml)',
   vcard: 'Contacts (vCard)',
+  djot: 'Djot',
+  textile: 'Textile',
 }
 
 // Binary formats are what their magic bytes say — no override. Text inputs can
@@ -51,6 +53,8 @@ const TEXT_OVERRIDES: SourceFormat[] = [
   'subtitles',
   'opml',
   'vcard',
+  'djot',
+  'textile',
 ]
 
 export function InputCard({

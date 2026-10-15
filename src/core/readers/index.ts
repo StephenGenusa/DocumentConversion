@@ -26,6 +26,8 @@ import { readJson, readJsonRows } from './json'
 import { readSubtitles } from './subtitles'
 import { readOpml } from './opml'
 import { readVcard, readVcardRows } from './vcard'
+import { readDjot } from './djot'
+import { readTextile } from './textile'
 import type { RowSource } from '../records'
 
 export type Reader = (src: SourceInput, ctx?: ReadContext) => Promise<HubDocument>
@@ -57,6 +59,8 @@ const registered: Partial<Record<SourceFormat, Reader>> = {
   subtitles: readSubtitles,
   opml: readOpml,
   vcard: readVcard,
+  djot: readDjot,
+  textile: readTextile,
 }
 
 export function getReader(format: SourceFormat): Reader {

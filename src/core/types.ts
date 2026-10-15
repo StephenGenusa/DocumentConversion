@@ -48,6 +48,8 @@ export type SourceFormat =
   | 'subtitles'
   | 'opml'
   | 'vcard'
+  | 'djot'
+  | 'textile'
 
 export const TARGET_FORMATS: TargetFormat[] = [
   'txt',
@@ -126,6 +128,8 @@ export const SOURCE_FORMATS: SourceFormat[] = [
   'subtitles',
   'opml',
   'vcard',
+  'djot',
+  'textile',
 ]
 
 export const EXTENSIONS: Record<TargetFormat, string> = {

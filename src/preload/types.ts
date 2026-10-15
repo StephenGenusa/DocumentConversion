@@ -49,6 +49,8 @@ export type SourceFormat =
   | 'subtitles'
   | 'opml'
   | 'vcard'
+  | 'djot'
+  | 'textile'
 
 export type DetectResult =
   | { kind: 'ok'; format: SourceFormat; /** JSON that reads as a table of records. */ jsonTable?: boolean }
