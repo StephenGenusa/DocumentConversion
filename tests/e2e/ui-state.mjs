@@ -231,6 +231,14 @@ const toggle = async (text) => {
   await waitFor(`[...document.querySelectorAll('label')].find(l=>l.textContent.trim()===${JSON.stringify(text)})?.querySelector('input').checked === ${!before}`, `"${text}" to change`)
 }
 
+/** The select labelled `text`, as { value, text } or null when it is not shown. */
+const choice = (text) =>
+  js(`(() => { const l=[...document.querySelectorAll('label')].find(l=>l.firstChild?.textContent.trim()===${JSON.stringify(text)}); const s=l?.querySelector('select'); return s ? { value: s.value, text: s.selectedOptions[0]?.textContent } : null })()`)
+const choose = async (text, value) => {
+  await js(`(() => { const s=[...document.querySelectorAll('label')].find(l=>l.firstChild?.textContent.trim()===${JSON.stringify(text)}).querySelector('select'); const set=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set; set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change',{bubbles:true})) })()`)
+  await waitFor(`[...document.querySelectorAll('label')].find(l=>l.firstChild?.textContent.trim()===${JSON.stringify(text)})?.querySelector('select').value === ${JSON.stringify(value)}`, `"${text}" to change`)
+}
+
 function check(name, ok, detail) {
   if (ok) console.log(`ok    ${name}`)
   else {
@@ -358,6 +366,26 @@ try {
   await dropFile(plain, 'plain.md')
   const boxes = [await checkbox('Include view results'), await checkbox('Include timestamps')]
   check('neither checkbox is offered for a Markdown file', boxes.every((b) => b === null), JSON.stringify(boxes))
+  await startOver()
+
+  // The Diagrams choice (spec B4, V1): shown for an output that takes SVG when
+  // an input has a diagram, known as soon as the file is added (never opened
+  // in the editor); hidden for Word; its value kept while hidden.
+  await dropFile(join(ROOT, 'tests', 'corpus', 'diagram-notes.md'), 'diagram-notes.md')
+  await click('PDF')
+  let diagramsChoice = await choice('Diagrams and formulas')
+  check('a file with diagrams, never opened, offers "Diagrams and formulas" for PDF', diagramsChoice !== null, JSON.stringify(diagramsChoice))
+  check('"Diagrams and formulas" starts as Sharp (SVG)', diagramsChoice?.value === 'svg' && diagramsChoice?.text === 'Sharp (SVG)', JSON.stringify(diagramsChoice))
+  await choose('Diagrams and formulas', 'png')
+  await click('Word')
+  check('it is not offered for Word', (await choice('Diagrams and formulas')) === null, 'shown for Word')
+  await click('PDF')
+  diagramsChoice = await choice('Diagrams and formulas')
+  check('it keeps its value while hidden', diagramsChoice?.value === 'png', JSON.stringify(diagramsChoice))
+  await startOver()
+  await dropFile(plain, 'plain.md')
+  await click('PDF')
+  check('it is not offered for a file with no diagrams', (await choice('Diagrams and formulas')) === null, 'shown')
   await startOver()
 
   // Diagrams drawn in the editor (spec B11): edit one, see the live preview,
@@ -521,6 +549,17 @@ try {
   const [first, second] = batch.rows
   check('a batch converts a changed file as it is now', first.status === 'saved' && readFileSync(first.path, 'utf8').includes('batch NEW'), JSON.stringify(first))
   check('a batch reports a deleted file on its own row', second.status === 'error' && /gone\.md/.test(second.message), JSON.stringify(second))
+
+  // The Diagrams choice is for the session only: a fresh start is Sharp (SVG)
+  // again, though it was left on PNG above. A reload starts the page afresh, as
+  // a restart does; nothing is saved to bring it back.
+  await js('location.reload()')
+  await sleep(500)
+  await waitFor(`!!document.querySelector('.dropzone')`, 'the app to load again')
+  await dropFile(join(ROOT, 'tests', 'corpus', 'diagram-notes.md'), 'diagram-notes.md')
+  await click('PDF')
+  diagramsChoice = await choice('Diagrams and formulas')
+  check('after a restart it is Sharp (SVG) again', diagramsChoice?.value === 'svg', JSON.stringify(diagramsChoice))
 } catch (err) {
   failures++
   console.log(`FAIL  ${err.message}`)

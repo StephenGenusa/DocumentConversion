@@ -1,3 +1,5 @@
+import type { TargetFormat } from './types'
+
 /**
  * Diagrams and formulas in the hub (spec B1): tagged source, never a drawing.
  *
@@ -60,6 +62,19 @@ export function hubFeatures(html: string): HubFeatures {
 export type RenderKind = 'mermaid' | 'dot' | 'math'
 export type RenderFormat = 'png' | 'svg'
 
+/**
+ * The targets that take an SVG picture (spec B3): the choice applies there,
+ * and is SVG unless PNG is asked for. azw4 is a PDF inside, so it follows
+ * the pdf choice. Word is always PNG: html-to-docx would store an SVG as
+ * media Word cannot show. (azw3 would be PNG too, once it draws at all.)
+ */
+export const SVG_TARGETS: ReadonlySet<TargetFormat> = new Set(['pdf', 'html', 'revealjs', 'epub', 'azw4'])
+
+/** The format `target` draws in, given the choice made (ConvertOptions.renderedFormat). */
+export function renderedFormatFor(target: TargetFormat, chosen?: RenderFormat): RenderFormat {
+  return SVG_TARGETS.has(target) && chosen !== 'png' ? 'svg' : 'png'
+}
+
 export interface RenderRequest {
   kind: RenderKind
   /** The block's source, byte for byte. */
@@ -103,3 +118,14 @@ export const DRAWN_KINDS: ReadonlySet<RenderKind> = new Set<RenderKind>(['mermai
 
 /** The largest source drawn, by the host and by the editor's IPC alike (spec B11). */
 export const MAX_SOURCE_BYTES = 100 * 1024
+
+/**
+ * Whether a document with these features has something a conversion draws
+ * now: what the Diagrams choice is shown for (spec 2a, V1). Formulas count
+ * once MathJax draws them (step 18); until then they stay source whatever
+ * is chosen. Graphviz is counted with the diagrams it is reported among.
+ */
+export function drawsSomething(features: HubFeatures | undefined): boolean {
+  if (!features) return false
+  return features.diagrams || (features.math && DRAWN_KINDS.has('math'))
+}

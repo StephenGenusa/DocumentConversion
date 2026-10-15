@@ -64,6 +64,7 @@ const api = {
     source: SourceFormat
     target: TargetFormat
     pdf?: { scale?: number; pageSize?: string; landscape?: boolean }
+    renderedFormat?: 'svg' | 'png'
     ocr?: boolean
     jobId?: string
     sourceDir?: string
@@ -97,6 +98,7 @@ const api = {
     source: SourceFormat
     target: TargetFormat
     pdf?: { scale?: number; pageSize?: string; landscape?: boolean }
+    renderedFormat?: 'svg' | 'png'
     ocr?: boolean
     jobId?: string
   }) => ipcRenderer.invoke('app:convert-copy', req),

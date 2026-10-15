@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { appliedOptions, appliedReadOptions, type ControlInput } from './lib/controls'
+import { appliedOptions, appliedReadOptions, SESSION_DEFAULTS, type ControlInput } from './lib/controls'
 import { DropZone } from './components/DropZone'
 import { createIntake, type LoadedPayload, type PaneSource } from './lib/intake'
 import type { Intake } from './lib/intake-types'
@@ -17,6 +17,7 @@ import type {
   BatchRow,
   PdfOptions,
   ReadOptions,
+  RenderedFormat,
   SaveResult,
   SlideOptions,
   SourceFormat,
@@ -37,6 +38,8 @@ function App(): React.JSX.Element {
   // Session-persistent so repeated conversions keep the chosen page setup.
   const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false })
   const [slideOptions, setSlideOptions] = useState<SlideOptions>({ splitOn: 'auto' })
+  // Diagrams as SVG or PNG (spec B4): for this session only, never saved.
+  const [renderedFormat, setRenderedFormat] = useState<RenderedFormat>(SESSION_DEFAULTS.renderedFormat)
   const [ocrLanguage, setOcrLanguage] = useState('eng')
   // The last reading choices made this session: the defaults for inputs added later.
   const [readDefaults, setReadDefaults] = useState<ReadOptions>({})
@@ -129,6 +132,7 @@ function App(): React.JSX.Element {
       handle: p.handle,
       jsonTable: p.jsonTable,
       viewCount: p.viewCount,
+      features: p.features,
       read: readDefaults,
     })
   }
@@ -284,7 +288,7 @@ function App(): React.JSX.Element {
         const payload = {
           ...req,
           target,
-          ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions }),
+          ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions, renderedFormat }),
           jobId,
         }
         const res =
@@ -298,7 +302,7 @@ function App(): React.JSX.Element {
         const res = await window.api.convertMerge({
           items: list.map((i) => toRequest(i, ocrLanguage)),
           target,
-          ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions }),
+          ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions, renderedFormat }),
           headings,
           jobId,
         })
@@ -310,7 +314,7 @@ function App(): React.JSX.Element {
       const res = await window.api.convertBatch({
         items: list.map((i) => toRequest(i, ocrLanguage)),
         target,
-        ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions }),
+        ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions, renderedFormat }),
         jobId,
       })
       if (res.status === 'batch') showBatch({ outDir: res.outDir, rows: res.rows })
@@ -326,7 +330,7 @@ function App(): React.JSX.Element {
       const res = await window.api.convertBatch({
         items: [toRequest(item, ocrLanguage)],
         target,
-        ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions }),
+        ...appliedOptions(target, controlInputs, { pdf: pdfOptions, slides: slideOptions, renderedFormat }),
         jobId,
         outDir,
       })
@@ -419,6 +423,7 @@ function App(): React.JSX.Element {
     imageMode: i.imageMode,
     jsonTable: i.jsonTable,
     viewCount: i.viewCount,
+    features: i.features,
   }))
   const validityInputs = items.map((i) => ({
     format: (i.html !== undefined ? 'html' : i.source) as SourceFormat,
@@ -555,6 +560,8 @@ function App(): React.JSX.Element {
               slideOptions={slideOptions}
               onSlideOptionsChange={setSlideOptions}
               onPdfOptionsChange={setPdfOptions}
+              renderedFormat={renderedFormat}
+              onRenderedFormatChange={setRenderedFormat}
               allowed={allowed}
               inputs={controlInputs}
               restrictionLabel={restrictor}

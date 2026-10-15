@@ -133,6 +133,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // merged document is drawn once and nothing drawn reaches the hub.
       const html = await drawBlocks(notesFree, target, {
         renderBlocks: deps.renderBlocks,
+        format: opts?.renderedFormat,
         signal: ctx?.signal,
         onAdvice: ctx?.onAdvice,
       })

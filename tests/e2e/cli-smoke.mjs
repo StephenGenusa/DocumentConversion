@@ -137,6 +137,26 @@ if (existsSync(join(work, 'diagrams.docx'))) {
   }
 }
 
+// Diagrams as SVG by default where the output takes it; --diagrams png asks for images.
+run('mermaid->html embeds SVG by default', [diagrams, '--to', 'html', '--out', join(work, 'diagrams-svg.html')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'diagrams-svg.html')],
+})
+run('mermaid->html --diagrams png', [diagrams, '--to', 'html', '--diagrams', 'png', '--out', join(work, 'diagrams-png.html')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'diagrams-png.html')],
+})
+for (const [file, mime] of [['diagrams-svg.html', 'image/svg+xml'], ['diagrams-png.html', 'image/png']]) {
+  if (existsSync(join(work, file)) && !readFileSync(join(work, file), 'utf8').includes(`src="data:${mime};base64,`)) {
+    failures++
+    console.log(`FAIL  ${file} has no ${mime} diagram`)
+  }
+}
+run('--diagrams for Word exit 2', [diagrams, '--to', 'docx', '--diagrams', 'svg'], {
+  expectCode: 2,
+  expectStderr: '--diagrams applies only to pdf, html, revealjs, epub, azw4 output, not docx',
+})
+
 // content sanity
 if (existsSync(join(work, 'spec.html'))) {
   const html = readFileSync(join(work, 'spec.html'), 'utf8')

@@ -16,6 +16,8 @@ export interface LoadedPayload {
   jsonTable?: boolean
   /** A SQLite database's number of views. */
   viewCount?: number
+  /** Diagrams and formulas it holds, as detected when it was added. */
+  features?: { diagrams: boolean; math: boolean }
 }
 
 /** How an input that opens in the edit pane is named in the list and on disk. */
@@ -74,6 +76,7 @@ export function createIntake(handlers: IntakeHandlers) {
           sourceDir,
           jsonTable: entry.detected.jsonTable,
           viewCount: entry.detected.viewCount,
+          features: entry.detected.features,
         })
         added++
       }
@@ -88,7 +91,16 @@ export function createIntake(handlers: IntakeHandlers) {
       return
     }
     onNotice(null)
-    onLoaded({ filename, base64, detected: detected.format, sourceDir, handle, jsonTable: detected.jsonTable, viewCount: detected.viewCount })
+    onLoaded({
+      filename,
+      base64,
+      detected: detected.format,
+      sourceDir,
+      handle,
+      jsonTable: detected.jsonTable,
+      viewCount: detected.viewCount,
+      features: detected.features,
+    })
   }
 
   async function acceptLoaded(loaded: LoadedInput[] | null): Promise<void> {

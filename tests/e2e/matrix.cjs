@@ -166,15 +166,24 @@ async function main() {
         rec.path = outPath
         if (!sniffOk(target, out)) throw new Error('output does not look like ' + target)
         if (hasDiagrams && DRAWING_TARGETS.includes(target)) {
-          // A diagram is drawn as a PNG: Word gets PNG media and no SVG, the
-          // HTML-based outputs a PNG data URI.
+          // A diagram is drawn as SVG where the output takes it (the default),
+          // and as PNG for Word: PNG media and no SVG there, an SVG data URI
+          // in the HTML-based outputs, an image/svg+xml item (never the
+          // cover) in an EPUB.
           if (target === 'docx') {
             const media = Object.keys((await JSZip.loadAsync(out)).files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
             if (!media.some((n) => n.endsWith('.png'))) throw new Error('docx has no PNG media for its diagrams')
             if (media.some((n) => /svg/i.test(n))) throw new Error('docx has SVG media')
             rec.note = `${media.length} media`
           } else if (target === 'html' || target === 'revealjs') {
-            if (!out.toString('utf8').includes('src="data:image/png;base64,')) throw new Error('no drawn diagram in the output')
+            if (!out.toString('utf8').includes('src="data:image/svg+xml;base64,')) throw new Error('no drawn SVG diagram in the output')
+          } else if (target === 'epub') {
+            const zip = await JSZip.loadAsync(out)
+            const opf = await zip.file('OEBPS/content.opf').async('string')
+            const svgItems = opf.match(/<item [^>]*media-type="image\/svg\+xml"[^>]*>/g) ?? []
+            if (svgItems.length === 0) throw new Error('epub has no SVG item for its diagrams')
+            if (svgItems.some((i) => i.includes('cover-image'))) throw new Error('a diagram is the epub cover')
+            rec.note = `${svgItems.length} SVG items`
           }
         }
         const reader = readerFor(target)

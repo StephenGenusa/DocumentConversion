@@ -1,4 +1,5 @@
 import type { SourceFormat } from './types'
+import type { HubFeatures } from './rendered-blocks'
 import { codeFormatFromFilename, codeNameFromFilename } from './code-langs'
 import { imageMime } from './readers/image'
 import { hasSqliteMagic } from './sqlite'
@@ -11,6 +12,8 @@ export type DetectResult =
       jsonTable?: boolean
       /** A SQLite database's number of views (added by the main process). */
       viewCount?: number
+      /** Diagrams and formulas it holds (added by the main process; features-hint.ts). */
+      features?: HubFeatures
     }
   | { kind: 'archive' }
   | { kind: 'unsupported'; reason: string }

@@ -93,4 +93,10 @@ describe('shared hub allowlist', () => {
     expect(sanitizeToHub('<pre><code class="language-c++ hljs">x</code></pre>')).toBe('<pre><code class="language-c++ hljs">x</code></pre>')
     expect(sanitizeToHub('<pre><code class="language-x&quot;onload">x</code></pre>')).toBe('<pre><code>x</code></pre>')
   })
+
+  it('drops the drawn-diagram marker, so it never comes back into a document read from our own output', () => {
+    expect(sanitizeToHub('<img src="data:image/png;base64,AAAA" alt="Diagram" data-rendered="diagram">')).toBe(
+      '<img src="data:image/png;base64,AAAA" alt="Diagram" />',
+    )
+  })
 })

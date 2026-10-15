@@ -49,6 +49,7 @@ export async function runCli(argv: string[]): Promise<number> {
       headerFooter: req.headerFooter,
     }),
     slides: { splitOn: req.split ?? 'auto' },
+    renderedFormat: req.diagrams,
     ocr: req.ocr,
     read: cliReadOptions(req),
   }

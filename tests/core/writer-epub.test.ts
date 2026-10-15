@@ -137,6 +137,34 @@ describe('writeEpub images', () => {
     expect(opf).toContain('media-type="image/png"')
   })
 
+  it('maps an SVG data URI to an image/svg+xml item holding the markup', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4"/></svg>'
+    const uri = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+    const zip = await open(await writeEpub(book(`<h1>A</h1><p><img src="${uri}" alt="Diagram"></p>`)))
+    expect(await text(zip, 'OEBPS/images/img001.svg')).toBe(svg)
+    expect(await text(zip, 'OEBPS/content.opf')).toContain('href="images/img001.svg" media-type="image/svg+xml"')
+    expect(await text(zip, 'OEBPS/ch001.xhtml')).toContain('<img src="images/img001.svg" alt="Diagram"/>')
+  })
+
+  it('makes the first picture of the document the cover', async () => {
+    const zip = await open(await writeEpub(book(`<h1>A</h1><p><img src="data:image/png;base64,${PNG_B64}"></p>`)))
+    expect(await text(zip, 'OEBPS/content.opf')).toContain('href="images/img001.png" media-type="image/png" properties="cover-image"')
+  })
+
+  it('never makes a drawn diagram the cover, and drops the marker from the book', async () => {
+    const diagram = `<img src="data:image/png;base64,${PNG_B64}" alt="Diagram" data-rendered="diagram">`
+    const photo = `<img src="data:image/gif;base64,${GIF_B64}" alt="photo">`
+    let zip = await open(await writeEpub(book(`<h1>A</h1><p>${diagram}</p><p>${photo}</p>`)))
+    let opf = await text(zip, 'OEBPS/content.opf')
+    expect(opf).toContain('<item id="img1" href="images/img001.png" media-type="image/png"/>')
+    expect(opf).toContain('<item id="img2" href="images/img002.gif" media-type="image/gif" properties="cover-image"/>')
+    expect(await text(zip, 'OEBPS/ch001.xhtml')).not.toContain('data-rendered')
+    // Only diagrams: no cover at all.
+    zip = await open(await writeEpub(book(`<h1>A</h1><p>${diagram}</p>`)))
+    opf = await text(zip, 'OEBPS/content.opf')
+    expect(opf).not.toContain('cover-image')
+  })
+
   it('stores one copy of an image used in several chapters', async () => {
     const img = `<img src="data:image/png;base64,${PNG_B64}" alt="logo">`
     const zip = await open(await writeEpub(book(`<h1>A</h1><p>${img}</p><h1>B</h1><p>${img}</p>`)))

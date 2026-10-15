@@ -1,4 +1,4 @@
-import type { PdfOptions, PdfPageSize, SlideOptions, TargetFormat } from '../../../preload/types'
+import type { PdfOptions, PdfPageSize, RenderedFormat, SlideOptions, TargetFormat } from '../../../preload/types'
 import { showsOutput, type ControlInput } from '../lib/controls'
 import { isClipboardTarget } from '../../../core/target-validity'
 import { DEFAULT_PDF_SCALE } from '../../../core/pdf-options'
@@ -47,6 +47,8 @@ export function OutputPicker({
   onPdfOptionsChange,
   slideOptions,
   onSlideOptionsChange,
+  renderedFormat = 'svg',
+  onRenderedFormatChange,
   allowed,
   inputs = [],
   restrictionLabel,
@@ -61,6 +63,9 @@ export function OutputPicker({
   onPdfOptionsChange: (o: PdfOptions) => void
   slideOptions: SlideOptions
   onSlideOptionsChange: (o: SlideOptions) => void
+  /** Diagrams as SVG or PNG (spec B4), for the session. */
+  renderedFormat?: RenderedFormat
+  onRenderedFormatChange?: (f: RenderedFormat) => void
   allowed?: TargetFormat[]
   /** What the inputs are, for controls that show only when an input has content they act on. */
   inputs?: ControlInput[]
@@ -157,6 +162,17 @@ export function OutputPicker({
               onChange={(e) => onPdfOptionsChange({ ...pdfOptions, headerFooter: e.target.checked })}
             />
             Header &amp; footer
+          </label>
+        </div>
+      )}
+      {showsOutput('renderedFormat', target, inputs) && onRenderedFormatChange && (
+        <div className="pdf-options">
+          <label>
+            Diagrams and formulas
+            <select value={renderedFormat} onChange={(e) => onRenderedFormatChange(e.target.value as RenderedFormat)}>
+              <option value="svg">Sharp (SVG)</option>
+              <option value="png">Image (PNG)</option>
+            </select>
           </label>
         </div>
       )}

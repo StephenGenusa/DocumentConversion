@@ -1,4 +1,5 @@
 import type { ReadOptions, SourceFormat, TargetFormat } from '../../../core/types'
+import { drawsSomething, SVG_TARGETS, type HubFeatures, type RenderFormat } from '../../../core/rendered-blocks'
 
 /**
  * Which conversion controls are shown (spec 2a).
@@ -14,7 +15,8 @@ import type { ReadOptions, SourceFormat, TargetFormat } from '../../../core/type
  * The rules live here and nowhere else, so the screen, the options sent with a
  * conversion, and every later control agree. Values live in App state: they
  * last for the session and survive being hidden, so switching the target away
- * and back does not reset them.
+ * and back does not reset them. Nothing is saved, so a restart starts again
+ * from SESSION_DEFAULTS.
  */
 
 export interface ControlInput {
@@ -24,15 +26,22 @@ export interface ControlInput {
   jsonTable?: boolean
   /** A SQLite database's number of views. */
   viewCount?: number
+  /** Diagrams and formulas it holds, from the last read or edit, or the hint given when it was added. */
+  features?: HubFeatures
 }
 
-export type OutputControl = 'pdfOptions' | 'slideSplit'
+export type OutputControl = 'pdfOptions' | 'slideSplit' | 'renderedFormat'
 export type InputControl = 'imageMode' | 'ocrLanguage' | 'jsonAs' | 'timestamps' | 'sqliteViews'
 
 const OUTPUT_RULES: Record<OutputControl, (target: TargetFormat, inputs: ControlInput[]) => boolean> = {
   pdfOptions: (target) => target === 'pdf',
   slideSplit: (target) => target === 'revealjs',
+  // Diagrams and formulas: Sharp (SVG) / Image (PNG), spec B4. Word is always PNG.
+  renderedFormat: (target, inputs) => SVG_TARGETS.has(target) && inputs.some((i) => drawsSomething(i.features)),
 }
+
+/** Where each session's choices start. */
+export const SESSION_DEFAULTS: { renderedFormat: RenderFormat } = { renderedFormat: 'svg' }
 
 const INPUT_RULES: Record<InputControl, (input: ControlInput) => boolean> = {
   imageMode: (input) => input.source === 'image',
@@ -56,11 +65,14 @@ export function showsInput(control: InputControl, input: ControlInput): boolean 
 export function appliedOptions<P, S>(
   target: TargetFormat,
   inputs: ControlInput[],
-  values: { pdf: P; slides: S },
-): { pdf?: P; slides?: S } {
+  values: { pdf: P; slides: S; renderedFormat?: RenderFormat },
+): { pdf?: P; slides?: S; renderedFormat?: RenderFormat } {
   return {
     ...(showsOutput('pdfOptions', target, inputs) ? { pdf: values.pdf } : {}),
     ...(showsOutput('slideSplit', target, inputs) ? { slides: values.slides } : {}),
+    ...(showsOutput('renderedFormat', target, inputs) && values.renderedFormat
+      ? { renderedFormat: values.renderedFormat }
+      : {}),
   }
 }
 

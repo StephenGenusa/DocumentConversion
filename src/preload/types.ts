@@ -1,3 +1,6 @@
+/** Diagrams embedded as SVG or as PNG (spec B4). */
+export type RenderedFormat = 'svg' | 'png'
+
 /** How a document is cut into slides. `auto` uses <hr> if present, else h1. */
 export interface SlideOptions {
   splitOn?: 'auto' | 'hr' | 'h1' | 'h2'
@@ -61,6 +64,8 @@ export type DetectResult =
       jsonTable?: boolean
       /** A SQLite database's number of views. */
       viewCount?: number
+      /** Diagrams and formulas it holds (spec B1), for the Diagrams choice. */
+      features?: { diagrams: boolean; math: boolean }
     }
   | { kind: 'archive' }
   | { kind: 'unsupported'; reason: string }
@@ -191,6 +196,7 @@ export interface Api {
     target: TargetFormat
     pdf?: PdfOptions
     slides?: SlideOptions
+    renderedFormat?: RenderedFormat
     ocr?: boolean
     jobId?: string
     /** Folder the input came from; the save dialog opens there. */
@@ -201,6 +207,7 @@ export interface Api {
     target: TargetFormat
     pdf?: PdfOptions
     slides?: SlideOptions
+    renderedFormat?: RenderedFormat
     jobId?: string
     outDir?: string
   }): Promise<BatchResult>
@@ -209,6 +216,7 @@ export interface Api {
     target: TargetFormat
     pdf?: PdfOptions
     slides?: SlideOptions
+    renderedFormat?: RenderedFormat
     headings?: boolean
     jobId?: string
   }): Promise<SaveResult>
@@ -260,6 +268,7 @@ export interface Api {
     target: TargetFormat
     pdf?: PdfOptions
     slides?: SlideOptions
+    renderedFormat?: RenderedFormat
     ocr?: boolean
     jobId?: string
   }): Promise<SaveResult>

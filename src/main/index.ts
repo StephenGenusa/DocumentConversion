@@ -7,6 +7,8 @@ import { detect } from '../core/detect'
 import { allFileUrisToPaths } from '../core/uri'
 import { EXTENSIONS, TABLE_TARGETS, type SourceFormat, type TargetFormat } from '../core/types'
 import type { DetectResult } from '../core/detect'
+import { featuresHint } from '../core/features-hint'
+import type { RenderFormat } from '../core/rendered-blocks'
 import { jsonIsTable } from '../core/readers/json'
 import { normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
@@ -88,14 +90,25 @@ const FILTERS: Record<TargetFormat, { name: string; extensions: string[] }> = {
 /**
  * Detection, plus what the input card needs to know before anything is
  * converted (spec 2a, V2): whether a JSON file reads as a table, which decides
- * whether the Table / Formatted JSON choice is shown, and how many views a
- * database has, which decides whether Include view results is.
+ * whether the Table / Formatted JSON choice is shown, how many views a
+ * database has, which decides whether Include view results is, and whether a
+ * text document holds diagrams, which decides whether the Diagrams choice is
+ * (spec V1; a file never opened in the pane has no other way to say).
  */
 async function detectWithHints(bytes: Buffer, filename?: string): Promise<DetectResult> {
   const d = detect(bytes, filename)
   if (d.kind === 'ok' && d.format === 'json') return { ...d, jsonTable: jsonIsTable(bytes, filename) }
   if (d.kind === 'ok' && d.format === 'sqlite') return { ...d, viewCount: await sqliteHost.viewCount(bytes) }
+  if (d.kind === 'ok') {
+    const features = await featuresHint(bytes, d.format, filename)
+    if (features) return { ...d, features }
+  }
   return d
+}
+
+/** A request's Diagrams choice (spec B4), when it is one the writers know. */
+function renderedFormatOf(value: unknown): RenderFormat | undefined {
+  return value === 'svg' || value === 'png' ? value : undefined
 }
 
 /**
@@ -251,8 +264,13 @@ function registerIpc(): void {
     typeof handle === 'string' ? stampOf(handle) : null,
   )
 
+  // Pasted text: the Diagrams hint too, for pasted AsciiDoc or reStructuredText
+  // that stays an input card (Markdown opens in the pane and is read there).
   ipcMain.handle('app:detect-text', async (_e, { text }: { text: string }) => {
-    return detect(Buffer.from(text, 'utf8'))
+    const bytes = Buffer.from(text, 'utf8')
+    const d = detect(bytes)
+    const features = d.kind === 'ok' ? await featuresHint(bytes, d.format) : undefined
+    return features && d.kind === 'ok' ? { ...d, features } : d
   })
 
   ipcMain.handle('app:cancel', (_e, { jobId }: { jobId: string }) => cancelJob(jobId))
@@ -437,6 +455,7 @@ function registerIpc(): void {
         target,
         pdf,
         slides,
+        renderedFormat,
         ocr,
         ocrLanguage,
         read,
@@ -449,6 +468,7 @@ function registerIpc(): void {
         target: TargetFormat
         pdf?: unknown
         slides?: unknown
+        renderedFormat?: unknown
         ocr?: unknown
         ocrLanguage?: unknown
         read?: unknown
@@ -478,13 +498,16 @@ function registerIpc(): void {
         const opts = {
           pdf: normalizePdfOptions(pdf),
           slides: normalizeSlideOptions(slides),
+          renderedFormat: renderedFormatOf(renderedFormat),
           ocr: ocr === true,
           ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
           read: readOptionsOf(read),
         }
         if (target === 'html') {
           // Rich flavor for Word/Teams/Outlook paste targets + plain-text flavor for editors.
-          const flavors = await clipboardFlavors(bytes, filename, source, opts, ctx)
+          // Diagrams go as PNG whatever is chosen: those apps do not show an
+          // SVG data URI from pasted HTML.
+          const flavors = await clipboardFlavors(bytes, filename, source, { ...opts, renderedFormat: 'png' }, ctx)
           clipboard.write(flavors)
           return { status: 'copied' as const }
         }
@@ -516,6 +539,7 @@ function registerIpc(): void {
         target,
         pdf,
         slides,
+        renderedFormat,
         ocr,
         ocrLanguage,
         read,
@@ -529,6 +553,7 @@ function registerIpc(): void {
         target: TargetFormat
         pdf?: unknown
         slides?: unknown
+        renderedFormat?: unknown
         ocr?: unknown
         ocrLanguage?: unknown
         read?: unknown
@@ -559,6 +584,7 @@ function registerIpc(): void {
         const out = await runConversion(bytes, filename, source, target, {
           pdf: normalizePdfOptions(pdf),
           slides: normalizeSlideOptions(slides),
+          renderedFormat: renderedFormatOf(renderedFormat),
           ocr: ocr === true,
           ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
           read: readOptionsOf(read),
@@ -597,10 +623,11 @@ function registerIpc(): void {
         target,
         pdf,
         slides,
+        renderedFormat,
         jobId,
         outDir: givenOutDir,
       }: { items: BatchItemPayload[]; target: TargetFormat; pdf?: unknown
-        slides?: unknown; jobId?: string; outDir?: string },
+        slides?: unknown; renderedFormat?: unknown; jobId?: string; outDir?: string },
     ) => {
       let outDir = givenOutDir
       if (!outDir) {
@@ -617,6 +644,7 @@ function registerIpc(): void {
       }
       const pdfOpts = normalizePdfOptions(pdf)
       const slideOpts = normalizeSlideOptions(slides)
+      const formatOpt = renderedFormatOf(renderedFormat)
       let rows: BatchRow[]
       try {
         // Read inside the loop: a file that has gone costs its own row, with a
@@ -627,7 +655,7 @@ function registerIpc(): void {
             item.filename,
             item.source,
             target,
-            { pdf: pdfOpts, slides: slideOpts, ocr: item.ocr === true, ocrLanguage: item.ocrLanguage, read: readOptionsOf(item.read) },
+            { pdf: pdfOpts, slides: slideOpts, renderedFormat: formatOpt, ocr: item.ocr === true, ocrLanguage: item.ocrLanguage, read: readOptionsOf(item.read) },
             ctx,
           ),
         )
@@ -648,10 +676,11 @@ function registerIpc(): void {
         target,
         pdf,
         slides,
+        renderedFormat,
         headings,
         jobId,
       }: { items: BatchItemPayload[]; target: TargetFormat; pdf?: unknown
-        slides?: unknown; headings?: unknown; jobId?: string },
+        slides?: unknown; renderedFormat?: unknown; headings?: unknown; jobId?: string },
     ) => {
       if (TABLE_TARGETS.includes(target)) {
         return {
@@ -685,7 +714,7 @@ function registerIpc(): void {
             })),
           ),
           target,
-          { pdf: normalizePdfOptions(pdf), slides: normalizeSlideOptions(slides) },
+          { pdf: normalizePdfOptions(pdf), slides: normalizeSlideOptions(slides), renderedFormat: renderedFormatOf(renderedFormat) },
           headings === true,
           ctx,
         )

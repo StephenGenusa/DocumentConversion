@@ -170,3 +170,32 @@ describe('flag scope', () => {
     }
   })
 })
+
+/** Spec B4: --diagrams <svg|png>, strict, for the outputs that take SVG. */
+describe('--diagrams', () => {
+  it('takes svg or png', () => {
+    for (const v of ['svg', 'png'] as const) {
+      const r = parseArgs(['a.md', '--to', 'html', '--diagrams', v])
+      expect(r.kind).toBe('ok')
+      if (r.kind === 'ok') expect(r.req.diagrams).toBe(v)
+    }
+    const none = parseArgs(['a.md', '--to', 'html'])
+    if (none.kind === 'ok') expect(none.req.diagrams).toBeUndefined()
+  })
+
+  it('refuses anything else, and a missing value', () => {
+    expect(parseArgs(['a.md', '--to', 'html', '--diagrams', 'jpeg']).kind).toBe('usage')
+    expect(parseArgs(['a.md', '--to', 'html', '--diagrams']).kind).toBe('usage')
+  })
+
+  it('exits 2 for an output that cannot take it (Word is always PNG)', () => {
+    for (const t of ['pdf', 'html', 'revealjs', 'epub', 'azw4'] as const) expect(checkFlagScope(['--diagrams'], t, ['md']), t).toBeNull()
+    for (const t of ['docx', 'azw3', 'md', 'txt', 'csv', 'json', 'xlsx'] as const) {
+      expect(checkFlagScope(['--diagrams'], t, ['md']), t).toMatch(/^--diagrams applies only to pdf, html, revealjs, epub, azw4 output/)
+    }
+  })
+
+  it('is listed in the usage', () => {
+    expect(USAGE).toContain('--diagrams <svg|png>')
+  })
+})

@@ -1,4 +1,4 @@
-import type { HubFeatures } from './rendered-blocks'
+import type { HubFeatures, RenderFormat } from './rendered-blocks'
 
 /** Formats the app can write. csv/json/xlsx are table extraction, not documents. */
 export type TargetFormat =
@@ -275,6 +275,12 @@ export interface ConvertOptions {
   slides?: SlideOptions
   /** Per input: the card's reading choices. Copied into the read context. */
   read?: ReadOptions
+  /**
+   * Diagrams as SVG or PNG (spec B3, B4), where the target takes SVG
+   * (pdf, html, revealjs, epub, azw4); SVG when not given. Word is always
+   * PNG. Ignored where nothing is drawn.
+   */
+  renderedFormat?: RenderFormat
 }
 
 export type RenderHtmlToPdf = (html: string, opts?: PdfRenderOptions) => Promise<Buffer>

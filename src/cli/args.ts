@@ -1,5 +1,6 @@
 import { SOURCE_FORMATS, TABLE_TARGETS, TARGET_FORMATS, type ReadOptions, type SourceFormat, type TargetFormat } from '../core/types'
 import { PDF_PAGE_SIZES } from '../core/pdf-options'
+import { SVG_TARGETS } from '../core/rendered-blocks'
 
 export interface CliRequest {
   inputs: string[]
@@ -18,6 +19,8 @@ export interface CliRequest {
   sqliteViews?: boolean
   /** Where a new slide starts, for the revealjs target. */
   split?: 'auto' | 'hr' | 'h1' | 'h2'
+  /** Diagrams as SVG or PNG, for the outputs that take SVG (spec B4). */
+  diagrams?: 'svg' | 'png'
   landscape: boolean
   headerFooter: boolean
   ocr: boolean
@@ -33,6 +36,7 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--merge]             combine all inputs into one document (--out is the output file)
   [--no-headings]       merge without per-source headings
   [--split <auto|hr|h1|h2>]  where a new slide starts (revealjs target)
+  [--diagrams <svg|png>]  diagrams sharp (svg, default) or as images (png): pdf, html, revealjs, epub, azw4
   [--table N]           csv/json target: extract only table N
   [--scale X]           pdf zoom factor 0.1-2.0 (default 0.9)
   [--page <size>]       pdf page size (Letter, A4, Legal, A3, Tabloid)
@@ -72,6 +76,8 @@ export const FLAG_SCOPES: FlagScope[] = [
   { flag: '--json-as', inputs: ['json'], strict: true },
   { flag: '--no-timestamps', inputs: ['subtitles'], strict: true },
   { flag: '--sqlite-views', inputs: ['sqlite'], strict: true },
+  // Word (and Kindle AZW3) are always PNG; md and txt keep the source.
+  { flag: '--diagrams', targets: [...SVG_TARGETS], strict: true },
 ]
 
 /** The usage message for the first strict flag that cannot apply, or null. */
@@ -182,6 +188,12 @@ export function parseArgs(argv: string[]): ParseResult {
         if (v !== 'table' && v !== 'text') return usage('--json-as needs table or text')
         req.jsonAs = v
         i++
+        break
+      }
+      case '--diagrams': {
+        const v = takeValue(arg, i++)
+        if (v !== 'svg' && v !== 'png') return usage('--diagrams needs svg or png')
+        req.diagrams = v
         break
       }
       case '--no-timestamps':

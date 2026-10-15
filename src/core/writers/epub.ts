@@ -6,6 +6,7 @@ import { Element, type AnyNode } from 'domhandler'
 import render from 'dom-serializer'
 import { escapeHtml } from '../shell'
 import type { HubDocument } from '../types'
+import { RENDERED_MARKER } from '../draw-blocks'
 
 /**
  * EPUB writer.
@@ -136,6 +137,8 @@ interface ExtractedImage {
   name: string
   mime: string
   bytes: Buffer
+  /** Used somewhere as the document's own picture, not only as a drawn diagram: may be the cover. */
+  ownPicture: boolean
 }
 
 /**
@@ -155,6 +158,10 @@ export function extractImages(nodes: AnyNode[]): ExtractedImage[] {
     for (const node of list) {
       if (!isElement(node)) continue
       if (node.name === 'img') {
+        // A diagram this app drew (draw-blocks.ts) is never the cover. The
+        // marker has done its job once read, so it does not reach the book.
+        const drawn = node.attribs?.[RENDERED_MARKER] !== undefined
+        if (drawn) delete node.attribs[RENDERED_MARKER]
         const src = node.attribs?.src ?? ''
         const match = /^data:([^;,]+);base64,([\s\S]+)$/i.exec(src)
         if (match) {
@@ -165,9 +172,10 @@ export function extractImages(nodes: AnyNode[]): ExtractedImage[] {
             const hash = createHash('sha1').update(bytes).digest('hex')
             let image = byHash.get(hash)
             if (!image) {
-              image = { name: `img${String(byHash.size + 1).padStart(3, '0')}.${ext}`, mime, bytes }
+              image = { name: `img${String(byHash.size + 1).padStart(3, '0')}.${ext}`, mime, bytes, ownPicture: false }
               byHash.set(hash, image)
             }
+            if (!drawn) image.ownPicture = true
             node.attribs.src = `images/${image.name}`
           }
         }
@@ -237,6 +245,8 @@ function opfDocument(
   chapters: { id: string; file: string }[],
   images: ExtractedImage[],
 ): string {
+  // The document's first own picture; a drawn diagram never is one.
+  const cover = images.find((img) => img.ownPicture)
   const manifest = [
     '<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>',
     '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>',
@@ -245,7 +255,7 @@ function opfDocument(
     ...images.map(
       (img, i) =>
         `<item id="img${i + 1}" href="images/${img.name}" media-type="${img.mime}"` +
-        `${i === 0 ? ' properties="cover-image"' : ''}/>`,
+        `${img === cover ? ' properties="cover-image"' : ''}/>`,
     ),
   ].join('\n')
   const spine = chapters.map((c) => `<itemref idref="${c.id}"/>`).join('\n')

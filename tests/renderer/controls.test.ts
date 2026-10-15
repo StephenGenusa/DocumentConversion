@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { TARGET_FORMATS, SOURCE_FORMATS } from '../../src/core/types'
-import { showsOutput, showsInput, appliedOptions, appliedReadOptions, editedCopyNote, type ControlInput } from '../../src/renderer/src/lib/controls'
+import {
+  showsOutput,
+  showsInput,
+  appliedOptions,
+  appliedReadOptions,
+  editedCopyNote,
+  SESSION_DEFAULTS,
+  type ControlInput,
+} from '../../src/renderer/src/lib/controls'
 
 /**
  * Spec 2a: a control that is visible must change the result, and one that
@@ -24,6 +32,42 @@ describe('output controls', () => {
     expect(appliedOptions('pdf', [doc], values)).toEqual({ pdf: { scale: 1.2 } })
     expect(appliedOptions('revealjs', [doc], values)).toEqual({ slides: { splitOn: 'h2' } })
     expect(appliedOptions('docx', [doc], values)).toEqual({})
+  })
+})
+
+describe('the Diagrams choice (spec B4)', () => {
+  const drawn: ControlInput = { source: 'md', features: { diagrams: true, math: false } }
+  const plain: ControlInput = { source: 'md', features: { diagrams: false, math: false } }
+  const svgTargets = ['pdf', 'html', 'revealjs', 'epub', 'azw4']
+
+  it('shows for the outputs that take SVG, when an input has a diagram', () => {
+    for (const t of TARGET_FORMATS) expect(showsOutput('renderedFormat', t, [plain, drawn]), t).toBe(svgTargets.includes(t))
+  })
+
+  it('stays hidden when no input has a diagram, or nothing is known yet', () => {
+    for (const t of TARGET_FORMATS) {
+      expect(showsOutput('renderedFormat', t, [plain]), t).toBe(false)
+      expect(showsOutput('renderedFormat', t, [doc]), t).toBe(false)
+      expect(showsOutput('renderedFormat', t, []), t).toBe(false)
+    }
+  })
+
+  it('counts formulas only once they are drawn (MathJax, step 18)', () => {
+    expect(showsOutput('renderedFormat', 'pdf', [{ source: 'md', features: { diagrams: false, math: true } }])).toBe(false)
+  })
+
+  it('is sent only while shown, so a value kept while hidden is not applied', () => {
+    const values = { pdf: { scale: 1 }, slides: { splitOn: 'auto' as const }, renderedFormat: 'png' as const }
+    expect(appliedOptions('html', [drawn], values)).toEqual({ renderedFormat: 'png' })
+    expect(appliedOptions('pdf', [drawn], values)).toEqual({ pdf: { scale: 1 }, renderedFormat: 'png' })
+    expect(appliedOptions('docx', [drawn], values)).toEqual({})
+    expect(appliedOptions('html', [plain], values)).toEqual({})
+    // Back to an output that takes it: the value kept while hidden is there again.
+    expect(appliedOptions('epub', [drawn], values)).toEqual({ renderedFormat: 'png' })
+  })
+
+  it('starts as Sharp (SVG) in every session: it is never saved, so a restart resets it', () => {
+    expect(SESSION_DEFAULTS.renderedFormat).toBe('svg')
   })
 })
 
