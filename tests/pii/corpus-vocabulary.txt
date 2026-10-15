@@ -53,7 +53,9 @@ apply
 archival
 archive
 are
+area
 areas
+arithmetic
 around
 arrive
 as
@@ -68,9 +70,11 @@ author's
 authorized
 automatically
 available
+average
 back
 background
 bandwidth
+bar
 basics
 batch
 batching
@@ -81,6 +85,7 @@ because
 becomes
 before
 began
+begin
 beginning
 below
 benefits
@@ -95,6 +100,7 @@ bookend
 books
 borrowed
 borrowers
+borrowing
 both
 bottom
 box
@@ -117,6 +123,7 @@ byte
 bytes
 cache
 caching
+calculate
 calculations
 calendar
 called
@@ -128,9 +135,11 @@ career
 carried
 carry
 case
+cases
 catalogue
 catches
 cc
+cdot
 center
 central
 certification
@@ -138,6 +147,7 @@ changes
 channel
 chapter
 charge
+charges
 check
 checklist
 checkout
@@ -161,6 +171,7 @@ code
 codes
 colleagues
 collect
+collected
 collection
 collections
 column
@@ -193,6 +204,7 @@ corner
 correction
 corrections
 cost
+costs
 count
 courier
 couriers
@@ -214,14 +226,17 @@ damaged
 damp
 data
 date
+day
 days
 decades
+decay
 decides
 decorative
 default
 defective
 defines
 delays
+demand
 demy
 department
 depot
@@ -256,6 +271,7 @@ drug
 dsorrel
 dust
 duty
+dx
 each
 early
 east
@@ -267,6 +283,7 @@ element
 elements
 ellipse
 elmwood
+else
 emergency
 emphasised
 employee
@@ -282,6 +299,7 @@ environment
 equipment
 even
 every
+everyone
 example
 example-model
 exc
@@ -297,6 +315,7 @@ expense
 explain
 explains
 export
+export-loans
 external
 face
 faces
@@ -318,6 +337,7 @@ final
 find
 finding
 finds
+fines
 fire
 first
 fixed
@@ -333,9 +353,11 @@ fontname
 for
 form
 formula
+formulas
 forward
 found
 four
+frac
 free
 friday
 from
@@ -352,6 +374,7 @@ glossary
 gmt
 go
 goes
+grace
 grade
 granted
 graph
@@ -408,6 +431,7 @@ inspection
 installed
 instead
 instructions
+int
 integrity
 interest
 interlibrary
@@ -435,8 +459,10 @@ just
 keep
 kept
 key
+know
 kraft
 label
+lambda
 laminate
 large
 larkspur
@@ -444,6 +470,7 @@ late
 latency
 law
 layout
+le
 leaning
 leather
 leave
@@ -460,6 +487,7 @@ lignin
 like
 likely
 limits
+line
 linen
 links
 list
@@ -498,6 +526,7 @@ medical
 meet
 meets
 members
+membership
 memorable
 memory
 mended
@@ -505,12 +534,14 @@ menu
 messages
 mezzanine
 military
+min
 mireille
 mis-shelved
 missing
 mission
 mistaken
 model
+month
 monthly
 months
 more
@@ -541,6 +572,7 @@ net
 never
 new
 next
+nightly
 nils
 no
 nobody
@@ -591,6 +623,7 @@ overdue
 overpaying
 oversize
 overtime
+owes
 page
 pages
 paid
@@ -605,6 +638,8 @@ participant
 pass
 path
 pay
+pays
+penny
 people
 per
 percent-decoding
@@ -620,6 +655,7 @@ photograph
 photographs
 photography
 piece
+pieces
 pin
 pinned
 pipeline
@@ -629,6 +665,7 @@ plan
 plans
 plus
 pm
+pmatrix
 png
 pocket
 policies
@@ -676,18 +713,21 @@ quiet
 quill
 raise
 rankdir
+rate
 rates
 rather
 rating
 ratings
 reach
 read
+reader
 reading
 reasonable
 receiving
 record
 recording
 records
+refer
 reference
 referenced
 refit
@@ -794,9 +834,11 @@ should
 shown
 shows
 sick
+sigma
 sign
 signal
 simply
+since
 single
 sit
 site
@@ -828,6 +870,8 @@ spec
 special
 specific
 spine
+spread
+sqrt
 stack
 stacks
 staging
@@ -836,6 +880,7 @@ stand
 standard
 stands
 start
+started
 starts
 state
 stationery
@@ -853,6 +898,7 @@ stores
 strip
 strives
 stub
+students
 study
 style
 sub-procedure
@@ -860,6 +906,7 @@ subject
 subkey
 subscriptions
 substance
+sum
 summarised
 summary
 sunil
@@ -870,6 +917,7 @@ surname
 systems
 tab
 table
+tag
 taken
 takes
 tape
@@ -879,8 +927,10 @@ team
 tenth
 tenure
 term
+terminal
 termination
 terms
+tex
 text
 than
 thank
@@ -901,6 +951,7 @@ throughout
 throughput
 thumb
 ticket
+tier
 time
 times
 to
@@ -917,6 +968,7 @@ training
 transmittal
 travel
 tray
+treasurers
 treat
 trolley
 trolleys
@@ -950,6 +1002,7 @@ updated
 urgent
 use
 used
+uses
 using
 usual
 utc
@@ -967,6 +1020,7 @@ volumes
 volunteer
 volunteers
 wait
+wall
 want
 water
 way
@@ -1009,6 +1063,7 @@ wrong
 wrote
 www
 yes
+yesterday
 you
 your
 zero

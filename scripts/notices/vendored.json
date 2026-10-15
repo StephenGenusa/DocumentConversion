@@ -29,6 +29,19 @@
       "note": "The XML parser Graphviz uses, compiled into viz-global.js (Viz.js 3.31.0), shipped in resources/render."
     },
     {
+      "name": "MathJax",
+      "package": "mathjax",
+      "license": "Apache-2.0",
+      "note": "The TeX formula engine (es5/tex-svg-full.js), shipped in resources/render to draw formulas offline. The file carries mhchemParser, listed separately."
+    },
+    {
+      "name": "mhchemParser",
+      "version": "4.1.1",
+      "license": "Apache-2.0",
+      "licenseFrom": "node_modules/mathjax/LICENSE",
+      "note": "Copyright (c) 2015-2021 Martin Hensel. The parser for the \\ce and \\pu commands, bundled by the MathJax project into its tex-svg-full.js, shipped in resources/render."
+    },
+    {
       "name": "reveal.js",
       "package": "reveal.js",
       "license": "MIT",

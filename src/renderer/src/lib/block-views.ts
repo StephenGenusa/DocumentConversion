@@ -23,9 +23,9 @@ import { renderClient, type BlockAnswer, type BlockPicture, type BlockRequest, t
  *                             Enter opens a small popover with the TeX and a
  *                             preview. Enter commits, Escape cancels.
  *
- * A kind this version has no engine for (TeX until step 18) shows its source, as conversions keep it, and edits the same way
- * without a preview: when the engine lands in DRAWN_KINDS the editor draws it
- * with no change here.
+ * A kind with no engine (none now: every hub kind is drawn)
+ * would show its source, as conversions keep it, and edit the same way
+ * without a preview.
  *
  * Drawing is lazy: a block is drawn when it scrolls into view, with a
  * placeholder of its last known size (or a neutral box) until then, and the
@@ -200,7 +200,17 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, at
 }
 
 /** An <img> for a picture, reusing the one there when it can. */
-function pictureInto(box: HTMLElement, picture: { uri: string; width: number; height: number }, alt: string): HTMLImageElement {
+/** The host's sizes are CSS px at 8 px to the ex (spec B5). */
+const PX_PER_EX = 8
+const exs = (px: number): string => `${Math.round((px / PX_PER_EX) * 1000) / 1000}ex`
+
+/**
+ * Show a picture in `box`. A formula is sized in ex, as conversions size it
+ * (draw-blocks.ts), so it follows the text around it (a heading's formula
+ * is a heading's size); an inline one is lowered by its depth below the
+ * baseline, so it sits on the line.
+ */
+function pictureInto(box: HTMLElement, picture: BlockPicture, alt: string, math?: 'inline' | 'display'): HTMLImageElement {
   let img = box.firstElementChild instanceof HTMLImageElement ? box.firstElementChild : null
   if (!img || box.childElementCount !== 1) {
     box.replaceChildren()
@@ -211,6 +221,11 @@ function pictureInto(box: HTMLElement, picture: { uri: string; width: number; he
   img.setAttribute('width', String(picture.width))
   img.setAttribute('height', String(picture.height))
   img.alt = alt
+  if (math) {
+    img.style.width = exs(picture.width)
+    img.style.height = math === 'inline' ? exs(picture.height) : 'auto'
+    img.style.verticalAlign = math === 'inline' ? (picture.baseline ? `-${exs(picture.baseline)}` : 'baseline') : ''
+  }
   return img
 }
 
@@ -306,21 +321,22 @@ class BlockView extends DrawnView implements NodeView {
     this.dom.dataset.state = state
     this.dom.classList.toggle('rb--nopreview', !can)
     const alt = req.kind === 'math' ? req.source : 'Diagram'
+    const mathAs = req.kind === 'math' ? 'display' : undefined
 
     if (state === 'editing') {
       this.bar.textContent = `${KIND_LABEL[req.kind]} · Esc to finish`
       const stale = this.lastPicture
       if (!can) this.preview.replaceChildren()
-      else if (answer && 'uri' in answer) pictureInto(this.preview, answer, alt).classList.remove('rb__img--stale')
+      else if (answer && 'uri' in answer) pictureInto(this.preview, answer, alt, mathAs).classList.remove('rb__img--stale')
       else if (answer && 'error' in answer) this.preview.replaceChildren(errorLine(answer.error))
-      else if (stale) pictureInto(this.preview, stale, alt).classList.add('rb__img--stale')
+      else if (stale) pictureInto(this.preview, stale, alt, mathAs).classList.add('rb__img--stale')
       else if (!req.source.trim()) this.preview.replaceChildren()
       else this.preview.replaceChildren(placeholder(renderClient().sizeOf(req), req.kind))
     }
-    if (state === 'picture' && answer && 'uri' in answer) pictureInto(this.picture, answer, alt)
+    if (state === 'picture' && answer && 'uri' in answer) pictureInto(this.picture, answer, alt, mathAs)
     if (state === 'waiting') {
       const old = this.lastPicture
-      if (old) pictureInto(this.picture, old, alt)
+      if (old) pictureInto(this.picture, old, alt, mathAs)
       else this.picture.replaceChildren(placeholder(renderClient().sizeOf(req), req.kind))
     }
     this.message.replaceChildren(...(state === 'error' && answer && 'error' in answer ? [errorLine(answer.error)] : []))
@@ -433,8 +449,7 @@ class InlineView extends DrawnView implements NodeView {
     const state = !can ? 'source' : answer && 'uri' in answer ? 'picture' : answer && 'error' in answer ? 'error' : 'waiting'
     this.dom.dataset.state = state
     if (state === 'picture' && answer && 'uri' in answer) {
-      const img = pictureInto(this.face, answer, req.source)
-      img.style.verticalAlign = answer.baseline !== undefined ? `${-answer.baseline}px` : 'middle'
+      pictureInto(this.face, answer, req.source, 'inline')
       return
     }
     const size = renderClient().sizeOf(req)
@@ -521,7 +536,7 @@ class InlineView extends DrawnView implements NodeView {
     const req: BlockRequest = { kind: 'math', source: tex, display: false }
     const put = (a: BlockAnswer): void => {
       if (this.popPreview !== preview || this.previewTex !== tex) return
-      if ('uri' in a) pictureInto(preview, a, tex)
+      if ('uri' in a) pictureInto(preview, a, tex, 'inline')
       else if ('error' in a) preview.replaceChildren(errorLine(a.error))
     }
     const hit = renderClient().known(req)

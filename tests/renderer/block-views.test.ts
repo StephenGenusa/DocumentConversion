@@ -146,7 +146,8 @@ describe('a diagram in the editor', () => {
     expect($('.rb__bar').textContent).toContain('Graphviz diagram')
   })
 
-  it('shows a kind with no engine yet (TeX) as its source, without asking the host', async () => {
+  it('shows a kind with no engine as its source, without asking the host', async () => {
+    configureBlockViews({ watch, drawable: (kind) => kind !== 'math' })
     make('<pre><code class="language-math">x^2</code></pre>')
     showAll()
     // First in the document, where the cursor starts: shown, not opened.
@@ -325,26 +326,87 @@ describe('Insert Diagram and Formula (spec B13)', () => {
   })
 })
 
-describe('math, before and after its engine', () => {
-  it('shows TeX as source while there is no engine (step 18 brings MathJax)', async () => {
+describe('math drawn by its engine (step 18)', () => {
+  /** A formula 30x20 px, its baseline 5 px above the bottom; \\foo is unknown, as MathJax says. */
+  const mathDraw: DrawFn = async (req) => {
+    asked.push({ ...req })
+    if (req.source.includes('\\foo')) return { error: 'Undefined control sequence \\foo' }
+    return { uri: svgOf(req.source), width: 30, height: 20, baseline: 5 }
+  }
+
+  it('draws inline and display TeX, asking for each as what it is', async () => {
+    setRenderClient(createRenderClient(mathDraw))
     make('<p>Let <code class="language-math">x^2</code>.</p><pre><code class="language-math">y</code></pre>')
     showAll()
     await settle()
-    expect($('.rm').dataset.state).toBe('source')
-    expect($('.rm__src').textContent).toBe('x^2')
-    expect($('.rb--math').dataset.state).toBe('source')
-    expect(asked).toEqual([])
+    expect(asked).toContainEqual({ kind: 'math', source: 'x^2', display: false, priority: 'visible' })
+    expect(asked).toContainEqual({ kind: 'math', source: 'y', display: true, priority: 'visible' })
+    expect($('.rm').dataset.state).toBe('picture')
+    expect($('.rb--math').dataset.state).toBe('picture')
+    // A display formula is sized in ex like the output, never wider than the pane.
+    const block = $('.rb--math .rb__picture img') as HTMLImageElement
+    expect(block.style.width).toBe('3.75ex')
+    expect(block.style.height).toBe('auto')
   })
 
-  it('draws inline math on the baseline once an engine exists', async () => {
-    configureBlockViews({ watch, drawable: () => true })
-    setRenderClient(createRenderClient(async (req) => ({ uri: svgOf(req.source), width: 30, height: 20, baseline: 5 })))
+  it('puts inline math on the baseline: sized in ex and lowered by its depth', async () => {
+    setRenderClient(createRenderClient(mathDraw))
     make('<p>Let <code class="language-math">x^2</code>.</p>')
     show($('.rm'))
     await settle()
     const img = $('.rm img') as HTMLImageElement
     expect(img.alt).toBe('x^2')
-    expect(img.style.verticalAlign).toBe('-5px')
+    expect(img.style.width).toBe('3.75ex')
+    expect(img.style.height).toBe('2.5ex')
+    expect(img.style.verticalAlign).toBe('-0.625ex')
+  })
+
+  it('an unknown macro shows the TeX, with the message on hover', async () => {
+    setRenderClient(createRenderClient(mathDraw))
+    make('<p>Let <code class="language-math">\\foo{x}</code>.</p>')
+    show($('.rm'))
+    await settle()
+    expect($('.rm').dataset.state).toBe('error')
+    expect($('.rm__src').textContent).toBe('\\foo{x}')
+    expect($('.rm__src').title).toBe('Undefined control sequence \\foo')
+  })
+
+  it('the inline popover previews the TeX as it is typed, 400 ms after typing stops, and shows an error there', async () => {
+    setRenderClient(createRenderClient(mathDraw))
+    const e = make('<p>Let <code class="language-math">x^2</code> hold.</p>')
+    show($('.rm'))
+    await settle()
+    vi.useFakeTimers()
+    $('.rm__face').dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }))
+    await settle()
+    // Opened: the current formula is previewed at once (already drawn: no new request).
+    let preview = $('.rm-pop__preview')
+    expect(preview.hidden).toBe(false)
+    expect((preview.querySelector('img') as HTMLImageElement).alt).toBe('x^2')
+    const input = $('.rm-pop input') as HTMLInputElement
+    input.value = 'x^3'
+    input.dispatchEvent(new Event('input'))
+    await vi.advanceTimersByTimeAsync(399)
+    expect(asked.some((a) => a.source === 'x^3')).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await settle()
+    expect(asked).toContainEqual({ kind: 'math', source: 'x^3', display: false, priority: 'visible' })
+    preview = $('.rm-pop__preview')
+    const img = preview.querySelector('img') as HTMLImageElement
+    expect(img.alt).toBe('x^3')
+    expect(img.getAttribute('src')).toBe(svgOf('x^3'))
+    expect(img.style.verticalAlign).toBe('-0.625ex')
+    input.value = '\\foo'
+    input.dispatchEvent(new Event('input'))
+    await vi.advanceTimersByTimeAsync(400)
+    await settle()
+    expect($('.rm-pop__preview').textContent).toBe('Undefined control sequence \\foo')
+    // Applying keeps the typed TeX; the formula in the line is drawn afresh.
+    input.value = 'x^3'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(e.getHTML()).toBe('<p>Let <code class="language-math">x^3</code> hold.</p>')
+    await settle()
+    expect(($('.rm .rm__face img') as HTMLImageElement).alt).toBe('x^3')
   })
 })
 

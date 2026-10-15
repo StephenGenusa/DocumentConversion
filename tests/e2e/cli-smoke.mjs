@@ -152,6 +152,22 @@ for (const [file, mime] of [['diagrams-svg.html', 'image/svg+xml'], ['diagrams-p
     console.log(`FAIL  ${file} has no ${mime} diagram`)
   }
 }
+// Formulas (step 18): drawn by MathJax; an unknown macro stays source with a NOTE.
+const formulas = join(work, 'formulas.md')
+writeFileSync(formulas, '# Formulas\n\nLet $x_i^2$ hold and $\\nosuch{y}$ too.\n\n$$\\sum_{i=1}^n x_i$$\n')
+run('math->html draws, notes the unknown macro', [formulas, '--to', 'html', '--out', join(work, 'formulas.html')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'formulas.html')],
+  expectStderr: 'NOTE formulas.md: Formula 2 could not be drawn: Undefined control sequence \\nosuch',
+})
+if (existsSync(join(work, 'formulas.html'))) {
+  const html = readFileSync(join(work, 'formulas.html'), 'utf8')
+  if ((html.match(/data-rendered="formula"/g) ?? []).length !== 2 || !/vertical-align:-[0-9.]+ex/.test(html)) {
+    failures++
+    console.log('FAIL  formulas.html does not hold two drawn formulas, the inline one lowered')
+  }
+}
+
 run('--diagrams for Word exit 2', [diagrams, '--to', 'docx', '--diagrams', 'svg'], {
   expectCode: 2,
   expectStderr: '--diagrams applies only to pdf, html, revealjs, epub, azw4 output, not docx',

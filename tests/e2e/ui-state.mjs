@@ -423,8 +423,9 @@ try {
   await click('Convert to clipboard')
   await waitFor(resultIsUp, 'a result')
   const clip = await mainEval(`(() => { const { clipboard } = process.mainModule.require('electron'); return { html: clipboard.readHTML(), text: clipboard.readText() } })()`)
-  // Two Mermaid diagrams and the Graphviz one; the broken one stays source.
-  check('converted to the clipboard, the edited diagram is drawn in the HTML', (clip.html.match(/<img[^>]+src="data:image\/png;base64,/g) ?? []).length === 3 && !clip.html.includes('Archived'), clip.html.slice(0, 300))
+  // Two Mermaid diagrams and the Graphviz one, and the formula (step 18); the broken diagram stays source.
+  const clipPictures = (clip.html.match(/<img[^>]+src="data:image\/png;base64,/g) ?? []).length
+  check('converted to the clipboard, the edited diagram is drawn in the HTML', clipPictures === 4 && !clip.html.includes('Archived'), `${clipPictures} pictures: ${clip.html.slice(0, 300)}`)
   check('and is its edited source in the plain text', clip.text.includes('H --> Z[Archived]'), clip.text.slice(0, 300))
   await dismiss()
   await waitFor(`!!${EDITOR}`, 'the edit pane to come back')
@@ -452,6 +453,23 @@ try {
   })`)
   console.log(`note  500-formula document: Edit to first paint ${Math.round(painted)} ms`)
   check('a 500-formula document opens in the editor at once', painted < 3000 && (await js(`document.querySelectorAll('.clip-pane__editor .rm').length`)) === 500, `${painted} ms`)
+  // TeX is drawn (MathJax, step 18): the inline formulas and the display one on screen.
+  await waitFor(`document.querySelector('.clip-pane__editor .rm')?.dataset.state === 'picture' && document.querySelector('.clip-pane__editor .rb--math')?.dataset.state === 'picture'`, 'the first formulas to be drawn')
+  const mathShown = await js(`(() => {
+    const rm = document.querySelector('.clip-pane__editor .rm img')
+    const rb = document.querySelector('.clip-pane__editor .rb--math .rb__picture img')
+    const svgOf = (img) => (img?.getAttribute('src') ?? '').startsWith('data:image/svg+xml;base64,')
+    // The formula's bottom sits below the text's baseline by its depth: compare with the text around it.
+    const p = rm?.closest('p')
+    const range = document.createRange()
+    range.setStart(p.firstChild, 0)
+    range.setEnd(p.firstChild, 4)
+    const text = range.getBoundingClientRect()
+    const box = rm.getBoundingClientRect()
+    return { inline: svgOf(rm), display: svgOf(rb), align: rm.style.verticalAlign, inlineH: box.height, textH: text.height, belowText: box.bottom - text.bottom, alt: rm.alt, centred: rb ? Math.abs((rb.getBoundingClientRect().left + rb.getBoundingClientRect().right) / 2 - (rb.closest('.rb').getBoundingClientRect().left + rb.closest('.rb').getBoundingClientRect().right) / 2) : -1 }
+  })()`)
+  console.log(`note  formula in the pane: ${JSON.stringify(mathShown)}`)
+  check('the editor draws inline and display TeX as SVG <img>s, the inline one lowered onto the baseline', mathShown.inline && mathShown.display && /^-[0-9.]+ex$/.test(mathShown.align) && mathShown.alt === 'x_{0}^2 + 0' && mathShown.inlineH > mathShown.textH * 0.6 && mathShown.inlineH < mathShown.textH * 2, JSON.stringify(mathShown))
   await startOver()
   const many = join(work, 'many.md')
   writeAt(many, Array.from({ length: 40 }, (_, i) => `Diagram ${i}.\n\n\`\`\`mermaid\nflowchart LR\n  A${i}[Start ${i}] --> B${i}[End ${i}]\n\`\`\``).join('\n\n'))

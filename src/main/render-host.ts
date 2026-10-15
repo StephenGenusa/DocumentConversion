@@ -9,7 +9,7 @@ import { MAX_PICTURE_BYTES, MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBl
 
 /**
  * The render host (spec B5): one hidden window that draws diagrams (Mermaid,
- * Graphviz; formulas in a later step) from vendored engines, for conversions now and for
+ * Graphviz) and TeX formulas (MathJax) from vendored engines, for conversions now and for
  * the editor (render-ipc.ts). It also makes PNG copies of the SVG images a
  * document carries, for Word and Kindle (kind `svg`, spec D10;
  * core/svg-images.ts), and re-encodes raster pictures a Kindle cannot store
@@ -51,6 +51,7 @@ import { MAX_PICTURE_BYTES, MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBl
 export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
   mermaid: '11.12.0',
   dot: '3.31.0',
+  math: '3.2.2',
   svg: 'raster-1',
   picture: 'reencode-1',
 }
@@ -72,7 +73,7 @@ function isEncoded(b64: string, mime: string): boolean {
 }
 
 /** The engine files the page may load, by kind. */
-const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.min.js', dot: 'viz-global.js' }
+const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.min.js', dot: 'viz-global.js', math: 'tex-svg-full.js' }
 
 /** Who is waiting: visible editor blocks first, conversions next, editor prefetch last. */
 export type RenderPriority = 'visible' | 'convert' | 'prefetch'
@@ -105,7 +106,7 @@ export interface RenderHostOptions {
   /** Every request the window makes, allowed or not (the host test's request log). */
   onRequest?: (url: string, allowed: boolean) => void
   /** The raw answer from the page, before sanitising (tests: what a directive could change). */
-  onDrawn?: (req: RenderRequest, raw: { svg: string; config?: Record<string, unknown> }) => void
+  onDrawn?: (req: RenderRequest, raw: { svg: string; config?: Record<string, unknown>; mathjax?: Record<string, number> }) => void
 }
 
 export interface RenderHostStats {
@@ -384,15 +385,15 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
         if (req.format === 'svg') return { result: { svg, width, height }, cacheable: true }
         return await rasterize(svg, width, height)
       }
-      const drawn = await call<Answer<{ svg: string; width: number; height: number; config?: Record<string, unknown> }>>(
+      const drawn = await call<Answer<{ svg: string; width: number; height: number; baseline?: number; config?: Record<string, unknown>; mathjax?: Record<string, number> }>>(
         w,
         'draw',
-        [req.kind, req.source],
+        [req.kind, req.source, req.display],
         left(),
       )
       draws++
       if (!drawn.ok) return { result: { error: drawn.error }, cacheable: true }
-      opts.onDrawn?.(req, { svg: drawn.value.svg, config: drawn.value.config })
+      opts.onDrawn?.(req, { svg: drawn.value.svg, config: drawn.value.config, mathjax: drawn.value.mathjax })
       // The page is the engines' playground: nothing it answers is trusted.
       const { width, height } = drawn.value
       if (!isSize(width) || !isSize(height) || typeof drawn.value.svg !== 'string') {
@@ -400,8 +401,13 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
       }
       const svg = sanitizeSvg(drawn.value.svg)
       if (!svg) return { result: { error: 'the engine returned something that is not an SVG' }, cacheable: true }
-      if (req.format === 'svg') return { result: { svg, width, height }, cacheable: true }
-      return await rasterize(svg, width, height)
+      // A formula's baseline (px above its bottom edge), only where it is a sane one.
+      const b = drawn.value.baseline
+      const baseline = req.kind === 'math' && typeof b === 'number' && Number.isFinite(b) && b >= 0 && b <= height ? b : undefined
+      const withBaseline = <T extends object>(r: T): T & { baseline?: number } => (baseline === undefined ? r : { ...r, baseline })
+      if (req.format === 'svg') return { result: withBaseline({ svg, width, height }), cacheable: true }
+      const raster = await rasterize(svg, width, height)
+      return 'error' in raster.result ? raster : { ...raster, result: withBaseline(raster.result) }
     } catch (err) {
       discard(w, true)
       if (err instanceof TimeoutError) {

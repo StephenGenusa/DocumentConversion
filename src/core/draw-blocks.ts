@@ -37,9 +37,14 @@ export function renderCacheKey(req: RenderRequest, engineVersion: string): strin
     .digest('hex')
 }
 
-/** Per conversion (spec B7), Mermaid and Graphviz together. Formulas join when MathJax does (step 18). */
+/**
+ * Per conversion (spec B7): diagrams (Mermaid and Graphviz together), and
+ * formulas. Formulas are asked for `batch` at a time, so the 60 s for all of
+ * them can be kept to: once it has passed, no further batch is started.
+ */
 export const RENDER_LIMITS = {
   diagrams: { max: 50, eachMs: 10_000 },
+  formulas: { max: 2000, eachMs: 2_000, totalMs: 60_000, batch: 100 },
 } as const
 
 /**
@@ -93,9 +98,10 @@ export interface DrawContext {
 }
 
 /**
- * Draw the document's diagrams for `target` (spec B3): each B1 block that is
- * drawn becomes a centred `<img>` of an SVG or PNG data URI (renderedFormatFor)
- * with alt "Diagram"; a
+ * Draw the document's diagrams and formulas for `target` (spec B3): each B1
+ * diagram that is drawn becomes a centred `<img>` of an SVG or PNG data URI
+ * (renderedFormatFor) with alt "Diagram", each formula an `<img>` whose alt
+ * is its TeX (drawFormulas); a
  * block that is not stays source, with a notice for each failure and one for
  * the blocks over the limit. Called by `Converter.write()` before the
  * writer; this HTML exists only between there and the writer.
@@ -105,7 +111,15 @@ export interface DrawContext {
  */
 export async function drawBlocks(html: string, target: TargetFormat, ctx: DrawContext): Promise<string> {
   const render = ctx.renderBlocks
-  if (!render || !rendersBlocks(target) || !hubFeatures(html).diagrams) return html
+  if (!render || !rendersBlocks(target)) return html
+  const features = hubFeatures(html)
+  let out = html
+  if (features.diagrams) out = await drawDiagrams(out, target, ctx, render)
+  if (features.math && DRAWN_KINDS.has('math')) out = await drawFormulas(out, target, ctx, render)
+  return out
+}
+
+async function drawDiagrams(html: string, target: TargetFormat, ctx: DrawContext, render: RenderBlocks): Promise<string> {
 
   interface Block {
     start: number
@@ -168,6 +182,152 @@ export async function drawBlocks(html: string, target: TargetFormat, ctx: DrawCo
     at = block.end
   }
   return out + html.slice(at)
+}
+
+// ---------------------------------------------------------------------------
+// Formulas (MathJax, step 18)
+// ---------------------------------------------------------------------------
+
+/**
+ * A formula in the hub's form (rendered-blocks.ts): display math is a code
+ * block, inline math the same code element alone. The display form is
+ * matched first, so its code element is never taken for an inline one.
+ */
+const FORMULA_SOURCE = /<pre><code class="language-math">([\s\S]*?)<\/code><\/pre>|<code class="language-math">([\s\S]*?)<\/code>/g
+
+/** The host's sizes are CSS px at 8 px to the ex (spec B5). */
+const PX_PER_EX = 8
+
+/**
+ * One ex of Word's text, in CSS px: html-to-docx writes Times New Roman at
+ * 11 pt (14.67 px), whose x-height is 0.447 of its size. MathJax draws a
+ * formula so its x-height is the text's (its ex), which in HTML targets the
+ * browser does by itself (the picture is sized in ex); Word takes sizes in
+ * px only, so they are scaled here.
+ */
+export const DOCX_EX_PX = ((11 * 96) / 72) * (916 / 2048)
+
+const exs = (px: number): string => `${Math.round((px / PX_PER_EX) * 1000) / 1000}ex`
+
+/**
+ * Draw the document's formulas (spec B3, B7): inline ones become an `<img>`
+ * in the line, lowered by the formula's depth below the baseline; display
+ * ones a centred `<img>` of their own. Alt is the TeX. Sizes are in ex where
+ * the target lays out CSS (so a formula follows the size of the text around
+ * it: a heading, a slide, a reader's chosen size), in px at the text's size
+ * for Word, with the lowering handed to the docx writer (`data-docx-lower`,
+ * half-points), since html-to-docx ignores vertical-align on a picture.
+ *
+ * Limits: 2,000 formulas, 2 s each, 60 s in all. Beyond either, the rest
+ * stay source with one notice; each formula that fails keeps its source
+ * with a notice naming it ("Formula 3 could not be drawn: Undefined control
+ * sequence \foo"). Numbered apart from diagrams.
+ */
+async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext, render: RenderBlocks): Promise<string> {
+  interface Formula {
+    start: number
+    end: number
+    display: boolean
+    source: string
+    number: number
+  }
+  const formulas: Formula[] = []
+  for (const m of html.matchAll(FORMULA_SOURCE)) {
+    const display = m[1] !== undefined
+    const source = decodeText(display ? m[1] : m[2])
+    if (!source.trim()) continue
+    formulas.push({ start: m.index, end: m.index + m[0].length, display, source, number: formulas.length + 1 })
+  }
+  if (formulas.length === 0) return html
+
+  const { max, eachMs, totalMs, batch } = RENDER_LIMITS.formulas
+  const drawn = formulas.slice(0, max)
+  if (formulas.length > max) {
+    const n = (v: number): string => v.toLocaleString('en-US')
+    ctx.onAdvice?.(
+      'render-failed',
+      `This document has ${n(formulas.length)} formulas; the first ${n(max)} were drawn and the other ${n(formulas.length - max)} are shown as source`,
+    )
+  }
+
+  const format = renderedFormatFor(target, ctx.format)
+  const keyOf = (f: Formula): string => JSON.stringify([f.display, f.source])
+  const unique = [...new Map(drawn.map((f) => [keyOf(f), f])).values()]
+  const byKey = new Map<string, RenderResult>()
+  const started = Date.now()
+  for (let i = 0; i < unique.length; i += batch) {
+    if (i > 0 && Date.now() - started > totalMs) {
+      const left = drawn.filter((f) => !byKey.has(keyOf(f))).length
+      ctx.onAdvice?.('render-failed', `Drawing formulas took over ${totalMs / 1000} s; the other ${left} are shown as source`)
+      break
+    }
+    const part = unique.slice(i, i + batch)
+    let results: RenderResult[]
+    try {
+      results = await render(
+        part.map(({ source, display }) => ({ kind: 'math', source, display, format })),
+        { signal: ctx.signal, timeoutMs: eachMs },
+      )
+    } catch (err) {
+      if (ctx.signal?.aborted) throw err
+      ctx.onAdvice?.('render-failed', `Formulas could not be drawn: ${oneLine((err as Error)?.message ?? String(err))}`)
+      return html
+    }
+    part.forEach((f, k) => byKey.set(keyOf(f), results[k]))
+  }
+
+  let out = ''
+  let at = 0
+  for (const f of drawn) {
+    if (!byKey.has(keyOf(f))) continue
+    const result = byKey.get(keyOf(f))
+    const data = result && !('error' in result) && result.width > 0 && result.height > 0 ? pictureData(result, format) : undefined
+    if (data === undefined || !result || 'error' in result) {
+      const why = result && 'error' in result ? oneLine(result.error) : 'the engine gave no picture'
+      ctx.onAdvice?.('render-failed', `Formula ${f.number} could not be drawn: ${why}`)
+      continue
+    }
+    out += html.slice(at, f.start) + formulaHtml(data, format, result, f.display, f.source, target)
+    at = f.end
+  }
+  return out + html.slice(at)
+}
+
+function formulaHtml(
+  data: string,
+  format: RenderFormat,
+  size: { width: number; height: number; baseline?: number },
+  display: boolean,
+  tex: string,
+  target: TargetFormat,
+): string {
+  const mime = format === 'svg' ? 'image/svg+xml' : 'image/png'
+  const head = `<img src="data:${mime};base64,${data}" alt="${escapeAttr(tex)}"`
+  const marker = `${RENDERED_MARKER}="formula"`
+  const baseline = typeof size.baseline === 'number' && size.baseline > 0 ? size.baseline : 0
+  let img: string
+  if (target === 'docx') {
+    const f = DOCX_EX_PX / PX_PER_EX
+    let w = Math.max(1, Math.round(size.width * f))
+    let h = Math.max(1, Math.round(size.height * f))
+    if (w > DOCX_MAX_WIDTH) {
+      h = Math.max(1, Math.round((h * DOCX_MAX_WIDTH) / w))
+      w = DOCX_MAX_WIDTH
+    }
+    // Half-points, as Word's w:position takes it (1 px = 0.75 pt).
+    const lower = display ? 0 : Math.round(baseline * f * 1.5)
+    img = `${head} width="${w}" height="${h}" style="width:${w}px;height:${h}px" ${marker}${lower > 0 ? ` data-docx-lower="${lower}"` : ''}>`
+  } else if (display) {
+    img = `${head} width="${size.width}" height="${size.height}" style="width:${exs(size.width)};height:auto;max-width:100%" ${marker}>`
+  } else {
+    const align = baseline > 0 ? `;vertical-align:-${exs(baseline)}` : ''
+    img = `${head} width="${size.width}" height="${size.height}" style="width:${exs(size.width)};height:${exs(size.height)}${align}" ${marker}>`
+  }
+  return display ? `<p style="text-align:center">${img}</p>` : img
+}
+
+function escapeAttr(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 const BASE64 = /^[A-Za-z0-9+/]+=*$/

@@ -36,7 +36,24 @@ interface HarnessResult {
     svgHasImport: boolean | null
   }>
   broken: string | null
-  math: string | null
+  mathInline: any
+  mathInlineSvg: { head: string; uses: number; localRefs: number; defs: boolean; style: boolean } | null
+  mathDeep: any
+  mathDisplay: any
+  mathSumInline: any
+  mathManyOk: boolean
+  mathMatrix: any
+  mathTagged: any
+  mathPng: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
+  mathPngBaseline: number | undefined
+  mathUnknown: string | null
+  mathUnclosed: string | null
+  mathRequire: string | null
+  mathHref: string | null
+  mathRecursive: string | null
+  mathDefines: any
+  mathLeaked: string | null
+  mathPackages: Record<string, string | null>
   dotDigraph: { width?: number; height?: number; error?: string; fonts: string[]; head: string | null; hasDoctype: boolean | null }
   dotPng: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
   dotLayered: { width?: number; height?: number; error?: string }
@@ -111,11 +128,13 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
   it('requests nothing but the bundled page and the engine beside it', () => {
     const files = result.requests.map((r) => decodeURIComponent(new URL(r.url).pathname).split('/').pop())
     expect(result.requests.every((r) => r.allowed && r.url.startsWith('file://'))).toBe(true)
-    expect(new Set(files)).toEqual(new Set(['host.html', 'host.js', 'mermaid.min.js', 'viz-global.js']))
+    expect(new Set(files)).toEqual(new Set(['host.html', 'host.js', 'mermaid.min.js', 'viz-global.js', 'tex-svg-full.js']))
     // Each engine is loaded once per window, not once per diagram (the run
     // opens four windows: first use, after each of two time-outs, after idle).
     expect(files.filter((f) => f === 'mermaid.min.js').length).toBeLessThanOrEqual(4)
     expect(files.filter((f) => f === 'viz-global.js').length).toBeLessThanOrEqual(2)
+    // MathJax: one file, nothing fetched after it (no extension, font or menu file).
+    expect(files.filter((f) => f === 'tex-svg-full.js').length).toBe(1)
   })
 
   it('draws a PNG at twice the CSS size', () => {
@@ -139,9 +158,77 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     }
   })
 
-  it('answers a broken diagram with the engine message, and an engine not yet built with an error', () => {
+  it('answers a broken diagram with the engine message', () => {
     expect(result.broken).toBe('Parse error: the diagram ends too soon')
-    expect(result.math).toBe('math is not drawn yet')
+  })
+
+  describe('TeX (step 18)', () => {
+    type M = { width?: number; height?: number; baseline?: number; error?: string; mathjax?: { verticalAlignEx: number; widthEx: number; heightEx: number } }
+    /** The baseline MathJax gave (its own vertical-align, in ex at 8 px), plus the padding to the whole pixel below. */
+    const expectBaseline = (m: M): void => {
+      expect(m.error).toBeUndefined()
+      const mj = m.mathjax!
+      const pad = m.height! - mj.heightEx * 8
+      expect(pad).toBeGreaterThanOrEqual(0)
+      expect(pad).toBeLessThan(1)
+      expect(m.baseline).toBeCloseTo(-mj.verticalAlignEx * 8 + pad, 2)
+      expect(m.width).toBe(Math.ceil(mj.widthEx * 8 - 1e-6))
+    }
+
+    it('draws inline TeX as a standalone SVG in whole px, its baseline where MathJax puts it', () => {
+      expectBaseline(result.mathInline)
+      // x^2 sits on the line: barely any depth.
+      expect(result.mathInline.baseline).toBeLessThan(2)
+      expectBaseline(result.mathDeep)
+      // Subscripts reach below the line: lowered by more.
+      expect(result.mathDeep.baseline!).toBeGreaterThan(3)
+      expect(result.mathInlineSvg).toMatchObject({ head: '<svg ', defs: true, style: false })
+    })
+
+    it("keeps MathJax's glyphs: every <use> points at a path in the picture's own <defs> (fontCache local)", () => {
+      expect(result.mathInlineSvg!.uses).toBeGreaterThanOrEqual(2)
+      expect(result.mathInlineSvg!.localRefs).toBe(result.mathInlineSvg!.uses)
+    })
+
+    it('draws display style larger than the same TeX inline; matrices and tagged formulas too', () => {
+      expect(result.mathDisplay.error).toBeUndefined()
+      expect(result.mathDisplay.height!).toBeGreaterThan(result.mathSumInline.height!)
+      expect(result.mathMatrix.error).toBeUndefined()
+      expect(result.mathMatrix.height!).toBeGreaterThan(30)
+      // A \tag: MathJax's full-width box, given its own width and a viewBox.
+      expect(result.mathTagged.error).toBeUndefined()
+      expect(result.mathTagged.width!).toBeGreaterThan(100)
+      expect(result.mathTagged.nested).toBeGreaterThanOrEqual(2)
+      expect(result.mathTagged.rootViewBox).toBe(true)
+      expect(result.mathManyOk).toBe(true)
+    })
+
+    it('draws PNG at twice the CSS size, with the baseline', () => {
+      expect(result.mathPng.magic).toBe('PNG')
+      expect(result.mathPng.pixelWidth).toBe(result.mathPng.width! * 2)
+      expect(result.mathPng.pixelHeight).toBe(result.mathPng.height! * 2)
+      expect(result.mathPngBaseline).toBeGreaterThan(0)
+    })
+
+    it("answers a mistake with MathJax's message, never red text: unknown macros (noundefined off), errors (noerrors off)", () => {
+      expect(result.mathUnknown).toBe('Undefined control sequence \\foo')
+      expect(result.mathUnclosed).toBe('Missing close brace')
+      expect(result.mathRecursive).toMatch(/maximum macro substitution count exceeded/)
+    })
+
+    it('loads nothing on demand and takes no links: \\require and \\href are unknown', () => {
+      expect(result.mathRequire).toBe('Undefined control sequence \\require')
+      expect(result.mathHref).toBe('Undefined control sequence \\href')
+    })
+
+    it("keeps one formula's definitions out of the next", () => {
+      expect(result.mathDefines.error).toBeUndefined()
+      expect(result.mathLeaked).toBe('Undefined control sequence \\R')
+    })
+
+    it('has the extensions notebooks use, from the one file', () => {
+      expect(result.mathPackages).toEqual({ boldsymbol: null, mhchem: null, cancel: null, color: null, mathtools: null, braket: null })
+    })
   })
 
   describe('Graphviz (step 17)', () => {
@@ -257,5 +344,8 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     const viz = /pkg: '@viz-js\/viz',\s*version: '([^']+)'/.exec(script)?.[1]
     expect(viz).toBe('3.31.0')
     expect(host).toContain(`dot: '${viz}'`)
+    const mathjax = /pkg: 'mathjax',\s*version: '([^']+)'/.exec(script)?.[1]
+    expect(mathjax).toBe('3.2.2')
+    expect(host).toContain(`math: '${mathjax}'`)
   })
 })

@@ -56,10 +56,14 @@ describe('render:block', () => {
     expect(await renderForEditor({ kind: 'mermaid', source: 'BROKEN' }, render)).toEqual({ error: 'Parse error on line 1' })
   })
 
-  it('answers "unavailable" for a kind with no engine yet, without asking the host', async () => {
-    const before = seen.length
-    expect(await renderForEditor({ kind: 'math', source: 'x^2', display: false }, render)).toEqual({ unavailable: true })
-    expect(seen.length).toBe(before)
+  it('draws TeX (step 18), inline or display as asked, and hands back its baseline', async () => {
+    const withBaseline = async (req: RenderRequest) => {
+      seen.push({ req, priority: 'visible' })
+      return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="16"/>', width: 19, height: 16, baseline: 0.903 }
+    }
+    const out = await renderForEditor({ kind: 'math', source: 'x^2', display: false }, withBaseline)
+    expect(out).toMatchObject({ width: 19, height: 16, baseline: 0.903 })
+    expect(seen.at(-1)).toMatchObject({ req: { kind: 'math', source: 'x^2', display: false, format: 'svg' } })
   })
 
   it('draws Graphviz (step 17)', async () => {

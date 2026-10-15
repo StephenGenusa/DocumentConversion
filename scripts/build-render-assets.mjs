@@ -17,8 +17,7 @@
  *   node scripts/build-render-assets.mjs --check   check the committed copies (run by `npm run build`)
  *
  * Moving to another release: change the version, run once to see the new
- * digest in the error, review, then pin it. MathJax joins this list in its
- * own step.
+ * digest in the error, review, then pin it.
  */
 import { createHash } from 'node:crypto'
 import { chmod, copyFile, mkdir, readFile } from 'node:fs/promises'
@@ -41,6 +40,16 @@ const ENGINES = [
     from: 'dist/viz-global.js',
     to: 'viz-global.js',
     sha256: 'c9e0b310f9883910e01c66054b48b7ff4be3d8695141116635e72b0af152692e',
+  },
+  {
+    // TeX input, SVG output and every TeX extension in one file, so the
+    // page never loads another (host.js turns the loader's remote paths
+    // off). It carries mhchemParser 4.1.1 (Apache-2.0) for \ce and \pu.
+    pkg: 'mathjax',
+    version: '3.2.2',
+    from: 'es5/tex-svg-full.js',
+    to: 'tex-svg-full.js',
+    sha256: 'a4354ff94fd868aea0cc6eaaa79a57fda0588646fc46ee3700a349ee0a11cbe6',
   },
 ]
 

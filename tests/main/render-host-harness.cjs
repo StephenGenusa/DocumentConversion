@@ -37,7 +37,7 @@ async function main() {
     idleMs: 1500,
     partition: 'docconv-render-test',
     onRequest: (url, allowed) => requests.push({ url, allowed }),
-    onDrawn: (req, raw) => drawn.push({ source: req.source, svg: raw.svg, config: raw.config }),
+    onDrawn: (req, raw) => drawn.push({ source: req.source, svg: raw.svg, config: raw.config, mathjax: raw.mathjax }),
   })
   const out = { timings: {} }
   const time = async (name, fn) => {
@@ -138,8 +138,50 @@ async function main() {
 
   const broken = await png('flowchart TD\n  A -->')
   out.broken = broken.error ?? null
-  const unknown = await host.render({ kind: 'math', source: 'x^2', display: true, format: 'png' })
-  out.math = unknown.error ?? null
+
+  // TeX (step 18): MathJax, the same page, sanitiser and rasteriser.
+  {
+    const math = (source, display = false, format = 'svg') => host.render({ kind: 'math', source, display, format })
+    const raw = (source) => drawn.filter((d) => d.source === source).pop()
+    const pick = (r) => ({ width: r.width, height: r.height, baseline: r.baseline, error: r.error })
+    const first = await time('mathFirstSvg', () => math('x^2'))
+    out.mathInline = { ...pick(first), mathjax: raw('x^2') && raw('x^2').mathjax }
+    out.mathInlineSvg = first.svg ? { head: first.svg.slice(0, 5), uses: (first.svg.match(/<use\b[^>]*>/g) || []).length, localRefs: (first.svg.match(/href="#MJX-[^"]+"/g) || []).length, defs: /<defs>/.test(first.svg), style: /<svg[^>]*\sstyle=/.test(first.svg) } : null
+    const DEEP = 'y_{i,j}^{(k)}'
+    const deep = await math(DEEP)
+    out.mathDeep = { ...pick(deep), mathjax: raw(DEEP) && raw(DEEP).mathjax }
+    const SUM = '\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}'
+    out.mathDisplay = pick(await math(SUM, true))
+    out.mathSumInline = pick(await math(SUM, false))
+    const t0 = process.hrtime.bigint()
+    const many = []
+    for (let i = 0; i < 50; i++) many.push(await math(`a_{${i}} + \\frac{${i}}{b}`))
+    out.timings.mathWarmAverage = Number(process.hrtime.bigint() - t0) / 1e6 / 50
+    out.mathManyOk = many.every((r) => r.svg && !r.error)
+    const MATRIX = '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}'
+    out.mathMatrix = pick(await math(MATRIX, true))
+    const TAGGED = 'E = mc^2 \\tag{1}'
+    const tagged = await math(TAGGED, true)
+    out.mathTagged = { ...pick(tagged), nested: tagged.svg ? (tagged.svg.match(/<svg\b/g) || []).length : 0, rootViewBox: tagged.svg ? /^<svg[^>]*\sviewBox="0 0 \d+ \d+"/.test(tagged.svg) : null }
+    out.mathPng = pngSize(await time('mathPng', () => math('\\int_0^1 x^2\\,dx', false, 'png')))
+    out.mathPngBaseline = (await math('\\int_0^1 x^2\\,dx', false, 'png')).baseline
+    out.mathUnknown = (await math('\\foo{x}')).error ?? null
+    out.mathUnclosed = (await math('\\frac{1}{')).error ?? null
+    out.mathRequire = (await math('\\require{physics} x')).error ?? null
+    out.mathHref = (await math('\\href{http://127.0.0.1:9/x}{y}')).error ?? null
+    out.mathRecursive = (await math('\\def\\a{\\a\\a}\\a')).error ?? null
+    // A definition in one formula does not carry over to the next.
+    out.mathDefines = pick(await math('\\newcommand{\\R}{\\mathbb{R}} x \\in \\R'))
+    out.mathLeaked = (await math('y \\in \\R')).error ?? null
+    out.mathPackages = {
+      boldsymbol: (await math('\\boldsymbol{\\beta}')).error ?? null,
+      mhchem: (await math('\\ce{H2O}')).error ?? null,
+      cancel: (await math('\\cancel{x}')).error ?? null,
+      color: (await math('\\color{red}{x}')).error ?? null,
+      mathtools: (await math('\\coloneqq')).error ?? null,
+      braket: (await math('\\braket{\\phi|\\psi}')).error ?? null,
+    }
+  }
 
   // Graphviz (step 17): its own engine, the same page, sanitiser and rasteriser.
   {

@@ -9,7 +9,7 @@
   var FONT = 'Arial, "Liberation Sans", Helvetica, sans-serif'
 
   /** The engine files beside this page, by kind. */
-  var ENGINE_FILES = { mermaid: 'mermaid.min.js', dot: 'viz-global.js' }
+  var ENGINE_FILES = { mermaid: 'mermaid.min.js', dot: 'viz-global.js', math: 'tex-svg-full.js' }
 
   var loading = {}
 
@@ -337,6 +337,186 @@
     return normaliseDot(result.output)
   }
 
+  // -------------------------------------------------------------------------
+  // TeX (MathJax 3, tex-svg-full: TeX input, SVG output and every TeX
+  // extension in the one file, so nothing else is ever loaded).
+  // -------------------------------------------------------------------------
+
+  /**
+   * The TeX packages a formula may use: everything the file carries, less
+   * the ones that would hide a mistake (noerrors shows the source instead of
+   * an error, noundefined draws an unknown macro as red text: with both off
+   * a formula that is wrong is an error, and the conversion keeps its
+   * source and says so) and html (\href, \style, \class: links and styling
+   * from inside a formula). require and autoload are left out too: each
+   * loads extensions from the network on demand.
+   */
+  var TEX_PACKAGES = [
+    'base', 'action', 'ams', 'amscd', 'bbox', 'boldsymbol', 'braket', 'bussproofs', 'cancel', 'cases', 'centernot',
+    'color', 'colortbl', 'empheq', 'enclose', 'extpfeil', 'gensymb', 'mathtools', 'mhchem', 'newcommand', 'upgreek',
+    'unicode', 'verb', 'configmacros', 'tagformat', 'textcomp', 'textmacros',
+  ]
+
+  /**
+   * MathJax's settings, read by the file as it loads. The page draws only
+   * when asked (no typesetting of the page, no menu, no accessibility
+   * extensions, which the menu would otherwise fetch), and an error in a
+   * formula is thrown rather than drawn.
+   */
+  function configureMathJax() {
+    window.MathJax = {
+      loader: { load: [], paths: { mathjax: '.' }, require: null },
+      startup: { typeset: false, elements: null },
+      options: {
+        enableMenu: false,
+        menuOptions: { settings: { assistiveMml: false, collapsible: false, explorer: false } },
+      },
+      tex: {
+        packages: TEX_PACKAGES,
+        // Without this an error becomes a red message drawn in the formula.
+        formatError: function (jax, err) {
+          throw err
+        },
+      },
+      // Each picture carries the glyphs it uses (<defs> + <use href="#…">),
+      // so it is complete on its own wherever it is put.
+      svg: { fontCache: 'local' },
+    }
+  }
+
+  /** Sizes are CSS px with 1ex = 8px (spec B5): MathJax's em of 16px. */
+  var EX = 8
+  var EM = 16
+
+  var mathReady = null
+
+  function mathjax() {
+    if (!mathReady) {
+      configureMathJax()
+      mathReady = load('math').then(function () {
+        return window.MathJax.startup.promise.then(function () {
+          return window.MathJax
+        })
+      })
+      mathReady.catch(function () {
+        mathReady = null
+      })
+    }
+    return mathReady
+  }
+
+  /**
+   * A drawn formula as a standalone <svg> sized in whole CSS px, and where
+   * the text baseline is in it. MathJax sizes in ex; the picture is widened
+   * and deepened to the next whole pixel (its viewBox with it, so nothing is
+   * stretched), and `baseline` is how far the baseline sits above its new
+   * bottom edge. A display formula MathJax sets to the line's full width
+   * (one with a \tag) is given the width it needs instead.
+   */
+  function normaliseMath(svg) {
+    var exOf = function (value) {
+      var m = /^\s*(-?[0-9.]+)ex\s*$/.exec(value || '')
+      return m ? Number(m[1]) : NaN
+    }
+    var style = svg.getAttribute('style') || ''
+    var align = /vertical-align:\s*(-?[0-9.]+)ex/.exec(style)
+    var alignEx = align ? Number(align[1]) : 0
+    var heightEx = exOf(svg.getAttribute('height'))
+    var widthEx = exOf(svg.getAttribute('width'))
+    if (!(widthEx > 0)) {
+      var minWidth = /min-width:\s*([0-9.]+)ex/.exec(style)
+      if (minWidth) widthEx = Number(minWidth[1])
+    }
+    if (!(heightEx > 0) || !(widthEx > 0)) throw new Error('The engine returned a picture with no size')
+    var width = Math.max(1, Math.ceil(widthEx * EX - 1e-6))
+    var height = Math.max(1, Math.ceil(heightEx * EX - 1e-6))
+    var box = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number)
+    var baseline
+    var root = svg
+    if (box.length === 4 && box[2] > 0 && box[3] > 0) {
+      // MathJax's units per px. The box is widened and deepened to the whole
+      // pixel; the baseline is y = 0, and the box runs from box[1] down.
+      var perPx = box[3] / (heightEx * EX)
+      var vb = [box[0], box[1], width * perPx, height * perPx]
+      baseline = (vb[1] + vb[3]) / perPx
+      svg.setAttribute('viewBox', vb.map(function (n) { return String(Math.round(n * 1000) / 1000) }).join(' '))
+    } else {
+      // A display formula with a \tag: an outer <svg> as wide as the line,
+      // holding the formula and its tag placed by percentages. Given the
+      // width it needs and put inside one with a viewBox, it scales as a
+      // whole like any other picture.
+      baseline = -alignEx * EX
+      root = svg.ownerDocument.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      root.setAttribute('viewBox', '0 0 ' + width + ' ' + height)
+      svg.parentNode.replaceChild(root, svg)
+      root.appendChild(svg)
+      svg.setAttribute('x', '0')
+      svg.setAttribute('y', '0')
+    }
+    svg.setAttribute('width', String(width))
+    svg.setAttribute('height', String(height))
+    svg.removeAttribute('style')
+    svg.removeAttribute('focusable')
+    svg.removeAttribute('role')
+    svg.removeAttribute('aria-hidden')
+    root.setAttribute('width', String(width))
+    root.setAttribute('height', String(height))
+    if (!root.getAttribute('xmlns')) root.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    var result = { svg: new XMLSerializer().serializeToString(root), width: width, height: height }
+    result.baseline = Math.round(Math.max(0, Math.min(height, baseline)) * 1000) / 1000
+    // What MathJax itself said, for the host test: its own lowering, in ex.
+    result.mathjax = { verticalAlignEx: alignEx, widthEx: widthEx, heightEx: heightEx }
+    return result
+  }
+
+  /**
+   * What one formula defined (\def, \newcommand, \newenvironment, \let,
+   * \DeclareMathOperator…) must not carry over to the next one: each is
+   * drawn on its own, as it would be in the editor, so a document's
+   * formulas cannot change each other. MathJax keeps those definitions in
+   * maps of their own; they are emptied, and its labels and equation
+   * numbers reset, after every formula.
+   */
+  var DEFINED = { 'new-Command': 1, 'new-Environment': 1, 'new-Delimiter': 1, 'ams-declare-ops': 1, 'mathtools-paired-delims': 1 }
+
+  function forget(MathJax) {
+    try {
+      // The maps the parser itself holds (newcommand's and the extensions'
+      // own copies), by kind of definition.
+      var handlers = MathJax.startup.input[0].parseOptions.handlers
+      ;['macro', 'environment', 'delimiter'].forEach(function (kind) {
+        var list = handlers.get(kind)._configuration
+        for (var it of list) {
+          var map = it.item
+          if (map && DEFINED[map.name] && map.map && typeof map.map.clear === 'function') map.map.clear()
+        }
+      })
+    } catch (e) {
+      /* nothing defined yet */
+    }
+    try {
+      MathJax.texReset()
+    } catch (e) {
+      /* nothing to reset */
+    }
+  }
+
+  async function mathSvg(source, display) {
+    var MathJax = await mathjax()
+    var node
+    try {
+      node = MathJax.tex2svg(source, { display: Boolean(display), em: EM, ex: EX, containerWidth: 80 * EM })
+    } finally {
+      forget(MathJax)
+    }
+    var svg = node && node.querySelector('svg')
+    if (!svg) throw new Error('The engine returned no picture')
+    // An error MathJax still drew (rather than threw) is an error all the same.
+    var merror = svg.querySelector('[data-mml-node="merror"]')
+    if (merror) throw new Error(merror.getAttribute('data-mjx-error') || merror.textContent || 'TeX error')
+    return normaliseMath(svg)
+  }
+
   /** Every call answers { ok, value } or { ok: false, error }, never throws across the boundary. */
   function answer(promise) {
     return promise.then(
@@ -351,9 +531,10 @@
 
   window.renderHost = {
     ready: true,
-    draw: function (kind, source) {
+    draw: function (kind, source, display) {
       if (kind === 'mermaid') return answer(mermaidSvg(source))
       if (kind === 'dot') return answer(dotSvg(source))
+      if (kind === 'math') return answer(mathSvg(source, display))
       return answer(Promise.reject(new Error('No engine for ' + kind)))
     },
     rasterize: function (svg, width, height, scale) {

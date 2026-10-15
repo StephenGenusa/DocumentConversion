@@ -52,8 +52,9 @@ describe('the Diagrams choice (spec B4)', () => {
     }
   })
 
-  it('counts formulas only once they are drawn (MathJax, step 18)', () => {
-    expect(showsOutput('renderedFormat', 'pdf', [{ source: 'md', features: { diagrams: false, math: true } }])).toBe(false)
+  it('counts formulas: they are drawn too (MathJax, step 18)', () => {
+    expect(showsOutput('renderedFormat', 'pdf', [{ source: 'md', features: { diagrams: false, math: true } }])).toBe(true)
+    expect(showsOutput('renderedFormat', 'docx', [{ source: 'md', features: { diagrams: false, math: true } }])).toBe(false)
   })
 
   it('is sent only while shown, so a value kept while hidden is not applied', () => {

@@ -2,7 +2,7 @@ import HTMLtoDOCX from 'html-to-docx'
 import JSZip from 'jszip'
 import { createHash } from 'node:crypto'
 import { parseDocument } from 'htmlparser2'
-import { textContent } from 'domutils'
+import { findAll, textContent } from 'domutils'
 import { Element, Text, type AnyNode } from 'domhandler'
 import render from 'dom-serializer'
 import { renderDocumentShell } from '../shell'
@@ -123,13 +123,90 @@ async function dedupeMedia(zip: JSZip): Promise<void> {
 }
 
 /**
+ * An inline formula's picture sits with its bottom edge on the text baseline
+ * in Word, and html-to-docx ignores vertical-align, so draw-blocks.ts hands
+ * over how far each is to be lowered (`data-docx-lower`, in half-points) and
+ * the run holding the picture is given Word's own lowering, `w:position`
+ * (Format > Font > Position: Lowered), after html-to-docx has written it.
+ *
+ * The picture is found again by its bytes (html-to-docx names media at
+ * random), so this is keyed by the SHA-1 of each formula's PNG.
+ */
+function formulaLowerings(html: string): Map<string, number> {
+  const out = new Map<string, number>()
+  if (!html.includes('data-docx-lower')) return out
+  for (const img of findAll((n) => n.name === 'img' && n.attribs['data-docx-lower'] !== undefined, parseDocument(html).children)) {
+    const lower = Number(img.attribs['data-docx-lower'])
+    const data = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(img.attribs.src ?? '')
+    if (data && Number.isInteger(lower) && lower > 0 && lower < 2000) {
+      out.set(createHash('sha1').update(Buffer.from(data[1], 'base64')).digest('hex'), lower)
+    }
+  }
+  return out
+}
+
+/** Elements that come after w:position in a run's properties (CT_RPr's order). */
+const AFTER_POSITION = /<w:(?:sz|szCs|highlight|u|effect|bdr|shd|fitText|vertAlign|rtl|cs|em|lang|eastAsianLayout|specVanish|oMath)\b/
+
+function withPosition(run: string, lower: number): string {
+  const position = `<w:position w:val="-${lower}"/>`
+  if (/<w:rPr\s*\/>/.test(run)) return run.replace(/<w:rPr\s*\/>/, `<w:rPr>${position}</w:rPr>`)
+  const props = /<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(run)
+  if (props) {
+    if (props[1].includes('<w:position')) return run
+    const after = AFTER_POSITION.exec(props[1])
+    const inner = after ? props[1].slice(0, after.index) + position + props[1].slice(after.index) : props[1] + position
+    return run.replace(props[0], `<w:rPr>${inner}</w:rPr>`)
+  }
+  return run.replace(/^<w:r(\s[^>]*)?>/, (open) => `${open}<w:rPr>${position}</w:rPr>`)
+}
+
+async function lowerFormulas(zip: JSZip, lowerings: Map<string, number>): Promise<void> {
+  for (const relsName of Object.keys(zip.files).filter((name) => /^word\/_rels\/.+\.rels$/.test(name))) {
+    const ownerName = relsName.replace('/_rels/', '/').replace(/\.rels$/, '')
+    const owner = zip.files[ownerName]
+    if (!owner) continue
+    const baseDir = ownerName.slice(0, ownerName.lastIndexOf('/') + 1)
+    const targets = new Map<string, string>()
+    for (const rel of (await zip.files[relsName].async('string')).match(/<Relationship\b[^>]*>/g) ?? []) {
+      if (!/relationships\/image/.test(rel)) continue
+      const id = /\bId="([^"]+)"/.exec(rel)?.[1]
+      const target = /\bTarget="([^"]+)"/.exec(rel)?.[1]
+      if (id && target) targets.set(id, resolvePart(baseDir, target))
+    }
+    const hashOf = new Map<string, string>()
+    for (const [id, part] of targets) {
+      const file = zip.files[part]
+      if (file) hashOf.set(id, createHash('sha1').update(await file.async('nodebuffer')).digest('hex'))
+    }
+    const xml = await owner.async('string')
+    let changed = false
+    const rewritten = xml.replace(/<w:r(?=[\s>])(?:(?!<\/w:r>)[\s\S])*?<w:drawing>[\s\S]*?<\/w:r>/g, (run) => {
+      const id = /\br:embed="([^"]+)"/.exec(run)?.[1]
+      const lower = id ? lowerings.get(hashOf.get(id) ?? '') : undefined
+      if (!lower) return run
+      changed = true
+      return withPosition(run, lower)
+    })
+    if (changed) zip.file(ownerName, rewritten)
+  }
+}
+
+/**
  * html-to-docx writes every zip entry STORED, so a large document balloons —
  * one workbook produced a 182 MB .docx that Word struggles to open. Repacking
  * with deflate is lossless and typically 20-30x smaller.
  */
-async function recompress(docx: Buffer): Promise<Buffer> {
+async function recompress(docx: Buffer, lowerings: Map<string, number> = new Map()): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
+    if (lowerings.size > 0) {
+      try {
+        await lowerFormulas(zip, lowerings)
+      } catch {
+        /* the formulas stay where html-to-docx put them: on the baseline's top */
+      }
+    }
     // Repacking is the one chance to fix the media parts; a failure there must
     // not cost the (much larger) compression win, so it is caught separately.
     try {
@@ -396,5 +473,5 @@ export async function writeDocx(doc: HubDocument): Promise<Buffer> {
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)
-  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer))
+  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html))
 }

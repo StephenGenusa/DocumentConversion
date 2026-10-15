@@ -171,6 +171,8 @@ async function main() {
     const probes = probeWords(hubText)
     const hasTables = hubText.includes('<table')
     const hasDiagrams = /<pre><code class="language-(?:mermaid|dot)">/.test(hubText)
+    // TeX formulas (step 18): drawn by MathJax, inline ones in the line.
+    const hasMath = /<code class="language-math">/.test(hubText)
     // SVG images (an .svg input, or an SVG <img> in a page): Word gets PNG copies (spec D10).
     const hasSvgImages = /src="data:image\/svg\+xml/i.test(hubText)
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
@@ -242,16 +244,37 @@ async function main() {
             rec.note = `${svgItems.length} SVG items`
           }
         }
+        if (hasMath && DRAWING_TARGETS.includes(target)) {
+          // Formulas: PNG in Word, each inline one lowered onto the baseline
+          // (w:position); SVG in the HTML outputs, inline ones lowered with
+          // vertical-align; no TeX left as code but a formula that failed.
+          if (target === 'docx') {
+            const zip = await JSZip.loadAsync(out)
+            const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
+            if (!media.some((n) => n.endsWith('.png'))) throw new Error('docx has no PNG media for its formulas')
+            if (media.some((n) => /svg/i.test(n))) throw new Error('docx has SVG media')
+            const doc = await zip.file('word/document.xml').async('string')
+            const lowered = (doc.match(/<w:position w:val="-\d+"\/>/g) ?? []).length
+            if (/language-math/.test(hubText.replace(/<pre><code class="language-math">/g, '')) && lowered === 0) throw new Error('no inline formula is lowered onto the baseline in Word')
+            rec.note = `${rec.note ? rec.note + ', ' : ''}${lowered} lowered formulas`
+          } else if (target === 'html' || target === 'revealjs') {
+            const text = out.toString('utf8')
+            const formulas = text.match(/<img src="data:image\/svg\+xml;base64,[^"]*" alt="[^"]*"[^>]*data-rendered="formula"/g) ?? []
+            if (formulas.length === 0) throw new Error('no drawn SVG formula in the output')
+            const inline = formulas.filter((f) => /vertical-align:-[0-9.]+ex/.test(f))
+            rec.note = `${rec.note ? rec.note + ', ' : ''}${formulas.length} SVG formulas (${inline.length} lowered)`
+          }
+        }
         let azw3Html
         if (target === 'azw3') {
           // Pictures survive: every <img> resolves to a JPEG, PNG or GIF
           // record; diagrams and SVG images arrive as PNG; a diagram is never the cover.
           const book = await readAzw3(out)
           if (book.pictures.some((p) => imageKind(p) === 'other')) throw new Error('azw3 has a picture that is not JPEG, PNG or GIF')
-          if ((hasDiagrams || hasSvgImages || hasRasterImages) && book.pictures.length === 0) throw new Error('azw3 lost its pictures')
-          if ((hasDiagrams || hasSvgImages) && !book.pictures.some((p) => imageKind(p) === 'png')) throw new Error('azw3 has no PNG for its diagrams or SVG images')
+          if ((hasDiagrams || hasSvgImages || hasRasterImages || hasMath) && book.pictures.length === 0) throw new Error('azw3 lost its pictures')
+          if ((hasDiagrams || hasSvgImages || hasMath) && !book.pictures.some((p) => imageKind(p) === 'png')) throw new Error('azw3 has no PNG for its diagrams, formulas or SVG images')
           if (/svg/i.test(book.html.replace(/<img[^>]*>/g, ''))) throw new Error('azw3 text still holds SVG')
-          if (book.cover && hasDiagrams && !hasSvgImages && !hasRasterImages) throw new Error('a diagram is the azw3 cover')
+          if (book.cover && (hasDiagrams || hasMath) && !hasSvgImages && !hasRasterImages) throw new Error('a drawn diagram or formula is the azw3 cover')
           rec.note = `${book.pictures.length} pictures, ${book.resources ?? 0} resources${book.cover ? ', cover' : ''}`
           azw3Html = book.html
         }

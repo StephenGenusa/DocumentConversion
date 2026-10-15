@@ -105,15 +105,21 @@ describe('drawBlocks (spec B3, B7) with a fake renderer', () => {
     expect(calls).toHaveLength(0)
   })
 
-  it('draws Graphviz with its own engine (kind dot), and keeps math as source in this step', async () => {
+  it('draws Graphviz with its own engine (kind dot), and formulas apart (draw-formulas.test.ts)', async () => {
     const { render, calls } = fakeRenderer()
     const math = block('math', 'x^2') + '<p><code class="language-math">y</code></p>'
     const out = await drawBlocks(block('dot', 'digraph { a -&gt; b }') + math, 'html', { renderBlocks: render })
-    expect(calls).toEqual([[{ kind: 'dot', source: 'digraph { a -> b }', display: true, format: 'svg' }]])
-    expect(out).toBe(
-      `<p style="text-align:center"><img src="data:image/svg+xml;base64,${SVG64}" alt="Diagram" width="200" height="100" style="width:200px;height:auto;max-width:100%" data-rendered="diagram"></p>` +
-        math,
+    expect(calls).toEqual([
+      [{ kind: 'dot', source: 'digraph { a -> b }', display: true, format: 'svg' }],
+      [
+        { kind: 'math', source: 'x^2', display: true, format: 'svg' },
+        { kind: 'math', source: 'y', display: false, format: 'svg' },
+      ],
+    ])
+    expect(out).toContain(
+      `<p style="text-align:center"><img src="data:image/svg+xml;base64,${SVG64}" alt="Diagram" width="200" height="100" style="width:200px;height:auto;max-width:100%" data-rendered="diagram"></p>`,
     )
+    expect(out).not.toContain('language-math')
   })
 
   it('numbers Mermaid and Graphviz diagrams together, and never mixes up the same text in two languages', async () => {

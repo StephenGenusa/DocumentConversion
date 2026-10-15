@@ -505,6 +505,49 @@ export const GRAPHVIZ_NOTES = {
   closing: 'Couriers report delays to the sorting room.',
 }
 
+/**
+ * The formula fixture (step 18, spec B1, B3): invented notes on how overdue
+ * fines and loan figures are worked out, with TeX formulas inline and on lines
+ * of their own. Each formula is written here as TeX, byte for byte; the
+ * matrix and the host test draw them with MathJax. `unknown` uses a macro TeX
+ * does not have, so it stays as written, with a notice.
+ */
+export const FORMULA_NOTES = {
+  title: 'Loan arithmetic',
+  intro:
+    'Branches calculate overdue charges, average borrowing and shelving capacity with the formulas below. Treasurers check every figure before the monthly report.',
+  finesLead: 'A volume returned',
+  finesDays: 'd_i',
+  finesMid: 'days late owes',
+  finesRate: 'f_i = r \\cdot d_i',
+  finesTail: 'where the daily rate',
+  rate: 'r_{\\text{day}}',
+  finesEnd: 'is set by each branch, and a reader pays at most',
+  cap: '\\min(f_i, 20)',
+  sumLead: 'Over a month, the fines collected from all returns are',
+  total: '\\sum_{i=1}^{n} f_i = r \\sum_{i=1}^{n} d_i',
+  meanLead: 'The average loan, numbered so the report can refer to it:',
+  mean: '\\bar{x} = \\frac{1}{n} \\sum_{i=1}^{n} x_i \\tag{1}',
+  ruleLead: 'Fines start after a week of grace:',
+  rule: 'f(d) = \\begin{cases} 0 & d \\le 7 \\\\ r\\,(d - 7) & d > 7 \\end{cases}',
+  gridLead: 'Shelf capacity per room, by wall and by tier:',
+  grid: 'C = \\begin{pmatrix} 120 & 80 \\\\ 95 & 60 \\end{pmatrix}',
+  inlineLead: 'Smaller pieces sit in the line of text: a share',
+  share: '\\frac{a}{b}',
+  inlineMid: 'of the stock, a decay',
+  decay: 'e^{-\\lambda t}',
+  inlineMore: 'in demand, a spread',
+  spread: '\\sqrt{\\sigma^2 + 1}',
+  inlineEnd: 'and an area',
+  area: '\\int_0^1 x^2 \\, dx',
+  prices: 'Membership costs $5 for students and $10 for everyone else.',
+  shellLead: 'The nightly export is started from a terminal:',
+  shell: '$ export-loans --since yesterday',
+  unknownLead: 'One formula uses a command TeX does not know and stays as written:',
+  unknown: '\\fines{d}',
+  closing: 'Treasurers round every charge to the nearest penny.',
+}
+
 /** The SVG fixtures (step 16, spec D10): a floor plan drawn as an SVG, and a page that shows it. */
 export const READING_ROOM = {
   title: 'Reading room plan',
