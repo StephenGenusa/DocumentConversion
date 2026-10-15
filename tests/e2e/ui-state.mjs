@@ -217,6 +217,15 @@ const paste = (selector, text) =>
     `(() => { const dt=new DataTransfer(); dt.setData('text/plain', ${JSON.stringify(text)}); document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true})) })()`,
   )
 
+/** The checkbox labelled `text`, as { checked } or null when it is not shown. */
+const checkbox = (text) =>
+  js(`(() => { const l=[...document.querySelectorAll('label')].find(l=>l.textContent.trim()===${JSON.stringify(text)}); const i=l?.querySelector('input[type=checkbox]'); return i ? { checked: i.checked } : null })()`)
+const toggle = async (text) => {
+  const before = (await checkbox(text))?.checked
+  await js(`[...document.querySelectorAll('label')].find(l=>l.textContent.trim()===${JSON.stringify(text)}).querySelector('input').click()`)
+  await waitFor(`[...document.querySelectorAll('label')].find(l=>l.textContent.trim()===${JSON.stringify(text)})?.querySelector('input').checked === ${!before}`, `"${text}" to change`)
+}
+
 function check(name, ok, detail) {
   if (ok) console.log(`ok    ${name}`)
   else {
@@ -296,10 +305,77 @@ try {
   await dismiss()
   await startOver()
 
+  // A database with a view: the view's rows are left out until asked for.
+  const db = join(work, 'pantry.sqlite')
+  const made = spawnSync('python3', ['-I', '-c', [
+    'import sqlite3, sys',
+    'c = sqlite3.connect(sys.argv[1])',
+    "c.execute('CREATE TABLE jars (shelf TEXT, flavour TEXT, jars INTEGER)')",
+    "c.executemany('INSERT INTO jars VALUES (?, ?, ?)', [('top', 'quincemarmalade', 3), ('top', 'gooseberryjam', 2), ('low', 'damsonjelly', 5)])",
+    "c.execute('CREATE TABLE shelves (shelf TEXT, room TEXT)')",
+    "c.execute(\"INSERT INTO shelves VALUES ('top', 'larder')\")",
+    "c.execute('CREATE VIEW shelftotals AS SELECT shelf, SUM(jars) AS jarsumzz FROM jars GROUP BY shelf')",
+    'c.commit()',
+  ].join('\n'), db])
+  if (made.status !== 0) throw new Error(`could not make the test database: ${made.stderr}`)
+  await dropFile(db, 'pantry.sqlite')
+  let box = await checkbox('Include view results')
+  check('a database with a view offers "Include view results"', box !== null, JSON.stringify(box))
+  check('"Include view results" starts unchecked', box?.checked === false, JSON.stringify(box))
+  out = await convert()
+  check('without it, the view is left out', out.text?.includes('quincemarmalade') && !/^#+ shelftotals/m.test(out.text ?? ''), JSON.stringify(out))
+  await dismiss()
+  await toggle('Include view results')
+  out = await convert()
+  check('with it, the view is converted too', out.text?.includes('quincemarmalade') && /^#+ shelftotals/m.test(out.text ?? '') && /\| *jarsumzz *\|/.test(out.text), JSON.stringify(out))
+  await dismiss()
+  await startOver()
+
+  // A transcript keeps its cue times unless told not to.
+  const vtt = join(work, 'chat.vtt')
+  writeAt(vtt, 'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n<v Zorbo Quill>Shall we begin the pickling?\n\n00:00:04.000 --> 00:00:06.500\n<v Mira Vantablue>Only once the jars are warm.\n\n00:00:07.000 --> 00:00:09.000\n<v Zorbo Quill>Warm they are.\n')
+  await dropFile(vtt, 'chat.vtt')
+  box = await checkbox('Include timestamps')
+  check('a transcript offers "Include timestamps"', box !== null, JSON.stringify(box))
+  check('"Include timestamps" starts checked', box?.checked === true, JSON.stringify(box))
+  out = await convert()
+  check('with it, the transcript shows the cue times', /00:00:0[14]/.test(out.text ?? '') && out.text.includes('pickling'), JSON.stringify(out))
+  await dismiss()
+  await toggle('Include timestamps')
+  out = await convert()
+  check('without it, the cue times are gone', !/\d\d:\d\d:\d\d/.test(out.text ?? '') && out.text?.includes('pickling'), JSON.stringify(out))
+  await dismiss()
+  await startOver()
+
+  // Neither checkbox is offered for a file they mean nothing to.
+  const plain = join(work, 'plain.md')
+  writeAt(plain, '# Nothing to tick\n')
+  await dropFile(plain, 'plain.md')
+  const boxes = [await checkbox('Include view results'), await checkbox('Include timestamps')]
+  check('neither checkbox is offered for a Markdown file', boxes.every((b) => b === null), JSON.stringify(boxes))
+  await startOver()
+
   // Edits in the pane survive a result being shown and dismissed.
   await paste('.dropzone', '# Title\n\nOriginal body.')
   await waitFor(`!!${EDITOR}`, 'the edit pane')
   await click('Markdown')
+
+  // At the size the window opens at, the formatting toolbar is one row.
+  const bar = await js(`(() => {
+    const t = document.querySelector('.clip-pane__toolbar')
+    const tops = [...t.querySelectorAll('button, select')].map((b) => b.offsetTop)
+    const rows = new Set(tops).size
+    const ctl = [...t.querySelectorAll('button, select')]
+    const used = Math.max(...ctl.map((b) => b.offsetLeft + b.offsetWidth)) - Math.min(...ctl.map((b) => b.offsetLeft))
+    const wrap = t.style.flexWrap
+    t.style.flexWrap = 'nowrap'
+    const needed = t.scrollWidth
+    t.style.flexWrap = wrap
+    return { rows, controls: tops.length, used, toolbarWidth: t.clientWidth, needed, windowWidth: window.outerWidth, innerWidth: window.innerWidth }
+  })()`)
+  const size = await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows()[0].getSize()`)
+  console.log(`note  toolbar ${JSON.stringify(bar)}, window ${JSON.stringify(size)}`)
+  check('the editor toolbar fits on one row at the default window size', bar.rows === 1, `${bar.rows} rows; the toolbar needs ${bar.needed} px and has ${bar.toolbarWidth}, so the window needs about ${size[0] + bar.needed - bar.toolbarWidth} px wide`)
   await typeIntoEditor('<p>EDITED LINE</p>')
   out = await convert()
   check('a conversion uses the edits in the pane', out.text?.includes('EDITED LINE'), JSON.stringify(out))
