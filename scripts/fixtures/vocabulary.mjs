@@ -566,3 +566,54 @@ export const READING_ROOM = {
   flowIntro: 'Returned volumes reach the shelves in three steps:',
   flow: ['Returned', 'Sorted', 'Reshelved'],
 }
+
+/**
+ * The Word equations fixture (step 19, spec B12): invented notes on loan and
+ * shelving figures, written as Word equations (OMML) so the docx reader turns
+ * them into TeX. One lead sentence per equation; the equations themselves are
+ * built in scripts/fixtures/build-omml-fixture.mjs, and `texWords` lists the
+ * TeX command names the reader writes for them (they reach the hub as text).
+ */
+export const OMML_NOTES = {
+  title: 'Equations from the treasurer',
+  intro:
+    'Treasurers keep their working in Word, with every figure typed as an equation. Each equation below should come through as a formula, drawn the way Word draws it.',
+  styles: 'Letters in different styles, and a few words of normal text:',
+  styleText: 'per branch',
+  fractions: 'Fractions: stacked, linear, skewed, and without a bar:',
+  scripts: 'Powers, indices, both together, and indices written before:',
+  roots: 'A square root and a cube root:',
+  sums: 'Sums, products, unions and integrals, with and without limits:',
+  delimiters: 'Brackets of every shape, a separator, and a bar with nothing on its left:',
+  matrices: 'Shelf grids as matrices, in parentheses, in brackets, and bare:',
+  aligned: 'Two lines lined up on their equals signs:',
+  cases: 'Fines by the number of days late:',
+  casesText: 'otherwise',
+  functions: 'Functions by name, with a power on one of them:',
+  limits: 'A limit, a maximum, and a definition written over an equals sign:',
+  accents: 'Accents, bars and braces over and under terms:',
+  braceLabel: 'terms',
+  boxes: 'A boxed result, a struck term, and a hidden spacer:',
+  symbols: 'Greek letters, operators and arrows:',
+  specials: 'Characters that mean something to TeX, typed as text:',
+  specialText: 'rate in % per $ & # of_days',
+  twoLines: 'Two equations in one math paragraph:',
+  inlineLead: 'Inline, a share',
+  inlineMid: 'of the stock goes to each branch, and the daily rate',
+  inlineEnd: 'stays the same all year.',
+  aloneLead: 'An equation alone in its paragraph, not marked as a math paragraph:',
+  footnoteLead: 'The yearly figure has a note',
+  footnote: 'Worked out as',
+  footnoteEnd: 'for each branch.',
+  endnoteLead: 'The monthly figure has an endnote',
+  endnote: 'The monthly total is',
+  unknownLead: 'One equation holds an element no version of Word writes; its characters come through as they are:',
+  closing: 'Treasurers check every equation against the printed report.',
+  texWords:
+    'mathbb mathcal mathfrak mathrm mathbf mathsf boldsymbol text frac genfrac sqrt sum prod bigcup int iint oint ' +
+    'limits nolimits left right middle langle rangle begin end matrix pmatrix bmatrix vmatrix aligned gathered cases ' +
+    'sin log operatorname sgn lim rightarrow infty max underset overset hat tilde dot ddot vec bar overline underline ' +
+    'widehat overrightarrow underbrace overbrace boxed cancel phantom alpha beta gamma delta varepsilon theta lambda ' +
+    'sigma omega Delta Sigma Omega forall exists le ge ne approx pm times cdot Rightarrow in subseteq cup cap partial ' +
+    'nabla backslash def cos cdots quad bbb c-b x-a',
+}

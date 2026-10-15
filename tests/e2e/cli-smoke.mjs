@@ -168,6 +168,22 @@ if (existsSync(join(work, 'formulas.html'))) {
   }
 }
 
+// Word equations (step 19): recovered as TeX, so Markdown gets $…$ and $$…$$;
+// the fixture's one unknown element is a NOTE.
+const equations = join(root, 'tests', 'corpus', 'treasurer-equations.docx')
+run('docx equations->md as TeX', [equations, '--to', 'md', '--out', join(work, 'equations.md')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'equations.md')],
+  expectStderr: 'NOTE treasurer-equations.docx: One equation has a part that could not be read as a formula',
+})
+if (existsSync(join(work, 'equations.md'))) {
+  const md = readFileSync(join(work, 'equations.md'), 'utf8')
+  if (!md.includes('a share $\\frac{a}{b}$ of the stock') || !md.includes('$$\\sqrt{a^{2}+b^{2}},\\quad\\sqrt[3]{V}$$')) {
+    failures++
+    console.log('FAIL  equations.md does not hold the inline and display formulas')
+  }
+}
+
 run('--diagrams for Word exit 2', [diagrams, '--to', 'docx', '--diagrams', 'svg'], {
   expectCode: 2,
   expectStderr: '--diagrams applies only to pdf, html, revealjs, epub, azw4 output, not docx',

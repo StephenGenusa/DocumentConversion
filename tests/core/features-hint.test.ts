@@ -20,6 +20,13 @@ describe('featuresHint (spec 2a: the Diagrams choice knows about a file never op
     expect(await featuresHint(b('# Plain\n\nNothing to draw, and $5 is not maths.\n'), 'md')).toEqual({ diagrams: false, math: false })
   })
 
+  it('a Word file: formulas when it holds equations (spec B12), found without converting it', async () => {
+    const equations = readFileSync(join(__dirname, '..', 'corpus', 'treasurer-equations.docx'))
+    expect(await featuresHint(equations, 'docx')).toEqual({ diagrams: false, math: true })
+    const plain = readFileSync(join(__dirname, '..', 'corpus', 'supply-request-header.docx'))
+    expect(await featuresHint(plain, 'docx')).toEqual({ diagrams: false, math: false })
+  })
+
   it('says nothing for formats with no such blocks, for large inputs, or for an input it cannot read', async () => {
     expect(await featuresHint(b('```mermaid\nA\n```'), 'txt')).toBeUndefined()
     expect(await featuresHint(b('anything'), 'docx')).toBeUndefined()

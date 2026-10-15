@@ -56,6 +56,13 @@ describe('the editor round-trips what the hub allows', () => {
     ['inline math', '<p>Let <code class="language-math">\\alpha_i &lt; 2</code> hold, and <code>plain</code>.</p>'],
     ['inline math in a list, a heading and a quote', '<ul><li><p><code class="language-math">x^2</code></p></li></ul><h2>On <code class="language-math">y</code></h2><blockquote><p><code class="language-math">z</code></p></blockquote>'],
     ['an ordinary code block beside them', '<pre><code class="language-python">x = 1</code></pre><pre><code class="language-math">a</code></pre>'],
+    // Word equations (step 19): math inside footnotes and endnotes, inline and display.
+    [
+      'math inside notes, as a Word file gives it',
+      '<p>Claim<sup data-fn="1">1</sup> and<sup data-fn="e1">2</sup>.</p>' +
+        '<ol><li data-fn="1"><p>Since <code class="language-math">x^{2}</code> grows.</p></li>' +
+        '<li data-fn="e1"><p>The total:</p><pre><code class="language-math">\\sum_{i=1}^{30}d_{i}</code></pre></li></ol>',
+    ],
   ])('keeps %s byte for byte (spec B1)', (_name, html) => {
     expect(roundTrip(html)).toBe(html)
   })

@@ -9,7 +9,8 @@ import {
   OVER_BUDGET,
   type ImageLedger,
 } from '../inline-images'
-import type { HubDocument, SourceInput } from '../types'
+import type { HubDocument, ReadContext, SourceInput } from '../types'
+import { ommlLinearText, ommlToTex } from '../omml-tex'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode, type ParentNode } from 'domhandler'
 import render from 'dom-serializer'
@@ -542,16 +543,175 @@ function dropBackLinks(li: Element): void {
   visit(li)
 }
 
-export async function readDocx(src: SourceInput): Promise<HubDocument> {
+/* -------------------------------------------------------------------------- */
+/* Word equations                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Word equations as formulas (spec B12). mammoth does not know OMML and drops
+ * `m:oMath` silently ("Inline x² end." became "Inline  end."), so each
+ * equation is taken out of the XML before mammoth sees it, turned into TeX
+ * (src/core/omml-tex.ts), and put back afterwards as the hub's math (B1).
+ *
+ * What stands in for it meanwhile is an ordinary text run holding a marker:
+ * private-use characters around a prefix the document's own text does not
+ * contain, and the equation's number. mammoth carries text through untouched,
+ * into footnotes and endnotes too, so the marker lands exactly where the
+ * equation stood.
+ */
+export interface WordEquation {
+  tex: string
+  /** An `m:oMathPara`: a math paragraph, drawn on a line of its own when it is alone in its paragraph. */
+  display: boolean
+  /** Some element was not understood and is its linear text in `tex`. */
+  partial: boolean
+}
+
+/** The parts mammoth reads that can hold equations. */
+const MATH_PARTS = ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']
+
+/** A marker prefix the text of none of the parts contains. */
+export function equationMarker(xmls: string[]): string {
+  // The text as mammoth will see it: a private-use character can be written
+  // as a character reference too.
+  const reference = new RegExp(`&#(?:x0*e000|0*${0xe000});`, 'gi')
+  const texts = xmls.map((x) => x.replace(reference, '\ue000'))
+  let marker = '\ue000eq'
+  for (let i = 0; texts.some((t) => t.includes(marker)); i++) marker = `\ue000eq${i.toString(36)}x`
+  return marker
+}
+
+/**
+ * Replace every top-level `m:oMathPara` / `m:oMath` of one part with a marker
+ * run, appending each equation's TeX to `equations` in document order.
+ */
+export function takeEquations(xml: string, marker: string, equations: WordEquation[]): string {
+  if (!xml.includes('<m:oMath')) return xml
+  const found = scanElements(xml, ['m:oMathPara', 'm:oMath'])
+  if (found.length === 0) return xml
+  let out = ''
+  let cursor = 0
+  for (const el of found) {
+    const at = xml.indexOf(el.xml, cursor)
+    if (at < 0) continue
+    const display = el.name === 'm:oMathPara'
+    // Parsed as a fragment: the reader matches prefixed names, so the
+    // namespace declarations on the part's root are not needed.
+    const fragment = el.xml
+    let eq: WordEquation
+    try {
+      const { tex, unknown } = ommlToTex(fragment, { display })
+      eq = { tex, display, partial: unknown.length > 0 }
+    } catch {
+      // Never dropped: at worst, the equation's own characters.
+      eq = { tex: safeLinear(fragment), display, partial: true }
+    }
+    out += xml.slice(cursor, at) + `<w:r><w:t>${marker}${equations.length}\ue001</w:t></w:r>`
+    equations.push(eq)
+    cursor = at + el.xml.length
+  }
+  return out + xml.slice(cursor)
+}
+
+function safeLinear(fragment: string): string {
+  try {
+    return ommlLinearText(fragment).replace(/[\\{}%#&_$^~]/g, (c) => (c === '\\' ? '\\backslash ' : c === '^' ? '\\hat{}' : c === '~' ? '\\sim ' : `\\${c}`))
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Whether a Word file holds equations, without converting it: the add-time
+ * features hint (src/core/features-hint.ts) for a docx. Only the three XML
+ * parts are inflated, so this is cheap even for a file full of pictures.
+ * Undefined when the bytes are not a readable package.
+ */
+export async function docxHasEquations(bytes: Buffer): Promise<boolean | undefined> {
+  try {
+    const zip = await JSZip.loadAsync(bytes)
+    for (const name of MATH_PARTS) {
+      if (zip.files[name] && (await zip.files[name].async('string')).includes('<m:oMath')) return true
+    }
+    return zip.files['word/document.xml'] ? false : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The package with its equations replaced by markers, or undefined when it has none. */
+async function extractEquations(
+  bytes: Buffer,
+): Promise<{ bytes: Buffer; marker: string; equations: WordEquation[] } | undefined> {
+  try {
+    const zip = await JSZip.loadAsync(bytes)
+    const parts = MATH_PARTS.filter((name) => zip.files[name])
+    const xmls = await Promise.all(parts.map((name) => zip.files[name].async('string')))
+    if (!xmls.some((x) => x.includes('<m:oMath'))) return undefined
+    const marker = equationMarker(xmls)
+    const equations: WordEquation[] = []
+    parts.forEach((name, i) => zip.file(name, takeEquations(xmls[i], marker, equations)))
+    if (equations.length === 0) return undefined
+    return { bytes: await zip.generateAsync({ type: 'nodebuffer' }), marker, equations }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Put each equation back where its marker stands: a math paragraph alone in
+ * its paragraph as display math, everything else as inline math (B12, B1).
+ * A marker that cannot be matched is removed, so none ever reaches the hub.
+ */
+export function restoreEquations(html: string, marker: string, equations: WordEquation[]): string {
+  const m = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const token = `${m}(\\d+)\ue001`
+  const eq = (n: string): WordEquation | undefined => equations[Number(n)]
+  // mammoth writes a bookmark as an empty <a id>, and ends a note's last
+  // paragraph with its ↑ link back to the reference (wordNotesToHub drops it
+  // anyway); neither stops the equation being alone in its paragraph.
+  const filler = '(?:\\s|<a id="[^"]*"></a>|<a href="#(?:foot|end)note-ref-\\d+">↑</a>)*'
+  let out = html.replace(new RegExp(`<p>${filler}${token}${filler}</p>`, 'g'), (whole, n: string) => {
+    const e = eq(n)
+    if (!e?.display) return whole
+    return e.tex ? `<pre><code class="language-math">${escapeHtml(e.tex)}</code></pre>` : ''
+  })
+  out = out.replace(new RegExp(token, 'g'), (_, n: string) => {
+    const e = eq(n)
+    return e?.tex ? `<code class="language-math">${escapeHtml(e.tex)}</code>` : ''
+  })
+  // Anything left of a marker (torn by something upstream) goes too.
+  return out.replace(new RegExp(`${m}\\d*\ue001?`, 'g'), '')
+}
+
+/** One notice per document for equations with parts that are only linear text. */
+function equationNotice(equations: WordEquation[], ctx?: ReadContext): void {
+  const n = equations.filter((e) => e.partial).length
+  if (n === 0) return
+  ctx?.onAdvice?.(
+    'equation-partial',
+    n === 1
+      ? 'One equation has a part that could not be read as a formula; that part is shown as plain characters.'
+      : `${n} equations have parts that could not be read as formulas; those parts are shown as plain characters.`,
+  )
+}
+
+export async function readDocx(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
   const ledger = createImageLedger(archiveInlineBudget(src.bytes.byteLength))
+  const math = await extractEquations(src.bytes)
+  // The package mammoth and the list scan read: with markers where equations
+  // were, so a paragraph holding only an equation is not taken for empty.
+  const bytes = math?.bytes ?? src.bytes
   const [{ value }, flags, header, numIds] = await Promise.all([
-    mammoth.convertToHtml({ buffer: src.bytes }, { convertImage: budgetedImageConverter(ledger) }),
-    headerFlags(src.bytes),
-    headerTitle(src.bytes),
-    listNumIds(src.bytes),
+    mammoth.convertToHtml({ buffer: bytes }, { convertImage: budgetedImageConverter(ledger) }),
+    headerFlags(bytes),
+    headerTitle(bytes),
+    listNumIds(bytes),
   ])
+  const converted = math ? restoreEquations(value, math.marker, math.equations) : value
+  if (math) equationNotice(math.equations, ctx)
   const html = keepTabsVisible(
-    mergeInterruptedOrderedLists(promoteHeaderRows(replaceUninlinedImages(value), flags), numIds),
+    mergeInterruptedOrderedLists(promoteHeaderRows(replaceUninlinedImages(converted), flags), numIds),
   )
   return withHeaderTitle(wordNotesToHub(html), header)
 }

@@ -8,6 +8,8 @@ export const R = 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006
 export const WP = 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
 export const A = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
 export const PIC = 'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"'
+/** Office Math (OMML), the namespace of Word equations. */
+export const M = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
 
 /** A trivial, valid 3x1 PNG — the same bytes used by tests/fixtures/gen-fixtures.mjs. */
 export const TINY_PNG = Buffer.from(
@@ -76,8 +78,11 @@ export function imageRelIds(count) {
  * tests/core/reader-docx.test.ts and reader-docx-fidelity.test.ts already hand
  * -build for the same reader, so mammoth reads it the same way it reads a real
  * Word file.
+ *
+ * `footnotes` / `endnotes` are the bodies (`<w:p>…`) of notes 1, 2, …; the
+ * body refers to note N with `noteRef('footnote', N)`.
  */
-export async function buildDocx({ body, headers = {}, footers = {}, numberingXml, imageCount = 0 }) {
+export async function buildDocx({ body, headers = {}, footers = {}, numberingXml, imageCount = 0, footnotes = [], endnotes = [] }) {
   const zip = new JSZip()
   const rels = []
   const refs = { header: [], footer: [] }
@@ -106,6 +111,28 @@ export async function buildDocx({ body, headers = {}, footers = {}, numberingXml
     mediaFiles.push([`word/media/${file}`, TINY_PNG])
   }
 
+  const notes = { footnote: footnotes, endnote: endnotes }
+  const noteOverrides = []
+  for (const [kind, list] of Object.entries(notes)) {
+    if (list.length === 0) continue
+    n += 1
+    rels.push(
+      `<Relationship Id="rId${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${kind}s" Target="${kind}s.xml"/>`,
+    )
+    noteOverrides.push(
+      `<Override PartName="/word/${kind}s.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.${kind}s+xml"/>`,
+    )
+    // Word's separator notes (ids -1 and 0) come first in every notes part.
+    const items = list.map((xml, i) => `<w:${kind} w:id="${i + 1}">${xml}</w:${kind}>`).join('')
+    parts.push([
+      `word/${kind}s.xml`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:${kind}s ${W} ${R} ${M}>` +
+        `<w:${kind} w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:${kind}>` +
+        `<w:${kind} w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:${kind}>` +
+        `${items}</w:${kind}s>`,
+    ])
+  }
+
   let numberingRelXml = ''
   if (numberingXml) {
     n += 1
@@ -122,6 +149,7 @@ export async function buildDocx({ body, headers = {}, footers = {}, numberingXml
       (numberingXml
         ? '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
         : '') +
+      noteOverrides.join('') +
       `</Types>`,
   )
   zip.file(
@@ -131,7 +159,7 @@ export async function buildDocx({ body, headers = {}, footers = {}, numberingXml
   )
   zip.file(
     'word/document.xml',
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W} ${R} ${WP} ${A} ${PIC}><w:body>${body}<w:sectPr>${refs.header.join('')}${refs.footer.join('')}</w:sectPr></w:body></w:document>`,
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W} ${R} ${WP} ${A} ${PIC} ${M}><w:body>${body}<w:sectPr>${refs.header.join('')}${refs.footer.join('')}</w:sectPr></w:body></w:document>`,
   )
   zip.file(
     'word/_rels/document.xml.rels',
@@ -151,4 +179,10 @@ export function decimalNumberingXml() {
     `<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum>` +
     `<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>`
   )
+}
+
+/** A run referring to footnote or endnote `id` (1-based), as Word writes it. */
+export function noteRef(kind, id) {
+  const style = kind === 'footnote' ? 'FootnoteReference' : 'EndnoteReference'
+  return `<w:r><w:rPr><w:rStyle w:val="${style}"/></w:rPr><w:${kind}Reference w:id="${id}"/></w:r>`
 }

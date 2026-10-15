@@ -1,4 +1,5 @@
 import { getReader } from './readers'
+import { docxHasEquations } from './readers/docx'
 import { hubFeatures, type HubFeatures } from './rendered-blocks'
 import type { SourceFormat } from './types'
 
@@ -30,6 +31,13 @@ export const FEATURES_HINT_MAX_BYTES = 2 * 1024 * 1024
  * are resolved by Converter.read, not here).
  */
 export async function featuresHint(bytes: Buffer, format: SourceFormat, filename?: string): Promise<HubFeatures | undefined> {
+  // A Word file's equations become formulas (spec B12). Converting the whole
+  // file just to learn that would be slow, so its parts are only searched,
+  // whatever its size.
+  if (format === 'docx') {
+    const math = await docxHasEquations(bytes)
+    return math === undefined ? undefined : { diagrams: false, math }
+  }
   if (!HINT_SOURCES.has(format) || bytes.length > FEATURES_HINT_MAX_BYTES) return undefined
   try {
     const hub = await getReader(format)({ bytes, filename })

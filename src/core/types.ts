@@ -213,6 +213,8 @@ export type AdviceKind =
   | 'photos-omitted'
   | 'sqlite-wal'
   | 'sqlite-stopped'
+  /** A Word equation with a part that is only its linear text (spec B12). */
+  | 'equation-partial'
   /** A diagram or formula kept as source (spec B7). Given by write(). */
   | 'render-failed'
 
