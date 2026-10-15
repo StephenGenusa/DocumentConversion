@@ -1,5 +1,6 @@
 import { textToBase64 } from './encoding'
-import type { BatchItemReq, SourceFormat } from '../../../preload/types'
+import type { BatchItemReq, ReadOptions, SourceFormat } from '../../../preload/types'
+import { appliedReadOptions } from './controls'
 
 /**
  * One input in the list. The list is the ONLY state that outlives the edit
@@ -29,8 +30,8 @@ export interface ListItem {
   rev?: number
   /** JSON that reads as a table of records (decides whether the choice is shown). */
   jsonTable?: boolean
-  /** The user's choice for JSON records. */
-  jsonAs?: 'table' | 'text'
+  /** The reading choices made on this input's card. */
+  read?: ReadOptions
   /** The pane's copy was read cut to the print limit (records.ts). */
   limited?: boolean
 }
@@ -67,7 +68,7 @@ export function toRequest(item: ListItem, ocrLanguage: string): BatchItemReq {
     ocr: item.source === 'image' && item.imageMode === 'ocr',
     ocrLanguage,
     sourceDir: item.sourceDir,
-    ...(item.source === 'json' ? { jsonAs: item.jsonAs ?? 'table' } : {}),
+    read: appliedReadOptions(item.source, item.read),
   }
 }
 

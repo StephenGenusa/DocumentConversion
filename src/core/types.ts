@@ -157,13 +157,20 @@ export interface SourceInput {
   filename?: string
 }
 
+/**
+ * The reading choices made on one input's card (spec 2a, V2). Each applies to
+ * one kind of input and is ignored by every other reader.
+ */
+export interface ReadOptions {
+  /** JSON records: as a table (the default) or as formatted JSON text. */
+  jsonAs?: 'table' | 'text'
+}
+
 /** Options, cancellation, and progress threaded into readers. */
-export interface ReadContext {
+export interface ReadContext extends ReadOptions {
   ocr?: boolean
   signal?: AbortSignal
   onProgress?: (stage: string, percent?: number) => void
-  /** JSON records: as a table (the default) or as formatted JSON text. */
-  jsonAs?: 'table' | 'text'
   /** Non-fatal suggestions surfaced to the user (e.g. "this would fit landscape"). */
   onAdvice?: (
     kind: 'landscape' | 'doc-tables' | 'doc-lists' | 'doc-images' | 'reformatted' | 'records-limited' | 'record-error',
@@ -216,8 +223,8 @@ export interface ConvertOptions {
   /** Which language OCR should recognise with. Defaults to the bundled English. */
   ocrLanguage?: string
   slides?: SlideOptions
-  /** Per input: JSON records as a table or as formatted text. Copied into the read context. */
-  jsonAs?: 'table' | 'text'
+  /** Per input: the card's reading choices. Copied into the read context. */
+  read?: ReadOptions
 }
 
 export type RenderHtmlToPdf = (html: string, opts?: PdfRenderOptions) => Promise<Buffer>

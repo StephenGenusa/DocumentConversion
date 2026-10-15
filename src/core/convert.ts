@@ -106,7 +106,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
     read,
     write,
     async convert(src, source, target, opts, ctx) {
-      const readCtx = opts?.jsonAs ? { ...ctx, jsonAs: opts.jsonAs } : ctx
+      const readCtx = opts?.read ? { ...ctx, ...opts.read } : ctx
       if (TABLE_TARGETS.includes(target)) {
         const rows = await this.readRows(src, source, readCtx)
         if (rows) return writeRows(rows, target, { signal: ctx?.signal, onProgress: ctx?.onProgress })

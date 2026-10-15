@@ -1,4 +1,4 @@
-import { SOURCE_FORMATS, TABLE_TARGETS, TARGET_FORMATS, type SourceFormat, type TargetFormat } from '../core/types'
+import { SOURCE_FORMATS, TABLE_TARGETS, TARGET_FORMATS, type ReadOptions, type SourceFormat, type TargetFormat } from '../core/types'
 import { PDF_PAGE_SIZES } from '../core/pdf-options'
 
 export interface CliRequest {
@@ -83,6 +83,13 @@ export function checkFlagScope(
     }
   }
   return null
+}
+
+/** The reading choices a request's flags make, for every input. */
+export function cliReadOptions(req: CliRequest): ReadOptions {
+  return {
+    ...(req.jsonAs ? { jsonAs: req.jsonAs } : {}),
+  }
 }
 
 export function parseArgs(argv: string[]): ParseResult {

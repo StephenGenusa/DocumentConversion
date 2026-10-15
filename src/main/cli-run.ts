@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { basename, dirname, resolve } from 'path'
 import { app } from 'electron'
-import { parseArgs, USAGE, checkFlagScope } from '../cli/args'
+import { parseArgs, USAGE, checkFlagScope, cliReadOptions } from '../cli/args'
 import { mergeToTarget, runConversion } from './conversion'
 import { detect } from '../core/detect'
 import { allowedTargets } from '../core/target-validity'
@@ -50,7 +50,7 @@ export async function runCli(argv: string[]): Promise<number> {
     }),
     slides: { splitOn: req.split ?? 'auto' },
     ocr: req.ocr,
-    ...(req.jsonAs ? { jsonAs: req.jsonAs } : {}),
+    read: cliReadOptions(req),
   }
 
   let failed = 0
@@ -139,7 +139,7 @@ export async function runCli(argv: string[]): Promise<number> {
           bytes: await bytesFor(f),
           filename: basename(f.path),
           source: f.source,
-          ...(req.jsonAs ? { jsonAs: req.jsonAs } : {}),
+          read: cliReadOptions(req),
           ocr: req.ocr,
         })),
       )

@@ -26,7 +26,7 @@ interface BatchItemPayload {
   ocrLanguage?: string
   ocr?: unknown
   sourceDir?: string
-  jsonAs?: unknown
+  read?: unknown
 }
 import { downloadPack, listPacks, removePack } from './ocr-packs'
 import { normalizeSlideOptions } from '../core/slides'
@@ -35,7 +35,7 @@ import { defaultSavePath, defaultSaveDir, rememberDir, rememberSaveDir } from '.
 import { shouldUseHtmlFlavor } from '../core/paste-flavors'
 import { pastedHtmlToHub } from '../core/remote-images'
 import { loadUrl } from '../core/readers/url'
-import type { ReadContext } from '../core/types'
+import type { ReadContext, ReadOptions } from '../core/types'
 import { urlFetchDeps } from './net'
 import { appTitle } from './app-identity'
 import { installAppMenu } from './menu'
@@ -86,9 +86,16 @@ function detectWithHints(bytes: Buffer, filename?: string): DetectResult {
   return d.kind === 'ok' && d.format === 'json' ? { ...d, jsonTable: jsonIsTable(bytes, filename) } : d
 }
 
-/** A request's jsonAs, if it is one of the two values the reader knows. */
-function jsonAsOf(value: unknown): 'table' | 'text' | undefined {
-  return value === 'table' || value === 'text' ? value : undefined
+/**
+ * A request's reading choices, keeping only values the readers know. The
+ * renderer is not trusted to send well-formed ones.
+ */
+function readOptionsOf(value: unknown): ReadOptions {
+  if (typeof value !== 'object' || value === null) return {}
+  const v = value as Record<string, unknown>
+  const out: ReadOptions = {}
+  if (v.jsonAs === 'table' || v.jsonAs === 'text') out.jsonAs = v.jsonAs
+  return out
 }
 
 function baseName(filename?: string): string {
@@ -296,7 +303,7 @@ function registerIpc(): void {
         source,
         ocr,
         ocrLanguage,
-        jsonAs,
+        read,
         jobId,
       }: {
         base64: string
@@ -305,11 +312,10 @@ function registerIpc(): void {
         source: SourceFormat
         ocr?: unknown
         ocrLanguage?: unknown
-        jsonAs?: unknown
+        read?: unknown
         jobId?: string
       },
     ) => {
-      const readAs = jsonAsOf(jsonAs)
       const ctx: ReadContext = jobId
         ? {
             signal: createJob(jobId),
@@ -318,7 +324,7 @@ function registerIpc(): void {
             },
           }
         : {}
-      if (readAs) ctx.jsonAs = readAs
+      Object.assign(ctx, readOptionsOf(read))
       try {
         // The stamp goes back with the html: it is what the pane was loaded
         // from, and what a later change on disk is measured against.
@@ -411,7 +417,7 @@ function registerIpc(): void {
         slides,
         ocr,
         ocrLanguage,
-        jsonAs,
+        read,
         jobId,
       }: {
         base64: string
@@ -423,7 +429,7 @@ function registerIpc(): void {
         slides?: unknown
         ocr?: unknown
         ocrLanguage?: unknown
-        jsonAs?: unknown
+        read?: unknown
         jobId?: string
       },
     ) => {
@@ -452,7 +458,7 @@ function registerIpc(): void {
           slides: normalizeSlideOptions(slides),
           ocr: ocr === true,
           ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
-          jsonAs: jsonAsOf(jsonAs),
+          read: readOptionsOf(read),
         }
         if (target === 'html') {
           // Rich flavor for Word/Teams/Outlook paste targets + plain-text flavor for editors.
@@ -490,7 +496,7 @@ function registerIpc(): void {
         slides,
         ocr,
         ocrLanguage,
-        jsonAs,
+        read,
         jobId,
         sourceDir,
       }: {
@@ -503,7 +509,7 @@ function registerIpc(): void {
         slides?: unknown
         ocr?: unknown
         ocrLanguage?: unknown
-        jsonAs?: unknown
+        read?: unknown
         jobId?: string
         sourceDir?: string
       },
@@ -529,7 +535,7 @@ function registerIpc(): void {
           slides: normalizeSlideOptions(slides),
           ocr: ocr === true,
           ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
-          jsonAs: jsonAsOf(jsonAs),
+          read: readOptionsOf(read),
         }, ctx)
         const defaultPath = defaultSavePath(sourceDir, baseName(filename) + EXTENSIONS[target])
         const save = await dialog.showSaveDialog({ defaultPath, filters: [FILTERS[target]] })
@@ -595,7 +601,7 @@ function registerIpc(): void {
             item.filename,
             item.source,
             target,
-            { pdf: pdfOpts, slides: slideOpts, ocr: item.ocr === true, ocrLanguage: item.ocrLanguage, jsonAs: jsonAsOf(item.jsonAs) },
+            { pdf: pdfOpts, slides: slideOpts, ocr: item.ocr === true, ocrLanguage: item.ocrLanguage, read: readOptionsOf(item.read) },
             ctx,
           ),
         )
@@ -644,7 +650,7 @@ function registerIpc(): void {
               filename: item.filename,
               source: item.source,
               ocr: item.ocr === true,
-              jsonAs: jsonAsOf(item.jsonAs),
+              read: readOptionsOf(item.read),
             })),
           ),
           target,

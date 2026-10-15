@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { appliedOptions, type ControlInput } from './lib/controls'
+import { appliedOptions, appliedReadOptions, type ControlInput } from './lib/controls'
 import { DropZone } from './components/DropZone'
 import { createIntake, type LoadedPayload, type PaneSource } from './lib/intake'
 import type { Intake } from './lib/intake-types'
@@ -15,6 +15,7 @@ import { DEFAULT_PDF_SCALE } from '../../core/pdf-options'
 import type {
   BatchRow,
   PdfOptions,
+  ReadOptions,
   SaveResult,
   SlideOptions,
   SourceFormat,
@@ -36,7 +37,8 @@ function App(): React.JSX.Element {
   const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false })
   const [slideOptions, setSlideOptions] = useState<SlideOptions>({ splitOn: 'auto' })
   const [ocrLanguage, setOcrLanguage] = useState('eng')
-  const [jsonAsDefault, setJsonAsDefault] = useState<'table' | 'text'>('table')
+  // The last reading choices made this session: the defaults for inputs added later.
+  const [readDefaults, setReadDefaults] = useState<ReadOptions>({})
   const [progress, setProgress] = useState<{ stage: string; percent?: number } | null>(null)
   /** What stopping the current job means: a paste keeps what it has fetched. */
   const [cancelLabel, setCancelLabel] = useState('Cancel')
@@ -123,15 +125,14 @@ function App(): React.JSX.Element {
       sourceDir: p.sourceDir,
       handle: p.handle,
       jsonTable: p.jsonTable,
-      // The last choice made this session is the default for inputs added later.
-      jsonAs: jsonAsDefault,
+      read: readDefaults,
     })
   }
 
-  /** Table or formatted JSON, for one input; remembered as the session's default. */
-  function setJsonAs(id: string, value: 'table' | 'text'): void {
-    setJsonAsDefault(value)
-    updateItem(id, { jsonAs: value })
+  /** A reading choice for one input; remembered as the session's default. */
+  function setRead(id: string, patch: ReadOptions): void {
+    setReadDefaults((d) => ({ ...d, ...patch }))
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, read: { ...i.read, ...patch } } : i)))
   }
 
   function onClipboard(html: string, source: PaneSource = { label: 'Clipboard', filename: 'Clipboard' }): void {
@@ -236,7 +237,7 @@ function App(): React.JSX.Element {
         source: item.source,
         ocr: item.source === 'image' && item.imageMode === 'ocr',
         ocrLanguage,
-        ...(item.source === 'json' ? { jsonAs: item.jsonAs ?? 'table' } : {}),
+        read: appliedReadOptions(item.source, item.read),
         jobId,
       }),
     )
@@ -386,7 +387,7 @@ function App(): React.JSX.Element {
           source: item.source,
           ocr: item.source === 'image' && item.imageMode === 'ocr',
           ocrLanguage,
-          ...(item.source === 'json' ? { jsonAs: item.jsonAs ?? 'table' } : {}),
+          read: appliedReadOptions(item.source, item.read),
           jobId,
         }),
       )
@@ -483,8 +484,8 @@ function App(): React.JSX.Element {
                 onOcrLanguageChange={setOcrLanguage}
                 onEdit={() => void editItem(single.id)}
                 jsonTable={single.jsonTable}
-                jsonAs={single.jsonAs ?? 'table'}
-                onJsonAsChange={(v) => setJsonAs(single.id, v)}
+                jsonAs={single.read?.jsonAs ?? 'table'}
+                onJsonAsChange={(v) => setRead(single.id, { jsonAs: v })}
                 editedLimited={single.html !== undefined && single.limited === true}
               />
             ) : (
@@ -498,7 +499,7 @@ function App(): React.JSX.Element {
                 onRemove={removeItem}
                 onEdit={editItem}
                 onImageModeChange={(id, m) => updateItem(id, { imageMode: m })}
-                onJsonAsChange={setJsonAs}
+                onJsonAsChange={(id, v) => setRead(id, { jsonAs: v })}
                 onAddFile={() => void intake.openDialog()}
                 onAddClipboard={() => void intake.pasteFromClipboard()}
                 onClear={reset}

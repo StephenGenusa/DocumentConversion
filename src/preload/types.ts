@@ -98,6 +98,12 @@ export type SaveResult =
   | { status: 'cancelled' }
   | { status: 'error'; code: string; message: string }
 
+/** The reading choices made on one input's card (mirrors core's ReadOptions). */
+export interface ReadOptions {
+  /** JSON records: as a table or as formatted text. */
+  jsonAs?: 'table' | 'text'
+}
+
 export interface BatchItemReq {
   /** The input's bytes. Empty when `handle` is set: the file is read instead. */
   base64: string
@@ -110,8 +116,8 @@ export interface BatchItemReq {
   sourceDir?: string
   /** Which OCR language to recognise with, when ocr is set. */
   ocrLanguage?: string
-  /** JSON records: as a table or as formatted text. */
-  jsonAs?: 'table' | 'text'
+  /** The reading choices made on this input's card. */
+  read?: ReadOptions
 }
 
 export interface BatchRow {
@@ -197,7 +203,7 @@ export interface Api {
     source: SourceFormat
     ocr?: boolean
     ocrLanguage?: string
-    jsonAs?: 'table' | 'text'
+    read?: ReadOptions
     jobId?: string
   }): Promise<
     | {

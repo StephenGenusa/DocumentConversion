@@ -93,7 +93,7 @@ export function InputList({
             {showsInput('jsonAs', { source: item.source, jsonTable: item.jsonTable }) && onJsonAsChange && (
               <select
                 aria-label={`How to read the JSON ${item.label}`}
-                value={item.jsonAs ?? 'table'}
+                value={item.read?.jsonAs ?? 'table'}
                 onChange={(e) => onJsonAsChange(item.id, e.target.value as 'table' | 'text')}
               >
                 <option value="table">Table</option>

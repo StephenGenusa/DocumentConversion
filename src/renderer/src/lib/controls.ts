@@ -1,4 +1,4 @@
-import type { SourceFormat, TargetFormat } from '../../../core/types'
+import type { ReadOptions, SourceFormat, TargetFormat } from '../../../core/types'
 
 /**
  * Which conversion controls are shown (spec 2a).
@@ -57,4 +57,13 @@ export function appliedOptions<P, S>(
     ...(showsOutput('pdfOptions', target, inputs) ? { pdf: values.pdf } : {}),
     ...(showsOutput('slideSplit', target, inputs) ? { slides: values.slides } : {}),
   }
+}
+
+/**
+ * The reading choices sent with an input: only those for its kind of input,
+ * with each choice's default filled in.
+ */
+export function appliedReadOptions(source: SourceFormat, read: ReadOptions = {}): ReadOptions {
+  if (source === 'json') return { jsonAs: read.jsonAs ?? 'table' }
+  return {}
 }
