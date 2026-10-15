@@ -13,6 +13,7 @@ ilva.brandt@example.com
 iris.vellum@example.com
 jane@example.com
 juno.halloway@example.org
+juno@example.com
 lesson-notes-1@example.com
 lesson-notes-2@example.com
 marta.quill@example.com
@@ -22,8 +23,11 @@ not-attached@example.com
 notes@example.com
 odile.larkspur@example.com
 opscenter@example.com
+p.ferrow@example.org
 petra.ferrow@example.com
+petra@example.com
 pic1@example.com
 sbraddock@example.org
 shelving-1@example.com
 someone@example.com
+zoe@example.com

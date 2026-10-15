@@ -45,6 +45,9 @@ export type SourceFormat =
   | 'asciidoc'
   | 'rst'
   | 'json'
+  | 'subtitles'
+  | 'opml'
+  | 'vcard'
 
 export const TARGET_FORMATS: TargetFormat[] = [
   'txt',
@@ -120,6 +123,9 @@ export const SOURCE_FORMATS: SourceFormat[] = [
   'asciidoc',
   'rst',
   'json',
+  'subtitles',
+  'opml',
+  'vcard',
 ]
 
 export const EXTENSIONS: Record<TargetFormat, string> = {
@@ -164,6 +170,8 @@ export interface SourceInput {
 export interface ReadOptions {
   /** JSON records: as a table (the default) or as formatted JSON text. */
   jsonAs?: 'table' | 'text'
+  /** Transcripts: show each turn's time (the default) or leave times out. */
+  transcriptTimestamps?: boolean
 }
 
 /** Options, cancellation, and progress threaded into readers. */
@@ -173,7 +181,7 @@ export interface ReadContext extends ReadOptions {
   onProgress?: (stage: string, percent?: number) => void
   /** Non-fatal suggestions surfaced to the user (e.g. "this would fit landscape"). */
   onAdvice?: (
-    kind: 'landscape' | 'doc-tables' | 'doc-lists' | 'doc-images' | 'reformatted' | 'records-limited' | 'record-error',
+    kind: 'landscape' | 'doc-tables' | 'doc-lists' | 'doc-images' | 'reformatted' | 'records-limited' | 'record-error' | 'photos-omitted',
     message: string,
     suggestion?: { pageSize: PdfPageSize; landscape: boolean },
   ) => void

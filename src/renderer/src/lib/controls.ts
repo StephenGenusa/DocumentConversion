@@ -25,7 +25,7 @@ export interface ControlInput {
 }
 
 export type OutputControl = 'pdfOptions' | 'slideSplit'
-export type InputControl = 'imageMode' | 'ocrLanguage' | 'jsonAs'
+export type InputControl = 'imageMode' | 'ocrLanguage' | 'jsonAs' | 'timestamps'
 
 const OUTPUT_RULES: Record<OutputControl, (target: TargetFormat, inputs: ControlInput[]) => boolean> = {
   pdfOptions: (target) => target === 'pdf',
@@ -37,6 +37,7 @@ const INPUT_RULES: Record<InputControl, (input: ControlInput) => boolean> = {
   ocrLanguage: (input) => input.source === 'image' && input.imageMode === 'ocr',
   // Only where there is a choice: JSON that is records. Other JSON is a listing either way.
   jsonAs: (input) => input.source === 'json' && input.jsonTable === true,
+  timestamps: (input) => input.source === 'subtitles',
 }
 
 export function showsOutput(control: OutputControl, target: TargetFormat, inputs: ControlInput[]): boolean {
@@ -65,5 +66,6 @@ export function appliedOptions<P, S>(
  */
 export function appliedReadOptions(source: SourceFormat, read: ReadOptions = {}): ReadOptions {
   if (source === 'json') return { jsonAs: read.jsonAs ?? 'table' }
+  if (source === 'subtitles') return { transcriptTimestamps: read.transcriptTimestamps ?? true }
   return {}
 }

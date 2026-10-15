@@ -37,7 +37,9 @@ export function limitMessage(shown: number, total: number, noun = 'records'): st
  */
 export function recordsTableHtml(header: string[], rows: string[][], total: number, noun = 'records'): string {
   const head = `<thead><tr>${header.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>`
-  const body = rows.map((r) => `<tr>${header.map((_h, i) => `<td>${escapeHtml(r[i] ?? '')}</td>`).join('')}</tr>`).join('')
+  // A cell's line breaks (a contact's several phone numbers) stay line breaks.
+  const cell = (v: string): string => escapeHtml(v).replace(/\n/g, '<br>')
+  const body = rows.map((r) => `<tr>${header.map((_h, i) => `<td>${cell(r[i] ?? '')}</td>`).join('')}</tr>`).join('')
   const table = `<table>${head}<tbody>${body}</tbody></table>`
   return total > rows.length ? `${table}\n<p><em>${limitMessage(rows.length, total, noun)}</em></p>` : table
 }

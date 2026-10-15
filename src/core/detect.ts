@@ -53,6 +53,13 @@ const EXT_MAP = new Map<string, SourceFormat>(
     asciidoc: 'asciidoc',
     asc: 'asciidoc',
     rst: 'rst',
+    // WebVTT and SRT subtitles, and Teams meeting transcripts (readers/subtitles.ts).
+    vtt: 'subtitles',
+    srt: 'subtitles',
+    opml: 'opml',
+    // Contacts. A .vcf is also the genomics Variant Call Format: see detect().
+    vcf: 'vcard',
+    vcard: 'vcard',
     // mammoth reads macro-enabled Word documents like any other .docx.
     docm: 'docx',
     ipynb: 'ipynb',
@@ -277,6 +284,12 @@ function rulesOutExtension(bytes: Buffer, byExtension: SourceFormat, sniffed: So
   return part !== undefined && !part.test(bytes.toString('latin1'))
 }
 
+/** `BEGIN:VCARD` on one of a file's first lines. */
+export function looksLikeVcard(bytes: Buffer): boolean {
+  const head = bytes.toString('utf8', 0, 1024).replace(/^\ufeff/, '').split(/\r?\n/).slice(0, 5)
+  return head.some((l) => /^\s*BEGIN:VCARD\s*$/i.test(l))
+}
+
 export function detect(bytes: Buffer, filename?: string): DetectResult {
   if (filename) {
     // .zip is an acquisition method, not a SourceFormat, so it is matched here
@@ -292,6 +305,9 @@ export function detect(bytes: Buffer, filename?: string): DetectResult {
       if (sniffed?.kind === 'ok' && sniffed.format !== byExt && rulesOutExtension(bytes, byExt, sniffed.format)) {
         return sniffed
       }
+      // A .vcf that is not a vCard is a genomics Variant Call Format file:
+      // tab-separated text, read as text rather than refused.
+      if (byExt === 'vcard' && /\.vcf$/i.test(filename.trim()) && !looksLikeVcard(bytes)) return ok('txt')
       return ok(byExt)
     }
     if (codeFormatFromFilename(filename)) return ok('code')
@@ -300,6 +316,8 @@ export function detect(bytes: Buffer, filename?: string): DetectResult {
   if (sniffed) return sniffed
   const text = bytes.toString('utf8')
   if (/^BEGIN:VCALENDAR/im.test(text.slice(0, 512))) return ok('ics')
+  if (looksLikeVcard(bytes)) return ok('vcard')
+  if (/^\ufeff?WEBVTT(?:[ \t]|\r?\n|$)/.test(text)) return ok('subtitles')
   if (looksLikeNotebook(text)) return ok('ipynb')
   if (looksLikeMbox(text)) return ok('mbox')
   if (looksLikeEml(text)) return ok('eml')

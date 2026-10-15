@@ -1,4 +1,4 @@
-import type { SourceFormat } from '../../../preload/types'
+import type { ReadOptions, SourceFormat } from '../../../preload/types'
 import { showsInput } from '../lib/controls'
 
 import type { ListItem } from '../lib/items'
@@ -29,6 +29,9 @@ const SHORT: Record<SourceFormat, string> = {
   ics: 'ics',
   asciidoc: 'adoc',
   rst: 'rst',
+  subtitles: 'vtt',
+  opml: 'opml',
+  vcard: 'vcf',
 }
 
 export function InputList({
@@ -41,7 +44,7 @@ export function InputList({
   onRemove,
   onEdit,
   onImageModeChange,
-  onJsonAsChange,
+  onReadChange,
   onAddFile,
   onAddClipboard,
   onClear,
@@ -55,7 +58,7 @@ export function InputList({
   onRemove: (id: string) => void
   onEdit: (id: string) => void
   onImageModeChange: (id: string, m: 'embed' | 'ocr') => void
-  onJsonAsChange?: (id: string, v: 'table' | 'text') => void
+  onReadChange?: (id: string, patch: ReadOptions) => void
   onAddFile: () => void
   onAddClipboard: () => void
   onClear: () => void
@@ -90,15 +93,26 @@ export function InputList({
                 <option value="ocr">OCR</option>
               </select>
             )}
-            {showsInput('jsonAs', { source: item.source, jsonTable: item.jsonTable }) && onJsonAsChange && (
+            {showsInput('jsonAs', { source: item.source, jsonTable: item.jsonTable }) && onReadChange && (
               <select
                 aria-label={`How to read the JSON ${item.label}`}
                 value={item.read?.jsonAs ?? 'table'}
-                onChange={(e) => onJsonAsChange(item.id, e.target.value as 'table' | 'text')}
+                onChange={(e) => onReadChange(item.id, { jsonAs: e.target.value as 'table' | 'text' })}
               >
                 <option value="table">Table</option>
                 <option value="text">Formatted JSON</option>
               </select>
+            )}
+            {showsInput('timestamps', { source: item.source }) && onReadChange && (
+              <label title={item.html !== undefined ? 'Edited: changing this does not change the edited transcript' : undefined}>
+                <input
+                  type="checkbox"
+                  aria-label={`Include timestamps in ${item.label}`}
+                  checked={item.read?.transcriptTimestamps ?? true}
+                  onChange={(e) => onReadChange(item.id, { transcriptTimestamps: e.target.checked })}
+                />
+                Times
+              </label>
             )}
             {/* Offered for every input, not only those that already carry hub
                 HTML. A dropped file is read when Edit is pressed. */}

@@ -1,6 +1,6 @@
 import { OcrLanguagePicker } from './OcrLanguagePicker'
 import { showsInput } from '../lib/controls'
-import type { SourceFormat } from '../../../preload/types'
+import type { ReadOptions, SourceFormat } from '../../../preload/types'
 
 const LABELS: Record<SourceFormat, string> = {
   txt: 'Plain text',
@@ -26,6 +26,9 @@ const LABELS: Record<SourceFormat, string> = {
   ics: 'Calendar (.ics)',
   asciidoc: 'AsciiDoc',
   rst: 'reStructuredText',
+  subtitles: 'Subtitles / transcript',
+  opml: 'Outline (.opml)',
+  vcard: 'Contacts (vCard)',
 }
 
 // Binary formats are what their magic bytes say — no override. Text inputs can
@@ -45,6 +48,9 @@ const TEXT_OVERRIDES: SourceFormat[] = [
   'asciidoc',
   'rst',
   'json',
+  'subtitles',
+  'opml',
+  'vcard',
 ]
 
 export function InputCard({
@@ -58,15 +64,19 @@ export function InputCard({
   onImageModeChange,
   onEdit,
   jsonTable,
-  jsonAs = 'table',
-  onJsonAsChange,
+  read = {},
+  onReadChange,
+  edited,
   editedLimited,
 }: {
   filename?: string
   /** JSON that reads as a table of records. */
   jsonTable?: boolean
-  jsonAs?: 'table' | 'text'
-  onJsonAsChange?: (v: 'table' | 'text') => void
+  /** The reading choices made on this card. */
+  read?: ReadOptions
+  onReadChange?: (patch: ReadOptions) => void
+  /** The input has been opened in the editor: its edited copy is what converts. */
+  edited?: boolean
   /** The pane holds an edited copy read cut to the print limit. */
   editedLimited?: boolean
   source: SourceFormat
@@ -79,6 +89,7 @@ export function InputCard({
   onEdit?: () => void
   onImageModeChange?: (m: 'embed' | 'ocr') => void
 }): React.JSX.Element {
+  const jsonAs = read.jsonAs ?? 'table'
   const options = BINARY.includes(source)
     ? [source]
     : TEXT_OVERRIDES.includes(source)
@@ -138,14 +149,14 @@ export function InputCard({
       {showsInput('ocrLanguage', { source, imageMode }) && onOcrLanguageChange && (
         <OcrLanguagePicker value={ocrLanguage ?? 'eng'} onChange={onOcrLanguageChange} />
       )}
-      {showsInput('jsonAs', { source, jsonTable }) && onJsonAsChange && (
+      {showsInput('jsonAs', { source, jsonTable }) && onReadChange && (
         <div className="card__row">
           <span className="card__label">Read as</span>
           <div className="chips" style={{ margin: 0 }}>
             <button
               className={`chip${jsonAs === 'table' ? ' chip--active' : ''}`}
               aria-pressed={jsonAs === 'table'}
-              onClick={() => onJsonAsChange('table')}
+              onClick={() => onReadChange({ jsonAs: 'table' })}
               title="One row per record: ready for CSV, JSON and Excel"
             >
               Table
@@ -153,13 +164,29 @@ export function InputCard({
             <button
               className={`chip${jsonAs === 'text' ? ' chip--active' : ''}`}
               aria-pressed={jsonAs === 'text'}
-              onClick={() => onJsonAsChange('text')}
+              onClick={() => onReadChange({ jsonAs: 'text' })}
               title="The JSON itself, indented and highlighted"
             >
               Formatted JSON
             </button>
           </div>
         </div>
+      )}
+      {showsInput('timestamps', { source }) && onReadChange && (
+        <div className="card__row">
+          <span className="card__label">Transcript</span>
+          <label>
+            <input
+              type="checkbox"
+              checked={read.transcriptTimestamps ?? true}
+              onChange={(e) => onReadChange({ transcriptTimestamps: e.target.checked })}
+            />
+            Include timestamps
+          </label>
+        </div>
+      )}
+      {showsInput('timestamps', { source }) && edited && (
+        <p className="card__note">This transcript has been edited, so changing timestamps does not change it.</p>
       )}
       {editedLimited && (
         <p className="card__note">

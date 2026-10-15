@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TARGET_FORMATS, SOURCE_FORMATS } from '../../src/core/types'
-import { showsOutput, showsInput, appliedOptions, type ControlInput } from '../../src/renderer/src/lib/controls'
+import { showsOutput, showsInput, appliedOptions, appliedReadOptions, type ControlInput } from '../../src/renderer/src/lib/controls'
 
 /**
  * Spec 2a: a control that is visible must change the result, and one that
@@ -36,5 +36,18 @@ describe('input controls', () => {
     expect(showsInput('ocrLanguage', { source: 'image', imageMode: 'ocr' })).toBe(true)
     expect(showsInput('ocrLanguage', { source: 'image', imageMode: 'embed' })).toBe(false)
     expect(showsInput('ocrLanguage', { source: 'pdf', imageMode: 'ocr' })).toBe(false)
+  })
+
+  it('shows Include timestamps on transcripts only', () => {
+    for (const s of SOURCE_FORMATS) expect(showsInput('timestamps', { source: s }), s).toBe(s === 'subtitles')
+  })
+})
+
+describe('reading choices sent with an input', () => {
+  it('sends each choice only for its kind of input, with its default', () => {
+    expect(appliedReadOptions('subtitles')).toEqual({ transcriptTimestamps: true })
+    expect(appliedReadOptions('subtitles', { transcriptTimestamps: false, jsonAs: 'text' })).toEqual({ transcriptTimestamps: false })
+    expect(appliedReadOptions('json', { transcriptTimestamps: false })).toEqual({ jsonAs: 'table' })
+    expect(appliedReadOptions('docx', { transcriptTimestamps: false, jsonAs: 'text' })).toEqual({})
   })
 })

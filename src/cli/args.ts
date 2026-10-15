@@ -12,6 +12,8 @@ export interface CliRequest {
   page?: string
   /** JSON records as a table or as formatted text. */
   jsonAs?: 'table' | 'text'
+  /** Transcripts without their times. */
+  noTimestamps?: boolean
   /** Where a new slide starts, for the revealjs target. */
   split?: 'auto' | 'hr' | 'h1' | 'h2'
   landscape: boolean
@@ -36,6 +38,7 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--header-footer]     pdf header/footer with title, date, page numbers
   [--ocr]               OCR scanned PDFs and images (English)
   [--json-as <table|text>]  JSON records: a table (default) or formatted JSON
+  [--no-timestamps]     subtitles and transcripts without their times
   [--no-clobber]        fail instead of overwriting existing outputs
 Exit codes: 0 all succeeded, 1 any failed, 2 bad usage.`
 
@@ -64,6 +67,7 @@ export const FLAG_SCOPES: FlagScope[] = [
   { flag: '--header-footer', targets: ['pdf'], strict: false },
   // Flags from 1.4 on are strict.
   { flag: '--json-as', inputs: ['json'], strict: true },
+  { flag: '--no-timestamps', inputs: ['subtitles'], strict: true },
 ]
 
 /** The usage message for the first strict flag that cannot apply, or null. */
@@ -89,6 +93,7 @@ export function checkFlagScope(
 export function cliReadOptions(req: CliRequest): ReadOptions {
   return {
     ...(req.jsonAs ? { jsonAs: req.jsonAs } : {}),
+    ...(req.noTimestamps ? { transcriptTimestamps: false } : {}),
   }
 }
 
@@ -174,6 +179,9 @@ export function parseArgs(argv: string[]): ParseResult {
         i++
         break
       }
+      case '--no-timestamps':
+        req.noTimestamps = true
+        break
       case '--merge':
         req.merge = true
         break

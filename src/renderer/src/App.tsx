@@ -484,8 +484,9 @@ function App(): React.JSX.Element {
                 onOcrLanguageChange={setOcrLanguage}
                 onEdit={() => void editItem(single.id)}
                 jsonTable={single.jsonTable}
-                jsonAs={single.read?.jsonAs ?? 'table'}
-                onJsonAsChange={(v) => setRead(single.id, { jsonAs: v })}
+                read={single.read}
+                onReadChange={(patch) => setRead(single.id, patch)}
+                edited={single.html !== undefined}
                 editedLimited={single.html !== undefined && single.limited === true}
               />
             ) : (
@@ -499,7 +500,7 @@ function App(): React.JSX.Element {
                 onRemove={removeItem}
                 onEdit={editItem}
                 onImageModeChange={(id, m) => updateItem(id, { imageMode: m })}
-                onJsonAsChange={(id, v) => setRead(id, { jsonAs: v })}
+                onReadChange={setRead}
                 onAddFile={() => void intake.openDialog()}
                 onAddClipboard={() => void intake.pasteFromClipboard()}
                 onClear={reset}

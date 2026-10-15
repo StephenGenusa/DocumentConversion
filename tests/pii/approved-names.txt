@@ -9,7 +9,9 @@ Excel, Kindle
 Ferrow, Petra
 Halloway, Juno
 History, Code
+Labs, Research
 Larkspur, Odile
+Lead, Platform
 Markdown, Quarto
 Menlo, Consolas
 Mission, Company
@@ -23,6 +25,7 @@ Superscript, Subscript
 Surname, Given
 Teams, Word
 Thanks, Iris
+Thanks, Petra
 Vellum, Iris
 Word, Markdown
 Word, Teams

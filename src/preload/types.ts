@@ -46,6 +46,9 @@ export type SourceFormat =
   | 'ics'
   | 'asciidoc'
   | 'rst'
+  | 'subtitles'
+  | 'opml'
+  | 'vcard'
 
 export type DetectResult =
   | { kind: 'ok'; format: SourceFormat; /** JSON that reads as a table of records. */ jsonTable?: boolean }
@@ -102,6 +105,8 @@ export type SaveResult =
 export interface ReadOptions {
   /** JSON records: as a table or as formatted text. */
   jsonAs?: 'table' | 'text'
+  /** Transcripts: show each turn's time (the default) or leave times out. */
+  transcriptTimestamps?: boolean
 }
 
 export interface BatchItemReq {

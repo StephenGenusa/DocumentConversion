@@ -95,6 +95,7 @@ function readOptionsOf(value: unknown): ReadOptions {
   const v = value as Record<string, unknown>
   const out: ReadOptions = {}
   if (v.jsonAs === 'table' || v.jsonAs === 'text') out.jsonAs = v.jsonAs
+  if (typeof v.transcriptTimestamps === 'boolean') out.transcriptTimestamps = v.transcriptTimestamps
   return out
 }
 
