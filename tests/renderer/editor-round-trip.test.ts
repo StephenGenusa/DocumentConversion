@@ -49,6 +49,30 @@ describe('the editor round-trips what the hub allows', () => {
     expect(roundTrip('<p>x<sup>2</sup></p>')).toBe('<p>x<sup>2</sup></p>')
   })
 
+  it.each([
+    ['a mermaid diagram', '<pre><code class="language-mermaid">graph TD\n  A --&gt; B &amp; C\n</code></pre>'],
+    ['a dot diagram', '<pre><code class="language-dot">digraph { a -&gt; b }</code></pre>'],
+    ['display math', '<pre><code class="language-math">\\sum_{i=1}^n i &lt; 3 \\\\\nx</code></pre>'],
+    ['inline math', '<p>Let <code class="language-math">\\alpha_i &lt; 2</code> hold, and <code>plain</code>.</p>'],
+    ['inline math in a list, a heading and a quote', '<ul><li><p><code class="language-math">x^2</code></p></li></ul><h2>On <code class="language-math">y</code></h2><blockquote><p><code class="language-math">z</code></p></blockquote>'],
+    ['an ordinary code block beside them', '<pre><code class="language-python">x = 1</code></pre><pre><code class="language-math">a</code></pre>'],
+  ])('keeps %s byte for byte (spec B1)', (_name, html) => {
+    expect(roundTrip(html)).toBe(html)
+  })
+
+  it('shows diagram and formula source as nodes of their own, not as code', () => {
+    const json = JSON.stringify(
+      generateJSON(
+        '<pre><code class="language-mermaid">m</code></pre><pre><code class="language-math">d</code></pre><p><code class="language-math">i</code></p>',
+        EDITOR_EXTENSIONS,
+      ),
+    )
+    expect(json).toContain('"type":"diagramBlock"')
+    expect(json).toContain('"type":"mathBlock"')
+    expect(json).toContain('"type":"mathInline"')
+    expect(json).not.toContain('codeBlock')
+  })
+
   it.each(
     HUB_TAGS.filter((t) => !['span', 'div', 'br', 'thead', 'tbody', 'tr', 'td', 'th', 'li'].includes(t)),
   )('models %s, so the editor cannot silently drop it', (tag) => {

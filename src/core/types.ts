@@ -1,3 +1,5 @@
+import type { HubFeatures } from './rendered-blocks'
+
 /** Formats the app can write. csv/json/xlsx are table extraction, not documents. */
 export type TargetFormat =
   | 'txt'
@@ -162,6 +164,12 @@ export interface HubDocument {
    * The editor tells the user an edited copy holds only these records.
    */
   limited?: boolean
+  /**
+   * Diagrams and formulas the document holds (spec B1), set where every
+   * reader's output passes (`convert.ts` `read()`). The input card keeps it,
+   * so a control that acts on them is shown only when there are some.
+   */
+  features?: HubFeatures
 }
 
 export interface SourceInput {

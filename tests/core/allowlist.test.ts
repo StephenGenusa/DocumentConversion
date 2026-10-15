@@ -86,4 +86,11 @@ describe('shared hub allowlist', () => {
     const out = sanitizeToHub('<pre><code class="language-ts">let x</code></pre>')
     expect(out).toContain('language-ts')
   })
+
+  it('keeps only language and highlighting classes on code (spec B1)', () => {
+    expect(sanitizeToHub('<pre><code class="evil">x</code></pre>')).toBe('<pre><code>x</code></pre>')
+    expect(sanitizeToHub('<p><code class="evil language-math">x</code></p>')).toBe('<p><code class="language-math">x</code></p>')
+    expect(sanitizeToHub('<pre><code class="language-c++ hljs">x</code></pre>')).toBe('<pre><code class="language-c++ hljs">x</code></pre>')
+    expect(sanitizeToHub('<pre><code class="language-x&quot;onload">x</code></pre>')).toBe('<pre><code>x</code></pre>')
+  })
 })

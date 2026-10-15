@@ -4,6 +4,7 @@ import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs'
 import { full as emoji } from 'markdown-it-emoji'
 import footnote from 'markdown-it-footnote'
 import { safeLabel } from '../footnotes'
+import { diagramLanguage, TEX_SHAPED } from '../rendered-blocks'
 import { parseHTML } from 'linkedom'
 import { sanitizeToHub } from '../allowlist'
 import { notesToHub } from '../speaker-notes'
@@ -156,6 +157,10 @@ md.core.ruler.after('block', 'chunk_fences', (state: StateCore) => {
     if (tok.type !== 'fence') continue
     const chunk = /^\{\s*\.?([A-Za-z][\w+-]*)[^}]*\}/.exec(tok.info.trim())
     if (chunk) tok.info = chunk[1].toLowerCase()
+    // `graphviz`, `gv` and `viz` are all Graphviz: the hub calls it `dot` (spec B1).
+    const [lang, ...rest] = tok.info.trim().split(/\s+/)
+    const diagram = diagramLanguage(lang)
+    if (diagram) tok.info = [diagram, ...rest].join(' ')
   }
 })
 
@@ -197,14 +202,19 @@ md.core.ruler.after('block', 'github_alerts', (state: StateCore) => {
 })
 
 /**
- * Hand a math span through untouched.
+ * Math, as tagged source (spec B1): `<code class="language-math">TEX</code>`
+ * inline, and `<pre><code class="language-math">TEX</code></pre>` for a
+ * `$$…$$` that is a paragraph of its own. TEX is the text between the
+ * delimiters, byte for byte. Writers draw only spans a reader identified, so
+ * the tag is what keeps a `$5 … $10` in a Word file from ever being drawn.
  *
- * TeX is deliberately NOT rendered here (see the ruling in docs/superpowers/
- * specs: a real engine cannot survive the hub allowlist, and a partial Unicode
- * transform silently changes formulas). But "not rendered" was not the same as
- * "left alone" — markdown-it applied its own inline rules to the source first,
- * so what reached the reader was already damaged. Measured over the corpus
- * notebooks, 29 of 387 spans:
+ * This release draws math (spec B10 in
+ * docs/superpowers/specs/2026-10-14-rendered-blocks-and-markdown-fidelity-design.md,
+ * which replaces an earlier "not rendered" ruling that was never written
+ * down). The hub still holds only the source, and why the source must reach
+ * it unaltered is unchanged: markdown-it used to apply its own inline rules to
+ * the TeX first. Measured over the corpus notebooks, 29 of 387 spans were
+ * damaged:
  *
  *   `\left\{`  ->  `\left{`     backslash escaping ate the escape
  *   `\\`       ->  `\`          a display-math line break vanished
@@ -219,15 +229,14 @@ md.core.ruler.after('block', 'github_alerts', (state: StateCore) => {
  * runs inline rules only in inline contexts: a `$` in a fenced or indented code
  * block is handled by the block parser and never reaches this, so a shell
  * prompt (`$ pip install ...`, which the corpus does contain) cannot be
- * mistaken for math. Emitting a `text` token also means the content is escaped
- * on render like any other text, so a `<` inside a formula stays inert.
+ * mistaken for math. The content is escaped on render like any other text, so
+ * a `<` inside a formula stays inert.
  *
  * `$$...$$` is always math — prose does not use it. A single `$` is only math
  * when the span actually looks like TeX, so "costs $5 for the **bold** plan and
- * $10" keeps its emphasis instead of being swallowed as a formula.
+ * $10" keeps its emphasis instead of being swallowed as a formula. The
+ * Markdown writer applies the same test, so what it writes reads back the same.
  */
-const TEX_SHAPED = /[\\{}^_]/
-
 md.inline.ruler.before('escape', 'math', (state, silent) => {
   const start = state.pos
   if (state.src.charCodeAt(start) !== 0x24) return false
@@ -237,9 +246,35 @@ md.inline.ruler.before('escape', 'math', (state, silent) => {
   if (close === -1) return false
   const content = state.src.slice(start + delim.length, close)
   if (content === '' || (!display && !TEX_SHAPED.test(content))) return false
-  if (!silent) state.push('text', '', 0).content = delim + content + delim
+  if (!silent) {
+    const tok = state.push(display ? 'math_display' : 'math_inline', 'code', 0)
+    tok.content = content
+    tok.markup = delim
+  }
   state.pos = close + delim.length
   return true
+})
+
+const mathCode = (tex: string): string => `<code class="language-math">${md.utils.escapeHtml(tex)}</code>`
+md.renderer.rules.math_inline = (tokens, idx) => mathCode(tokens[idx].content)
+// `$$…$$` within a sentence: still math, drawn in the line.
+md.renderer.rules.math_display = (tokens, idx) => mathCode(tokens[idx].content)
+md.renderer.rules.math_block = (tokens, idx) => `<pre>${mathCode(tokens[idx].content)}</pre>\n`
+
+/** A paragraph that is one `$$…$$` and nothing else is display math, not a paragraph. */
+md.core.ruler.after('inline', 'display_math', (state: StateCore) => {
+  const t = state.tokens
+  for (let i = 0; i + 2 < t.length; i++) {
+    const kids = t[i + 1].children
+    if (t[i].type !== 'paragraph_open' || t[i + 2].type !== 'paragraph_close' || kids?.length !== 1 || kids[0].type !== 'math_display') continue
+    const block = new state.Token('math_block', 'pre', 0)
+    block.block = true
+    block.content = kids[0].content
+    block.markup = '$$'
+    block.map = t[i].map
+    block.level = t[i].level
+    t.splice(i, 3, block)
+  }
 })
 
 /**

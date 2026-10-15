@@ -12,6 +12,7 @@ import { BatchResults } from './components/BatchResults'
 import { applyLiveEdit, keepEdits, markDiskState, toRequest, type LiveEdit } from './lib/items'
 import { allowedMergeTargets, allowedTargets } from '../../core/target-validity'
 import { DEFAULT_PDF_SCALE } from '../../core/pdf-options'
+import { hubFeatures } from '../../core/rendered-blocks'
 import type {
   BatchRow,
   PdfOptions,
@@ -103,7 +104,9 @@ function App(): React.JSX.Element {
   function addItem(item: Omit<ListItem, 'id'>, edit = false): void {
     const id = crypto.randomUUID()
     const live = liveRef.current?.() ?? null
-    setItems((prev) => [...applyLiveEdit(prev, live), { ...item, id }])
+    // Clipboard and URL input arrive as hub html, read by no reader here.
+    const features = item.html !== undefined && item.features === undefined ? { features: hubFeatures(item.html) } : {}
+    setItems((prev) => [...applyLiveEdit(prev, live), { ...item, ...features, id }])
     setResult(null)
     setBatch(null)
     if (edit) {
@@ -250,7 +253,7 @@ function App(): React.JSX.Element {
     setItems((prev) =>
       prev.map((i) =>
         i.id === id
-          ? { ...i, html: result.html, diskStamp: result.stamp, staleStamp: undefined, rev: (i.rev ?? 0) + 1, limited: result.limited }
+          ? { ...i, html: result.html, diskStamp: result.stamp, staleStamp: undefined, rev: (i.rev ?? 0) + 1, limited: result.limited, features: result.features }
           : i,
       ),
     )
@@ -398,7 +401,7 @@ function App(): React.JSX.Element {
       }
       // The stamp is what a later change on disk is measured against.
       setItems((prev) =>
-        prev.map((i) => (i.id === id ? { ...i, html: result.html, diskStamp: result.stamp, limited: result.limited } : i)),
+        prev.map((i) => (i.id === id ? { ...i, html: result.html, diskStamp: result.stamp, limited: result.limited, features: result.features } : i)),
       )
     }
     setEditingId(id)

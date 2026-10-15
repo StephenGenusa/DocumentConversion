@@ -28,6 +28,12 @@ describe('writing live edits back to the list', () => {
     expect(out.map((i) => i.html)).toEqual(['<p>new</p>', '<p>other</p>'])
   })
 
+  it('keeps what the edited html holds of diagrams and formulas', () => {
+    const list = [item({ id: 'a', html: '<p>old</p>', features: { diagrams: false, math: false } })]
+    const out = applyLiveEdit(list, { id: 'a', html: '<p><code class="language-math">x</code></p>' })
+    expect(out[0].features).toEqual({ diagrams: false, math: true })
+  })
+
   it('leaves the list alone when no pane is open', () => {
     const list = [item({ html: '<p>old</p>' })]
     expect(applyLiveEdit(list, null)).toBe(list)

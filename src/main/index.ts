@@ -349,7 +349,7 @@ function registerIpc(): void {
         )
         // `limited`: a record source cut to the print limit, so an edited copy
         // holds only those records; the card says so.
-        return { kind: 'ok' as const, html: hub.html, title: hub.title, stamp: input.stamp, limited: hub.limited === true }
+        return { kind: 'ok' as const, html: hub.html, title: hub.title, stamp: input.stamp, limited: hub.limited === true, features: hub.features }
       } catch (err) {
         const code = err instanceof ConversionError ? err.code : 'read-failed'
         return { kind: 'error' as const, code, message: (err as Error).message }

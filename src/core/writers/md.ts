@@ -7,6 +7,7 @@ import { Element, Text } from 'domhandler'
 import render from 'dom-serializer'
 import { gridForElement } from '../table-grid'
 import type { HubDocument } from '../types'
+import { TEX_SHAPED } from '../rendered-blocks'
 
 const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 td.use([tables, strikethrough])
@@ -204,6 +205,70 @@ td.addRule('footnoteList', {
     return `\n\n${defs.join('\n\n')}\n\n`
   },
 })
+
+/*
+ * Diagrams and formulas (spec B1) back to the syntax the reader takes them
+ * from. A diagram is already a fenced block with its language
+ * (```` ```mermaid ````, ```` ```dot ````); math needs its dollars back.
+ */
+const isMath = (node: Node | null): boolean =>
+  node?.nodeName === 'CODE' && /(?:^|\s)language-math(?:\s|$)/.test((node as HTMLElement).getAttribute('class') ?? '')
+
+/**
+ * `$TEX$` when the reader will take it back as math (it must look like TeX
+ * and hold no `$`), else `$$TEX$$`, which is always math.
+ */
+function inlineMath(tex: string): string {
+  return !tex.includes('$') && TEX_SHAPED.test(tex) ? `$${tex}$` : `$$${tex}$$`
+}
+
+/**
+ * A line that would end a paragraph or start another block. `$$…$$` is read
+ * as display math only while it is one paragraph, so TeX holding one of these
+ * is written as a math fence instead.
+ */
+const BREAKS_PARAGRAPH = /^\s*$|^ {0,3}(?:[-+*>#=|_<]|\d+[.)]|```|~~~)/
+
+function displayMath(tex: string): string {
+  const [, ...rest] = tex.split('\n')
+  if (!tex.includes('$$') && !rest.some((l) => BREAKS_PARAGRAPH.test(l))) return `$$${tex}$$`
+  const ticks = Math.max(2, ...[...tex.matchAll(/`+/g)].map((m) => m[0].length)) + 1
+  const fence = '`'.repeat(ticks)
+  return `${fence}math\n${tex.replace(/\n$/, '')}\n${fence}`
+}
+
+td.addRule('mathInline', {
+  filter: (node) => isMath(node) && node.parentNode?.nodeName !== 'PRE',
+  replacement: (_content, node) => inlineMath(node.textContent ?? ''),
+})
+td.addRule('mathBlock', {
+  filter: (node) => node.nodeName === 'PRE' && isMath(node.firstChild),
+  replacement: (_content, node) => `\n\n${displayMath(node.firstChild?.textContent ?? '')}\n\n`,
+})
+
+/**
+ * A `$` in prose that the reader would take as opening math, escaped. Without
+ * it, "costs $5 for a_b and $10" from a Word file read back as a formula: the
+ * escaped underscore makes the span between the dollars look like TeX. The
+ * scan is the reader's own, on the text the reader will see; a pair split
+ * across two text nodes (`$a <em>b</em> c_d$`) is not caught.
+ */
+function escapeDollars(text: string): string {
+  if (!text.includes('$')) return text
+  let out = ''
+  let i = 0
+  for (let at = text.indexOf('$'); at !== -1; at = text.indexOf('$', i)) {
+    const delim = text.startsWith('$$', at) ? '$$' : '$'
+    const close = text.indexOf(delim, at + delim.length)
+    const content = close === -1 ? '' : text.slice(at + delim.length, close)
+    const opens = content !== '' && (delim === '$$' || TEX_SHAPED.test(content))
+    out += text.slice(i, at) + (opens ? delim.replace(/\$/g, '\\$') : '$')
+    i = at + (opens ? delim.length : 1)
+  }
+  return out + text.slice(i)
+}
+const turndownEscape = td.escape.bind(td)
+td.escape = (text: string): string => escapeDollars(turndownEscape(text))
 
 export async function writeMarkdown(doc: HubDocument): Promise<Buffer> {
   // Strip any stray sentinel from the source so it cannot be mistaken for one

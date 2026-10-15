@@ -54,6 +54,19 @@ function keepValidLabel(tagName: string, attribs: sanitizeHtml.Attributes): sani
   return { tagName, attribs: label !== undefined && FOOTNOTE_LABEL.test(label) ? { ...rest, 'data-fn': label } : rest }
 }
 
+/**
+ * `code` keeps a class only to name its language (`language-*`) or to say the
+ * shell highlighted it (`hljs`). The class is what makes a block a diagram or
+ * a formula (spec B1), so anything else an input put there is dropped.
+ */
+const CODE_CLASS = /^(?:language-[\w+-]+|hljs)$/
+
+function keepCodeClass(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
+  const { class: cls, ...rest } = attribs
+  const kept = (cls ?? '').split(/\s+/).filter((c) => CODE_CLASS.test(c))
+  return { tagName, attribs: kept.length > 0 ? { ...rest, class: kept.join(' ') } : rest }
+}
+
 export function hubSanitizeOptions(): sanitizeHtml.IOptions {
   return {
     allowedTags: HUB_TAGS,
@@ -70,7 +83,7 @@ export function hubSanitizeOptions(): sanitizeHtml.IOptions {
       sup: ['data-fn'],
       li: ['data-fn'],
     },
-    transformTags: { sup: keepValidLabel, li: keepValidLabel },
+    transformTags: { sup: keepValidLabel, li: keepValidLabel, code: keepCodeClass },
     // Text inside these is metadata or code, not content: without this the
     // <title> of an HTML page leaked into the body above its own <h1>.
     nonTextTags: ['script', 'style', 'textarea', 'option', 'title', 'head', 'noframes'],

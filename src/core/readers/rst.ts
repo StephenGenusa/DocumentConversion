@@ -8,6 +8,10 @@ interface RstNode {
   type: string
   value?: string
   depth?: number
+  /** The name of a `directive` (`.. math::` -> `math`). */
+  directive?: string
+  /** The role of `interpreted_text` (`:math:` -> `math`). */
+  role?: string
   children?: RstNode[]
 }
 
@@ -26,6 +30,50 @@ const NOTE_DEF = /^\[(#[\w-]*|\d+|\*)\]\s+([\s\S]*)$/
 
 function rawText(node: RstNode): string {
   return (node.value ?? '') + (node.children ?? []).map(rawText).join(' ')
+}
+
+/** `:label: eq1`, `:caption: Flow`: a directive's options, which are not its content. */
+const OPTION_LINE = /^:[A-Za-z][\w-]*:(?:\s|$)/
+
+/**
+ * A directive's lines, as written: options left out and the common indent
+ * removed. restructured gives one text child per non-blank line, so a blank
+ * line inside the body is not kept.
+ */
+function directiveLines(node: RstNode): string[] {
+  const lines: string[] = []
+  let head = true
+  ;(node.children ?? []).forEach((child, i) => {
+    const line = rawText(child)
+    // The argument (on the directive's own line) comes first, then the options.
+    if (head && OPTION_LINE.test(line)) return
+    if (i > 0) head = false
+    lines.push(line)
+  })
+  const indent = Math.min(...lines.filter((l) => l.trim()).map((l) => /^ */.exec(l)![0].length))
+  return Number.isFinite(indent) && indent > 0 ? lines.map((l) => l.slice(indent)) : lines
+}
+
+/**
+ * Diagram and math directives in the hub's tagged form (spec B1):
+ *
+ *   .. mermaid::             mermaid
+ *   .. graphviz::            dot, the body as written
+ *   .. digraph:: name        dot, the body inside `digraph name { … }`, as Sphinx builds it
+ *   .. graph:: name          dot, likewise with `graph`
+ *   .. math::                math (an argument on the directive line is part of it)
+ */
+function renderedBlock(node: RstNode): string | undefined {
+  const name = node.directive?.toLowerCase()
+  const block = (lang: string, source: string): string => `<pre><code class="language-${lang}">${escapeHtml(source)}</code></pre>`
+  if (name === 'mermaid') return block('mermaid', directiveLines(node).join('\n'))
+  if (name === 'math') return block('math', directiveLines(node).join('\n'))
+  if (name === 'graphviz') return block('dot', directiveLines(node).join('\n'))
+  if (name === 'digraph' || name === 'graph') {
+    const [graphName = '', ...body] = directiveLines(node)
+    return block('dot', `${name} ${graphName.trim()} {\n${body.join('\n')}\n}`)
+  }
+  return undefined
 }
 
 /** Render the restructured AST; unknown node types fall through to their children. */
@@ -83,7 +131,10 @@ function render(node: RstNode, depth = 0): string {
     case 'directive':
       // Without this the directive's text nodes concatenate with no
       // separators at all ("Simple======  ===Item    Qty  Price...").
-      return `<pre>${kids()}</pre>`
+      return renderedBlock(node) ?? `<pre>${kids()}</pre>`
+    case 'interpreted_text':
+      if (node.role === 'math') return `<code class="language-math">${escapeHtml((node.children ?? []).map(rawText).join(''))}</code>`
+      return kids()
     case 'unknown':
       // Anything the parser cannot classify — including a table this reader
       // declined to parse. The default branch would drop it on the floor

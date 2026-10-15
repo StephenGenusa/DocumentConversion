@@ -1,6 +1,7 @@
 import { textToBase64 } from './encoding'
 import type { BatchItemReq, ReadOptions, SourceFormat } from '../../../preload/types'
 import { appliedReadOptions } from './controls'
+import { hubFeatures, type HubFeatures } from '../../../core/rendered-blocks'
 
 /**
  * One input in the list. The list is the ONLY state that outlives the edit
@@ -36,6 +37,11 @@ export interface ListItem {
   read?: ReadOptions
   /** The pane's copy was read cut to the print limit (records.ts). */
   limited?: boolean
+  /**
+   * Diagrams and formulas in `html` (spec B1), from the last read or edit:
+   * what decides whether a control acting on them is shown (spec 2a, V1).
+   */
+  features?: HubFeatures
 }
 
 /** What the open edit pane holds right now. */
@@ -47,7 +53,7 @@ export interface LiveEdit {
 /** Write the pane's content back onto its item. Pure: safe inside a state updater. */
 export function applyLiveEdit(list: ListItem[], live: LiveEdit | null): ListItem[] {
   if (live === null) return list
-  return list.map((i) => (i.id === live.id ? { ...i, html: live.html } : i))
+  return list.map((i) => (i.id === live.id ? { ...i, html: live.html, features: hubFeatures(live.html) } : i))
 }
 
 /**

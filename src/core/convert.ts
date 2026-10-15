@@ -23,6 +23,7 @@ import { writeRows, type RowWriteOptions } from './writers/rows'
 import type { RowSource } from './records'
 import { TABLE_TARGETS } from './types'
 import { normalizeFootnotes } from './footnotes'
+import { hubFeatures } from './rendered-blocks'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
 
 export interface Converter {
@@ -84,6 +85,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // Embedded here, at the one boundary every reader's output passes, so
       // that the edit pane and every writer see data URIs only.
       hub.html = await resolveRemoteImages(hub.html, source, deps.fetchImages, ctx)
+      hub.features = hubFeatures(hub.html)
       return hub
     } catch (err) {
       if (err instanceof ConversionError) throw err

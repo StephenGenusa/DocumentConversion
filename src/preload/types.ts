@@ -231,6 +231,8 @@ export interface Api {
         stamp?: string
         /** A record source cut to the print limit: an edited copy holds only these records. */
         limited?: boolean
+        /** Diagrams and formulas the document holds (spec B1). */
+        features?: { diagrams: boolean; math: boolean }
       }
     | { kind: 'error'; code: string; message: string }
   >

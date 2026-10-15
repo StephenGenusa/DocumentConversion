@@ -163,6 +163,82 @@ const FootnoteNumbering = Extension.create({
   ],
 })
 
+/*
+ * Diagrams and formulas, in the hub's tagged form (spec B1):
+ *
+ *   <pre><code class="language-mermaid|language-dot">…</code></pre>   diagramBlock
+ *   <pre><code class="language-math">…</code></pre>                  mathBlock
+ *   <code class="language-math">…</code>                             mathInline
+ *
+ * For now each shows its source as plain code; drawing it is a later step.
+ * They are nodes of their own, parsed at priority 100 ahead of CodeBlock and
+ * the Code mark, so the class that makes them what they are is never lost and
+ * an ordinary code block stays a code block.
+ */
+const codeClass = (el: HTMLElement): string | null => {
+  const code = el.firstElementChild
+  return el.childElementCount === 1 && code?.tagName === 'CODE' ? code.getAttribute('class') : null
+}
+
+const DiagramBlock = Node.create({
+  name: 'diagramBlock',
+  group: 'block',
+  content: 'text*',
+  marks: '',
+  code: true,
+  defining: true,
+  addAttributes: () => ({
+    language: {
+      default: 'mermaid',
+      parseHTML: (el: HTMLElement) => (codeClass(el) === 'language-dot' ? 'dot' : 'mermaid'),
+      renderHTML: () => ({}),
+    },
+  }),
+  parseHTML: () => [
+    {
+      tag: 'pre',
+      priority: 100,
+      preserveWhitespace: 'full',
+      contentElement: 'code',
+      getAttrs: (el: HTMLElement) => (/^language-(?:mermaid|dot)$/.test(codeClass(el) ?? '') ? null : false),
+    },
+  ],
+  renderHTML: ({ node }) => ['pre', ['code', { class: `language-${node.attrs.language}` }, 0]],
+})
+
+const MathBlock = Node.create({
+  name: 'mathBlock',
+  group: 'block',
+  content: 'text*',
+  marks: '',
+  code: true,
+  defining: true,
+  parseHTML: () => [
+    {
+      tag: 'pre',
+      priority: 100,
+      preserveWhitespace: 'full',
+      contentElement: 'code',
+      getAttrs: (el: HTMLElement) => (codeClass(el) === 'language-math' ? null : false),
+    },
+  ],
+  renderHTML: () => ['pre', ['code', { class: 'language-math' }, 0]],
+})
+
+/** An atom holding its TeX: inline content that edits as text is a later step's popover. */
+const MathInline = Node.create({
+  name: 'mathInline',
+  group: 'inline',
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes: () => ({
+    tex: { default: '', parseHTML: (el: HTMLElement) => el.textContent ?? '', renderHTML: () => ({}) },
+  }),
+  parseHTML: () => [{ tag: 'code', priority: 100, preserveWhitespace: 'full', getAttrs: (el: HTMLElement) => (el.getAttribute('class') === 'language-math' ? null : false) }],
+  renderHTML: ({ node }) => ['code', { class: 'language-math' }, String(node.attrs.tex)],
+})
+
 export const EDITOR_EXTENSIONS: Extensions = [
   // No empty trailing paragraph after the notes: they are always last, and
   // that paragraph would be written into every document that has footnotes.
@@ -180,4 +256,7 @@ export const EDITOR_EXTENSIONS: Extensions = [
   FootnoteItem,
   Footnotes,
   FootnoteNumbering,
+  DiagramBlock,
+  MathBlock,
+  MathInline,
 ]
