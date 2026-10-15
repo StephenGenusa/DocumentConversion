@@ -166,6 +166,11 @@ async function main() {
     out.mathPng = pngSize(await time('mathPng', () => math('\\int_0^1 x^2\\,dx', false, 'png')))
     out.mathPngBaseline = (await math('\\int_0^1 x^2\\,dx', false, 'png')).baseline
     out.mathUnknown = (await math('\\foo{x}')).error ?? null
+    const bm = await math('\\bm{x}')
+    const boldsymbol = await math('\\boldsymbol{x}')
+    // Ids and the source attribute differ by formula; the drawing must not.
+    const drawing = (svg) => (svg || '').replace(/\s(?:id|data-[\w-]+)="[^"]*"/g, '').replace(/href="#[^"]*"/g, 'href="#"')
+    out.mathBm = { error: bm.error ?? null, same: Boolean(bm.svg) && drawing(bm.svg) === drawing(boldsymbol.svg) }
     out.mathUnclosed = (await math('\\frac{1}{')).error ?? null
     out.mathRequire = (await math('\\require{physics} x')).error ?? null
     out.mathHref = (await math('\\href{http://127.0.0.1:9/x}{y}')).error ?? null

@@ -373,6 +373,9 @@
       },
       tex: {
         packages: TEX_PACKAGES,
+        // \bm is the bm package's bold math, common in papers and notebooks;
+        // MathJax has no bm package, and \boldsymbol draws the same thing.
+        macros: { bm: ['\\boldsymbol{#1}', 1] },
         // Without this an error becomes a red message drawn in the formula.
         formatError: function (jax, err) {
           throw err

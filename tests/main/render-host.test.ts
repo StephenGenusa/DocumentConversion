@@ -47,6 +47,7 @@ interface HarnessResult {
   mathPng: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
   mathPngBaseline: number | undefined
   mathUnknown: string | null
+  mathBm: { error: string | null; same: boolean }
   mathUnclosed: string | null
   mathRequire: string | null
   mathHref: string | null
@@ -214,6 +215,10 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
       expect(result.mathUnknown).toBe('Undefined control sequence \\foo')
       expect(result.mathUnclosed).toBe('Missing close brace')
       expect(result.mathRecursive).toMatch(/maximum macro substitution count exceeded/)
+    })
+
+    it('draws \\bm as \\boldsymbol (the bm package\'s macro, common in papers)', () => {
+      expect(result.mathBm).toEqual({ error: null, same: true })
     })
 
     it('loads nothing on demand and takes no links: \\require and \\href are unknown', () => {
