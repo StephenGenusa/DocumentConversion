@@ -3,7 +3,7 @@ import JSZip from 'jszip'
 import { createHash } from 'node:crypto'
 import { parseDocument } from 'htmlparser2'
 import { textContent } from 'domutils'
-import { Element, type AnyNode } from 'domhandler'
+import { Element, Text, type AnyNode } from 'domhandler'
 import render from 'dom-serializer'
 import { renderDocumentShell } from '../shell'
 import { replaceImages } from '../inline-images'
@@ -328,9 +328,63 @@ export function flattenForDocx(source: string): string {
   return changed ? serialize(dom.children) : source
 }
 
+/**
+ * html-to-docx writes the text of a <pre> as it is, newlines and all, and Word
+ * shows a newline in a run as a space: a code block came out as one long line.
+ * A <br> straight inside <pre> or <code> is dropped too, but one wrapped in a
+ * <span> becomes a <w:br/> (so a <br> already there is wrapped as well), a line break inside the block's one paragraph —
+ * so the block stays a single monospace unit, and the runs keep their spaces
+ * and tabs (xml:space="preserve"). Run after unwrapSpans, which would take the
+ * wrappers off again, and which has by then merged any highlighting span a
+ * newline fell inside into plain text. The newline that ends the last line is
+ * dropped rather than leaving an empty line under the block.
+ *
+ * In a list item the block shares a paragraph with the item's text, so a
+ * break also goes between them, where there is text either side.
+ */
+function breakCodeLines(source: string): string {
+  if (!/<pre\b/i.test(source)) return source
+  const dom = parseDocument(source)
+  const pres = elementsOf(dom.children, 'pre')
+  if (!pres.length) return source
+  const lineBreak = (): Element => new Element('span', {}, [new Element('br', {})])
+  const hasText = (nodes: AnyNode[]): boolean => textContent(nodes).trim() !== ''
+  for (const pre of pres) {
+    const texts: Text[] = []
+    const collect = (nodes: AnyNode[]): void => {
+      for (const node of nodes) {
+        if (node instanceof Text) texts.push(node)
+        else if (isElement(node) && node.name === 'br') splice(node.parent!, node.parent!.children.indexOf(node), 1, [lineBreak()])
+        else if (isElement(node)) collect(node.children)
+      }
+    }
+    collect(pre.children)
+    const last = texts.findLast((t) => t.data !== '')
+    if (last) last.data = last.data.replace(/\r?\n$/, '')
+    for (const text of texts) {
+      const lines = text.data.split(/\r?\n/)
+      if (lines.length === 1) continue
+      const fresh: AnyNode[] = []
+      lines.forEach((line, i) => {
+        if (i) fresh.push(lineBreak())
+        if (line) fresh.push(new Text(line))
+      })
+      const parent = text.parent!
+      splice(parent, parent.children.indexOf(text), 1, fresh)
+    }
+    const li = pre.parent
+    if (li instanceof Element && li.name === 'li') {
+      const at = li.children.indexOf(pre)
+      if (hasText(li.children.slice(at + 1))) splice(li, at + 1, 0, [lineBreak()])
+      if (hasText(li.children.slice(0, at))) splice(li, at, 0, [lineBreak()])
+    }
+  }
+  return serialize(dom.children)
+}
+
 export async function writeDocx(doc: HubDocument): Promise<Buffer> {
   const html = renderDocumentShell(
-    { ...doc, html: unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain')))) },
+    { ...doc, html: breakCodeLines(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain'))))) },
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)
