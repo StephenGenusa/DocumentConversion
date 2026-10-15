@@ -267,4 +267,22 @@ export interface Api {
   openPath(path: string): Promise<void>
   /** Help → About: the version and every licence notice, in its own window. */
   openAbout(): Promise<void>
+  /**
+   * A diagram or formula drawn for the editor (spec B11): an `<img>`-ready
+   * data URI of the sanitised SVG with its CSS px size, the engine's message,
+   * or `unavailable` for a kind this version does not draw.
+   */
+  renderBlock(req: BlockRenderRequest): Promise<BlockRenderResult>
 }
+
+export interface BlockRenderRequest {
+  kind: 'mermaid' | 'dot' | 'math'
+  source: string
+  display: boolean
+  priority: 'visible' | 'prefetch'
+}
+
+export type BlockRenderResult =
+  | { uri: string; width: number; height: number; baseline?: number }
+  | { error: string }
+  | { unavailable: true }

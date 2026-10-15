@@ -7,6 +7,7 @@ import { Node, Extension } from '@tiptap/core'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import type { Extensions } from '@tiptap/core'
+import { RenderedBlocks, blockNodeView, inlineNodeView } from './block-views'
 
 /**
  * The editor schema must model everything the hub sanitizer passes
@@ -170,8 +171,8 @@ const FootnoteNumbering = Extension.create({
  *   <pre><code class="language-math">…</code></pre>                  mathBlock
  *   <code class="language-math">…</code>                             mathInline
  *
- * For now each shows its source as plain code; drawing it is a later step.
- * They are nodes of their own, parsed at priority 100 ahead of CodeBlock and
+ * Each is drawn by a node view (block-views.ts); the document keeps only the
+ * source, so what is saved is exactly the B1 form. They are nodes of their own, parsed at priority 100 ahead of CodeBlock and
  * the Code mark, so the class that makes them what they are is never lost and
  * an ordinary code block stays a code block.
  */
@@ -204,6 +205,7 @@ const DiagramBlock = Node.create({
     },
   ],
   renderHTML: ({ node }) => ['pre', ['code', { class: `language-${node.attrs.language}` }, 0]],
+  addNodeView: () => blockNodeView,
 })
 
 const MathBlock = Node.create({
@@ -223,9 +225,10 @@ const MathBlock = Node.create({
     },
   ],
   renderHTML: () => ['pre', ['code', { class: 'language-math' }, 0]],
+  addNodeView: () => blockNodeView,
 })
 
-/** An atom holding its TeX: inline content that edits as text is a later step's popover. */
+/** An atom holding its TeX, edited in its node view's popover. */
 const MathInline = Node.create({
   name: 'mathInline',
   group: 'inline',
@@ -237,6 +240,7 @@ const MathInline = Node.create({
   }),
   parseHTML: () => [{ tag: 'code', priority: 100, preserveWhitespace: 'full', getAttrs: (el: HTMLElement) => (el.getAttribute('class') === 'language-math' ? null : false) }],
   renderHTML: ({ node }) => ['code', { class: 'language-math' }, String(node.attrs.tex)],
+  addNodeView: () => inlineNodeView,
 })
 
 export const EDITOR_EXTENSIONS: Extensions = [
@@ -259,4 +263,5 @@ export const EDITOR_EXTENSIONS: Extensions = [
   DiagramBlock,
   MathBlock,
   MathInline,
+  RenderedBlocks,
 ]

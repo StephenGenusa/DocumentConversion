@@ -60,6 +60,10 @@ describe('the editor round-trips what the hub allows', () => {
     expect(roundTrip(html)).toBe(html)
   })
 
+  // Opening a diagram or formula for editing and closing it with no change
+  // keeps these bytes too: that needs the node views and a DOM, so it is in
+  // block-views.test.ts ("opening and closing with no change ...").
+
   it('shows diagram and formula source as nodes of their own, not as code', () => {
     const json = JSON.stringify(
       generateJSON(

@@ -110,6 +110,9 @@ const api = {
   reveal: (path: string) => ipcRenderer.invoke('app:reveal', { path }),
   openPath: (path: string) => ipcRenderer.invoke('app:open-path', { path }),
   openAbout: () => ipcRenderer.invoke('app:open-about'),
+  /** One diagram or formula for the editor, as an <img>-ready data URI (spec B11). */
+  renderBlock: (req: { kind: string; source: string; display: boolean; priority: 'visible' | 'prefetch' }) =>
+    ipcRenderer.invoke('render:block', req),
 }
 
 if (process.contextIsolated) {

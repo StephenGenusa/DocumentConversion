@@ -173,6 +173,11 @@ const click = async (label) => {
   )
   if (!ok) throw new Error(`no "${label}" button`)
 }
+/** A toolbar control drawn as an icon, found by its accessible name. */
+const press = async (label) => {
+  const ok = await js(`(() => { const b=document.querySelector(${JSON.stringify(`button[aria-label="${label}"]`)}); if(!b) return false; b.click(); return true })()`)
+  if (!ok) throw new Error(`no "${label}" control`)
+}
 const editorText = () => js(`${EDITOR}?.textContent ?? null`)
 const typeIntoEditor = (html) =>
   js(`(() => { const ed=${EDITOR}.editor; ed.commands.insertContentAt(ed.state.doc.content.size, ${JSON.stringify(html)}) })()`)
@@ -355,6 +360,70 @@ try {
   check('neither checkbox is offered for a Markdown file', boxes.every((b) => b === null), JSON.stringify(boxes))
   await startOver()
 
+  // Diagrams drawn in the editor (spec B11): edit one, see the live preview,
+  // close it, and convert to the clipboard as HTML, where it is drawn too.
+  await dropFile(join(ROOT, 'tests', 'corpus', 'diagram-notes.md'), 'diagram-notes.md')
+  await click('Edit')
+  await waitFor(`document.querySelectorAll('.rb[data-state=picture]').length >= 1`, 'the first diagram to be drawn')
+  const blockStates = () => js(`[...document.querySelectorAll('.rb')].map((b) => b.dataset.state)`)
+  let states = await blockStates()
+  check('the editor draws the Mermaid diagrams, shows the broken one with its message and Graphviz as source', states[0] === 'picture' && states[3] === 'source', JSON.stringify(states))
+  const firstSrc = () => js(`document.querySelector('.rb .rb__picture img')?.getAttribute('src') ?? null`)
+  const before = await firstSrc()
+  check('a drawing is an <img> of SVG, never markup in the page', before?.startsWith('data:image/svg+xml;base64,') && (await js(`!document.querySelector('.clip-pane__editor svg')`)), String(before).slice(0, 60))
+  await js(`document.querySelector('.rb .rb__picture').dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }))`)
+  await waitFor(`document.querySelector('.rb').dataset.state === 'editing'`, 'the diagram to open for editing')
+  await js(`${EDITOR}.editor.commands.insertContent('\\n  H --> Z[Archived]')`)
+  await waitFor(`(document.querySelector('.rb .rb__preview img')?.getAttribute('src') ?? ${JSON.stringify(before)}) !== ${JSON.stringify(before)}`, 'the live preview to redraw')
+  await js(`${EDITOR}.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`)
+  await waitFor(`document.querySelector('.rb').dataset.state === 'picture'`, 'the diagram to close')
+  check('closing the editor leaves the new drawing in place', (await firstSrc()) !== before, 'unchanged picture')
+  await click('HTML')
+  await click('Convert to clipboard')
+  await waitFor(resultIsUp, 'a result')
+  const clip = await mainEval(`(() => { const { clipboard } = process.mainModule.require('electron'); return { html: clipboard.readHTML(), text: clipboard.readText() } })()`)
+  check('converted to the clipboard, the edited diagram is drawn in the HTML', (clip.html.match(/<img[^>]+src="data:image\/png;base64,/g) ?? []).length === 2 && !clip.html.includes('Archived'), clip.html.slice(0, 300))
+  check('and is its edited source in the plain text', clip.text.includes('H --> Z[Archived]'), clip.text.slice(0, 300))
+  await dismiss()
+  await waitFor(`!!${EDITOR}`, 'the edit pane to come back')
+
+  // Insert Diagram (spec B13): drawn at once from its starter; one undo removes it.
+  const pane = () => js(`${EDITOR}.editor.getHTML()`)
+  const withoutInsert = await pane()
+  await press('Diagram')
+  await click('Mermaid diagram')
+  await waitFor(`!!document.querySelector('.rb[data-state=editing] .rb__preview img')`, 'the inserted diagram to preview')
+  check('Insert diagram adds a Mermaid block with a starter', (await pane()).includes('<pre><code class="language-mermaid">flowchart LR\n  A --&gt; B</code></pre>'), await pane())
+  await press('Undo')
+  check('one undo removes the inserted diagram', (await pane()) === withoutInsert, await pane())
+  await startOver()
+
+  // A 500-formula document opens at once (spec B11); diagrams are drawn as they scroll into view.
+  const formulas = join(work, 'formulas.md')
+  writeAt(formulas, ['# Exercises', ...Array.from({ length: 500 }, (_, i) => `Step ${i}: the value $x_{${i}}^2 + ${i}$ holds.` + (i % 25 === 0 ? `\n\n$$\n\\sum_{k=0}^{${i}} k\n$$` : ''))].join('\n\n'))
+  await dropFile(formulas, 'formulas.md')
+  const painted = await js(`new Promise((done) => {
+    const t0 = performance.now()
+    ;[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Edit').click()
+    const tick = () => document.querySelector('.clip-pane__editor .ProseMirror') ? requestAnimationFrame(() => requestAnimationFrame(() => done(performance.now() - t0))) : requestAnimationFrame(tick)
+    tick()
+  })`)
+  console.log(`note  500-formula document: Edit to first paint ${Math.round(painted)} ms`)
+  check('a 500-formula document opens in the editor at once', painted < 3000 && (await js(`document.querySelectorAll('.clip-pane__editor .rm').length`)) === 500, `${painted} ms`)
+  await startOver()
+  const many = join(work, 'many.md')
+  writeAt(many, Array.from({ length: 40 }, (_, i) => `Diagram ${i}.\n\n\`\`\`mermaid\nflowchart LR\n  A${i}[Start ${i}] --> B${i}[End ${i}]\n\`\`\``).join('\n\n'))
+  await dropFile(many, 'many.md')
+  await click('Edit')
+  await waitFor(`document.querySelectorAll('.rb[data-state=picture]').length >= 2`, 'the diagrams on screen to be drawn')
+  await sleep(1500)
+  states = await blockStates()
+  check('only the diagrams on screen and next to it are drawn', states[0] === 'picture' && states.at(-1) === 'waiting' && states.filter((s) => s === 'picture').length < 15, states.join(' '))
+  await js(`document.querySelector('.clip-pane__editor').scrollTop = 1e6`)
+  await waitFor(`[...document.querySelectorAll('.rb')].at(-1).dataset.state === 'picture'`, 'the last diagram to be drawn on scroll')
+  check('scrolling to the end draws the last diagram', true)
+  await startOver()
+
   // Edits in the pane survive a result being shown and dismissed.
   await paste('.dropzone', '# Title\n\nOriginal body.')
   await waitFor(`!!${EDITOR}`, 'the edit pane')
@@ -363,17 +432,20 @@ try {
   // At the size the window opens at, the formatting toolbar is one row.
   const bar = await js(`(() => {
     const t = document.querySelector('.clip-pane__toolbar')
-    const tops = [...t.querySelectorAll('button, select')].map((b) => b.offsetTop)
+    // Page coordinates: offsetTop is relative to the nearest positioned
+    // ancestor, which the Formula and Diagram menus are.
+    const ctl = [...t.querySelectorAll('button, select')].map((b) => b.getBoundingClientRect())
+    const tops = ctl.map((r) => Math.round(r.top))
     const rows = new Set(tops).size
-    const ctl = [...t.querySelectorAll('button, select')]
-    const used = Math.max(...ctl.map((b) => b.offsetLeft + b.offsetWidth)) - Math.min(...ctl.map((b) => b.offsetLeft))
+    const used = Math.max(...ctl.map((r) => r.right)) - Math.min(...ctl.map((r) => r.left))
     const wrap = t.style.flexWrap
     t.style.flexWrap = 'nowrap'
     const needed = t.scrollWidth
     t.style.flexWrap = wrap
     return { rows, controls: tops.length, used, toolbarWidth: t.clientWidth, needed, windowWidth: window.outerWidth, innerWidth: window.innerWidth }
   })()`)
-  const size = await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows()[0].getSize()`)
+  // The visible one: the hidden render window is a window too.
+  const size = await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).getSize()`)
   console.log(`note  toolbar ${JSON.stringify(bar)}, window ${JSON.stringify(size)}`)
   check('the editor toolbar fits on one row at the default window size', bar.rows === 1, `${bar.rows} rows; the toolbar needs ${bar.needed} px and has ${bar.toolbarWidth}, so the window needs about ${size[0] + bar.needed - bar.toolbarWidth} px wide`)
   await typeIntoEditor('<p>EDITED LINE</p>')

@@ -1,6 +1,7 @@
 import { useEffect, type MutableRefObject } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { EDITOR_EXTENSIONS } from '../lib/editor-extensions'
+import { focusAtStart } from '../lib/block-views'
 import { EditorToolbar } from './EditorToolbar'
 import type { LiveEdit } from '../lib/items'
 
@@ -19,12 +20,15 @@ export function ClipboardPane({
   itemId,
   html,
   sourceLabel,
+  sourceFormat,
   liveRef,
   onReset,
 }: {
   itemId: string
   html: string
   sourceLabel: string
+  /** The format the document was read from (the toolbar hides inserts for code listings). */
+  sourceFormat?: string
   liveRef: MutableRefObject<(() => LiveEdit) | null>
   onReset: () => void
 }): React.JSX.Element {
@@ -34,7 +38,15 @@ export function ClipboardPane({
   // selection is not editable and Chromium writes nothing to the clipboard. So
   // "select all, cut, paste into Word" quietly pasted whatever was on the
   // clipboard beforehand.
-  const editor = useEditor({ extensions: EDITOR_EXTENSIONS, content: html, autofocus: 'start' })
+  // A diagram or formula at the very start is selected, not opened for editing.
+  const editor = useEditor({
+    extensions: EDITOR_EXTENSIONS,
+    content: html,
+    autofocus: false,
+    onCreate: ({ editor: e }) => {
+      if (!e.isDestroyed) focusAtStart(e)
+    },
+  })
 
   useEffect(() => {
     liveRef.current = () => ({ id: itemId, html: editor?.getHTML() ?? html })
@@ -52,7 +64,7 @@ export function ClipboardPane({
           Change
         </button>
       </div>
-      <EditorToolbar editor={editor} />
+      <EditorToolbar editor={editor} sourceFormat={sourceFormat} />
       <EditorContent editor={editor} className="clip-pane__editor" />
     </div>
   )

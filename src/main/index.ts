@@ -48,6 +48,7 @@ import { urlFetchDeps } from './net'
 import { appTitle } from './app-identity'
 import { installAppMenu } from './menu'
 import { openAboutWindow } from './about-window'
+import { renderForEditor } from './render-ipc'
 
 // CLI mode: `DocumentConverter convert ...` (packaged, argv[1]) or
 // `electron <app-path> convert ...` (dev, argv[2]).
@@ -707,6 +708,9 @@ function registerIpc(): void {
   )
 
   ipcMain.handle('app:open-about', () => openAboutWindow())
+  // The editor's drawings (spec B11): checked in render-ipc.ts, drawn by the
+  // same host and cache as conversions.
+  ipcMain.handle('render:block', (_e, req: unknown) => renderForEditor(req, renderHost.render))
 
   ipcMain.handle('app:reveal', async (_e, { path }: { path: string }) => {
     shell.showItemInFolder(path)

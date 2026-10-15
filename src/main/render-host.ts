@@ -4,12 +4,12 @@ import { join, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { renderCacheKey } from '../core/draw-blocks'
 import { sanitizeSvg } from '../core/svg-sanitize'
-import type { RenderBlocks, RenderKind, RenderRequest, RenderResult } from '../core/rendered-blocks'
+import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
 
 /**
  * The render host (spec B5): one hidden window that draws diagrams (and, in
  * later steps, formulas) from vendored engines, for conversions now and for
- * the editor in step 14.
+ * the editor (render-ipc.ts).
  *
  *   window      hidden, sandboxed, context-isolated, no preload, JavaScript
  *               on (the engines are scripts). Created on first need, closed
@@ -48,7 +48,7 @@ export type RenderPriority = 'visible' | 'convert' | 'prefetch'
 const PRIORITY_ORDER: Record<RenderPriority, number> = { visible: 0, convert: 1, prefetch: 2 }
 
 /** The largest source drawn; the editor's IPC applies the same cap (spec B11). */
-export const MAX_SOURCE_BYTES = 100 * 1024
+export { MAX_SOURCE_BYTES }
 
 /** PNG is the SVG drawn at this many device pixels per CSS px (spec B5). */
 const PNG_SCALE = 2
@@ -88,7 +88,7 @@ export interface RenderHostStats {
 }
 
 export interface RenderHost {
-  /** One block, for the editor (step 14) or anything else. */
+  /** One block, for the editor (render-ipc.ts) or anything else. */
   render(req: RenderRequest, opts?: RenderCallOptions): Promise<RenderResult>
   /** ConverterDeps.renderBlocks: conversion priority, results in order. */
   renderBlocks: RenderBlocks

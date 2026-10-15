@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useEditorState } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { normalizeLinkUrl } from '../lib/link-url'
@@ -6,6 +6,7 @@ import {
   IconBulletList,
   IconClear,
   IconCode,
+  IconDiagram,
   IconLink,
   IconOrderedList,
   IconQuote,
@@ -39,9 +40,17 @@ type Control =
       onChange: (value: string) => void
     }
   | {
+      kind: 'menu'
+      label: string
+      content: React.ReactNode
+      items: ReadonlyArray<MenuItem>
+    }
+  | {
       kind: 'button'
       label: string
       content: React.ReactNode
+      /** The tooltip, when it says more than the label (a shortcut). */
+      title?: string
       /** Rendered as text rather than an icon; sizes the button differently. */
       text?: boolean
       className?: string
@@ -51,6 +60,16 @@ type Control =
       onClick: () => void
     }
 
+interface MenuItem {
+  label: string
+  /** The shortcut, shown beside the label. */
+  keys?: string
+  onSelect: () => void
+}
+
+const MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
+const keys = (k: string): string => (MAC ? k.replace('Mod+', '⌘').replace('Shift+', '⇧').replace('Alt+', '⌥') : k.replace('Mod+', 'Ctrl+'))
+
 const BLOCKS = [
   ['p', 'Paragraph'],
   ['h1', 'Heading 1'],
@@ -59,7 +78,18 @@ const BLOCKS = [
   ['code', 'Code block'],
 ] as const
 
-export function EditorToolbar({ editor }: { editor: Editor | null }): React.JSX.Element | null {
+export function EditorToolbar({
+  editor,
+  sourceFormat,
+}: {
+  editor: Editor | null
+  /**
+   * The format the document was read from. A code listing (the code reader)
+   * is shown as a file, so diagrams and formulas are not offered there
+   * (spec B13).
+   */
+  sourceFormat?: string
+}): React.JSX.Element | null {
   /*
    * TipTap v3 does NOT re-render on every transaction — `shouldRerenderOnTransaction`
    * defaults to false — so reading `editor.isActive(...)` straight into JSX
@@ -105,13 +135,26 @@ export function EditorToolbar({ editor }: { editor: Editor | null }): React.JSX.
   const toolbarRef = useRef<HTMLDivElement>(null)
   const [tabStop, setTabStop] = useState(0)
 
+  /** The Formula or Diagram menu that is open, by label. */
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  useEffect(() => {
+    if (menuOpen === null) return
+    const close = (e: MouseEvent): void => {
+      if (!(e.target as Element | null)?.closest?.('.tb-menu')) setMenuOpen(null)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [menuOpen])
+
   function onToolbarKeys(e: React.KeyboardEvent<HTMLDivElement>): void {
     if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) return
     // A select owns Left/Right for changing its own value.
     if (e.target instanceof HTMLSelectElement && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       return
     }
-    const controls = Array.from(toolbarRef.current?.querySelectorAll('button, select') ?? [])
+    // The open menu's items are not stops of the toolbar; the menu handles its own keys.
+    if ((e.target as Element).closest('[role="menu"]')) return
+    const controls = Array.from(toolbarRef.current?.querySelectorAll('button:not([role="menuitem"]), select') ?? [])
     if (controls.length === 0) return
     e.preventDefault()
     const active = controls.findIndex((c) => c === document.activeElement)
@@ -202,7 +245,23 @@ export function EditorToolbar({ editor }: { editor: Editor | null }): React.JSX.
       ),
       icon('Horizontal rule', <IconRule />, false, () => chain().setHorizontalRule().run()),
       // A reference at the cursor and its note at the end, with the cursor in the note.
-      icon('Insert footnote', <span className="tb-fn">fn</span>, false, () => chain().insertFootnote().run()),
+      {
+        ...icon('Insert footnote', <span className="tb-fn">fn</span>, false, () => chain().insertFootnote().run()),
+        title: `Insert footnote (${keys('Mod+Alt+F')})`,
+      },
+      // Diagrams and formulas (spec B13); not for code listings.
+      ...(sourceFormat === 'code'
+        ? []
+        : [
+            menu('Formula', <span className="tb-fx">fx</span>, [
+              { label: 'Inline formula', keys: keys('Mod+Shift+M'), onSelect: () => chain().insertMathInline().run() },
+              { label: 'Formula block', onSelect: () => chain().insertMathBlock().run() },
+            ]),
+            menu('Diagram', <IconDiagram />, [
+              { label: 'Mermaid diagram', onSelect: () => chain().insertDiagram('mermaid').run() },
+              { label: 'Graphviz diagram', onSelect: () => chain().insertDiagram('dot').run() },
+            ]),
+          ]),
     ],
     [
       { ...icon('Undo', <IconUndo />, false, () => chain().undo().run()), off: !state.canUndo },
@@ -250,7 +309,19 @@ export function EditorToolbar({ editor }: { editor: Editor | null }): React.JSX.
               <span className="clip-pane__sep" role="separator" aria-orientation="vertical" />
             )}
             <span className="clip-pane__group">
-              {group.map((control) => render(control, flat.indexOf(control) === stop))}
+              {group.map((control) =>
+                control.kind === 'menu' ? (
+                  <ToolbarMenu
+                    key={control.label}
+                    control={control}
+                    tabbable={flat.indexOf(control) === stop}
+                    open={menuOpen === control.label}
+                    setOpen={(o) => setMenuOpen(o ? control.label : null)}
+                  />
+                ) : (
+                  render(control, flat.indexOf(control) === stop)
+                ),
+              )}
             </span>
           </Fragment>
         ))}
@@ -296,7 +367,97 @@ export function EditorToolbar({ editor }: { editor: Editor | null }): React.JSX.
   )
 }
 
+/**
+ * A toolbar button that opens a short menu (the menu-button pattern): Enter,
+ * Space or Down opens it on its first item, Up and Down move, Escape closes it
+ * and returns to the button, and choosing an item runs it.
+ */
+function ToolbarMenu({
+  control,
+  tabbable,
+  open,
+  setOpen,
+}: {
+  control: Control & { kind: 'menu' }
+  tabbable: boolean
+  open: boolean
+  setOpen: (open: boolean) => void
+}): React.JSX.Element {
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const focusItem = (i: number): void => {
+    const items = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    items[(i + items.length) % items.length]?.focus()
+  }
+  useEffect(() => {
+    if (open) focusItem(0)
+  }, [open])
+
+  function onListKeys(e: React.KeyboardEvent<HTMLDivElement>): void {
+    const items = Array.from(listRef.current?.querySelectorAll('[role="menuitem"]') ?? [])
+    const at = items.indexOf(document.activeElement as Element)
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      focusItem(at + (e.key === 'ArrowDown' ? 1 : -1))
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault()
+      focusItem(e.key === 'Home' ? 0 : -1)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setOpen(false)
+      buttonRef.current?.focus()
+    } else if (e.key === 'Tab') setOpen(false)
+    e.stopPropagation()
+  }
+
+  return (
+    <span className="tb-menu">
+      <button
+        ref={buttonRef}
+        className={['btn', 'btn--mini', 'btn--icon', open ? 'btn--on' : ''].filter(Boolean).join(' ')}
+        aria-label={control.label}
+        title={control.label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        tabIndex={tabbable ? 0 : -1}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setOpen(true)
+          }
+        }}
+      >
+        {control.content}
+        <span className="tb-menu__caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="tb-menu__list" role="menu" aria-label={control.label} ref={listRef} onKeyDown={onListKeys}>
+          {control.items.map((item) => (
+            <button
+              key={item.label}
+              role="menuitem"
+              tabIndex={-1}
+              className="tb-menu__item"
+              onClick={() => {
+                setOpen(false)
+                item.onSelect()
+              }}
+            >
+              <span>{item.label}</span>
+              {item.keys && <span className="tb-menu__keys">{item.keys}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </span>
+  )
+}
+
 function render(control: Control, tabbable: boolean): React.JSX.Element {
+  if (control.kind === 'menu') throw new Error('menus are rendered by ToolbarMenu')
   if (control.kind === 'select') {
     return (
       <select
@@ -327,7 +488,7 @@ function render(control: Control, tabbable: boolean): React.JSX.Element {
         .filter(Boolean)
         .join(' ')}
       aria-label={control.label}
-      title={control.label}
+      title={control.title ?? control.label}
       tabIndex={tabbable ? 0 : -1}
       // A disabled control is removed from the tab order and from most screen
       // readers' output, so an undo button that is merely unavailable would
@@ -360,6 +521,10 @@ function mark(
   onClick: () => void,
 ): Control & { kind: 'button' } {
   return { kind: 'button', label, content, active, onClick }
+}
+
+function menu(label: string, content: React.ReactNode, items: MenuItem[]): Control & { kind: 'menu' } {
+  return { kind: 'menu', label, content, items }
 }
 
 /** A labelled control: no `aria-pressed`, because it is an action, not a state. */

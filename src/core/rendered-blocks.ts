@@ -73,7 +73,9 @@ export interface RenderRequest {
  * A drawing, or why there is none. Sizes are CSS px (1ex = 8px). A PNG is
  * drawn at twice that size, so it stays sharp when printed or zoomed. `png`
  * is base64 without a data: prefix; `svg` is markup the host has already
- * sanitised (svg-sanitize.ts).
+ * sanitised (svg-sanitize.ts). `baseline` (inline math only) is how far the
+ * text baseline sits above the picture's bottom edge, in px: the picture is
+ * lowered by that much to sit on the line.
  */
 export type RenderResult =
   | { png?: string; svg?: string; width: number; height: number; baseline?: number }
@@ -91,3 +93,13 @@ export interface RenderBlocksOptions {
  * promise rejects only when the signal is aborted.
  */
 export type RenderBlocks = (requests: RenderRequest[], opts: RenderBlocksOptions) => Promise<RenderResult[]>
+
+/**
+ * The kinds an engine draws so far. Conversions draw these and keep the rest
+ * as source; the editor draws these and shows the rest as source. Graphviz
+ * (dot) joins with its engine (step 17), math with MathJax (step 18).
+ */
+export const DRAWN_KINDS: ReadonlySet<RenderKind> = new Set<RenderKind>(['mermaid'])
+
+/** The largest source drawn, by the host and by the editor's IPC alike (spec B11). */
+export const MAX_SOURCE_BYTES = 100 * 1024

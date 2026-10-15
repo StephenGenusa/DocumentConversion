@@ -197,4 +197,18 @@ describe('Converter.write draws diagrams through ConverterDeps.renderBlocks', ()
     expect(hub.html).toBe(before)
     expect(hub.html).not.toContain('<img')
   })
+
+  it("an editor's copy converts to the clipboard as the html target does: drawn, with the source as plain text (spec B11)", async () => {
+    // What the pane sends for an edited input: its HTML, read as html (items.ts toRequest).
+    const edited = Buffer.from('<p>Flow:</p><pre><code class="language-mermaid">flowchart LR\n  A --&gt; B</code></pre>')
+    const { render } = fakeRenderer()
+    const conv = createConverter(pdf, { renderBlocks: render })
+    const hub = await conv.read({ bytes: edited, filename: 'Clipboard' }, 'html')
+    // The two flavours clipboardFlavors writes.
+    const rich = (await conv.write(hub, 'html')).parts[0].bytes.toString('utf8')
+    const plain = (await conv.write(hub, 'txt')).parts[0].bytes.toString('utf8')
+    expect(rich).toContain(`src="data:image/png;base64,${PNG}"`)
+    expect(rich).not.toContain('A --&gt; B')
+    expect(plain).toContain('flowchart LR\n  A --> B')
+  })
 })

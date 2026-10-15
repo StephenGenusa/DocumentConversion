@@ -475,6 +475,7 @@ function App(): React.JSX.Element {
                 itemId={editingItem.id}
                 html={editingItem.html ?? ''}
                 sourceLabel={editingItem.label}
+                sourceFormat={editingItem.source}
                 liveRef={liveRef}
                 onReset={() => {
                   if (items.length === 1) reset()

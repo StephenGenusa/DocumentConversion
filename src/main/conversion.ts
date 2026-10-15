@@ -142,7 +142,8 @@ export const sqliteHost = createSqliteHost()
 
 /**
  * The hidden window that draws diagrams (spec B5). Opened on the first
- * diagram, closed after a minute idle; the editor shares it from step 14.
+ * diagram, closed after a minute idle; the editor shares it (render:block,
+ * render-ipc.ts), and with it the cache.
  */
 export const renderHost = createRenderHost()
 

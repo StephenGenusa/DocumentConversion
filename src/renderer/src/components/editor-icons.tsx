@@ -145,3 +145,14 @@ export function IconClear(): React.JSX.Element {
     </svg>
   )
 }
+
+/** Two boxes joined by an arrow: a flowchart, for the Diagram menu. */
+export function IconDiagram(): React.JSX.Element {
+  return (
+    <svg {...svg}>
+      <rect x="1.5" y="2.5" width="5" height="4" rx="1" />
+      <rect x="9.5" y="9.5" width="5" height="4" rx="1" />
+      <path d="M4 6.5v4.5h5.5" />
+    </svg>
+  )
+}

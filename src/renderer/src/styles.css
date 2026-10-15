@@ -166,3 +166,57 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .clip-pane__editor ol:has(> li[data-fn])::before { content: 'Notes'; display: block; margin: 0 0 .3rem -1.4em; font-weight: 600; font-size: .85rem; color: #71717a; }
 .clip-pane__editor sup[data-fn] { color: #4f46e5; cursor: default; }
 .card__note { margin: .5rem 0 0; font-size: .82rem; color: #92400e; background: #fffbeb; border-radius: 6px; padding: .4rem .6rem; }
+/*
+ * Diagrams and formulas in the editor (block-views.ts). `data-state` is one of
+ * picture, waiting (not drawn yet), editing, source (no engine for it in this
+ * version) and error. The source is the block's own text, hidden behind the
+ * picture and shown in the other states.
+ */
+.clip-pane__editor .rb { margin: .75rem 0; border-radius: 8px; border: 1px solid transparent; }
+.clip-pane__editor .rb pre.rb__source { margin: 0; font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace; font-size: .85rem; line-height: 1.45; white-space: pre-wrap; }
+.rb__bar, .rb__preview, .rb__message, .rb__picture { display: none; }
+.rb[data-state='picture'] .rb__source, .rb[data-state='waiting'] .rb__source { display: none; }
+.rb[data-state='picture'] .rb__picture, .rb[data-state='waiting'] .rb__picture { display: block; text-align: center; cursor: pointer; padding: .25rem 0; border-radius: 8px; }
+.rb[data-state='picture'] .rb__picture:hover { background: #fafafa; box-shadow: inset 0 0 0 1px #e4e4e7; }
+.rb__img { max-width: 100%; height: auto; display: inline-block; vertical-align: top; }
+.rb__img--stale { opacity: .45; }
+.rb__placeholder { display: inline-block; max-width: 100%; background: #f4f4f5; border-radius: 6px; vertical-align: top; }
+.rb__placeholder--unknown { width: 100%; }
+/* Edit mode: a framed box, the source on top and the live preview under it. */
+.rb[data-state='editing'] { border-color: #a5b4fc; box-shadow: 0 0 0 3px #eef2ff; background: #fff; }
+.rb[data-state='editing'] .rb__bar { display: block; font-size: .72rem; letter-spacing: .02em; color: #6366f1; padding: .35rem .75rem 0; user-select: none; }
+.clip-pane__editor .rb[data-state='editing'] pre.rb__source { background: #f8fafc; border-radius: 0; margin: .35rem 0 0; border-top: 1px solid #eef2ff; border-bottom: 1px solid #eef2ff; }
+.rb[data-state='editing'] .rb__preview { display: block; text-align: center; padding: .6rem .75rem .75rem; min-height: 2.5rem; }
+.rb[data-state='editing'].rb--nopreview .rb__preview { display: none; }
+.rb[data-state='editing'].rb--nopreview pre.rb__source { border-bottom: 0; border-radius: 0 0 8px 8px; }
+/* Error: the source with an outline, and the engine's message under it. */
+.rb[data-state='error'] { border-color: #fca5a5; }
+.clip-pane__editor .rb[data-state='error'] pre.rb__source { border-radius: 8px 8px 0 0; }
+.rb[data-state='error'] .rb__message { display: block; padding: .4rem .75rem; background: #fef2f2; border-radius: 0 0 8px 8px; }
+.rb__error { color: #b91c1c; font-size: .8rem; overflow-wrap: anywhere; }
+.rb__preview .rb__error { display: block; text-align: left; }
+.rb.ProseMirror-selectednode { border-color: #6366f1; box-shadow: 0 0 0 3px #e0e7ff; }
+/* Inline formulas: the picture on the baseline, or the TeX as code. */
+.rm { position: relative; display: inline; }
+.rm__face { cursor: pointer; border-radius: 4px; }
+.rm__face:hover { background: #eef2ff; }
+.rm__face .rb__img { display: inline; vertical-align: middle; }
+.rm__src { font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace; font-size: .85em; background: #f4f4f5; border-radius: 4px; padding: .05em .3em; color: #3f3f46; }
+.rm[data-state='error'] .rm__src { box-shadow: inset 0 0 0 1px #fca5a5; }
+.rm__placeholder { display: inline-block; vertical-align: middle; }
+.rm.ProseMirror-selectednode .rm__face, .rm--open .rm__face { box-shadow: 0 0 0 2px #a5b4fc; }
+.rm-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; display: flex; flex-direction: column; gap: .4rem; width: 20rem; max-width: 80vw; background: #fff; border: 1px solid #d4d4d8; border-radius: 10px; box-shadow: 0 8px 24px rgba(24, 24, 27, .14); padding: .55rem; font-size: .85rem; line-height: 1.3; text-indent: 0; font-weight: normal; font-style: normal; }
+.rm-pop--above { top: auto; bottom: calc(100% + 6px); }
+.rm-pop__input { border: 1px solid #d4d4d8; border-radius: 6px; padding: .35rem .5rem; font-family: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", Consolas, monospace; font-size: .85rem; }
+.rm-pop__input:focus { outline: 2px solid #a5b4fc; outline-offset: 0; border-color: #6366f1; }
+.rm-pop__preview { display: block; text-align: center; padding: .25rem 0; }
+.rm-pop__preview[hidden] { display: none; }
+.rm-pop__hint { color: #71717a; font-size: .72rem; }
+/* The Formula and Diagram menus in the toolbar. */
+.tb-menu { position: relative; display: inline-flex; }
+.tb-menu__caret { font-size: .6rem; margin-left: .15rem; color: #71717a; }
+.tb-fx { font-family: Georgia, "Times New Roman", serif; font-style: italic; font-size: .9rem; }
+.tb-menu__list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; min-width: 13rem; background: #fff; border: 1px solid #d4d4d8; border-radius: 8px; box-shadow: 0 8px 24px rgba(24, 24, 27, .14); padding: .25rem; display: flex; flex-direction: column; }
+.tb-menu__item { display: flex; justify-content: space-between; gap: 1rem; align-items: center; text-align: left; background: none; border: 0; border-radius: 6px; padding: .4rem .6rem; font: inherit; font-size: .85rem; color: inherit; cursor: pointer; }
+.tb-menu__item:hover, .tb-menu__item:focus-visible { background: #eef2ff; outline: none; }
+.tb-menu__keys { color: #71717a; font-size: .75rem; }

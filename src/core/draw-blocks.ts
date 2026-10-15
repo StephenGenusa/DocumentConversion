@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { parseDocument } from 'htmlparser2'
 import { textContent } from 'domutils'
 import type { TargetFormat } from './types'
-import { hubFeatures, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from './rendered-blocks'
+import { DRAWN_KINDS, hubFeatures, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from './rendered-blocks'
 
 /*
  * Drawing a document's diagrams for output (spec B3, B5, B7), at write time.
@@ -53,9 +53,6 @@ export function rendersBlocks(target: TargetFormat): boolean {
  * max-width.
  */
 const DOCX_MAX_WIDTH = 624
-
-/** The kinds drawn so far. Graphviz (dot) and math stay source until their steps. */
-const DRAWN_KINDS: ReadonlySet<RenderKind> = new Set(['mermaid'])
 
 /** A B1 diagram block, in the exact form the hub writes it (rendered-blocks.ts). */
 const DIAGRAM_BLOCK_SOURCE = /<pre><code class="language-(mermaid|dot)">([\s\S]*?)<\/code><\/pre>/g
