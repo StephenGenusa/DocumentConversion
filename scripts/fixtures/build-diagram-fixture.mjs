@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * Builds `tests/corpus/diagram-notes.md`: invented library returns notes with
- * Mermaid diagrams (spec B1, B3), for the e2e matrix. Every drawing target
- * must turn the two good diagrams into PNG pictures (the matrix checks Word
- * output for PNG media), keep the broken one as source, and leave the
- * Graphviz block and the formula as source until their steps.
+ * Mermaid diagrams and one Graphviz block (spec B1, B3), for the e2e matrix.
+ * Every drawing target must draw the three good diagrams (the matrix checks
+ * Word output for PNG media), keep the broken one as source, and leave the
+ * formula as source until its step. tests/corpus/graphviz-notes.md
+ * (build-graphviz-fixture.mjs) covers Graphviz on its own.
  *
  * The prose comes first and carries the words the matrix probes for, since a
  * drawn diagram's labels are no longer text in the output. Every word comes

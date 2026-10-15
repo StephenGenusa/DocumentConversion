@@ -24,6 +24,7 @@ export const ALLOWED = new Set([
   'Apache-2.0',
   'MPL-2.0',
   'EPL-1.0',
+  'EPL-2.0',
   'BlueOak-1.0.0',
   'CC0-1.0',
   'Unlicense',

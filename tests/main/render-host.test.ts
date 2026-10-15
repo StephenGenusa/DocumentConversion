@@ -36,7 +36,20 @@ interface HarnessResult {
     svgHasImport: boolean | null
   }>
   broken: string | null
-  dot: string | null
+  math: string | null
+  dotDigraph: { width?: number; height?: number; error?: string; fonts: string[]; head: string | null; hasDoctype: boolean | null }
+  dotPng: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
+  dotLayered: { width?: number; height?: number; error?: string }
+  dotNeato: { width?: number; height?: number; error?: string }
+  dotUndirected: { width?: number; height?: number; error?: string }
+  dotOwnFont: string[]
+  dotBroken: string | null
+  dotWrongEdge: string | null
+  dotEmpty: string | null
+  dotUnknownLayout: string | null
+  dotSlow: { error: string | null; ms: number }
+  dotAfterSlow: { width?: number; height?: number; error?: string }
+  dotHostile: { error?: string; remote: boolean | null; javascript: boolean | null }
   svgImage: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
   svgHostile: { width?: number; height?: number; error?: string; magic?: string }
   svgNotOne: string | null
@@ -98,9 +111,11 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
   it('requests nothing but the bundled page and the engine beside it', () => {
     const files = result.requests.map((r) => decodeURIComponent(new URL(r.url).pathname).split('/').pop())
     expect(result.requests.every((r) => r.allowed && r.url.startsWith('file://'))).toBe(true)
-    expect(new Set(files)).toEqual(new Set(['host.html', 'host.js', 'mermaid.min.js']))
-    // The engine is loaded once per window, not once per diagram.
-    expect(files.filter((f) => f === 'mermaid.min.js').length).toBeLessThanOrEqual(3)
+    expect(new Set(files)).toEqual(new Set(['host.html', 'host.js', 'mermaid.min.js', 'viz-global.js']))
+    // Each engine is loaded once per window, not once per diagram (the run
+    // opens four windows: first use, after each of two time-outs, after idle).
+    expect(files.filter((f) => f === 'mermaid.min.js').length).toBeLessThanOrEqual(4)
+    expect(files.filter((f) => f === 'viz-global.js').length).toBeLessThanOrEqual(2)
   })
 
   it('draws a PNG at twice the CSS size', () => {
@@ -126,7 +141,61 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
 
   it('answers a broken diagram with the engine message, and an engine not yet built with an error', () => {
     expect(result.broken).toBe('Parse error: the diagram ends too soon')
-    expect(result.dot).toBe('dot is not drawn yet')
+    expect(result.math).toBe('math is not drawn yet')
+  })
+
+  describe('Graphviz (step 17)', () => {
+    it('draws a digraph as a standalone SVG, sized in CSS px from its points, labels in the font stack', () => {
+      const d = result.dotDigraph
+      expect(d.error).toBeUndefined()
+      expect(d.head).toBe('<svg ')
+      expect(d.hasDoctype).toBe(false)
+      expect(d.width).toBeGreaterThan(60)
+      expect(d.height).toBeGreaterThan(100)
+      // Node, edge and graph labels alike (spec B5, B8): never Graphviz's default Times.
+      expect(d.fonts.length).toBeGreaterThanOrEqual(3)
+      for (const f of d.fonts) expect(f).toBe('Arial, "Liberation Sans", Helvetica, sans-serif')
+    })
+
+    it('draws a PNG at twice the CSS size', () => {
+      expect(result.dotPng.magic).toBe('PNG')
+      expect(result.dotPng.pixelWidth).toBe(result.dotPng.width! * 2)
+      expect(result.dotPng.pixelHeight).toBe(result.dotPng.height! * 2)
+    })
+
+    it("honours the graph's own layout= (neato), and draws undirected graphs", () => {
+      expect(result.dotLayered.error).toBeUndefined()
+      expect(result.dotNeato.error).toBeUndefined()
+      // dot stacks the triangle in three ranks; neato lays it out flat.
+      expect(result.dotNeato.height).toBeLessThan(result.dotLayered.height! * 0.7)
+      expect(result.dotUndirected.error).toBeUndefined()
+      expect(result.dotUndirected.height).toBeGreaterThan(100)
+    })
+
+    it('keeps a font the source names', () => {
+      expect(result.dotOwnFont).toContain('Courier,monospace')
+      expect(result.dotOwnFont).toContain('Times,serif')
+      expect(result.dotOwnFont).not.toContain('Arial, "Liberation Sans", Helvetica, sans-serif')
+    })
+
+    it("answers a broken graph with Graphviz's message, made readable", () => {
+      expect(result.dotBroken).toBe("Syntax error on line 1 near '}'")
+      expect(result.dotWrongEdge).toBe("Syntax error on line 1 near '->'")
+      expect(result.dotEmpty).toBe('Graphviz found no graph in it')
+      expect(result.dotUnknownLayout).toBe('Layout type "nosuch" not recognized')
+    })
+
+    it('stops a graph Graphviz would take minutes over at the time limit, then draws the next', () => {
+      expect(result.dotSlow.error).toBe('drawing took longer than 2 s')
+      expect(result.dotSlow.ms).toBeLessThan(5000)
+      expect(result.dotAfterSlow.error).toBeUndefined()
+      expect(result.dotAfterSlow.width).toBeGreaterThan(0)
+    })
+
+    it('keeps out links, stylesheets and pictures a graph names', () => {
+      expect(result.dotHostile.remote).toBe(false)
+      expect(result.dotHostile.javascript).toBe(false)
+    })
   })
 
   it('rasterises an SVG image at twice its own size (spec D10)', () => {
@@ -185,5 +254,8 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     const vendored = /pkg: 'mermaid',\s*version: '([^']+)'/.exec(script)?.[1]
     expect(vendored).toBe('11.12.0')
     expect(host).toContain(`mermaid: '${vendored}'`)
+    const viz = /pkg: '@viz-js\/viz',\s*version: '([^']+)'/.exec(script)?.[1]
+    expect(viz).toBe('3.31.0')
+    expect(host).toContain(`dot: '${viz}'`)
   })
 })

@@ -7,8 +7,9 @@
 
   Loaded into a hidden, sandboxed window whose session cancels every request
   but this page and the engine files beside it. The policy below says the same
-  thing a second time, from inside the page: scripts only from this folder,
-  no connections, images only from data: and blob: (the rasteriser draws an
+  thing a second time, from inside the page: scripts only from this folder
+  ('wasm-unsafe-eval' lets them compile WebAssembly, which Graphviz is, but
+  allows no eval() and no script from a string), no connections, images only from data: and blob: (the rasteriser draws an
   SVG through one), and inline styles because the engines put a <style> in
   every SVG they draw.
 
@@ -16,7 +17,7 @@
   process calls the functions on window.renderHost with executeJavaScript and
   JSON-encoded arguments; nothing here reads anything but those arguments.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data: blob:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>render</title>
 <style>
   body { margin: 0; background: #fff; }

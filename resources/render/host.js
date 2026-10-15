@@ -9,7 +9,7 @@
   var FONT = 'Arial, "Liberation Sans", Helvetica, sans-serif'
 
   /** The engine files beside this page, by kind. */
-  var ENGINE_FILES = { mermaid: 'mermaid.min.js' }
+  var ENGINE_FILES = { mermaid: 'mermaid.min.js', dot: 'viz-global.js' }
 
   var loading = {}
 
@@ -223,6 +223,120 @@
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Graphviz (viz-js: Graphviz compiled to WebAssembly, carried inside its
+  // script). The graph's own layout= is honoured; dot when it names none.
+  // -------------------------------------------------------------------------
+
+  /**
+   * The font Graphviz is given for labels it has no font for. Graphviz sizes
+   * each shape from its own table of font widths, which knows Arial by name
+   * but measures a list of fonts as Times (wrong by 4% or so). So labels are
+   * measured as Arial, and the font Graphviz writes for them is then
+   * replaced with the whole stack (spec B8), which shares Arial's widths.
+   */
+  var DOT_FONT = 'Arial'
+
+  var vizReady = null
+
+  /** One viz-js instance, made once; after a crash inside it, made again. */
+  function viz() {
+    if (!vizReady) {
+      vizReady = load('dot').then(function () {
+        return window.Viz.instance()
+      })
+      vizReady.catch(function () {
+        vizReady = null
+      })
+    }
+    return vizReady
+  }
+
+  /** Graphviz's messages for a graph it could not draw, as one readable line. */
+  function vizMessage(errors) {
+    var list = (errors || []).filter(function (e) {
+      return e && e.level === 'error'
+    })
+    if (list.length === 0) list = errors || []
+    var seen = {}
+    var lines = []
+    list.forEach(function (e) {
+      var text = String(e.message || '').trim()
+      // A message that only quotes the source back adds nothing on one line.
+      if (!text || /^\.\.\. /.test(text)) return
+      text = text
+        .replace(/^syntax error in line (\d+)/i, 'Syntax error on line $1')
+        .replace(/^Layout type: "([^"]*)" not recognized\..*$/, 'Layout type "$1" not recognized')
+      if (!seen[text]) {
+        seen[text] = true
+        lines.push(text)
+      }
+    })
+    return lines.length ? lines.join('; ') : 'Graphviz found no graph in it'
+  }
+
+  /** CSS px for an SVG length Graphviz writes (points, mostly). */
+  function lengthPx(value) {
+    var m = /^\s*([0-9.]+)\s*(pt|px|in|cm|mm|pc)?\s*$/.exec(value || '')
+    if (!m) return 0
+    var n = Number(m[1])
+    var per = { pt: 96 / 72, px: 1, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, pc: 16 }[m[2] || 'px']
+    return n * per
+  }
+
+  /**
+   * Graphviz's SVG document as one standalone <svg>: its prolog, doctype and
+   * any xml-stylesheet instruction (the graph's stylesheet=) left behind,
+   * comments dropped, sized in CSS px (Graphviz sizes in points), and the
+   * labels it was given no font for in the font stack.
+   */
+  function normaliseDot(markup) {
+    var doc = new DOMParser().parseFromString(markup, 'image/svg+xml')
+    var svg = doc.documentElement
+    if (!svg || svg.localName !== 'svg' || doc.getElementsByTagName('parsererror').length) {
+      throw new Error('The engine returned no picture')
+    }
+    var box = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number)
+    var width = lengthPx(svg.getAttribute('width')) || (box.length === 4 ? (box[2] * 96) / 72 : 0)
+    var height = lengthPx(svg.getAttribute('height')) || (box.length === 4 ? (box[3] * 96) / 72 : 0)
+    if (!(width > 0 && height > 0)) throw new Error('The engine returned a picture with no size')
+    width = Math.ceil(width)
+    height = Math.ceil(height)
+    svg.setAttribute('width', String(width))
+    svg.setAttribute('height', String(height))
+    var walker = doc.createTreeWalker(svg, NodeFilter.SHOW_COMMENT)
+    var comments = []
+    while (walker.nextNode()) comments.push(walker.currentNode)
+    comments.forEach(function (c) {
+      c.parentNode.removeChild(c)
+    })
+    var texts = svg.querySelectorAll('[font-family]')
+    for (var i = 0; i < texts.length; i++) {
+      if (texts[i].getAttribute('font-family') === DOT_FONT) texts[i].setAttribute('font-family', FONT)
+    }
+    return { svg: new XMLSerializer().serializeToString(svg), width: width, height: height }
+  }
+
+  async function dotSvg(source) {
+    var instance = await viz()
+    var result
+    try {
+      result = instance.render(source, {
+        format: 'svg',
+        // Defaults only: a font the graph, a node or an edge names is kept.
+        graphAttributes: { fontname: DOT_FONT },
+        nodeAttributes: { fontname: DOT_FONT },
+        edgeAttributes: { fontname: DOT_FONT },
+      })
+    } catch (err) {
+      // Graphviz itself stopped (out of memory, say): start a fresh one next time.
+      vizReady = null
+      throw new Error('Graphviz stopped: ' + message(err))
+    }
+    if (result.status !== 'success' || typeof result.output !== 'string') throw new Error(vizMessage(result.errors))
+    return normaliseDot(result.output)
+  }
+
   /** Every call answers { ok, value } or { ok: false, error }, never throws across the boundary. */
   function answer(promise) {
     return promise.then(
@@ -239,6 +353,7 @@
     ready: true,
     draw: function (kind, source) {
       if (kind === 'mermaid') return answer(mermaidSvg(source))
+      if (kind === 'dot') return answer(dotSvg(source))
       return answer(Promise.reject(new Error('No engine for ' + kind)))
     },
     rasterize: function (svg, width, height, scale) {

@@ -21,6 +21,12 @@ const SKIP_PATHS = new Set([
   'src/core/assets/reveal.generated.ts',
   // sql.js's loader, vendored byte for byte (scripts/build-sqlite-assets.mjs).
   'resources/sqlite/sql-wasm.js',
+  // viz-js's Graphviz build, vendored byte for byte (scripts/build-render-assets.mjs).
+  'resources/render/viz-global.js',
+  // Third-party licence texts, copied word for word (scripts/notices/vendored.json).
+  'scripts/notices/texts/viz-js-3.31.0-LICENSE',
+  'scripts/notices/texts/graphviz-16.1.0-LICENSE',
+  'scripts/notices/texts/expat-2.8.5-COPYING',
   'tests/pii/corpus-vocabulary.txt',
   // The guard's own lists name the values they exist to exclude. Scanning them
   // makes every check trip on itself.

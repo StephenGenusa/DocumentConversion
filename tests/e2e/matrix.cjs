@@ -28,7 +28,7 @@ const JSZip = require('jszip')
 // ESM only, whatever its "require" export says, so imported when first used.
 const kf8Reader = () => import('@lingo-reader/mobi-parser')
 
-/** Targets that draw a document's Mermaid diagrams (spec B3; Word and Kindle as PNG). */
+/** Targets that draw a document's Mermaid and Graphviz diagrams (spec B3; Word and Kindle as PNG). */
 const DRAWING_TARGETS = ['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx', 'azw3']
 
 function imageKind(buf) {
@@ -170,7 +170,7 @@ async function main() {
     }
     const probes = probeWords(hubText)
     const hasTables = hubText.includes('<table')
-    const hasDiagrams = hubText.includes('<pre><code class="language-mermaid">')
+    const hasDiagrams = /<pre><code class="language-(?:mermaid|dot)">/.test(hubText)
     // SVG images (an .svg input, or an SVG <img> in a page): Word gets PNG copies (spec D10).
     const hasSvgImages = /src="data:image\/svg\+xml/i.test(hubText)
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
@@ -230,7 +230,9 @@ async function main() {
             if (media.some((n) => /svg/i.test(n))) throw new Error('docx has SVG media')
             rec.note = `${media.length} media`
           } else if (target === 'html' || target === 'revealjs') {
-            if (!out.toString('utf8').includes('src="data:image/svg+xml;base64,')) throw new Error('no drawn SVG diagram in the output')
+            const drawn = out.toString('utf8').match(/src="data:image\/svg\+xml;base64,/g) ?? []
+            if (drawn.length === 0) throw new Error('no drawn SVG diagram in the output')
+            rec.note = `${drawn.length} SVG pictures`
           } else if (target === 'epub') {
             const zip = await JSZip.loadAsync(out)
             const opf = await zip.file('OEBPS/content.opf').async('string')

@@ -23,8 +23,7 @@ import { renderClient, type BlockAnswer, type BlockPicture, type BlockRequest, t
  *                             Enter opens a small popover with the TeX and a
  *                             preview. Enter commits, Escape cancels.
  *
- * A kind this version has no engine for (Graphviz until step 17, TeX until
- * step 18) shows its source, as conversions keep it, and edits the same way
+ * A kind this version has no engine for (TeX until step 18) shows its source, as conversions keep it, and edits the same way
  * without a preview: when the engine lands in DRAWN_KINDS the editor draws it
  * with no change here.
  *

@@ -8,6 +8,27 @@
       "note": "The diagram engine (mermaid.min.js), shipped in resources/render to draw Mermaid diagrams offline. The file bundles its own dependencies; those are listed separately, each marked as bundled by the Mermaid project."
     },
     {
+      "name": "Viz.js",
+      "package": "@viz-js/viz",
+      "license": "MIT",
+      "licenseFrom": "scripts/notices/texts/viz-js-3.31.0-LICENSE",
+      "note": "The Graphviz engine (viz-global.js), shipped in resources/render to draw Graphviz diagrams offline. The file carries Graphviz and Expat compiled to WebAssembly; those are listed separately. The npm package ships no licence file; this text is the project's own (github.com/mdaines/viz-js)."
+    },
+    {
+      "name": "Graphviz",
+      "version": "16.1.0",
+      "license": "EPL-2.0",
+      "licenseFrom": "scripts/notices/texts/graphviz-16.1.0-LICENSE",
+      "note": "Compiled to WebAssembly inside viz-global.js (Viz.js 3.31.0), shipped in resources/render. Distributed in object code form; its source code (graphviz-16.1.0.tar.gz) is available from https://gitlab.com/graphviz/graphviz/-/releases/16.1.0 and graphviz.org."
+    },
+    {
+      "name": "Expat",
+      "version": "2.8.5",
+      "license": "MIT",
+      "licenseFrom": "scripts/notices/texts/expat-2.8.5-COPYING",
+      "note": "The XML parser Graphviz uses, compiled into viz-global.js (Viz.js 3.31.0), shipped in resources/render."
+    },
+    {
       "name": "reveal.js",
       "package": "reveal.js",
       "license": "MIT",

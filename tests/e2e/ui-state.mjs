@@ -387,6 +387,11 @@ try {
   await click('PDF')
   check('it is not offered for a file with no diagrams', (await choice('Diagrams and formulas')) === null, 'shown')
   await startOver()
+  // Graphviz alone is something drawn (step 17), so the choice applies to it.
+  await dropFile(join(ROOT, 'tests', 'corpus', 'graphviz-notes.md'), 'graphviz-notes.md')
+  await click('PDF')
+  check('a Graphviz-only file offers "Diagrams and formulas" for PDF', (await choice('Diagrams and formulas')) !== null, 'not shown')
+  await startOver()
 
   // Diagrams drawn in the editor (spec B11): edit one, see the live preview,
   // close it, and convert to the clipboard as HTML, where it is drawn too.
@@ -394,8 +399,16 @@ try {
   await click('Edit')
   await waitFor(`document.querySelectorAll('.rb[data-state=picture]').length >= 1`, 'the first diagram to be drawn')
   const blockStates = () => js(`[...document.querySelectorAll('.rb')].map((b) => b.dataset.state)`)
+  await waitFor(`document.querySelectorAll('.rb')[3]?.dataset.state === 'picture'`, 'the Graphviz diagram to be drawn')
   let states = await blockStates()
-  check('the editor draws the Mermaid diagrams, shows the broken one with its message and Graphviz as source', states[0] === 'picture' && states[3] === 'source', JSON.stringify(states))
+  check('the editor draws the Mermaid and Graphviz diagrams, and shows the broken one with its message', states[0] === 'picture' && states[2] === 'error' && states[3] === 'picture', JSON.stringify(states))
+  const dotPicture = await js(`(() => {
+    const img = document.querySelectorAll('.rb')[3].querySelector('.rb__picture img')
+    const src = img?.getAttribute('src') ?? ''
+    const svg = src.startsWith('data:image/svg+xml;base64,') ? decodeURIComponent(escape(atob(src.split(',')[1]))) : ''
+    return { svg: Boolean(svg), font: /font-family="Arial, &quot;Liberation Sans&quot;, Helvetica, sans-serif"/.test(svg), width: img?.naturalWidth ?? 0, shown: img?.getBoundingClientRect().width ?? 0 }
+  })()`)
+  check('the Graphviz drawing is an SVG <img> in the pane, labels in the font stack', dotPicture.svg && dotPicture.font && dotPicture.width > 0 && dotPicture.shown > 0, JSON.stringify(dotPicture))
   const firstSrc = () => js(`document.querySelector('.rb .rb__picture img')?.getAttribute('src') ?? null`)
   const before = await firstSrc()
   check('a drawing is an <img> of SVG, never markup in the page', before?.startsWith('data:image/svg+xml;base64,') && (await js(`!document.querySelector('.clip-pane__editor svg')`)), String(before).slice(0, 60))
@@ -410,7 +423,8 @@ try {
   await click('Convert to clipboard')
   await waitFor(resultIsUp, 'a result')
   const clip = await mainEval(`(() => { const { clipboard } = process.mainModule.require('electron'); return { html: clipboard.readHTML(), text: clipboard.readText() } })()`)
-  check('converted to the clipboard, the edited diagram is drawn in the HTML', (clip.html.match(/<img[^>]+src="data:image\/png;base64,/g) ?? []).length === 2 && !clip.html.includes('Archived'), clip.html.slice(0, 300))
+  // Two Mermaid diagrams and the Graphviz one; the broken one stays source.
+  check('converted to the clipboard, the edited diagram is drawn in the HTML', (clip.html.match(/<img[^>]+src="data:image\/png;base64,/g) ?? []).length === 3 && !clip.html.includes('Archived'), clip.html.slice(0, 300))
   check('and is its edited source in the plain text', clip.text.includes('H --> Z[Archived]'), clip.text.slice(0, 300))
   await dismiss()
   await waitFor(`!!${EDITOR}`, 'the edit pane to come back')

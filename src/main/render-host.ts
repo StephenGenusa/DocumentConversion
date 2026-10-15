@@ -8,8 +8,8 @@ import { svgIntrinsicSize } from '../core/svg-images'
 import { MAX_PICTURE_BYTES, MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
 
 /**
- * The render host (spec B5): one hidden window that draws diagrams (and, in
- * later steps, formulas) from vendored engines, for conversions now and for
+ * The render host (spec B5): one hidden window that draws diagrams (Mermaid,
+ * Graphviz; formulas in a later step) from vendored engines, for conversions now and for
  * the editor (render-ipc.ts). It also makes PNG copies of the SVG images a
  * document carries, for Word and Kindle (kind `svg`, spec D10;
  * core/svg-images.ts), and re-encodes raster pictures a Kindle cannot store
@@ -48,7 +48,12 @@ import { MAX_PICTURE_BYTES, MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBl
  * scripts/build-render-assets.mjs. `svg` has no engine: an SVG image is only
  * rasterised by the page (spec D10); bump its version if that changes.
  */
-export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = { mermaid: '11.12.0', svg: 'raster-1', picture: 'reencode-1' }
+export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
+  mermaid: '11.12.0',
+  dot: '3.31.0',
+  svg: 'raster-1',
+  picture: 'reencode-1',
+}
 
 /** The largest source of each kind: a diagram's text, a whole SVG image, or a picture's data: URL. */
 const maxSourceBytes = (kind: RenderKind): number =>
@@ -67,7 +72,7 @@ function isEncoded(b64: string, mime: string): boolean {
 }
 
 /** The engine files the page may load, by kind. */
-const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.min.js' }
+const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.min.js', dot: 'viz-global.js' }
 
 /** Who is waiting: visible editor blocks first, conversions next, editor prefetch last. */
 export type RenderPriority = 'visible' | 'convert' | 'prefetch'

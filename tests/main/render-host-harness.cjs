@@ -138,8 +138,46 @@ async function main() {
 
   const broken = await png('flowchart TD\n  A -->')
   out.broken = broken.error ?? null
-  const unknown = await host.render({ kind: 'dot', source: 'digraph { a -> b }', display: true, format: 'png' })
-  out.dot = unknown.error ?? null
+  const unknown = await host.render({ kind: 'math', source: 'x^2', display: true, format: 'png' })
+  out.math = unknown.error ?? null
+
+  // Graphviz (step 17): its own engine, the same page, sanitiser and rasteriser.
+  {
+    const dot = (source, format = 'svg') => host.render({ kind: 'dot', source, display: true, format })
+    const fonts = (svg) => [...svg.matchAll(/font-family="([^"]*)"/g)].map((m) => m[1].replace(/&quot;/g, '"'))
+    const size = (r) => ({ width: r.width, height: r.height, error: r.error })
+    const first = await time('dotFirstSvg', () => dot('digraph { a -> b [label="an edge"]; label="A graph" }'))
+    out.dotDigraph = { ...size(first), fonts: first.svg ? fonts(first.svg) : [], head: first.svg ? first.svg.slice(0, 5) : null }
+    out.dotDigraph.hasDoctype = first.svg ? /<!DOCTYPE|<\?xml-stylesheet/i.test(first.svg) : null
+    await time('dotWarmSvg', () => dot('digraph { x -> y -> z }'))
+    out.dotPng = pngSize(await time('dotPng', () => dot('digraph { a -> b [label="an edge"]; label="A graph" }', 'png')))
+    const TRIANGLE = 'a -- b; b -- c; c -- a'
+    out.dotLayered = size(await dot(`graph { ${TRIANGLE} }`))
+    out.dotNeato = size(await dot(`graph { layout=neato; ${TRIANGLE} }`))
+    out.dotUndirected = size(await dot('graph links { a -- b; b -- c }'))
+    const own = await dot('digraph { node [fontname="Courier"]; a -> b; c [fontname="Times-Roman"] }')
+    out.dotOwnFont = own.svg ? fonts(own.svg) : [own.error]
+    out.dotBroken = (await dot('digraph { a -> }')).error ?? null
+    out.dotWrongEdge = (await dot('graph { a -> b }')).error ?? null
+    out.dotEmpty = (await dot('')).error ?? null
+    out.dotUnknownLayout = (await dot('digraph { layout=nosuch; a -> b }')).error ?? null
+    const hostile = await dot(
+      'digraph { stylesheet="http://127.0.0.1:9/s.css"; a [URL="javascript:alert(1)" href="http://127.0.0.1:9/link"]; ' +
+        'b [image="http://127.0.0.1:9/x.png"]; a -> b [URL="http://127.0.0.1:9/edge"] }',
+    )
+    // A graph Graphviz takes minutes over (it does not yield): stopped at the limit, and the next one draws.
+    let edges = ''
+    for (let i = 0; i < 400; i++) for (let k = 1; k <= 4; k++) edges += `n${i} -> n${(i * 7 + k * 13) % 400}; `
+    const slowStart = Date.now()
+    const slow = await host.render({ kind: 'dot', source: `digraph { ${edges}}`, display: true, format: 'svg' }, { timeoutMs: 1500 })
+    out.dotSlow = { error: slow.error ?? null, ms: Date.now() - slowStart }
+    out.dotAfterSlow = size(await dot('digraph { after -> slow }'))
+    out.dotHostile = {
+      error: hostile.error,
+      remote: hostile.svg ? /127\.0\.0\.1/.test(markupOnly(hostile.svg)) : null,
+      javascript: hostile.svg ? /javascript:/i.test(hostile.svg) : null,
+    }
+  }
 
   // Priority: with the page busy, a visible editor block jumps the conversion queue.
   const order = []

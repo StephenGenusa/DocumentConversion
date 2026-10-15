@@ -105,11 +105,30 @@ describe('drawBlocks (spec B3, B7) with a fake renderer', () => {
     expect(calls).toHaveLength(0)
   })
 
-  it('keeps Graphviz and math as source in this step', async () => {
+  it('draws Graphviz with its own engine (kind dot), and keeps math as source in this step', async () => {
     const { render, calls } = fakeRenderer()
-    const html = block('dot', 'digraph { a -&gt; b }') + block('math', 'x^2') + '<p><code class="language-math">y</code></p>'
-    expect(await drawBlocks(html, 'html', { renderBlocks: render })).toBe(html)
-    expect(calls).toHaveLength(0)
+    const math = block('math', 'x^2') + '<p><code class="language-math">y</code></p>'
+    const out = await drawBlocks(block('dot', 'digraph { a -&gt; b }') + math, 'html', { renderBlocks: render })
+    expect(calls).toEqual([[{ kind: 'dot', source: 'digraph { a -> b }', display: true, format: 'svg' }]])
+    expect(out).toBe(
+      `<p style="text-align:center"><img src="data:image/svg+xml;base64,${SVG64}" alt="Diagram" width="200" height="100" style="width:200px;height:auto;max-width:100%" data-rendered="diagram"></p>` +
+        math,
+    )
+  })
+
+  it('numbers Mermaid and Graphviz diagrams together, and never mixes up the same text in two languages', async () => {
+    const { render, calls } = fakeRenderer()
+    const onAdvice = vi.fn()
+    const html = block('mermaid', 'graph LR\nA') + block('dot', 'BROKEN {') + block('dot', 'graph LR\nA')
+    const out = await drawBlocks(html, 'docx', { renderBlocks: render, onAdvice })
+    expect(calls[0].map((r) => [r.kind, r.source])).toEqual([
+      ['mermaid', 'graph LR\nA'],
+      ['dot', 'BROKEN {'],
+      ['dot', 'graph LR\nA'],
+    ])
+    expect(out.match(/<img /g)).toHaveLength(2)
+    expect(out).toContain(block('dot', 'BROKEN {'))
+    expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Diagram 2 could not be drawn: Parse error on line 1: BROKEN ^')
   })
 
   it('keeps source silently when there is no renderer', async () => {
@@ -242,6 +261,21 @@ describe('Converter.write draws diagrams through ConverterDeps.renderBlocks', ()
     const txt = (await conv.convert({ bytes: md, filename: 'd.md' }, 'md', 'txt')).parts[0].bytes.toString('utf8')
     expect(txt).toContain('A --> B')
     expect(calls).toHaveLength(1)
+  })
+
+  it("draws Graphviz from every reader's form: md fences (graphviz alias), and rst digraph:: / graph:: directives", async () => {
+    const { render, calls } = fakeRenderer()
+    const conv = createConverter(pdf, { renderBlocks: render })
+    const fromMd = Buffer.from('```graphviz\ndigraph { a -> b }\n```\n')
+    const html = (await conv.convert({ bytes: fromMd, filename: 'g.md' }, 'md', 'html')).parts[0].bytes.toString('utf8')
+    expect(html).toContain(`src="data:image/svg+xml;base64,${SVG64}"`)
+    expect(calls[0]).toEqual([{ kind: 'dot', source: 'digraph { a -> b }\n', display: true, format: 'svg' }])
+    const fromRst = Buffer.from('Title\n=====\n\n.. digraph:: deps\n\n   a -> b\n\n.. graph:: links\n\n   a -- b\n')
+    await conv.convert({ bytes: fromRst, filename: 'g.rst' }, 'rst', 'pdf')
+    expect(calls[1]).toEqual([
+      { kind: 'dot', source: 'digraph deps {\na -> b\n}', display: true, format: 'svg' },
+      { kind: 'dot', source: 'graph links {\na -- b\n}', display: true, format: 'svg' },
+    ])
   })
 
   it('passes the chosen format from ConvertOptions.renderedFormat', async () => {

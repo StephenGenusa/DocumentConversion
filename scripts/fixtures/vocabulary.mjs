@@ -459,9 +459,50 @@ export const DIAGRAM_NOTES = {
   ],
   brokenIntro: 'This one is unfinished and stays as written:',
   broken: ['flowchart TD', '  Q -->'],
-  dotIntro: 'Graphviz is kept as source for now:',
+  dotIntro: 'Graphviz draws the trolley run:',
   dot: 'digraph { shelf -> trolley }',
   formula: 'Overdue charge: $$c = r \\times d$$',
+}
+
+/**
+ * The Graphviz fixture (step 17): routes between library rooms, drawn by the
+ * dot layout, by neato (the graph's own layout=) and as an undirected graph.
+ * One node names its own font, which must be kept.
+ */
+export const GRAPHVIZ_NOTES = {
+  title: 'Shelving routes',
+  intro:
+    'Volumes move between rooms in a fixed order. Couriers collect crates from branches each morning, and the sorting room decides where every volume goes next.',
+  // No quoted strings: the PII guard reads code text with its entities, so
+  // labels are single words, which Graphviz takes unquoted.
+  route: [
+    'digraph route {',
+    '  rankdir=LR;',
+    '  node [shape=box, style=rounded];',
+    '  Returns -> Sorting [label=crates];',
+    '  Sorting -> Repairs [label=damaged];',
+    '  Sorting -> Reshelving;',
+    '  Repairs -> Reshelving [label=mended];',
+    '  Reshelving -> Stacks;',
+    '  Stacks [fontname=Courier];',
+    '}',
+  ],
+  branchesIntro: 'Branches share couriers, so their links have no direction:',
+  branches: [
+    'graph branches {',
+    '  layout=neato;',
+    '  node [shape=ellipse];',
+    '  Central -- Northgate [label=daily];',
+    '  Central -- Riverside;',
+    '  Central -- Hillcrest;',
+    '  Northgate -- Riverside [label=weekly];',
+    '}',
+  ],
+  undirectedIntro: 'A plain undirected sketch of the reading room:',
+  undirected: ['graph room {', '  entrance -- periodicals -- fiction;', '  entrance -- media;', '}'],
+  brokenIntro: 'This route is unfinished and stays as written:',
+  broken: ['digraph {', '  desk -> ', '}'],
+  closing: 'Couriers report delays to the sorting room.',
 }
 
 /** The SVG fixtures (step 16, spec D10): a floor plan drawn as an SVG, and a page that shows it. */

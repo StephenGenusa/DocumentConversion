@@ -27,7 +27,7 @@ flowchart TD
   Q -->
 ```
 
-Graphviz is kept as source for now:
+Graphviz draws the trolley run:
 
 ```dot
 digraph { shelf -> trolley }

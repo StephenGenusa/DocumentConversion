@@ -134,8 +134,20 @@ describe('a diagram in the editor', () => {
     expect($('.rb__source').textContent).toBe('flowchart TD\n  BROKEN -->')
   })
 
-  it('shows a kind with no engine yet (Graphviz) as its source, without asking the host', async () => {
-    make('<pre><code class="language-dot">digraph { a -&gt; b }</code></pre>')
+  it('draws a Graphviz diagram the same way, and opens it as "Graphviz diagram"', async () => {
+    make('<p>x</p><pre><code class="language-dot">digraph { a -&gt; b }</code></pre>')
+    show($('.rb'))
+    await settle()
+    expect(asked).toEqual([{ kind: 'dot', source: 'digraph { a -> b }', display: true, priority: 'visible' }])
+    expect($('.rb').dataset.state).toBe('picture')
+    expect($('.rb__picture img').getAttribute('src')).toBe(svgOf('digraph { a -> b }'))
+    $('.rb__picture').dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }))
+    expect($('.rb').dataset.state).toBe('editing')
+    expect($('.rb__bar').textContent).toContain('Graphviz diagram')
+  })
+
+  it('shows a kind with no engine yet (TeX) as its source, without asking the host', async () => {
+    make('<pre><code class="language-math">x^2</code></pre>')
     showAll()
     // First in the document, where the cursor starts: shown, not opened.
     await settle()

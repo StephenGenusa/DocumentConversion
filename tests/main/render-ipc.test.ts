@@ -59,8 +59,14 @@ describe('render:block', () => {
   it('answers "unavailable" for a kind with no engine yet, without asking the host', async () => {
     const before = seen.length
     expect(await renderForEditor({ kind: 'math', source: 'x^2', display: false }, render)).toEqual({ unavailable: true })
-    expect(await renderForEditor({ kind: 'dot', source: 'digraph {}' }, render)).toEqual({ unavailable: true })
     expect(seen.length).toBe(before)
+  })
+
+  it('draws Graphviz (step 17)', async () => {
+    const before = seen.length
+    expect(await renderForEditor({ kind: 'dot', source: 'digraph {}' }, render)).not.toHaveProperty('unavailable')
+    expect(seen.length).toBe(before + 1)
+    expect(seen.at(-1)).toMatchObject({ req: { kind: 'dot', format: 'svg' } })
   })
 
   it('never throws: a host failure is a message', async () => {

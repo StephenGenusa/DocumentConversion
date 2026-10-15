@@ -17,8 +17,8 @@
  *   node scripts/build-render-assets.mjs --check   check the committed copies (run by `npm run build`)
  *
  * Moving to another release: change the version, run once to see the new
- * digest in the error, review, then pin it. Graphviz and MathJax join this
- * list in their own steps.
+ * digest in the error, review, then pin it. MathJax joins this list in its
+ * own step.
  */
 import { createHash } from 'node:crypto'
 import { chmod, copyFile, mkdir, readFile } from 'node:fs/promises'
@@ -32,6 +32,15 @@ const ENGINES = [
     from: 'dist/mermaid.min.js',
     to: 'mermaid.min.js',
     sha256: '07e37dfa97b337ccc85365d57eddf99b9706f09db3b59b260d0333b23b343c4b',
+  },
+  {
+    // Graphviz 16.1.0 (EPL-2.0) and Expat 2.8.5 compiled to WebAssembly,
+    // which the file carries inside it: one script, nothing else to load.
+    pkg: '@viz-js/viz',
+    version: '3.31.0',
+    from: 'dist/viz-global.js',
+    to: 'viz-global.js',
+    sha256: 'c9e0b310f9883910e01c66054b48b7ff4be3d8695141116635e72b0af152692e',
   },
 ]
 

@@ -37,7 +37,7 @@ export function renderCacheKey(req: RenderRequest, engineVersion: string): strin
     .digest('hex')
 }
 
-/** Per conversion (spec B7). Formulas join when MathJax does (step 18). */
+/** Per conversion (spec B7), Mermaid and Graphviz together. Formulas join when MathJax does (step 18). */
 export const RENDER_LIMITS = {
   diagrams: { max: 50, eachMs: 10_000 },
 } as const
@@ -110,13 +110,15 @@ export async function drawBlocks(html: string, target: TargetFormat, ctx: DrawCo
   interface Block {
     start: number
     end: number
+    kind: BlockKind
     source: string
     number: number
   }
   const blocks: Block[] = []
   for (const m of html.matchAll(DIAGRAM_BLOCK_SOURCE)) {
-    if (!DRAWN_KINDS.has(m[1] as BlockKind)) continue
-    blocks.push({ start: m.index, end: m.index + m[0].length, source: decodeText(m[2]), number: blocks.length + 1 })
+    const kind = m[1] as BlockKind
+    if (!DRAWN_KINDS.has(kind)) continue
+    blocks.push({ start: m.index, end: m.index + m[0].length, kind, source: decodeText(m[2]), number: blocks.length + 1 })
   }
   if (blocks.length === 0) return html
 
@@ -131,12 +133,14 @@ export async function drawBlocks(html: string, target: TargetFormat, ctx: DrawCo
   }
 
   const format = renderedFormatFor(target, ctx.format)
-  // One request per distinct source: a diagram repeated is drawn once.
-  const unique = [...new Set(drawn.map((b) => b.source))]
+  // One request per distinct diagram: one repeated is drawn once. The key
+  // is the kind and the source, so the same text in two languages is two.
+  const keyOf = (b: Block): string => JSON.stringify([b.kind, b.source])
+  const unique = [...new Map(drawn.map((b) => [keyOf(b), b])).values()]
   let results: RenderResult[]
   try {
     results = await render(
-      unique.map((source) => ({ kind: 'mermaid', source, display: true, format })),
+      unique.map(({ kind, source }) => ({ kind, source, display: true, format })),
       { signal: ctx.signal, timeoutMs: eachMs },
     )
   } catch (err) {
@@ -145,12 +149,12 @@ export async function drawBlocks(html: string, target: TargetFormat, ctx: DrawCo
     ctx.onAdvice?.('render-failed', `Diagrams could not be drawn: ${message}`)
     return html
   }
-  const bySource = new Map(unique.map((source, i) => [source, results[i]]))
+  const byKey = new Map(unique.map((b, i) => [keyOf(b), results[i]]))
 
   let out = ''
   let at = 0
   for (const block of drawn) {
-    const result = bySource.get(block.source)
+    const result = byKey.get(keyOf(block))
     let replacement: string | undefined
     const data = result && !('error' in result) && result.width > 0 && result.height > 0 ? pictureData(result, format) : undefined
     if (data !== undefined && result && !('error' in result)) {

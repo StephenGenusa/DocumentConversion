@@ -130,10 +130,10 @@ export type RenderBlocks = (requests: RenderRequest[], opts: RenderBlocksOptions
 
 /**
  * The kinds an engine draws so far. Conversions draw these and keep the rest
- * as source; the editor draws these and shows the rest as source. Graphviz
- * (dot) joins with its engine (step 17), math with MathJax (step 18).
+ * as source; the editor draws these and shows the rest as source. Math joins
+ * with MathJax (step 18).
  */
-export const DRAWN_KINDS: ReadonlySet<BlockKind> = new Set<BlockKind>(['mermaid'])
+export const DRAWN_KINDS: ReadonlySet<BlockKind> = new Set<BlockKind>(['mermaid', 'dot'])
 
 /** The largest source drawn, by the host and by the editor's IPC alike (spec B11). */
 export const MAX_SOURCE_BYTES = 100 * 1024
@@ -152,7 +152,7 @@ export const MAX_PICTURE_BYTES = 30 * 1024 * 1024
  * Whether a document with these features has something a conversion draws
  * now: what the Diagrams choice is shown for (spec 2a, V1). Formulas count
  * once MathJax draws them (step 18); until then they stay source whatever
- * is chosen. Graphviz is counted with the diagrams it is reported among.
+ * is chosen. Diagrams are Mermaid and Graphviz alike, both drawn.
  */
 export function drawsSomething(features: HubFeatures | undefined): boolean {
   if (!features) return false
