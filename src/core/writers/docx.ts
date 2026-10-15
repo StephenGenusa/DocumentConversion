@@ -29,9 +29,17 @@ import type { HubDocument } from '../types'
  */
 const SAFE_IMAGE_DATA = /^data:image\/[\w.+-]+;base64,[A-Za-z0-9+/=\s]*$/i
 
+/**
+ * html-to-docx stores an SVG as an `image/svg+xml` part Word does not show.
+ * Converter.write() gives Word a PNG copy of each SVG image (svg-images.ts);
+ * one still here (no renderer, or core used on its own) goes the way of any
+ * other picture Word cannot take: its alt text.
+ */
+const SVG_IMAGE = /^\s*data:image\/svg\+xml/i
+
 function dropUnresolvableImages(html: string): string {
   return replaceImages(html, (src, alt) => {
-    if (SAFE_IMAGE_DATA.test(src)) return null
+    if (SAFE_IMAGE_DATA.test(src) && !SVG_IMAGE.test(src)) return null
     const text = alt?.trim()
     return text ? `<p>[${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}]</p>` : ''
   })

@@ -38,6 +38,7 @@ export type SourceFormat =
   | 'xlsx'
   | 'rtf'
   | 'image'
+  | 'svg'
   | 'code'
   | 'ipynb'
   | 'pptx'

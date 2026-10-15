@@ -529,6 +529,34 @@ try {
   await sleep(400)
   check('and the notice stays gone until the file changes again', !/changed on disk/.test(await noticeText()), await noticeText())
 
+  // An .svg file (spec D10): a picture, so no Embed/OCR choice and no text
+  // targets; the editor shows it as an image; Word gets a PNG copy of it.
+  {
+    await startOver()
+    const plan = join(ROOT, 'tests', 'corpus', 'reading-room-plan.svg')
+    await js(
+      `(() => { const dt=new DataTransfer(); dt.setData('text/uri-list', ${JSON.stringify(pathToFileURL(plan).href)}); document.querySelector('.dropzone').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true})) })()`,
+    )
+    await waitFor(`[...document.querySelectorAll('.card__name')].some(e=>e.textContent.includes('reading-room-plan.svg'))`, 'the SVG to load')
+    const card = await js(`(() => { const s=[...document.querySelectorAll('.card select')][0]; return { detected: s?.selectedOptions[0]?.textContent, chips: [...document.querySelectorAll('.card .chip')].map(c=>c.textContent.trim()) } })()`)
+    check('an .svg is detected as an SVG image, with no Embed/OCR choice', card.detected === 'SVG image' && !card.chips.includes('OCR'), JSON.stringify(card))
+    const markdownOff = await js(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Markdown')?.disabled ?? true`)
+    check('an .svg cannot go to Markdown', markdownOff === true, 'Markdown offered')
+    await click('Edit')
+    await waitFor(`!!document.querySelector('.clip-pane__editor img[src^="data:image/svg+xml;base64,"]')`, 'the SVG in the editor')
+    await waitFor(`document.querySelector('.clip-pane__editor img[src^="data:image/svg+xml"]').naturalWidth > 0`, 'the SVG to be drawn')
+    const shown = await js(`(() => { const i=document.querySelector('.clip-pane__editor img[src^="data:image/svg+xml"]'); return { w: i.naturalWidth, h: i.naturalHeight, svgInPage: !!document.querySelector('.clip-pane__editor svg') } })()`)
+    check('the editor shows the SVG as an image', shown.w === 480 && shown.h === 300 && !shown.svgInPage, JSON.stringify(shown))
+    const svgInputs = await js(`window.api.loadUriList(${JSON.stringify(pathToFileURL(plan).href)})`)
+    const svgOut = join(work, 'svg-out')
+    mkdirSync(svgOut)
+    const svgItems = svgInputs.map((i) => ({ base64: '', handle: i.handle, filename: i.filename, source: 'svg' }))
+    const svgBatch = await js(`window.api.convertBatch(${JSON.stringify({ items: svgItems, target: 'docx', outDir: svgOut })})`)
+    const row = svgBatch.rows[0]
+    const docx = row?.status === 'saved' ? readFileSync(row.path).toString('latin1') : ''
+    check('it converts to Word with PNG media and no SVG', /word\/media\/[^\0]*?\.png/.test(docx) && !/svg\+xml|media\/[^\0]*?\.svg/.test(docx), JSON.stringify(row))
+  }
+
   // The batch path, straight through the bridge. Naming the output folder
   // skips the folder dialog, which is how "retry" calls it. One file changed
   // after it was added, one deleted: the first converts as it is now, the

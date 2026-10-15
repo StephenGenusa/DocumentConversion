@@ -21,7 +21,11 @@ function targetsFor(input: TargetValidityInput): TargetFormat[] {
   // targets that can hold a picture, unlike txt/md (no image) or
   // csv/json/xlsx (no table). A deck is self-contained HTML carrying data
   // URIs, so one image is a legitimate one-slide deck.
-  if (input.format === 'image' && input.imageMode !== 'ocr') {
+  //
+  // An SVG is a picture the same way (spec D10). OCR is never offered for it
+  // (its text is in the file, not in pixels), so an imageMode carried on its
+  // item changes nothing.
+  if (input.format === 'svg' || (input.format === 'image' && input.imageMode !== 'ocr')) {
     return ['docx', 'pdf', 'html', 'epub', 'revealjs', 'azw3', 'azw4']
   }
   return TARGET_FORMATS

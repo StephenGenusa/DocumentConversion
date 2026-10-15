@@ -2,7 +2,7 @@ import { Extension } from '@tiptap/core'
 import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from '@tiptap/pm/view'
 import type { Node as PMNode } from '@tiptap/pm/model'
-import { DRAWN_KINDS, type RenderKind } from '../../../core/rendered-blocks'
+import { DRAWN_KINDS, type BlockKind } from '../../../core/rendered-blocks'
 import { renderClient, type BlockAnswer, type BlockPicture, type BlockRequest, type DrawPriority } from './render-client'
 
 /*
@@ -51,11 +51,11 @@ const isBlock = (node: PMNode | null | undefined): node is PMNode => !!node && B
 /** Report when an element is on screen. Replaced in tests, where nothing scrolls. */
 export type Watch = (el: HTMLElement, onChange: (visible: boolean) => void) => () => void
 
-let drawable = (kind: RenderKind): boolean => DRAWN_KINDS.has(kind)
+let drawable = (kind: BlockKind): boolean => DRAWN_KINDS.has(kind)
 let watch: Watch = observeVisibility
 
 /** Tests: pretend an engine exists, or drive visibility by hand. */
-export function configureBlockViews(opts: { drawable?: (kind: RenderKind) => boolean; watch?: Watch } = {}): void {
+export function configureBlockViews(opts: { drawable?: (kind: BlockKind) => boolean; watch?: Watch } = {}): void {
   drawable = opts.drawable ?? ((kind) => DRAWN_KINDS.has(kind))
   watch = opts.watch ?? observeVisibility
 }
@@ -215,7 +215,7 @@ function pictureInto(box: HTMLElement, picture: { uri: string; width: number; he
   return img
 }
 
-const KIND_LABEL: Record<RenderKind, string> = { mermaid: 'Mermaid diagram', dot: 'Graphviz diagram', math: 'TeX formula' }
+const KIND_LABEL: Record<BlockKind, string> = { mermaid: 'Mermaid diagram', dot: 'Graphviz diagram', math: 'TeX formula' }
 
 /** diagramBlock and mathBlock: picture, or source with a live preview. */
 class BlockView extends DrawnView implements NodeView {
@@ -253,7 +253,7 @@ class BlockView extends DrawnView implements NodeView {
 
   request(): BlockRequest {
     return {
-      kind: this.node.type.name === 'mathBlock' ? 'math' : (this.node.attrs.language as RenderKind),
+      kind: this.node.type.name === 'mathBlock' ? 'math' : (this.node.attrs.language as BlockKind),
       source: this.node.textContent,
       display: true,
     }
@@ -365,7 +365,7 @@ function errorLine(message: string): HTMLElement {
 }
 
 /** A box the size the block was last drawn at, or a neutral one. */
-function placeholder(size: { width: number; height: number } | undefined, kind: RenderKind): HTMLElement {
+function placeholder(size: { width: number; height: number } | undefined, kind: BlockKind): HTMLElement {
   const box = el('span', `rb__placeholder${size ? '' : ' rb__placeholder--unknown'}`, { 'aria-label': 'Drawing…', role: 'img' })
   if (size) {
     box.style.width = `${size.width}px`

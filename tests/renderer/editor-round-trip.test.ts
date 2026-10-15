@@ -64,6 +64,17 @@ describe('the editor round-trips what the hub allows', () => {
   // keeps these bytes too: that needs the node views and a DOM, so it is in
   // block-views.test.ts ("opening and closing with no change ...").
 
+  it('shows an SVG image (an .svg input, spec D10) as an ordinary image, and keeps it byte for byte', () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="30"><rect width="48" height="30"/></svg>').toString('base64')
+    const html = `<img src="data:image/svg+xml;base64,${svg}" alt="plan.svg" width="48" height="30">`
+    const json = generateJSON(html, EDITOR_EXTENSIONS)
+    expect(JSON.stringify(json)).toContain('"type":"image"')
+    expect(JSON.stringify(json)).toContain(`data:image/svg+xml;base64,${svg}`)
+    const out = roundTrip(html)
+    expect(out).toContain(`src="data:image/svg+xml;base64,${svg}"`)
+    expect(out).toContain('alt="plan.svg"')
+  })
+
   it('shows diagram and formula source as nodes of their own, not as code', () => {
     const json = JSON.stringify(
       generateJSON(

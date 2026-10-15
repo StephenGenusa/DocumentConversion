@@ -26,6 +26,7 @@ import { TABLE_TARGETS } from './types'
 import { normalizeFootnotes } from './footnotes'
 import { hubFeatures, type RenderBlocks } from './rendered-blocks'
 import { drawBlocks } from './draw-blocks'
+import { rasterizeSvgImages, sanitizeSvgImages } from './svg-images'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
 
 export interface Converter {
@@ -97,6 +98,9 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // Embedded here, at the one boundary every reader's output passes, so
       // that the edit pane and every writer see data URIs only.
       hub.html = await resolveRemoteImages(hub.html, source, deps.fetchImages, ctx)
+      // Every SVG image, from whichever reader or fetch, cleaned (spec B6)
+      // before the editor shows it or a writer embeds it.
+      hub.html = sanitizeSvgImages(hub.html)
       hub.features = hubFeatures(hub.html)
       return hub
     } catch (err) {
@@ -116,6 +120,8 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // A remote image still here would be fetched by the docx and pdf
       // writers outside the guarded fetcher, so it is dropped, never fetched.
       hub.html = dropRemoteImages(stripXmlIllegal(hub.html))
+      // Pasted, merged and OCR hubs did not pass read() either: B6 here too.
+      hub.html = sanitizeSvgImages(hub.html)
       // Edited, merged and OCR hubs reach here without read(): one notes list,
       // last, numbered as the notes stand (the editor showed that numbering).
       hub.html = normalizeFootnotes(hub.html)
@@ -131,12 +137,15 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       const notesFree = SLIDE_TARGETS.includes(target) ? hub.html : stripSpeakerNotes(hub.html)
       // Diagrams drawn last, on the html the writer is about to get, so a
       // merged document is drawn once and nothing drawn reaches the hub.
-      const html = await drawBlocks(notesFree, target, {
+      const drawCtx = {
         renderBlocks: deps.renderBlocks,
         format: opts?.renderedFormat,
         signal: ctx?.signal,
         onAdvice: ctx?.onAdvice,
-      })
+      }
+      const drawn = await drawBlocks(notesFree, target, drawCtx)
+      // PNG copies of the document's SVG images for Word (spec D10).
+      const html = await rasterizeSvgImages(drawn, target, drawCtx)
       return await writers[target](html === hub.html ? hub : { ...hub, html }, opts)
     } catch (err) {
       if (err instanceof ConversionError) throw err

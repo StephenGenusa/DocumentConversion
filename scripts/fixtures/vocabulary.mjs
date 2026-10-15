@@ -463,3 +463,15 @@ export const DIAGRAM_NOTES = {
   dot: 'digraph { shelf -> trolley }',
   formula: 'Overdue charge: $$c = r \\times d$$',
 }
+
+/** The SVG fixtures (step 16, spec D10): a floor plan drawn as an SVG, and a page that shows it. */
+export const READING_ROOM = {
+  title: 'Reading room plan',
+  labels: ['Fiction', 'Periodicals', 'Media', 'Desk', 'Entrance'],
+  pageTitle: 'Finding your way around',
+  pageIntro:
+    'The reading room plan below shows where each collection stands. Periodicals sit beside the windows; the desk faces the entrance.',
+  pageAfter: 'Volunteers keep the plan current whenever shelving moves.',
+  iconIntro: 'A small marker shows quiet seating:',
+  iconAlt: 'Quiet seating marker',
+}

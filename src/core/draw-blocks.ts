@@ -8,7 +8,7 @@ import {
   renderedFormatFor,
   type RenderBlocks,
   type RenderFormat,
-  type RenderKind,
+  type BlockKind,
   type RenderRequest,
   type RenderResult,
 } from './rendered-blocks'
@@ -67,7 +67,7 @@ export const RENDERED_MARKER = 'data-rendered'
  * this a wide diagram would run off the page; the other targets have CSS
  * max-width.
  */
-const DOCX_MAX_WIDTH = 624
+export const DOCX_MAX_WIDTH = 624
 
 /** A B1 diagram block, in the exact form the hub writes it (rendered-blocks.ts). */
 const DIAGRAM_BLOCK_SOURCE = /<pre><code class="language-(mermaid|dot)">([\s\S]*?)<\/code><\/pre>/g
@@ -103,7 +103,7 @@ export async function drawBlocks(html: string, target: TargetFormat, ctx: DrawCo
   }
   const blocks: Block[] = []
   for (const m of html.matchAll(DIAGRAM_BLOCK_SOURCE)) {
-    if (!DRAWN_KINDS.has(m[1] as RenderKind)) continue
+    if (!DRAWN_KINDS.has(m[1] as BlockKind)) continue
     blocks.push({ start: m.index, end: m.index + m[0].length, source: decodeText(m[2]), number: blocks.length + 1 })
   }
   if (blocks.length === 0) return html

@@ -83,6 +83,22 @@ async function main() {
     })
   }
 
+  // SVG images (spec D10): rasterised at twice their size; a hostile one sanitised before the page sees it.
+  const pngSize = (r) => {
+    if (!r.png) return { error: r.error }
+    const bytes = Buffer.from(r.png, 'base64')
+    return { width: r.width, height: r.height, magic: bytes.subarray(1, 4).toString('latin1'), pixelWidth: bytes.readUInt32BE(16), pixelHeight: bytes.readUInt32BE(20) }
+  }
+  const PLAN = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="150" viewBox="0 0 480 300"><rect x="10" y="10" width="460" height="280" fill="#2f5d8a"/></svg>'
+  out.svgImage = pngSize(await host.render({ kind: 'svg', source: PLAN, display: true, format: 'png' }))
+  const HOSTILE_SVG =
+    '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40" height="20" onload="fetch(\'http://127.0.0.1:9/onload\')">' +
+    '<style>@import url(http://127.0.0.1:9/import.css);</style><image href="http://127.0.0.1:9/a.png" width="10" height="10"/>' +
+    '<use xlink:href="http://127.0.0.1:9/s.svg#a"/><rect width="40" height="20" fill="url(http://127.0.0.1:9/f.png)"/>' +
+    '<script>fetch("http://127.0.0.1:9/script")</script></svg>'
+  out.svgHostile = pngSize(await host.render({ kind: 'svg', source: HOSTILE_SVG, display: true, format: 'png' }))
+  out.svgNotOne = (await host.render({ kind: 'svg', source: '<note/>', display: true, format: 'png' })).error ?? null
+
   const broken = await png('flowchart TD\n  A -->')
   out.broken = broken.error ?? null
   const unknown = await host.render({ kind: 'dot', source: 'digraph { a -> b }', display: true, format: 'png' })

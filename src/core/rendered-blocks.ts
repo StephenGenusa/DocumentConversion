@@ -58,15 +58,23 @@ export function hubFeatures(html: string): HubFeatures {
 // is src/main/render-host.ts.
 // ---------------------------------------------------------------------------
 
-/** What the render host draws. */
-export type RenderKind = 'mermaid' | 'dot' | 'math'
+/**
+ * What the render host draws. `svg` is not a hub block: it is an SVG image a
+ * document already carries, which the host only rasterises, for the targets
+ * that cannot show SVG (spec D10, svg-images.ts). The editor never asks for it.
+ */
+export type RenderKind = BlockKind | 'svg'
+/** The kinds a hub block is drawn as: what the editor and draw-blocks.ts ask for. */
+export type BlockKind = 'mermaid' | 'dot' | 'math'
 export type RenderFormat = 'png' | 'svg'
 
 /**
  * The targets that take an SVG picture (spec B3): the choice applies there,
  * and is SVG unless PNG is asked for. azw4 is a PDF inside, so it follows
  * the pdf choice. Word is always PNG: html-to-docx would store an SVG as
- * media Word cannot show. (azw3 would be PNG too, once it draws at all.)
+ * media Word cannot show, which is also why every SVG image a document
+ * carries gets a PNG copy for Word (svg-images.ts). (azw3 would be PNG too,
+ * once its writer embeds pictures at all.)
  */
 export const SVG_TARGETS: ReadonlySet<TargetFormat> = new Set(['pdf', 'html', 'revealjs', 'epub', 'azw4'])
 
@@ -114,10 +122,17 @@ export type RenderBlocks = (requests: RenderRequest[], opts: RenderBlocksOptions
  * as source; the editor draws these and shows the rest as source. Graphviz
  * (dot) joins with its engine (step 17), math with MathJax (step 18).
  */
-export const DRAWN_KINDS: ReadonlySet<RenderKind> = new Set<RenderKind>(['mermaid'])
+export const DRAWN_KINDS: ReadonlySet<BlockKind> = new Set<BlockKind>(['mermaid'])
 
 /** The largest source drawn, by the host and by the editor's IPC alike (spec B11). */
 export const MAX_SOURCE_BYTES = 100 * 1024
+
+/**
+ * The largest SVG image rasterised (spec D10). Pictures are larger than
+ * diagram sources: an illustration exported from a drawing program runs to
+ * megabytes, and it is the file itself, not a few lines of text.
+ */
+export const MAX_SVG_IMAGE_BYTES = 5 * 1024 * 1024
 
 /**
  * Whether a document with these features has something a conversion draws

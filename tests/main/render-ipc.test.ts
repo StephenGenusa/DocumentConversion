@@ -15,6 +15,8 @@ describe('render:block', () => {
     ['nothing', undefined],
     ['a string', 'flowchart LR'],
     ['an unknown kind', { kind: 'plantuml', source: 'x' }],
+    // SVG images are rasterised for conversions only (spec D10); the editor shows them as images.
+    ['an SVG image to rasterise', { kind: 'svg', source: '<svg xmlns="http://www.w3.org/2000/svg"/>' }],
     ['a kind that is not a string', { kind: ['mermaid'], source: 'x' }],
     ['no source', { kind: 'mermaid' }],
     ['a source that is not a string', { kind: 'mermaid', source: 42 }],

@@ -157,6 +157,21 @@ run('--diagrams for Word exit 2', [diagrams, '--to', 'docx', '--diagrams', 'svg'
   expectStderr: '--diagrams applies only to pdf, html, revealjs, epub, azw4 output, not docx',
 })
 
+// An .svg file (spec D10): read as a picture, and given to Word as a PNG, never as SVG media.
+const svgIn = join(work, 'plan.svg')
+writeFileSync(svgIn, '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><rect width="120" height="60" fill="#2f5d8a"/></svg>\n')
+run('svg->docx has PNG media', [svgIn, '--to', 'docx', '--out', join(work, 'plan.docx')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'plan.docx')],
+})
+if (existsSync(join(work, 'plan.docx'))) {
+  const names = readFileSync(join(work, 'plan.docx')).toString('latin1')
+  if (!/word\/media\/[^\0]*?\.png/.test(names) || /svg\+xml|\.svg/.test(names)) {
+    failures++
+    console.log('FAIL  plan.docx has no PNG media, or has SVG media')
+  }
+}
+
 // content sanity
 if (existsSync(join(work, 'spec.html'))) {
   const html = readFileSync(join(work, 'spec.html'), 'utf8')

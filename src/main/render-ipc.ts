@@ -1,4 +1,4 @@
-import { DRAWN_KINDS, MAX_SOURCE_BYTES, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
+import { DRAWN_KINDS, MAX_SOURCE_BYTES, type BlockKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
 
 /**
  * The editor's door to the render host (spec B11): `render:block`.
@@ -12,11 +12,11 @@ import { DRAWN_KINDS, MAX_SOURCE_BYTES, type RenderKind, type RenderRequest, typ
  * window.
  */
 
-const KINDS: ReadonlySet<string> = new Set<RenderKind>(['mermaid', 'dot', 'math'])
+const KINDS: ReadonlySet<string> = new Set<BlockKind>(['mermaid', 'dot', 'math'])
 
 /** What the editor asks for. */
 export interface EditorRenderRequest {
-  kind: RenderKind
+  kind: BlockKind
   source: string
   display: boolean
   priority: 'visible' | 'prefetch'
@@ -39,7 +39,7 @@ export function checkRenderRequest(value: unknown): EditorRenderRequest | { refu
   if (typeof display !== 'boolean') return { refused: 'bad display' }
   const priority = v.priority === undefined ? 'visible' : v.priority
   if (priority !== 'visible' && priority !== 'prefetch') return { refused: 'bad priority' }
-  return { kind: v.kind as RenderKind, source: v.source, display, priority }
+  return { kind: v.kind as BlockKind, source: v.source, display, priority }
 }
 
 type Render = (req: RenderRequest, opts: { priority: 'visible' | 'prefetch' }) => Promise<RenderResult>

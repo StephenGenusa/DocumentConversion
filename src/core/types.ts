@@ -35,6 +35,7 @@ export type SourceFormat =
   | 'xlsx'
   | 'rtf'
   | 'image'
+  | 'svg'
   | 'code'
   | 'ipynb'
   | 'pptx'
@@ -116,6 +117,7 @@ export const SOURCE_FORMATS: SourceFormat[] = [
   'xlsx',
   'rtf',
   'image',
+  'svg',
   'code',
   'ipynb',
   'pptx',

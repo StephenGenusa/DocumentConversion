@@ -35,6 +35,9 @@ interface HarnessResult {
   }>
   broken: string | null
   dot: string | null
+  svgImage: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
+  svgHostile: { width?: number; height?: number; error?: string; magic?: string }
+  svgNotOne: string | null
   order: string[]
   cancelled: string
   timeout: string | null
@@ -115,6 +118,16 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
   it('answers a broken diagram with the engine message, and an engine not yet built with an error', () => {
     expect(result.broken).toBe('Parse error: the diagram ends too soon')
     expect(result.dot).toBe('dot is not drawn yet')
+  })
+
+  it('rasterises an SVG image at twice its own size (spec D10)', () => {
+    expect(result.svgImage).toEqual({ width: 240, height: 150, magic: 'PNG', pixelWidth: 480, pixelHeight: 300 })
+  })
+
+  it('rasterises a hostile SVG image without a request (the request log above holds only the page), and refuses one that is not an SVG', () => {
+    expect(result.svgHostile).toMatchObject({ width: 40, height: 20, magic: 'PNG' })
+    expect(result.requests.some((r) => r.url.includes('127.0.0.1'))).toBe(false)
+    expect(result.svgNotOne).toBe('it is not a readable SVG')
   })
 
   it('serves a repeated request from the cache', () => {

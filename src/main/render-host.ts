@@ -4,12 +4,14 @@ import { join, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { renderCacheKey } from '../core/draw-blocks'
 import { sanitizeSvg } from '../core/svg-sanitize'
-import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
+import { svgIntrinsicSize } from '../core/svg-images'
+import { MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
 
 /**
  * The render host (spec B5): one hidden window that draws diagrams (and, in
  * later steps, formulas) from vendored engines, for conversions now and for
- * the editor (render-ipc.ts).
+ * the editor (render-ipc.ts). It also makes PNG copies of the SVG images a
+ * document carries, for Word (kind `svg`, spec D10; core/svg-images.ts).
  *
  *   window      hidden, sandboxed, context-isolated, no preload, JavaScript
  *               on (the engines are scripts). Created on first need, closed
@@ -37,8 +39,15 @@ import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderReques
  * only as JSON literals in executeJavaScript.
  */
 
-/** Engine versions, part of every cache key. Keep in step with scripts/build-render-assets.mjs. */
-export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = { mermaid: '11.12.0' }
+/**
+ * Engine versions, part of every cache key. Keep in step with
+ * scripts/build-render-assets.mjs. `svg` has no engine: an SVG image is only
+ * rasterised by the page (spec D10); bump its version if that changes.
+ */
+export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = { mermaid: '11.12.0', svg: 'raster-1' }
+
+/** The largest source of each kind: a diagram's text, or a whole SVG image. */
+const maxSourceBytes = (kind: RenderKind): number => (kind === 'svg' ? MAX_SVG_IMAGE_BYTES : MAX_SOURCE_BYTES)
 
 /** The engine files the page may load, by kind. */
 const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.min.js' }
@@ -309,8 +318,29 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
       return { result: { error: `the render window could not start: ${(err as Error).message}` }, cacheable: false }
     }
     const left = (): number => Math.max(1, job.timeoutMs - (Date.now() - started))
+    type Answer<T> = { ok: true; value: T } | { ok: false; error: string }
+    const rasterize = async (svg: string, width: number, height: number): Promise<{ result: RenderResult; cacheable: boolean }> => {
+      const png = await call<Answer<string>>(w, 'rasterize', [svg, width, height, PNG_SCALE], left())
+      if (!png.ok) return { result: { error: png.error }, cacheable: false }
+      if (typeof png.value !== 'string' || !/^[A-Za-z0-9+/]+=*$/.test(png.value)) {
+        return { result: { error: 'the picture could not be made' }, cacheable: false }
+      }
+      return { result: { png: png.value, width, height }, cacheable: true }
+    }
     try {
-      type Answer<T> = { ok: true; value: T } | { ok: false; error: string }
+      if (req.kind === 'svg') {
+        // An SVG image (spec D10): no engine, only the rasteriser. Sanitised
+        // here too, whatever core did, and sized from its own root.
+        draws++
+        const svg = sanitizeSvg(req.source)
+        const size = svg ? svgIntrinsicSize(svg) : null
+        if (!svg || !size) return { result: { error: 'it is not a readable SVG' }, cacheable: true }
+        const width = Math.max(1, Math.round(size.width))
+        const height = Math.max(1, Math.round(size.height))
+        if (!isSize(width) || !isSize(height)) return { result: { error: 'the picture is too large' }, cacheable: true }
+        if (req.format === 'svg') return { result: { svg, width, height }, cacheable: true }
+        return await rasterize(svg, width, height)
+      }
       const drawn = await call<Answer<{ svg: string; width: number; height: number; config?: Record<string, unknown> }>>(
         w,
         'draw',
@@ -328,12 +358,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
       const svg = sanitizeSvg(drawn.value.svg)
       if (!svg) return { result: { error: 'the engine returned something that is not an SVG' }, cacheable: true }
       if (req.format === 'svg') return { result: { svg, width, height }, cacheable: true }
-      const png = await call<Answer<string>>(w, 'rasterize', [svg, width, height, PNG_SCALE], left())
-      if (!png.ok) return { result: { error: png.error }, cacheable: false }
-      if (typeof png.value !== 'string' || !/^[A-Za-z0-9+/]+=*$/.test(png.value)) {
-        return { result: { error: 'the picture could not be made' }, cacheable: false }
-      }
-      return { result: { png: png.value, width, height }, cacheable: true }
+      return await rasterize(svg, width, height)
     } catch (err) {
       discard(w, true)
       if (err instanceof TimeoutError) {
@@ -369,8 +394,9 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
     if (signal?.aborted) return Promise.reject(cancelled())
     const version = ENGINE_VERSIONS[req.kind]
     if (!version) return Promise.resolve({ error: `${req.kind} is not drawn yet` })
-    if (typeof req.source !== 'string' || Buffer.byteLength(req.source, 'utf8') > MAX_SOURCE_BYTES) {
-      return Promise.resolve({ error: `the source is over ${MAX_SOURCE_BYTES / 1024} KB` })
+    const max = maxSourceBytes(req.kind)
+    if (typeof req.source !== 'string' || Buffer.byteLength(req.source, 'utf8') > max) {
+      return Promise.resolve({ error: `the source is over ${max / 1024} KB` })
     }
     if (req.format !== 'png' && req.format !== 'svg') return Promise.resolve({ error: `no format ${String(req.format)}` })
     const key = renderCacheKey(req, version)

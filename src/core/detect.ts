@@ -1,7 +1,7 @@
 import type { SourceFormat } from './types'
 import type { HubFeatures } from './rendered-blocks'
 import { codeFormatFromFilename, codeNameFromFilename } from './code-langs'
-import { imageMime } from './readers/image'
+import { imageMime, looksLikeSvg } from './readers/image'
 import { hasSqliteMagic } from './sqlite'
 
 export type DetectResult =
@@ -98,6 +98,8 @@ const EXT_MAP = new Map<string, SourceFormat>(
     jpeg: 'image',
     gif: 'image',
     webp: 'image',
+    // SVG is text, so it is sniffed by its first element (looksLikeSvg), not by magic bytes.
+    svg: 'svg',
   } satisfies Record<string, SourceFormat>),
 )
 
@@ -159,6 +161,8 @@ export function sniffBinary(bytes: Buffer, filename?: string): DetectResult | nu
   if (head.startsWith('{\\rtf')) return ok('rtf')
   const lower = head.toLowerCase()
   if (lower.startsWith('<!doctype html') || lower.startsWith('<html')) return ok('html')
+  // After html: a page is never an SVG, while an SVG's prolog can look like anything XML.
+  if (looksLikeSvg(bytes)) return ok('svg')
   return null
 }
 
@@ -308,6 +312,9 @@ function rulesOutExtension(bytes: Buffer, byExtension: SourceFormat, sniffed: So
   return part !== undefined && !part.test(bytes.toString('latin1'))
 }
 
+/** The picture formats: the bytes choose between them, whatever the name says. */
+const PICTURES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['image', 'svg'])
+
 /** `BEGIN:VCARD` on one of a file's first lines. */
 export function looksLikeVcard(bytes: Buffer): boolean {
   const head = bytes.toString('utf8', 0, 1024).replace(/^\ufeff/, '').split(/\r?\n/).slice(0, 5)
@@ -330,6 +337,9 @@ export function detect(bytes: Buffer, filename?: string): DetectResult {
       // .docx used to be refused with a raw zip error. Believe the bytes only
       // where they rule the extension out; see `rulesOutExtension`.
       const sniffed = sniffBinary(bytes, filename)
+      // An image's name says it is a picture; the bytes say whether a raster
+      // one or an SVG (a .png that is really an SVG, an .svg that is a PNG).
+      if (sniffed?.kind === 'ok' && PICTURES.has(byExt) && PICTURES.has(sniffed.format)) return sniffed
       if (sniffed?.kind === 'ok' && sniffed.format !== byExt && rulesOutExtension(bytes, byExt, sniffed.format)) {
         return sniffed
       }

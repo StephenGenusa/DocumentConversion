@@ -1,4 +1,4 @@
-import type { RenderKind } from '../../../core/rendered-blocks'
+import type { BlockKind } from '../../../core/rendered-blocks'
 
 /**
  * The editor's side of drawing (spec B11): asks the main process for a
@@ -17,7 +17,7 @@ export type BlockAnswer = BlockDrawing | { unavailable: true }
 export type DrawPriority = 'visible' | 'prefetch'
 
 export interface BlockRequest {
-  kind: RenderKind
+  kind: BlockKind
   source: string
   display: boolean
 }

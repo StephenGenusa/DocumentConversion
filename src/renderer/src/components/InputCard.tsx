@@ -14,6 +14,7 @@ const LABELS: Record<SourceFormat, string> = {
   xlsx: 'Excel (.xlsx)',
   rtf: 'Rich text (.rtf)',
   image: 'Image',
+  svg: 'SVG image',
   code: 'Source code',
   ipynb: 'Jupyter notebook',
   pptx: 'PowerPoint (.pptx)',

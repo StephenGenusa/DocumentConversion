@@ -121,6 +121,8 @@ async function main() {
     const probes = probeWords(hubText)
     const hasTables = hubText.includes('<table')
     const hasDiagrams = hubText.includes('<pre><code class="language-mermaid">')
+    // SVG images (an .svg input, or an SVG <img> in a page): Word gets PNG copies (spec D10).
+    const hasSvgImages = /src="data:image\/svg\+xml/i.test(hubText)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
 
     /**
@@ -185,6 +187,14 @@ async function main() {
             if (svgItems.some((i) => i.includes('cover-image'))) throw new Error('a diagram is the epub cover')
             rec.note = `${svgItems.length} SVG items`
           }
+        }
+        if (hasSvgImages && target === 'docx') {
+          const zip = await JSZip.loadAsync(out)
+          const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
+          if (!media.some((n) => n.endsWith('.png'))) throw new Error('docx has no PNG media for its SVG images')
+          if (media.some((n) => /svg/i.test(n))) throw new Error('docx has SVG media')
+          if (/svg/i.test(await zip.file('[Content_Types].xml').async('string'))) throw new Error('docx declares SVG content')
+          rec.note = `${media.length} PNG media for SVG images`
         }
         const reader = readerFor(target)
         if (reader) {
