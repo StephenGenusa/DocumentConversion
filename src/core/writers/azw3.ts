@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import { writeEpub } from './epub'
 import { buildPalmDb } from './palmdb'
-import { buildFdst, buildIndex, type IndexEntry } from './kf8-index'
+import { buildCncx, buildFdst, buildIndex, type IndexEntry } from './kf8-index'
 import { EXTH, buildRecord0, exthString, splitTextRecords, TEXT_RECORD_SIZE } from './mobi-header'
 import type { HubDocument } from '../types'
 
@@ -79,12 +79,22 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
        */
       name: String(skelStart + Buffer.byteLength(SKEL_OPEN, 'utf8')),
       values: new Map([
-        [2, [i]], // index into the CNCX strings
-        [4, [i]], // which skeleton this fragment belongs to
+        [2, [i]], // the selector's CNCX offset: set below, once all are known
+        [3, [i]], // which skeleton (file) this fragment belongs to
+        [4, [i]], // the fragment's sequence number
         [6, [0, Buffer.byteLength(body, 'utf8')]],
       ]),
     })
   })
+
+  /*
+   * Fragment tags, as kindlegen writes them and calibre and KindleUnpack read
+   * them: 2 the selector's BYTE offset in the CNCX record (not its number),
+   * 3 the skeleton (file) it belongs to, 4 its sequence number, 6 where its
+   * bytes are. Without tag 3 calibre cannot open the book at all.
+   */
+  const { offsets: selectorOffsets } = buildCncx(selectors)
+  fragments.forEach((f, i) => f.values.set(2, [selectorOffsets[i]]))
 
   const text = Buffer.from(flow, 'utf8')
   const textRecords = splitTextRecords(text, TEXT_RECORD_SIZE)
@@ -97,8 +107,9 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
     fragments,
     [
       { tag: 2, numValues: 1, mask: 0x01 },
-      { tag: 4, numValues: 1, mask: 0x02 },
-      { tag: 6, numValues: 2, mask: 0x04 },
+      { tag: 3, numValues: 1, mask: 0x02 },
+      { tag: 4, numValues: 1, mask: 0x04 },
+      { tag: 6, numValues: 2, mask: 0x08 },
     ],
     selectors,
   )

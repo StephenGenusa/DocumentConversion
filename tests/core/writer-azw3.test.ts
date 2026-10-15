@@ -82,4 +82,22 @@ describe('the AZW3 writer', () => {
     const { kf8 } = await roundTrip({ html: '<p>x</p>' })
     expect(kf8.getMetadata().title).toBe('Untitled')
   })
+
+  it('names no DATP or guide index, and gives each fragment the tags readers look up (2, 3, 4, 6)', async () => {
+    // calibre refused every book this writer made: it read the guide index
+    // from a field left at 0 (record 0 itself), and a fragment without tag 3.
+    const { bytes } = await roundTrip({ html: TWO_CHAPTERS, title: 'T' })
+    const count = bytes.readUInt16BE(76)
+    const offsets = Array.from({ length: count }, (_, i) => bytes.readUInt32BE(78 + i * 8))
+    const record = (i: number) => bytes.subarray(offsets[i], i + 1 < count ? offsets[i + 1] : bytes.length)
+    const r0 = record(0)
+    expect(r0.readUInt32BE(256)).toBe(0xffffffff) // DATP
+    expect(r0.readUInt32BE(260)).toBe(0xffffffff) // guide
+    const frag = record(r0.readUInt32BE(248))
+    expect(frag.toString('latin1', 0, 4)).toBe('INDX')
+    const tagx = frag.indexOf('TAGX')
+    const tags: number[] = []
+    for (let at = tagx + 12; frag[at + 3] !== 1; at += 4) tags.push(frag[at])
+    expect(tags).toEqual([2, 3, 4, 6])
+  })
 })

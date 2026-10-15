@@ -156,6 +156,10 @@ export function buildRecord0(input: Record0Input): Buffer {
     mobi.writeUInt32BE(input.fdstCount ?? 0, 196 - 16)
     mobi.writeUInt32BE(input.fragmentIndex ?? 0xffffffff, 248 - 16)
     mobi.writeUInt32BE(input.skeletonIndex ?? 0xffffffff, 252 - 16)
+    // DATP and the guide (other) index: none. Left at 0 they name record 0,
+    // which a reader then tries to parse as an INDX (calibre refuses the book).
+    mobi.writeUInt32BE(0xffffffff, 256 - 16)
+    mobi.writeUInt32BE(0xffffffff, 260 - 16)
   }
 
   return Buffer.concat([palmdoc, mobi, exth, title, Buffer.alloc(2)])
