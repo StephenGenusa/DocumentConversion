@@ -2,6 +2,12 @@
   "//": "Components that ship without being a production npm package or a bundled import. Each entry is reviewed by hand. `package` reads version and licence files from node_modules/<package>; `licenseFrom` names one file instead.",
   "components": [
     {
+      "name": "Mermaid",
+      "package": "mermaid",
+      "license": "MIT",
+      "note": "The diagram engine (mermaid.min.js), shipped in resources/render to draw Mermaid diagrams offline. The file bundles its own dependencies; those are listed separately, each marked as bundled by the Mermaid project."
+    },
+    {
       "name": "reveal.js",
       "package": "reveal.js",
       "license": "MIT",
@@ -19,6 +25,420 @@
       "license": "Apache-2.0",
       "licenseFrom": "node_modules/tesseract.js-core/LICENSE",
       "note": "Trained data from the Tesseract OCR project (github.com/tesseract-ocr/tessdata), distributed by tessdata.projectnaptha.com; shipped in resources/ocr. Language packs downloaded later are the same data set under the same licence."
+    },
+    {
+      "name": "@braintree/sanitize-url",
+      "package": "@braintree/sanitize-url",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "@chevrotain/cst-dts-gen",
+      "package": "@chevrotain/cst-dts-gen",
+      "license": "Apache-2.0",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "@chevrotain/gast",
+      "package": "@chevrotain/gast",
+      "license": "Apache-2.0",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "@chevrotain/regexp-to-ast",
+      "package": "@chevrotain/regexp-to-ast",
+      "license": "Apache-2.0",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "@chevrotain/types",
+      "package": "@chevrotain/types",
+      "license": "Apache-2.0",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "@chevrotain/utils",
+      "package": "@chevrotain/utils",
+      "license": "Apache-2.0",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "@iconify/types",
+      "package": "@iconify/types",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "@iconify/utils",
+      "package": "@iconify/utils",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "@mermaid-js/parser",
+      "package": "@mermaid-js/parser",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "chevrotain",
+      "package": "chevrotain",
+      "license": "Apache-2.0",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "chevrotain-allstar",
+      "package": "chevrotain-allstar",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "cose-base",
+      "package": "cose-base",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "cytoscape",
+      "package": "cytoscape",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "cytoscape-cose-bilkent",
+      "package": "cytoscape-cose-bilkent",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "cytoscape-fcose",
+      "package": "cytoscape-fcose",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3",
+      "package": "d3",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-array",
+      "package": "d3-array",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-axis",
+      "package": "d3-axis",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-brush",
+      "package": "d3-brush",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-chord",
+      "package": "d3-chord",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-color",
+      "package": "d3-color",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-contour",
+      "package": "d3-contour",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-delaunay",
+      "package": "d3-delaunay",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-dispatch",
+      "package": "d3-dispatch",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-drag",
+      "package": "d3-drag",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-dsv",
+      "package": "d3-dsv",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-ease",
+      "package": "d3-ease",
+      "license": "BSD-3-Clause",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-fetch",
+      "package": "d3-fetch",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-force",
+      "package": "d3-force",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-format",
+      "package": "d3-format",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-geo",
+      "package": "d3-geo",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-hierarchy",
+      "package": "d3-hierarchy",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-interpolate",
+      "package": "d3-interpolate",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-path",
+      "package": "d3-path",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-polygon",
+      "package": "d3-polygon",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-quadtree",
+      "package": "d3-quadtree",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-random",
+      "package": "d3-random",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-sankey",
+      "package": "d3-sankey",
+      "license": "BSD-3-Clause",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-scale",
+      "package": "d3-scale",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-scale-chromatic",
+      "package": "d3-scale-chromatic",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-selection",
+      "package": "d3-selection",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-shape",
+      "package": "d3-shape",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-time",
+      "package": "d3-time",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-time-format",
+      "package": "d3-time-format",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-timer",
+      "package": "d3-timer",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-transition",
+      "package": "d3-transition",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "d3-zoom",
+      "package": "d3-zoom",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "dagre-d3-es",
+      "package": "dagre-d3-es",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "delaunator",
+      "package": "delaunator",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "dompurify",
+      "package": "dompurify",
+      "license": "(MPL-2.0 OR Apache-2.0)",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "hachure-fill",
+      "package": "hachure-fill",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "internmap",
+      "package": "internmap",
+      "license": "ISC",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "katex",
+      "package": "katex",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "khroma",
+      "package": "khroma",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "langium",
+      "package": "langium",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "layout-base",
+      "package": "layout-base",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "lodash-es",
+      "package": "lodash-es",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "marked",
+      "package": "marked",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "path-data-parser",
+      "package": "path-data-parser",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "points-on-curve",
+      "package": "points-on-curve",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "points-on-path",
+      "package": "points-on-path",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "robust-predicates",
+      "package": "robust-predicates",
+      "license": "Unlicense",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "roughjs",
+      "package": "roughjs",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "stylis",
+      "package": "stylis",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "ts-dedent",
+      "package": "ts-dedent",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "uuid",
+      "package": "uuid",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "vscode-languageserver-types",
+      "package": "vscode-languageserver-types",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "vscode-uri",
+      "package": "vscode-uri",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
+    },
+    {
+      "name": "js-yaml",
+      "package": "js-yaml",
+      "license": "MIT",
+      "note": "Bundled by the Mermaid project into its mermaid.min.js, shipped in resources/render; the copy there may be a different release of this package."
     }
   ]
 }

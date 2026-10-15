@@ -106,7 +106,15 @@ export interface LoadedInput {
 }
 
 export type SaveResult =
-  | { status: 'saved'; path: string; paths?: string[]; advice?: string }
+  | {
+      status: 'saved'
+      path: string
+      paths?: string[]
+      /** Page-fit advice: shown as a "try Landscape" tip. */
+      advice?: string
+      /** Other notices, shown as they are (e.g. "Diagram 2 could not be drawn: …"). */
+      notes?: string[]
+    }
   | { status: 'copied'; totalParts?: number }
   | { status: 'cancelled' }
   | { status: 'error'; code: string; message: string }

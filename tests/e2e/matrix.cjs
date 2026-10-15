@@ -21,6 +21,12 @@ const { createConverter, detect, getReader, TARGET_FORMATS, TABLE_TARGETS, allow
 // The app's SQLite host (sql.js in a worker), built beside core by build:e2e-core.
 // Without it the converter refuses databases, as core alone does.
 const { createSqliteHost } = require('../../out/e2e/sqlite-host.js')
+// The app's render host (spec B5), so diagrams are drawn as they are in the app.
+const { createRenderHost } = require('../../out/e2e/render-host.js')
+const JSZip = require('jszip')
+
+/** Targets that draw a document's Mermaid diagrams (spec B3; azw3 not yet, see core/draw-blocks.ts). */
+const DRAWING_TARGETS = ['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx']
 
 /** Targets the app can also read back; others are verified by shape only. */
 function readerFor(format) {
@@ -89,7 +95,8 @@ async function main() {
     return
   }
   await mkdir(outDir, { recursive: true })
-  const conv = createConverter(renderHtmlToPdf, { sqlite: createSqliteHost() })
+  const renderHost = createRenderHost()
+  const conv = createConverter(renderHtmlToPdf, { sqlite: createSqliteHost(), renderBlocks: renderHost.renderBlocks })
   const results = []
 
   for (const input of inputs) {
@@ -113,6 +120,7 @@ async function main() {
     }
     const probes = probeWords(hubText)
     const hasTables = hubText.includes('<table')
+    const hasDiagrams = hubText.includes('<pre><code class="language-mermaid">')
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
 
     /**
@@ -157,6 +165,18 @@ async function main() {
         await writeFile(outPath, out)
         rec.path = outPath
         if (!sniffOk(target, out)) throw new Error('output does not look like ' + target)
+        if (hasDiagrams && DRAWING_TARGETS.includes(target)) {
+          // A diagram is drawn as a PNG: Word gets PNG media and no SVG, the
+          // HTML-based outputs a PNG data URI.
+          if (target === 'docx') {
+            const media = Object.keys((await JSZip.loadAsync(out)).files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
+            if (!media.some((n) => n.endsWith('.png'))) throw new Error('docx has no PNG media for its diagrams')
+            if (media.some((n) => /svg/i.test(n))) throw new Error('docx has SVG media')
+            rec.note = `${media.length} media`
+          } else if (target === 'html' || target === 'revealjs') {
+            if (!out.toString('utf8').includes('src="data:image/png;base64,')) throw new Error('no drawn diagram in the output')
+          }
+        }
         const reader = readerFor(target)
         if (reader) {
           // Round-trip: read the output back with the app's reader and check probe words survive.

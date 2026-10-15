@@ -55,6 +55,15 @@ export async function runCli(argv: string[]): Promise<number> {
 
   let failed = 0
 
+  /** Advice on stderr as `NOTE <name>: …`, with the flags to try when there are some. */
+  const noteFor =
+    (name: string) =>
+    (_kind: string, message: string, suggestion?: { pageSize: string; landscape: boolean }): void => {
+      const flags = suggestion ? ` Try: --page ${suggestion.pageSize}${suggestion.landscape ? ' --landscape' : ''}` : ''
+      // Some advice already ends its sentence; don't print "..".
+      console.error(`NOTE ${name}: ${message}${/[.!?]$/.test(message) ? '' : '.'}${flags}`)
+    }
+
   /**
    * Resolve inputs to a work list WITHOUT holding their bytes: reading all of
    * them up front meant a 94 MB corpus peaked at 2 GB (4 GB to docx). Only
@@ -148,7 +157,7 @@ export async function runCli(argv: string[]): Promise<number> {
         req.to,
         opts,
         req.headings,
-        {},
+        { onAdvice: noteFor(basename(req.out!)) },
       )
       await writeOut(req.out!, out.parts[0].bytes)
     } catch (err) {
@@ -174,13 +183,7 @@ export async function runCli(argv: string[]): Promise<number> {
         )
       }
       const out = await runConversion(await bytesFor(f), basename(f.path), f.source, req.to, opts, {
-        onAdvice: (_kind, message, suggestion) => {
-          const flags = suggestion
-            ? ` Try: --page ${suggestion.pageSize}${suggestion.landscape ? ' --landscape' : ''}`
-            : ''
-          // Some advice already ends its sentence; don't print "..".
-          console.error(`NOTE ${basename(f.path)}: ${message}${/[.!?]$/.test(message) ? '' : '.'}${flags}`)
-        },
+        onAdvice: noteFor(basename(f.path)),
       })
       const parts = selectTable(out.parts)
       for (const part of parts) {

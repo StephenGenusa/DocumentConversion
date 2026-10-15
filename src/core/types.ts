@@ -196,21 +196,37 @@ export interface ReadContext extends ReadOptions {
   signal?: AbortSignal
   onProgress?: (stage: string, percent?: number) => void
   /** Non-fatal suggestions surfaced to the user (e.g. "this would fit landscape"). */
-  onAdvice?: (
-    kind:
-      | 'landscape'
-      | 'doc-tables'
-      | 'doc-lists'
-      | 'doc-images'
-      | 'reformatted'
-      | 'records-limited'
-      | 'record-error'
-      | 'photos-omitted'
-      | 'sqlite-wal'
-      | 'sqlite-stopped',
-    message: string,
-    suggestion?: { pageSize: PdfPageSize; landscape: boolean },
-  ) => void
+  onAdvice?: AdviceHandler
+}
+
+/** The kinds of non-fatal notice a conversion can give. */
+export type AdviceKind =
+  | 'landscape'
+  | 'doc-tables'
+  | 'doc-lists'
+  | 'doc-images'
+  | 'reformatted'
+  | 'records-limited'
+  | 'record-error'
+  | 'photos-omitted'
+  | 'sqlite-wal'
+  | 'sqlite-stopped'
+  /** A diagram or formula kept as source (spec B7). Given by write(). */
+  | 'render-failed'
+
+export type AdviceHandler = (
+  kind: AdviceKind,
+  message: string,
+  suggestion?: { pageSize: PdfPageSize; landscape: boolean },
+) => void
+
+/**
+ * What write() is handed besides the options: drawing diagrams (spec B7) is
+ * the part of writing that can be cancelled and that has notices to give.
+ */
+export interface WriteContext {
+  signal?: AbortSignal
+  onAdvice?: AdviceHandler
 }
 
 export type PdfPageSize = 'Letter' | 'A4' | 'Legal' | 'A3' | 'Tabloid'

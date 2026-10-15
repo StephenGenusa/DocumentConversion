@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+  The render host's page (spec B5, src/main/render-host.ts).
+
+  Loaded into a hidden, sandboxed window whose session cancels every request
+  but this page and the engine files beside it. The policy below says the same
+  thing a second time, from inside the page: scripts only from this folder,
+  no connections, images only from data: and blob: (the rasteriser draws an
+  SVG through one), and inline styles because the engines put a <style> in
+  every SVG they draw.
+
+  Each engine is loaded the first time a block of its kind is drawn. The main
+  process calls the functions on window.renderHost with executeJavaScript and
+  JSON-encoded arguments; nothing here reads anything but those arguments.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data: blob:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>render</title>
+<style>
+  body { margin: 0; background: #fff; }
+  /* The engines measure text in the live DOM, so the scratch area must be laid
+     out (not display:none), but never seen: the window is hidden anyway. */
+  #scratch { position: absolute; left: 0; top: 0; width: 2000px; }
+</style>
+</head>
+<body>
+<div id="scratch"></div>
+<script src="host.js"></script>
+</body>
+</html>

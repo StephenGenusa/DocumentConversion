@@ -21,6 +21,12 @@ export function ResultView({
             💡 Tip: {result.advice}. Try Landscape orientation and convert again.
           </p>
         )}
+        {result.notes?.map((note) => (
+          <p key={note} className="result__note">
+            {note}
+            {/[.!?]$/.test(note) ? '' : '.'}
+          </p>
+        ))}
         <div className="result__actions">
           <button className="btn" onClick={() => window.api.openPath(result.path)}>
             Open

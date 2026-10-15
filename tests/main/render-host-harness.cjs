@@ -1,0 +1,139 @@
+/* eslint-disable */
+/**
+ * Drives the real render host inside Electron for tests/main/render-host.test.ts.
+ *
+ *   electron render-host-harness.cjs <bundled render-host.js> <resources/render>
+ *
+ * Prints one line, `RESULT <json>`, and exits.
+ */
+const { app } = require('electron')
+
+const [hostPath, pageDir] = process.argv.slice(-2)
+const { createRenderHost } = require(hostPath)
+
+app.on('window-all-closed', () => {})
+
+const FLOW = 'flowchart TD\n  A[Start] --> B{Is it?}\n  B -->|Yes| C[OK]\n  B -->|No| D[End]'
+const SEQUENCE = 'sequenceDiagram\n  Alice->>Bob: Hello\n  Bob-->>Alice: Hi'
+/** Every way a diagram's source might try to loosen the settings or reach out. */
+const HOSTILE = [
+  '%%{init: {"securityLevel": "loose", "htmlLabels": true, "flowchart": {"htmlLabels": true}}}%%\n' +
+    'flowchart TD\n  A["<b>bold</b> <img src=\'http://127.0.0.1:9/a.png\'>"] --> B\n  click A href "javascript:alert(1)"\n  click B call alert(1)',
+  '%%{init: {"themeCSS": "@import url(http://127.0.0.1:9/x.css); .node rect { fill: url(http://127.0.0.1:9/p.png) }"}}%%\nflowchart LR\n  A --> B',
+  '%%{init: {"securityLevel": "sandbox"}}%%\nflowchart LR\n  A --> B',
+  'flowchart LR\n  A["<iframe src=\'http://127.0.0.1:9/\'></iframe>"] --> B\n  click B href "http://127.0.0.1:9/link"',
+]
+
+/** An SVG with its text content taken out (style elements kept): what is left is tags and attributes. */
+const markupOnly = (svg) => svg.replace(/(<style[^>]*>[\s\S]*?<\/style>)|>[^<]*</g, (m, style) => style || '><')
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+async function main() {
+  const requests = []
+  const drawn = []
+  const host = createRenderHost({
+    pageDir,
+    idleMs: 1500,
+    partition: 'docconv-render-test',
+    onRequest: (url, allowed) => requests.push({ url, allowed }),
+    onDrawn: (req, raw) => drawn.push({ source: req.source, svg: raw.svg, config: raw.config }),
+  })
+  const out = { timings: {} }
+  const time = async (name, fn) => {
+    const t = process.hrtime.bigint()
+    const r = await fn()
+    out.timings[name] = Number(process.hrtime.bigint() - t) / 1e6
+    return r
+  }
+  const png = (src, extra) => host.render({ kind: 'mermaid', source: src, display: true, format: 'png' }, extra)
+
+  const first = await time('firstPng', () => png(FLOW))
+  out.first = { width: first.width, height: first.height, error: first.error }
+  if (first.png) {
+    const bytes = Buffer.from(first.png, 'base64')
+    out.first.magic = bytes.subarray(1, 4).toString('latin1')
+    out.first.pixelWidth = bytes.readUInt32BE(16)
+    out.first.pixelHeight = bytes.readUInt32BE(20)
+  }
+  await time('warmPng', () => png(SEQUENCE))
+  await time('warmSvg', () => host.render({ kind: 'mermaid', source: SEQUENCE, display: true, format: 'svg' }))
+  const drawsBefore = host.stats().draws
+  await time('cachedPng', () => png(FLOW))
+  out.cacheHitDrew = host.stats().draws - drawsBefore
+
+  // Memory of the render window's process.
+  const metrics = app.getAppMetrics()
+  const tab = metrics.filter((m) => m.type === 'Tab')
+  out.windowMemoryKb = tab.map((m) => m.memory.workingSetSize)
+
+  out.hostile = []
+  for (const src of HOSTILE) {
+    const r = await host.render({ kind: 'mermaid', source: src, display: true, format: 'svg' })
+    const raw = drawn.find((d) => d.source === src)
+    out.hostile.push({
+      error: r.error,
+      config: raw && raw.config,
+      rawHasJavascript: raw ? /javascript:/i.test(raw.svg) : null,
+      rawHasForeignObject: raw ? /foreignObject/i.test(raw.svg) : null,
+      rawHasIframe: raw ? /<iframe/i.test(raw.svg) : null,
+      // In an attribute or a url(): the label text may say anything.
+      svgHasRemote: r.svg ? /127\.0\.0\.1/.test(markupOnly(r.svg)) : null,
+      svgHasImport: r.svg ? /@import/i.test(r.svg) : null,
+    })
+  }
+
+  const broken = await png('flowchart TD\n  A -->')
+  out.broken = broken.error ?? null
+  const unknown = await host.render({ kind: 'dot', source: 'digraph { a -> b }', display: true, format: 'png' })
+  out.dot = unknown.error ?? null
+
+  // Priority: with the page busy, a visible editor block jumps the conversion queue.
+  const order = []
+  const jobs = [
+    png('flowchart LR\n  P1 --> Q', { priority: 'convert' }).then(() => order.push('convert-1')),
+    png('flowchart LR\n  P2 --> Q', { priority: 'prefetch' }).then(() => order.push('prefetch')),
+    png('flowchart LR\n  P3 --> Q', { priority: 'convert' }).then(() => order.push('convert-2')),
+    png('flowchart LR\n  P4 --> Q', { priority: 'visible' }).then(() => order.push('visible')),
+  ]
+  await Promise.all(jobs)
+  out.order = order
+
+  // Cancel: a queued block's caller is released at once.
+  const controller = new AbortController()
+  const slow = png('flowchart LR\n  C1 --> D', {})
+  const cancelled = png('flowchart LR\n  C2 --> D', { signal: controller.signal }).then(
+    () => 'resolved',
+    (e) => e.name,
+  )
+  controller.abort()
+  out.cancelled = await cancelled
+  await slow
+
+  // A block over its time limit: an error, and the next block gets a fresh window.
+  const windowsBefore = host.stats().windows
+  const late = await png('flowchart LR\n  T1 --> T2', { timeoutMs: 1 })
+  out.timeout = late.error ?? null
+  const after = await png('flowchart LR\n  T3 --> T4')
+  out.afterTimeout = { ok: Boolean(after.png), windowsOpened: host.stats().windows - windowsBefore }
+
+  // Idle close.
+  out.openBeforeIdle = host.stats().windowOpen
+  await sleep(2500)
+  out.openAfterIdle = host.stats().windowOpen
+  const reopened = await time('reopenCachedEngine', () => png('flowchart LR\n  R1 --> R2'))
+  out.reopened = Boolean(reopened.png)
+
+  out.requests = requests
+  out.stats = host.stats()
+  host.close()
+  console.log('RESULT ' + JSON.stringify(out))
+  app.exit(0)
+}
+
+app.whenReady().then(() =>
+  main().catch((e) => {
+    console.log('RESULT ' + JSON.stringify({ fatal: String(e && e.stack) }))
+    app.exit(1)
+  }),
+)

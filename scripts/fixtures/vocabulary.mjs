@@ -432,3 +432,34 @@ export const HOWTO_DOCX = {
     'Repeat the process for any other shortcuts you want pinned to that menu.',
   ],
 }
+
+/**
+ * tests/corpus/diagram-notes.md (scripts/fixtures/build-diagram-fixture.mjs):
+ * invented returns notes with Mermaid diagrams. Arrows are spaced so that a
+ * participant's name never runs into its arrow as one word.
+ */
+export const DIAGRAM_NOTES = {
+  title: 'Returns procedure',
+  intro:
+    'Returned volumes travel through sorting, inspection and reshelving before borrowers see them again. Damaged volumes wait for repairs.',
+  flowchart: [
+    'flowchart TD',
+    '  R[Returned volume] --> S{Damaged?}',
+    '  S -->|No| H[Reshelve]',
+    '  S -->|Yes| P[Repairs queue]',
+    '  P --> H',
+  ],
+  between: 'The desk and the catalogue exchange two messages for every return.',
+  sequence: [
+    'sequenceDiagram',
+    '  participant Desk',
+    '  participant Catalogue',
+    '  Desk ->> Catalogue: Item returned',
+    '  Catalogue -->> Desk: Status updated',
+  ],
+  brokenIntro: 'This one is unfinished and stays as written:',
+  broken: ['flowchart TD', '  Q -->'],
+  dotIntro: 'Graphviz is kept as source for now:',
+  dot: 'digraph { shelf -> trolley }',
+  formula: 'Overdue charge: $$c = r \\times d$$',
+}

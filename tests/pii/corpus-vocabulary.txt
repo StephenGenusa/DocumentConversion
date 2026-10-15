@@ -91,6 +91,7 @@ book
 bookend
 books
 borrowed
+borrowers
 both
 bottom
 box
@@ -132,6 +133,7 @@ certification
 changes
 channel
 chapter
+charge
 check
 checklist
 checkout
@@ -222,6 +224,7 @@ desktop
 detail
 devi
 differently
+digraph
 directed
 directly
 directory
@@ -303,6 +306,7 @@ first
 fixed
 floor
 floorplan
+flowchart
 folder
 folio
 follow
@@ -330,6 +334,7 @@ gmt
 go
 grade
 granted
+graphviz
 gratuities
 grew
 grievance
@@ -377,6 +382,7 @@ incident
 independent
 index
 inference
+inspection
 installed
 instead
 instructions
@@ -390,6 +396,7 @@ iris
 is
 isbn
 it
+item
 items
 its
 ivellum
@@ -469,6 +476,7 @@ members
 memorable
 memory
 menu
+messages
 mezzanine
 military
 mireille
@@ -516,6 +524,7 @@ note
 noted
 notes
 nothing
+now
 null
 number
 numbered
@@ -548,6 +557,7 @@ our
 out
 outstanding
 over
+overdue
 overpaying
 oversize
 overtime
@@ -561,6 +571,7 @@ paperback
 papers
 parking
 part
+participant
 pass
 path
 pay
@@ -628,6 +639,7 @@ quarterly
 quarto
 question
 questions
+queue
 quickly
 quill
 raise
@@ -656,6 +668,7 @@ reliably
 remote
 renewal
 renewals
+repairs
 repeat
 replace
 report
@@ -671,6 +684,7 @@ requirements
 reservation
 reserve
 reserved
+reshelve
 reshelving
 resist
 resistant
@@ -679,6 +693,7 @@ respect
 rest
 result
 resulting
+return
 returned
 returns
 reuse
@@ -714,6 +729,7 @@ self-adhesive
 self-sealing
 sent
 separates
+sequencediagram
 serve
 service
 session
@@ -756,6 +772,8 @@ something
 sometimes
 somewhere
 sorrel
+sorting
+source
 sources
 south
 southern
@@ -808,6 +826,7 @@ taken
 takes
 tape
 task
+td
 team
 tenth
 tenure
@@ -867,6 +886,7 @@ uncollected
 under
 underneath
 uneven
+unfinished
 unit
 unknown
 unless
@@ -876,6 +896,7 @@ unsafe
 until
 untitled
 up
+updated
 urgent
 use
 used
@@ -891,6 +912,8 @@ verify
 violence
 visit
 visitor
+volume
+volumes
 volunteers
 wait
 want
@@ -934,6 +957,7 @@ written
 wrong
 wrote
 www
+yes
 you
 your
 zero

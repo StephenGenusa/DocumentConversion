@@ -6,6 +6,7 @@ import type {
   SourceFormat,
   SourceInput,
   TargetFormat,
+  WriteContext,
   WriteResult,
 } from './types'
 import { ConversionError } from './errors'
@@ -23,7 +24,8 @@ import { writeRows, type RowWriteOptions } from './writers/rows'
 import type { RowSource } from './records'
 import { TABLE_TARGETS } from './types'
 import { normalizeFootnotes } from './footnotes'
-import { hubFeatures } from './rendered-blocks'
+import { hubFeatures, type RenderBlocks } from './rendered-blocks'
+import { drawBlocks } from './draw-blocks'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
 
 export interface Converter {
@@ -36,8 +38,12 @@ export interface Converter {
   ): Promise<WriteResult>
   /** Read a source to its hub document without writing (used by merge). */
   read(src: SourceInput, source: SourceFormat, ctx?: ReadContext): Promise<HubDocument>
-  /** Write an already-built hub document (used by the OCR recovery path and merge). */
-  write(hub: HubDocument, target: TargetFormat, opts?: ConvertOptions): Promise<WriteResult>
+  /**
+   * Write an already-built hub document (used by the OCR recovery path and
+   * merge). `ctx` carries the cancel signal and the notices for diagrams that
+   * could not be drawn.
+   */
+  write(hub: HubDocument, target: TargetFormat, opts?: ConvertOptions, ctx?: WriteContext): Promise<WriteResult>
   /**
    * A record source's rows, for a table target: every record, never via the
    * hub. Null when the source is not records (or has no row reader).
@@ -58,6 +64,12 @@ export interface ConverterDeps {
    * Without it a database is refused: "SQLite databases need the desktop app".
    */
   sqlite?: SqliteEngine
+  /**
+   * The render host (spec B5, src/main/render-host.ts): draws Mermaid
+   * diagrams for the targets that show pictures. Without it every diagram
+   * stays as source, silently.
+   */
+  renderBlocks?: RenderBlocks
 }
 
 export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {}): Converter {
@@ -93,7 +105,12 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
     }
   }
 
-  async function write(hub: HubDocument, target: TargetFormat, opts?: ConvertOptions): Promise<WriteResult> {
+  async function write(
+    hub: HubDocument,
+    target: TargetFormat,
+    opts?: ConvertOptions,
+    ctx?: WriteContext,
+  ): Promise<WriteResult> {
     try {
       // The OCR recovery and merge paths build a hub without passing read().
       // A remote image still here would be fetched by the docx and pdf
@@ -111,7 +128,14 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // they are exempted rather than being handed a document with the notes
       // already removed. Missing this is invisible to a writer unit test,
       // which calls the writer directly and never crosses this boundary.
-      const html = SLIDE_TARGETS.includes(target) ? hub.html : stripSpeakerNotes(hub.html)
+      const notesFree = SLIDE_TARGETS.includes(target) ? hub.html : stripSpeakerNotes(hub.html)
+      // Diagrams drawn last, on the html the writer is about to get, so a
+      // merged document is drawn once and nothing drawn reaches the hub.
+      const html = await drawBlocks(notesFree, target, {
+        renderBlocks: deps.renderBlocks,
+        signal: ctx?.signal,
+        onAdvice: ctx?.onAdvice,
+      })
       return await writers[target](html === hub.html ? hub : { ...hub, html }, opts)
     } catch (err) {
       if (err instanceof ConversionError) throw err
@@ -128,7 +152,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
         const rows = await this.readRows(src, source, readCtx)
         if (rows) return writeRows(rows, target, { signal: ctx?.signal, onProgress: ctx?.onProgress })
       }
-      return write(await read(src, source, readCtx), target, opts)
+      return write(await read(src, source, readCtx), target, opts, ctx)
     },
     async readRows(src, source, ctx) {
       const reader = bound[source]?.rows ?? getRowReader(source)

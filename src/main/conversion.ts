@@ -12,6 +12,7 @@ import { mergePdfs, type PdfMergeInput } from '../core/pdf-merge'
 import { escapeHtml } from '../core/shell'
 import { runOcr } from './ocr-host'
 import { createSqliteHost } from './sqlite-host'
+import { createRenderHost } from './render-host'
 import { throwIfCancelled, untilCancelled } from './jobs'
 import { looksLikeHeader, rowsToHtmlTable } from '../core/readers/csv'
 import { extractPdfPageLines, pdfPagesToHub, type PdfPageSource } from '../core/readers/pdf'
@@ -139,7 +140,17 @@ export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Pr
 /** sql.js in a worker per open database (spec D13); the card asks it for view counts too. */
 export const sqliteHost = createSqliteHost()
 
-export const converter = createConverter(renderHtmlToPdf, { fetchImages: urlFetchDeps, sqlite: sqliteHost })
+/**
+ * The hidden window that draws diagrams (spec B5). Opened on the first
+ * diagram, closed after a minute idle; the editor shares it from step 14.
+ */
+export const renderHost = createRenderHost()
+
+export const converter = createConverter(renderHtmlToPdf, {
+  fetchImages: urlFetchDeps,
+  sqlite: sqliteHost,
+  renderBlocks: renderHost.renderBlocks,
+})
 
 /**
  * OCR pages to one hub document.
@@ -265,7 +276,7 @@ export async function runConversion(
     const advice = advisePageFit(hub.html, named, opts.pdf.landscape)
     if (advice.suggestion) ctx.onAdvice?.('landscape', advice.reason ?? '', advice.suggestion)
   }
-  return untilCancelled(converter.write(hub, target, opts), ctx.signal)
+  return untilCancelled(converter.write(hub, target, opts, ctx), ctx.signal)
 }
 
 /**
@@ -285,8 +296,8 @@ export async function clipboardFlavors(
   throwIfCancelled(ctx.signal)
   const hub = await readForConversion(bytes, filename, source, opts.ocr === true, ctx, opts.ocrLanguage)
   throwIfCancelled(ctx.signal)
-  const html = await untilCancelled(converter.write(hub, 'html', opts), ctx.signal)
-  const text = await untilCancelled(converter.write(hub, 'txt', opts), ctx.signal)
+  const html = await untilCancelled(converter.write(hub, 'html', opts, ctx), ctx.signal)
+  const text = await untilCancelled(converter.write(hub, 'txt', opts, ctx), ctx.signal)
   throwIfCancelled(ctx.signal)
   return { html: html.parts[0].bytes.toString('utf8'), text: text.parts[0].bytes.toString('utf8') }
 }
@@ -332,7 +343,7 @@ export async function mergeToTarget(
       const withHeading = headings
         ? { ...hub, html: `<h1 class="doc-title">${escapeHtml(hub.sourceName ?? name)}</h1>\n${hub.html}` }
         : hub
-      const rendered = await untilCancelled(converter.write(withHeading, 'pdf', opts), ctx.signal)
+      const rendered = await untilCancelled(converter.write(withHeading, 'pdf', opts, ctx), ctx.signal)
       fragments.push({ bytes: rendered.parts[0].bytes, name })
     }
     throwIfCancelled(ctx.signal)
@@ -346,5 +357,5 @@ export async function mergeToTarget(
     hubs.push(await readForConversion(item.bytes, item.filename, item.source, item.ocr, item.read ? { ...ctx, ...item.read } : ctx))
   }
   throwIfCancelled(ctx.signal)
-  return untilCancelled(converter.write(mergeHubDocuments(hubs, { headings }), target, opts), ctx.signal)
+  return untilCancelled(converter.write(mergeHubDocuments(hubs, { headings }), target, opts, ctx), ctx.signal)
 }

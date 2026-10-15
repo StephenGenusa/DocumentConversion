@@ -120,6 +120,23 @@ if (existsSync(join(work, 'shop.pdf')) && readFileSync(join(work, 'shop.pdf')).s
   console.log('FAIL  shop.pdf is not a PDF')
 }
 
+// Diagrams (spec B3, B7): drawn as PNG in Word output; a broken one stays as
+// source with a NOTE on stderr, and the conversion still succeeds.
+const diagrams = join(work, 'diagrams.md')
+writeFileSync(diagrams, '# Diagrams\n\n```mermaid\nflowchart LR\n  A --> B\n```\n\n```mermaid\nflowchart LR\n  A -->\n```\n')
+run('mermaid->docx draws, notes the broken one', [diagrams, '--to', 'docx', '--out', join(work, 'diagrams.docx')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'diagrams.docx')],
+  expectStderr: 'NOTE diagrams.md: Diagram 2 could not be drawn: Parse error: the diagram ends too soon',
+})
+if (existsSync(join(work, 'diagrams.docx'))) {
+  const names = readFileSync(join(work, 'diagrams.docx')).toString('latin1')
+  if (!/word\/media\/[^\0]*?\.png/.test(names)) {
+    failures++
+    console.log('FAIL  diagrams.docx has no PNG media')
+  }
+}
+
 // content sanity
 if (existsSync(join(work, 'spec.html'))) {
   const html = readFileSync(join(work, 'spec.html'), 'utf8')

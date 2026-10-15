@@ -11,7 +11,15 @@ import { jsonIsTable } from '../core/readers/json'
 import { normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
 import { createJob, cancelJob, finishJob, runBatch, throwIfCancelled, type BatchRow } from './jobs'
-import { blockHostedFileUrls, clipboardFlavors, mergeToTarget, readForConversion, runConversion, sqliteHost } from './conversion'
+import {
+  blockHostedFileUrls,
+  clipboardFlavors,
+  mergeToTarget,
+  readForConversion,
+  renderHost,
+  runConversion,
+  sqliteHost,
+} from './conversion'
 import { runCli } from './cli-run'
 import { inputBytes, readHandle, registerPath, stampOf } from './file-handles'
 import { isBinaryTarget } from '../core/target-validity'
@@ -129,6 +137,9 @@ function createWindow(): void {
 
   // The page's own <title> would replace the version-bearing one on load.
   mainWindow.on('page-title-updated', (e) => e.preventDefault())
+  // The hidden render window is a window too: left open, it would keep the
+  // app running (window-all-closed never fires) until its idle close.
+  mainWindow.on('closed', () => renderHost.close())
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -525,9 +536,13 @@ function registerIpc(): void {
       },
     ) => {
       let advice: string | undefined
+      // Every other notice (a diagram kept as source, records cut short…)
+      // is shown as it is; only page-fit advice is a "try Landscape" tip.
+      const notes: string[] = []
       const ctx: ReadContext = {
-        onAdvice: (_kind, message) => {
-          advice = message
+        onAdvice: (kind, message) => {
+          if (kind === 'landscape') advice = message
+          else if (!notes.includes(message)) notes.push(message)
         },
         ...(jobId
           ? {
@@ -562,7 +577,7 @@ function registerIpc(): void {
           await writeFile(p, part.bytes)
           paths.push(p)
         }
-        return { status: 'saved' as const, path: paths[0], paths, advice }
+        return { status: 'saved' as const, path: paths[0], paths, advice, ...(notes.length ? { notes } : {}) }
       } catch (err) {
         const code = err instanceof ConversionError ? err.code : 'unexpected'
         return { status: 'error' as const, code, message: (err as Error).message }
@@ -644,14 +659,19 @@ function registerIpc(): void {
           message: `Merge cannot target ${target.toUpperCase()} — use batch for table extraction`,
         }
       }
+      const notes: string[] = []
+      const onAdvice: ReadContext['onAdvice'] = (_kind, message) => {
+        if (!notes.includes(message)) notes.push(message)
+      }
       const ctx: ReadContext = jobId
         ? {
             signal: createJob(jobId),
             onProgress: (stage, percent) => {
               if (!e.sender.isDestroyed()) e.sender.send('app:progress', { jobId, stage, percent })
             },
+            onAdvice,
           }
-        : {}
+        : { onAdvice }
       try {
         const out = await mergeToTarget(
           await Promise.all(
@@ -676,7 +696,7 @@ function registerIpc(): void {
         if (save.canceled || !save.filePath) return { status: 'cancelled' as const }
         rememberSaveDir(save.filePath)
         await writeFile(save.filePath, out.parts[0].bytes)
-        return { status: 'saved' as const, path: save.filePath }
+        return { status: 'saved' as const, path: save.filePath, ...(notes.length ? { notes } : {}) }
       } catch (err) {
         const code = err instanceof ConversionError ? err.code : 'unexpected'
         return { status: 'error' as const, code, message: (err as Error).message }

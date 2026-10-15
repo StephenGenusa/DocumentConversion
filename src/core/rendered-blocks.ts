@@ -49,3 +49,45 @@ const MATH = /<code class="language-math">/
 export function hubFeatures(html: string): HubFeatures {
   return { diagrams: DIAGRAM_BLOCK.test(html), math: MATH.test(html) }
 }
+
+// ---------------------------------------------------------------------------
+// Drawing blocks in output (spec B3, B5, B7). The types live here, where the
+// renderer can import them; the drawing pass is draw-blocks.ts and the host
+// is src/main/render-host.ts.
+// ---------------------------------------------------------------------------
+
+/** What the render host draws. */
+export type RenderKind = 'mermaid' | 'dot' | 'math'
+export type RenderFormat = 'png' | 'svg'
+
+export interface RenderRequest {
+  kind: RenderKind
+  /** The block's source, byte for byte. */
+  source: string
+  /** Display (a block of its own) or inline (math only). */
+  display: boolean
+  format: RenderFormat
+}
+
+/**
+ * A drawing, or why there is none. Sizes are CSS px (1ex = 8px). A PNG is
+ * drawn at twice that size, so it stays sharp when printed or zoomed. `png`
+ * is base64 without a data: prefix; `svg` is markup the host has already
+ * sanitised (svg-sanitize.ts).
+ */
+export type RenderResult =
+  | { png?: string; svg?: string; width: number; height: number; baseline?: number }
+  | { error: string }
+
+export interface RenderBlocksOptions {
+  signal?: AbortSignal
+  /** How long each block may take to draw, once the engine starts on it. */
+  timeoutMs: number
+}
+
+/**
+ * The render host, as core sees it (ConverterDeps.renderBlocks): one result
+ * per request, in order. A request that fails answers `{ error }`; the
+ * promise rejects only when the signal is aborted.
+ */
+export type RenderBlocks = (requests: RenderRequest[], opts: RenderBlocksOptions) => Promise<RenderResult[]>
