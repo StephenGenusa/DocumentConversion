@@ -1,6 +1,5 @@
-import { escapeHtml } from '../shell'
 import { scanElements } from '../ooxml'
-import { collectOdfNotes, appendOdfList, loadOdfContent, odfText, type ListRun } from './odf-common'
+import { collectOdfNotes, appendOdfList, loadOdfDocument, odfRich, withOdfStyles, type ListRun } from './odf-common'
 import { renderOdfTable } from './odt'
 import type { HubDocument, SourceInput } from '../types'
 
@@ -12,8 +11,8 @@ import type { HubDocument, SourceInput } from '../types'
  * loose paragraphs it reads nothing like the deck.
  */
 export async function readOdp(src: SourceInput): Promise<HubDocument> {
-  const xml = await loadOdfContent(src.bytes, 'presentation')
-  const html = collectOdfNotes(() => {
+  const { xml, styles } = await loadOdfDocument(src.bytes, 'presentation')
+  const html = withOdfStyles(styles, () => collectOdfNotes(() => {
     const sections: string[] = []
     for (const page of xml.matchAll(/<draw:page\b[^>]*>([\s\S]*?)<\/draw:page>/g)) {
       const pageXml = page[1]
@@ -33,21 +32,21 @@ export async function readOdp(src: SourceInput): Promise<HubDocument> {
           continue
         }
         lastList = null
-        const text = odfText(block.inner)
+        const { text, html: inline } = odfRich(block.xml)
         if (text === '') continue
         // The slide's first line of text is its title, as before.
         if (title === undefined && parts.length === 0) {
-          title = text
+          title = inline
           continue
         }
-        parts.push(`<p>${escapeHtml(text)}</p>`)
+        parts.push(`<p>${inline}</p>`)
       }
       if (parts.length === 0 && title === undefined && tables.length === 0) continue
-      if (title !== undefined) parts.unshift(`<h2>${escapeHtml(title)}</h2>`)
+      if (title !== undefined) parts.unshift(`<h2>${title}</h2>`)
       parts.push(...tables)
       sections.push(parts.join('\n'))
     }
     return sections.join('\n')
-  })
+  }))
   return { html, title: src.filename?.split(/[\\/]/).pop() }
 }

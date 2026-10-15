@@ -14,8 +14,12 @@ import { scanElements, type XmlElement } from '../ooxml'
  * promoted "internal only, do not ship" to the slide's heading. A reviewer's
  * private remark reaching a delivered deck is the worst outcome this reader
  * has, so the strip goes where no reader can miss it. Doing it twice is free.
+ *
+ * The styles its spans and paragraphs refer to come back with it. Automatic
+ * styles live in content.xml itself; the named ones they inherit from live in
+ * styles.xml, which a minimal package may leave out.
  */
-export async function loadOdfContent(bytes: Buffer, what: string): Promise<string> {
+export async function loadOdfDocument(bytes: Buffer, what: string): Promise<{ xml: string; styles: OdfStyles }> {
   let zip: JSZip
   try {
     zip = await JSZip.loadAsync(bytes)
@@ -24,7 +28,179 @@ export async function loadOdfContent(bytes: Buffer, what: string): Promise<strin
   }
   const content = zip.files['content.xml']
   if (!content) throw new ConversionError('read-failed', `Not an OpenDocument ${what} (missing content.xml)`)
-  return stripOdfComments(await content.async('string'))
+  const raw = await content.async('string')
+  const stylesXml = (await zip.files['styles.xml']?.async('string')) ?? ''
+  const named = /<office:styles\b[^>]*>([\s\S]*?)<\/office:styles>/.exec(stylesXml)?.[1] ?? ''
+  const automatic = /<office:automatic-styles\b[^>]*>([\s\S]*?)<\/office:automatic-styles>/.exec(raw)?.[1] ?? ''
+  return { xml: stripOdfComments(raw), styles: parseOdfStyles(named + automatic) }
+}
+
+/*
+ * Inline formatting. ODF keeps none of it in the text: a `<text:span>` or
+ * `<text:p>` names a style, and the style's `<style:text-properties>` says
+ * bold, italic and so on, possibly by way of a parent style. Each bit below is
+ * one hub tag, in the order they nest, outermost first — the same order the
+ * RTF reader writes them.
+ */
+const BOLD = 1
+const ITALIC = 2
+const UNDERLINE = 4
+const STRIKE = 8
+const SUPER = 16
+const SUB = 32
+const FORMAT_TAGS: [number, string][] = [
+  [BOLD, 'strong'],
+  [ITALIC, 'em'],
+  [UNDERLINE, 'u'],
+  [STRIKE, 's'],
+  [SUPER, 'sup'],
+  [SUB, 'sub'],
+]
+
+/**
+ * What a style says about each bit: `set` is the bits it decides at all, `on`
+ * those it turns on. Kept apart because `fo:font-weight="normal"` inside a
+ * bold paragraph has to switch bold OFF, not merely fail to add it.
+ */
+type TextFormat = { set: number; on: number }
+type StyleEntry = { parent?: string; format: TextFormat }
+export type OdfStyles = { text: Map<string, StyleEntry>; paragraph: Map<string, StyleEntry> }
+
+const NO_STYLES: OdfStyles = { text: new Map(), paragraph: new Map() }
+
+function attr(attrs: string, name: string): string | undefined {
+  return new RegExp(`\\b${name}="([^"]*)"`).exec(attrs)?.[1]
+}
+
+function textFormat(props: string): TextFormat {
+  let set = 0
+  let on = 0
+  const decide = (bit: number, value: boolean): void => {
+    set |= bit
+    if (value) on |= bit
+  }
+  const weight = attr(props, 'fo:font-weight')
+  if (weight !== undefined) decide(BOLD, weight === 'bold' || Number(weight) >= 600)
+  const slant = attr(props, 'fo:font-style')
+  if (slant !== undefined) decide(ITALIC, slant === 'italic' || slant === 'oblique')
+  const underline = attr(props, 'style:text-underline-style')
+  if (underline !== undefined) decide(UNDERLINE, underline !== 'none')
+  const strike = attr(props, 'style:text-line-through-style')
+  if (strike !== undefined) decide(STRIKE, strike !== 'none')
+  // "super 58%", "sub 58%", or a signed percentage raise: "33% 58%", "-33% 58%".
+  const position = attr(props, 'style:text-position')?.trim().split(/\s+/)[0]
+  if (position !== undefined) {
+    const raise = position === 'super' ? 1 : position === 'sub' ? -1 : parseFloat(position) || 0
+    set |= SUPER | SUB
+    if (raise > 0) on |= SUPER
+    if (raise < 0) on |= SUB
+  }
+  return { set, on }
+}
+
+function parseOdfStyles(xml: string): OdfStyles {
+  const styles: OdfStyles = { text: new Map(), paragraph: new Map() }
+  for (const m of xml.matchAll(/<style:style\b([^>]*?)(?:\/>|>([\s\S]*?)<\/style:style>)/g)) {
+    const attrs = m[1]
+    const name = attr(attrs, 'style:name')
+    const family = attr(attrs, 'style:family')
+    if (name === undefined || (family !== 'text' && family !== 'paragraph')) continue
+    const props = /<style:text-properties\b([^>]*)>/.exec(m[2] ?? '')?.[1] ?? ''
+    styles[family].set(name, { parent: attr(attrs, 'style:parent-style-name'), format: textFormat(props) })
+  }
+  return styles
+}
+
+/** A style's format with its ancestors' folded in; the nearest one wins. */
+function resolveStyle(map: Map<string, StyleEntry>, name: string | undefined, depth = 0): TextFormat {
+  const entry = name === undefined ? undefined : map.get(name)
+  // The depth cap stops a parent cycle in a hand-made file looping forever.
+  if (!entry || depth > 20) return { set: 0, on: 0 }
+  const parent = resolveStyle(map, entry.parent, depth + 1)
+  return { set: parent.set | entry.format.set, on: (parent.on & ~entry.format.set) | entry.format.on }
+}
+
+/**
+ * The styles of the document being read. Set only inside withOdfStyles,
+ * around synchronous work, like `documentNotes` below; `odfText` on its own
+ * knows no styles and returns plain text as it always has.
+ */
+let documentStyles: OdfStyles = NO_STYLES
+
+export function withOdfStyles<T>(styles: OdfStyles, build: () => T): T {
+  documentStyles = styles
+  try {
+    return build()
+  } finally {
+    documentStyles = NO_STYLES
+  }
+}
+
+/**
+ * The formatting in force at a point in the text travels as one private-use
+ * character, U+E100 plus the bits. Being a character it survives the tag
+ * strip, the whitespace collapse and `escapeHtml`, so the hub tags can be
+ * written afterwards — the same trick as the tab sentinel above.
+ */
+const MARK_BASE = 0xe100
+const MARKS = /[\uE100-\uE13F]/g
+const mark = (bits: number): string => String.fromCharCode(MARK_BASE + bits)
+
+/**
+ * Put a mark after every span and paragraph boundary. A heading's own style
+ * is left out on purpose: heading styles are bold by default, and an <h1>
+ * wrapped whole in <strong> says nothing the <h1> did not.
+ */
+function markFormatting(xml: string): string {
+  const styles = documentStyles
+  if (styles === NO_STYLES) return xml
+  const stack = [0]
+  const boundary = /<(\/?)(text:span|text:p|text:h)\b([^>]*?)(\/?)>/g
+  return xml.replace(boundary, (tag, close: string, name: string, attrs: string, empty: string) => {
+    if (empty) return tag
+    // A fragment cut out by a lazy regex can close more than it opened.
+    if (close) {
+      if (stack.length > 1) stack.pop()
+      return tag + mark(stack[stack.length - 1])
+    }
+    const outer = stack[stack.length - 1]
+    let bits = outer
+    if (name !== 'text:h') {
+      const own = resolveStyle(name === 'text:span' ? styles.text : styles.paragraph, attr(attrs, 'text:style-name'))
+      bits = (outer & ~own.set) | own.on
+    }
+    stack.push(bits)
+    return tag + mark(bits)
+  })
+}
+
+/**
+ * Turn the marks in escaped text into hub tags. Tags open only when a
+ * character needs them, so an empty span leaves no empty <strong>, and a
+ * change keeps the outer tags that still apply open: bold, then bold italic,
+ * reads `<strong>a <em>b</em></strong>`.
+ */
+function marksToHtml(text: string): string {
+  let out = ''
+  let open: string[] = []
+  let want: string[] = []
+  for (const ch of text) {
+    const code = ch.charCodeAt(0)
+    if (code >= MARK_BASE && code < MARK_BASE + 64) {
+      want = FORMAT_TAGS.filter(([bit]) => (code - MARK_BASE) & bit).map(([, tag]) => tag)
+      continue
+    }
+    if (open !== want) {
+      let keep = 0
+      while (keep < open.length && keep < want.length && open[keep] === want[keep]) keep++
+      for (let i = open.length - 1; i >= keep; i--) out += `</${open[i]}>`
+      for (let i = keep; i < want.length; i++) out += `<${want[i]}>`
+      open = want
+    }
+    out += ch
+  }
+  for (let i = open.length - 1; i >= 0; i--) out += `</${open[i]}>`
+  return out
 }
 
 /**
@@ -135,14 +311,14 @@ export function collectOdfNotes(build: () => string): string {
   }
   if (notes.length === 0) return html
   const body = html.replace(/zOdFnOtE(\d+)Zz/g, (_m, i: string) => `<sup data-fn="${Number(i) + 1}">${Number(i) + 1}</sup>`)
-  const items = notes.map((text, i) => `<li data-fn="${i + 1}"><p>${escapeHtml(text)}</p></li>`)
+  const items = notes.map((text, i) => `<li data-fn="${i + 1}"><p>${marksToHtml(escapeHtml(text))}</p></li>`)
   return `${body}\n<ol>${items.join('')}</ol>`
 }
 
 function liftOdfNotes(xml: string, notes: string[]): string {
   return replaceElements(stripOdfComments(xml), ['text:note'], (note) => {
     const citation = /<text:note-citation\b[^>]*>([\s\S]*?)<\/text:note-citation>/.exec(note.inner)?.[1] ?? ''
-    const mark = odfInline(citation) || NOTE_FALLBACK_MARK
+    const mark = odfInline(citation).replace(MARKS, '') || NOTE_FALLBACK_MARK
     // Tolerate a missing `</text:note-body>`: callers that carve a fragment out
     // with a lazy `<text:p>…</text:p>` regex hand us a note cut off mid-body,
     // and the words in it are still the reader's only copy of that footnote.
@@ -171,6 +347,22 @@ function liftOdfNotes(xml: string, notes: string[]): string {
  * fragment (a cell or list item holding several paragraphs) separate words too.
  */
 export function odfText(xml: string): string {
+  return odfMarked(xml).replace(MARKS, '')
+}
+
+/**
+ * A fragment both ways at once: `text` plain, for titles and emptiness
+ * checks, and `html` escaped with its inline formatting as hub tags. One call,
+ * because reading a fragment twice would record its footnotes twice. Pass the
+ * whole `<text:p>` rather than its inner XML so the paragraph's own style
+ * counts.
+ */
+export function odfRich(xml: string): { text: string; html: string } {
+  const marked = odfMarked(xml)
+  return { text: marked.replace(MARKS, ''), html: marksToHtml(escapeHtml(marked)) }
+}
+
+function odfMarked(xml: string): string {
   const notes: string[] = []
   const main = odfInline(liftOdfNotes(xml, notes))
   return [main, ...notes].filter((part) => part !== '').join(' ')
@@ -178,7 +370,7 @@ export function odfText(xml: string): string {
 
 /** The tag strip and whitespace collapse, with notes already lifted out. */
 function odfInline(xml: string): string {
-  return xml
+  return markFormatting(xml)
     .replace(/<text:s\b[^>]*?\/?>/g, (tag) => {
       const count = Number(/\btext:c="(\d+)"/.exec(tag)?.[1] ?? 1)
       return ' '.repeat(Number.isFinite(count) ? Math.min(Math.max(count, 1), 100) : 1)
@@ -200,8 +392,13 @@ function odfInline(xml: string): string {
     .replace(PADDED_TAB_SENTINEL, TAB_SENTINEL)
     .split(TAB_SENTINEL)
     .join(TAB_GAP)
-    .trim()
+    // Trim through the formatting marks, keeping the marks themselves: the
+    // last one is what resets the formatting for whatever is joined on after.
+    .replace(EDGE_SPACE, (edge) => edge.replace(/\s/g, ''))
 }
+
+/** Whitespace at either end of a fragment, with any marks among it. */
+const EDGE_SPACE = /^[\s\uE100-\uE13F]+|[\s\uE100-\uE13F]+$/g
 
 /**
  * The `<li>`s of one `<text:list>`. A nested `<text:list>` belongs INSIDE the
@@ -219,11 +416,11 @@ export function odfListItems(listInner: string): string {
         nested += odfList(part.inner)
         continue
       }
-      const text = odfText(part.inner)
-      if (text !== '') texts.push(text)
+      const { text, html } = odfRich(part.xml)
+      if (text !== '') texts.push(html)
     }
     if (texts.length === 0 && nested === '') continue
-    items.push(`<li>${escapeHtml(texts.join(' '))}${nested}</li>`)
+    items.push(`<li>${texts.join(' ')}${nested}</li>`)
   }
   return items.join('')
 }

@@ -1,6 +1,5 @@
-import { escapeHtml } from '../shell'
 import { scanElements } from '../ooxml'
-import { collectOdfNotes, appendOdfList, loadOdfContent, odfText, type ListRun } from './odf-common'
+import { collectOdfNotes, appendOdfList, loadOdfDocument, odfRich, withOdfStyles, type ListRun } from './odf-common'
 import type { HubDocument, SourceInput } from '../types'
 
 /**
@@ -27,8 +26,8 @@ export function odfRowCells(rowXml: string): string[] {
         continue
       }
       // A list inside a cell: its items' text, in order.
-      const text = odfText(block.inner)
-      if (text) pieces.push(escapeHtml(text))
+      const { text, html: inline } = odfRich(block.xml)
+      if (text) pieces.push(inline)
     }
     const html = pieces.join(' ')
     const repeat = Math.min(1000, Math.max(1, Number(/number-columns-repeated="(\d+)"/.exec(attrs)?.[1] ?? 1)))
@@ -61,12 +60,13 @@ export function renderOdfTable(tableXml: string): string | null {
 
 /**
  * OpenDocument text. Content-focused like the rest of the app: headings,
- * paragraphs, lists and tables survive; styling and page layout do not.
+ * paragraphs, lists, tables and inline formatting survive; fonts, colours and
+ * page layout do not.
  */
 export async function readOdt(src: SourceInput): Promise<HubDocument> {
-  const xml = await loadOdfContent(src.bytes, 'text document')
+  const { xml, styles } = await loadOdfDocument(src.bytes, 'text document')
   let title: string | undefined
-  const html = collectOdfNotes(() => {
+  const html = withOdfStyles(styles, () => collectOdfNotes(() => {
     const body = /<office:text\b[^>]*>([\s\S]*)<\/office:text>/.exec(xml)?.[1] ?? xml
     const parts: string[] = []
 
@@ -88,19 +88,19 @@ export async function readOdt(src: SourceInput): Promise<HubDocument> {
         continue
       }
       lastList = null
-      const text = odfText(block.inner)
+      const { text, html: inline } = odfRich(block.xml)
       if (text === '') continue
       if (block.name === 'text:h') {
         const level = Math.min(6, Math.max(1, Number(/<text:h\b[^>]*\boutline-level="(\d+)"/.exec(block.xml)?.[1] ?? 1)))
         title ??= text
-        parts.push(`<h${level}>${escapeHtml(text)}</h${level}>`)
+        parts.push(`<h${level}>${inline}</h${level}>`)
       } else {
-        parts.push(`<p>${escapeHtml(text)}</p>`)
+        parts.push(`<p>${inline}</p>`)
       }
     }
 
     return parts.join('\n')
-  })
+  }))
   // A heading's note mark is a reference in the body, not part of the title.
   title = title?.replace(/zOdFnOtE\d+Zz/g, '').trim() || undefined
   return { html, title: title ?? src.filename?.split(/[\\/]/).pop() }

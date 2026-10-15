@@ -236,7 +236,7 @@ describe('readOdt with notes and comments', () => {
  * In a presentation an `<office:annotation>` is a child of `<draw:page>`, not
  * of a paragraph, so the slide scan in odp.ts meets the comment's `<text:p>`
  * directly and — it being the first text on the page — made it the slide's
- * heading. That is why comments are stripped in `loadOdfContent` as well as in
+ * heading. That is why comments are stripped in `loadOdfDocument` as well as in
  * `odfText`: at that door no ODF reader can miss them.
  */
 describe('readOdp with slide comments', () => {
