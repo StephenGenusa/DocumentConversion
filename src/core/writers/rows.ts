@@ -27,7 +27,10 @@ async function* rowsOf(source: RowSource, opts: RowWriteOptions, index: number, 
   for await (const row of source.rows) {
     if (opts.signal?.aborted) throw new ConversionError('cancelled', 'Cancelled')
     yield row
-    if (++n % 10_000 === 0) opts.onProgress?.(`Table ${index + 1} of ${count}: ${n.toLocaleString('en-US')} rows`)
+    if (++n % 10_000 === 0) {
+      const of = source.total !== undefined ? ` of ${source.total.toLocaleString('en-US')}` : ''
+      opts.onProgress?.(`Table ${index + 1} of ${count}: ${n.toLocaleString('en-US')}${of} rows`)
+    }
   }
 }
 
@@ -52,6 +55,15 @@ function sheetNamer(): (name: string) => string {
 }
 
 export async function writeRows(sources: RowSource[], target: TargetFormat, opts: RowWriteOptions = {}): Promise<WriteResult> {
+  try {
+    return await writeAll(sources, target, opts)
+  } finally {
+    // Whatever happened, a source holding something open lets go of it.
+    for (const s of new Set(sources.map((x) => x.close))) await s?.()
+  }
+}
+
+async function writeAll(sources: RowSource[], target: TargetFormat, opts: RowWriteOptions): Promise<WriteResult> {
   if (sources.length === 0) throw new ConversionError('no-tables', 'This document contains no tables to extract')
   if (target === 'csv') {
     const parts: WritePart[] = []

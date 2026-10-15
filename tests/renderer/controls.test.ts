@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TARGET_FORMATS, SOURCE_FORMATS } from '../../src/core/types'
-import { showsOutput, showsInput, appliedOptions, appliedReadOptions, type ControlInput } from '../../src/renderer/src/lib/controls'
+import { showsOutput, showsInput, appliedOptions, appliedReadOptions, editedCopyNote, type ControlInput } from '../../src/renderer/src/lib/controls'
 
 /**
  * Spec 2a: a control that is visible must change the result, and one that
@@ -41,6 +41,20 @@ describe('input controls', () => {
   it('shows Include timestamps on transcripts only', () => {
     for (const s of SOURCE_FORMATS) expect(showsInput('timestamps', { source: s }), s).toBe(s === 'subtitles')
   })
+
+  it('shows Include view results only on a database with views', () => {
+    for (const s of SOURCE_FORMATS) expect(showsInput('sqliteViews', { source: s, viewCount: 2 }), s).toBe(s === 'sqlite')
+    expect(showsInput('sqliteViews', { source: 'sqlite', viewCount: 0 })).toBe(false)
+    expect(showsInput('sqliteViews', { source: 'sqlite' })).toBe(false)
+  })
+})
+
+describe('the edited-copy note', () => {
+  it('uses the SQLite wording for a database, and the records wording otherwise', () => {
+    expect(editedCopyNote('sqlite')).toBe('Edited copy: tables are limited to 5,000 rows. Discard edits to export every row.')
+    expect(editedCopyNote('json')).toMatch(/^This edited copy holds the first 5,000 records\./)
+    expect(editedCopyNote('vcard')).toBe(editedCopyNote('json'))
+  })
 })
 
 describe('reading choices sent with an input', () => {
@@ -49,5 +63,8 @@ describe('reading choices sent with an input', () => {
     expect(appliedReadOptions('subtitles', { transcriptTimestamps: false, jsonAs: 'text' })).toEqual({ transcriptTimestamps: false })
     expect(appliedReadOptions('json', { transcriptTimestamps: false })).toEqual({ jsonAs: 'table' })
     expect(appliedReadOptions('docx', { transcriptTimestamps: false, jsonAs: 'text' })).toEqual({})
+    expect(appliedReadOptions('sqlite')).toEqual({ sqliteViews: false })
+    expect(appliedReadOptions('sqlite', { sqliteViews: true, jsonAs: 'text' })).toEqual({ sqliteViews: true })
+    expect(appliedReadOptions('json', { sqliteViews: true })).toEqual({ jsonAs: 'table' })
   })
 })

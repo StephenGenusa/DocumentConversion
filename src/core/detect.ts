@@ -1,9 +1,17 @@
 import type { SourceFormat } from './types'
 import { codeFormatFromFilename, codeNameFromFilename } from './code-langs'
 import { imageMime } from './readers/image'
+import { hasSqliteMagic } from './sqlite'
 
 export type DetectResult =
-  | { kind: 'ok'; format: SourceFormat; /** JSON that reads as a table of records (added by the main process). */ jsonTable?: boolean }
+  | {
+      kind: 'ok'
+      format: SourceFormat
+      /** JSON that reads as a table of records (added by the main process). */
+      jsonTable?: boolean
+      /** A SQLite database's number of views (added by the main process). */
+      viewCount?: number
+    }
   | { kind: 'archive' }
   | { kind: 'unsupported'; reason: string }
 
@@ -63,6 +71,14 @@ const EXT_MAP = new Map<string, SourceFormat>(
     dj: 'djot',
     djot: 'djot',
     textile: 'textile',
+    // SQLite databases go by their magic bytes (see detect()). These names
+    // without it are still databases, encrypted ones (SQLCipher encrypts the
+    // header too), and are refused with that message rather than read as
+    // text. A .db is not among them: the name is used by too many other
+    // formats (Thumbs.db is a CFB file), so one without the magic is not SQLite.
+    sqlite: 'sqlite',
+    sqlite3: 'sqlite',
+    db3: 'sqlite',
     // mammoth reads macro-enabled Word documents like any other .docx.
     docm: 'docx',
     ipynb: 'ipynb',
@@ -100,6 +116,7 @@ function hasMagic(bytes: Buffer, magic: number[]): boolean {
  * generic ZIP handling so xlsx/pptx are never mistaken for docx.
  */
 export function sniffBinary(bytes: Buffer, filename?: string): DetectResult | null {
+  if (hasSqliteMagic(bytes)) return ok('sqlite')
   if (imageMime(bytes)) return ok('image')
   if (bytes.length >= 5 && bytes.toString('latin1', 0, 5) === '%PDF-') return ok('pdf')
   if (hasMagic(bytes, CFB_MAGIC)) {
@@ -226,7 +243,7 @@ export function looksLikeNotebook(text: string): boolean {
  * extension is always authoritative: text formats overlap by design (an .md
  * file is also valid .txt), so `looksLike…` is a guess, never a correction.
  */
-const CONTAINER: Partial<Record<SourceFormat, 'zip' | 'cfb' | 'pdf' | 'image' | 'rtf'>> = {
+const CONTAINER: Partial<Record<SourceFormat, 'zip' | 'cfb' | 'pdf' | 'image' | 'rtf' | 'sqlite'>> = {
   docx: 'zip',
   xlsx: 'zip',
   pptx: 'zip',
@@ -239,6 +256,7 @@ const CONTAINER: Partial<Record<SourceFormat, 'zip' | 'cfb' | 'pdf' | 'image' | 
   pdf: 'pdf',
   image: 'image',
   rtf: 'rtf',
+  sqlite: 'sqlite',
 }
 
 /**
@@ -294,6 +312,10 @@ export function looksLikeVcard(bytes: Buffer): boolean {
 }
 
 export function detect(bytes: Buffer, filename?: string): DetectResult {
+  // A SQLite database is what its first 16 bytes say, whatever its name
+  // (.db, .sqlite3, an app's own extension, none), so this runs before any
+  // extension is looked at. The magic ends in a NUL: no text file has it.
+  if (hasSqliteMagic(bytes)) return ok('sqlite')
   if (filename) {
     // .zip is an acquisition method, not a SourceFormat, so it is matched here
     // rather than through the extension map (an empty zip has no PK\x03\x04).

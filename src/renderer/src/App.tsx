@@ -125,6 +125,7 @@ function App(): React.JSX.Element {
       sourceDir: p.sourceDir,
       handle: p.handle,
       jsonTable: p.jsonTable,
+      viewCount: p.viewCount,
       read: readDefaults,
     })
   }
@@ -410,7 +411,12 @@ function App(): React.JSX.Element {
   // html, which opening it in the pane already recorded. Rendering must not
   // read the pane.
   // What the visibility rules (lib/controls.ts) look at, per input.
-  const controlInputs: ControlInput[] = items.map((i) => ({ source: i.source, imageMode: i.imageMode, jsonTable: i.jsonTable }))
+  const controlInputs: ControlInput[] = items.map((i) => ({
+    source: i.source,
+    imageMode: i.imageMode,
+    jsonTable: i.jsonTable,
+    viewCount: i.viewCount,
+  }))
   const validityInputs = items.map((i) => ({
     format: (i.html !== undefined ? 'html' : i.source) as SourceFormat,
     imageMode: i.imageMode,
@@ -484,6 +490,7 @@ function App(): React.JSX.Element {
                 onOcrLanguageChange={setOcrLanguage}
                 onEdit={() => void editItem(single.id)}
                 jsonTable={single.jsonTable}
+                viewCount={single.viewCount}
                 read={single.read}
                 onReadChange={(patch) => setRead(single.id, patch)}
                 edited={single.html !== undefined}

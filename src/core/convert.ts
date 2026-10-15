@@ -9,7 +9,9 @@ import type {
   WriteResult,
 } from './types'
 import { ConversionError } from './errors'
-import { getReader } from './readers'
+import { getReader, type Reader, type RowReader } from './readers'
+import { sqliteReader, sqliteRowReader } from './readers/sqlite'
+import type { SqliteEngine } from './sqlite'
 import { stripXmlIllegal } from './allowlist'
 import { stripSpeakerNotes } from './speaker-notes'
 import { SLIDE_TARGETS } from './types'
@@ -50,14 +52,27 @@ export interface ConverterDeps {
    * Without it nothing is fetched and those images become their alt text.
    */
   fetchImages?: GuardedFetchDeps
+  /**
+   * The SQLite engine (sql.js in a main-process worker, see core/sqlite.ts).
+   * Without it a database is refused: "SQLite databases need the desktop app".
+   */
+  sqlite?: SqliteEngine
 }
 
 export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {}): Converter {
   const writers: Record<TargetFormat, Writer> = createWriters(render)
 
+  // Readers are plain (src, ctx) functions and get no deps; a reader that
+  // needs a host service is a factory, bound here to this converter's deps.
+  // The registry's own entry for it is the unbound one, which refuses, so a
+  // caller going round the converter (getReader) cannot reach a missing engine.
+  const bound: Partial<Record<SourceFormat, { read: Reader; rows: RowReader }>> = {
+    sqlite: { read: sqliteReader(deps.sqlite), rows: sqliteRowReader(deps.sqlite) },
+  }
+
   async function read(src: SourceInput, source: SourceFormat, ctx?: ReadContext): Promise<HubDocument> {
     try {
-      const hub = await getReader(source)(src, ctx)
+      const hub = await (bound[source]?.read ?? getReader(source))(src, ctx)
       if (!hub.sourceName && src.filename) hub.sourceName = src.filename
       // The hub contract every writer relies on, applied where every reader's
       // output passes. Most readers do not sanitise, and the docx and epub
@@ -114,7 +129,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       return write(await read(src, source, readCtx), target, opts)
     },
     async readRows(src, source, ctx) {
-      const reader = getRowReader(source)
+      const reader = bound[source]?.rows ?? getRowReader(source)
       if (!reader) return null
       try {
         return await reader(src, ctx)

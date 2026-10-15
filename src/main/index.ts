@@ -11,7 +11,7 @@ import { jsonIsTable } from '../core/readers/json'
 import { normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
 import { createJob, cancelJob, finishJob, runBatch, throwIfCancelled, type BatchRow } from './jobs'
-import { blockHostedFileUrls, clipboardFlavors, mergeToTarget, readForConversion, runConversion } from './conversion'
+import { blockHostedFileUrls, clipboardFlavors, mergeToTarget, readForConversion, runConversion, sqliteHost } from './conversion'
 import { runCli } from './cli-run'
 import { inputBytes, readHandle, registerPath, stampOf } from './file-handles'
 import { isBinaryTarget } from '../core/target-validity'
@@ -78,12 +78,15 @@ const FILTERS: Record<TargetFormat, { name: string; extensions: string[] }> = {
 
 /**
  * Detection, plus what the input card needs to know before anything is
- * converted: whether a JSON file reads as a table, which decides whether the
- * Table / Formatted JSON choice is shown (spec 2a, V2).
+ * converted (spec 2a, V2): whether a JSON file reads as a table, which decides
+ * whether the Table / Formatted JSON choice is shown, and how many views a
+ * database has, which decides whether Include view results is.
  */
-function detectWithHints(bytes: Buffer, filename?: string): DetectResult {
+async function detectWithHints(bytes: Buffer, filename?: string): Promise<DetectResult> {
   const d = detect(bytes, filename)
-  return d.kind === 'ok' && d.format === 'json' ? { ...d, jsonTable: jsonIsTable(bytes, filename) } : d
+  if (d.kind === 'ok' && d.format === 'json') return { ...d, jsonTable: jsonIsTable(bytes, filename) }
+  if (d.kind === 'ok' && d.format === 'sqlite') return { ...d, viewCount: await sqliteHost.viewCount(bytes) }
+  return d
 }
 
 /**
@@ -96,6 +99,7 @@ function readOptionsOf(value: unknown): ReadOptions {
   const out: ReadOptions = {}
   if (v.jsonAs === 'table' || v.jsonAs === 'text') out.jsonAs = v.jsonAs
   if (typeof v.transcriptTimestamps === 'boolean') out.transcriptTimestamps = v.transcriptTimestamps
+  if (typeof v.sqliteViews === 'boolean') out.sqliteViews = v.sqliteViews
   return out
 }
 
@@ -167,19 +171,24 @@ interface LoadedFile {
  * back to, so it stays the snapshot it was expanded as.
  */
 async function loadBytes(bytes: Buffer, filename: string, sourceDir?: string, path?: string): Promise<LoadedFile[]> {
-  const detected = detectWithHints(bytes, filename)
+  const detected = await detectWithHints(bytes, filename)
   if (detected.kind !== 'archive') {
     const handle = path ? registerPath(path) : undefined
     return [{ filename, base64: bytes.toString('base64'), detected, sourceDir, handle }]
   }
   const entries = await expandZipArchive(bytes)
   // An entry has no folder of its own, so it inherits the archive's.
-  return entries.map((entry) => ({
-    filename: entry.filename,
-    base64: entry.bytes.toString('base64'),
-    detected: detectWithHints(entry.bytes, entry.filename),
-    sourceDir,
-  }))
+  // One at a time: a database entry's hint starts an engine worker.
+  const loaded: LoadedFile[] = []
+  for (const entry of entries) {
+    loaded.push({
+      filename: entry.filename,
+      base64: entry.bytes.toString('base64'),
+      detected: await detectWithHints(entry.bytes, entry.filename),
+      sourceDir,
+    })
+  }
+  return loaded
 }
 
 async function loadPath(path: string): Promise<LoadedFile[]> {

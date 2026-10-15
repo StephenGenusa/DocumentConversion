@@ -11,6 +11,7 @@ import { mergeHubDocuments } from '../core/merge'
 import { mergePdfs, type PdfMergeInput } from '../core/pdf-merge'
 import { escapeHtml } from '../core/shell'
 import { runOcr } from './ocr-host'
+import { createSqliteHost } from './sqlite-host'
 import { throwIfCancelled, untilCancelled } from './jobs'
 import { looksLikeHeader, rowsToHtmlTable } from '../core/readers/csv'
 import { extractPdfPageLines, pdfPagesToHub, type PdfPageSource } from '../core/readers/pdf'
@@ -135,7 +136,10 @@ export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Pr
   }
 }
 
-export const converter = createConverter(renderHtmlToPdf, { fetchImages: urlFetchDeps })
+/** sql.js in a worker per open database (spec D13); the card asks it for view counts too. */
+export const sqliteHost = createSqliteHost()
+
+export const converter = createConverter(renderHtmlToPdf, { fetchImages: urlFetchDeps, sqlite: sqliteHost })
 
 /**
  * OCR pages to one hub document.

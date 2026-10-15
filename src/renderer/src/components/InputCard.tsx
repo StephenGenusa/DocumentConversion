@@ -1,5 +1,5 @@
 import { OcrLanguagePicker } from './OcrLanguagePicker'
-import { showsInput } from '../lib/controls'
+import { editedCopyNote, showsInput } from '../lib/controls'
 import type { ReadOptions, SourceFormat } from '../../../preload/types'
 
 const LABELS: Record<SourceFormat, string> = {
@@ -31,11 +31,12 @@ const LABELS: Record<SourceFormat, string> = {
   vcard: 'Contacts (vCard)',
   djot: 'Djot',
   textile: 'Textile',
+  sqlite: 'SQLite database',
 }
 
 // Binary formats are what their magic bytes say — no override. Text inputs can
 // be reinterpreted as any text format that has a reader (extended per phase).
-const BINARY: SourceFormat[] = ['docx', 'pdf', 'xlsx', 'msg', 'image', 'pptx', 'doc', 'epub', 'odt', 'odp']
+const BINARY: SourceFormat[] = ['docx', 'pdf', 'xlsx', 'msg', 'image', 'pptx', 'doc', 'epub', 'odt', 'odp', 'sqlite']
 const TEXT_OVERRIDES: SourceFormat[] = [
   'txt',
   'md',
@@ -68,6 +69,7 @@ export function InputCard({
   onImageModeChange,
   onEdit,
   jsonTable,
+  viewCount,
   read = {},
   onReadChange,
   edited,
@@ -76,6 +78,8 @@ export function InputCard({
   filename?: string
   /** JSON that reads as a table of records. */
   jsonTable?: boolean
+  /** A SQLite database's number of views. */
+  viewCount?: number
   /** The reading choices made on this card. */
   read?: ReadOptions
   onReadChange?: (patch: ReadOptions) => void
@@ -192,12 +196,23 @@ export function InputCard({
       {showsInput('timestamps', { source }) && edited && (
         <p className="card__note">This transcript has been edited, so changing timestamps does not change it.</p>
       )}
-      {editedLimited && (
-        <p className="card__note">
-          This edited copy holds the first 5,000 records. Exporting it to CSV, JSON or Excel writes only those; to export
-          every record, remove it and add the file again without opening it in the editor.
-        </p>
+      {showsInput('sqliteViews', { source, viewCount }) && onReadChange && (
+        <div className="card__row">
+          <span className="card__label">Database</span>
+          <label>
+            <input
+              type="checkbox"
+              checked={read.sqliteViews ?? false}
+              onChange={(e) => onReadChange({ sqliteViews: e.target.checked })}
+            />
+            Include view results
+          </label>
+        </div>
       )}
+      {showsInput('sqliteViews', { source, viewCount }) && edited && (
+        <p className="card__note">This database has been edited, so changing view results does not change it.</p>
+      )}
+      {editedLimited && <p className="card__note">{editedCopyNote(source)}</p>}
     </div>
   )
 }

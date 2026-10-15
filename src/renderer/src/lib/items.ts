@@ -30,6 +30,8 @@ export interface ListItem {
   rev?: number
   /** JSON that reads as a table of records (decides whether the choice is shown). */
   jsonTable?: boolean
+  /** A SQLite database's number of views (decides whether Include view results is shown). */
+  viewCount?: number
   /** The reading choices made on this input's card. */
   read?: ReadOptions
   /** The pane's copy was read cut to the print limit (records.ts). */

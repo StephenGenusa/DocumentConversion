@@ -50,6 +50,7 @@ export type SourceFormat =
   | 'vcard'
   | 'djot'
   | 'textile'
+  | 'sqlite'
 
 export const TARGET_FORMATS: TargetFormat[] = [
   'txt',
@@ -130,6 +131,7 @@ export const SOURCE_FORMATS: SourceFormat[] = [
   'vcard',
   'djot',
   'textile',
+  'sqlite',
 ]
 
 export const EXTENSIONS: Record<TargetFormat, string> = {
@@ -176,6 +178,8 @@ export interface ReadOptions {
   jsonAs?: 'table' | 'text'
   /** Transcripts: show each turn's time (the default) or leave times out. */
   transcriptTimestamps?: boolean
+  /** SQLite: each view's results after the tables (off by default: views are listed in the schema). */
+  sqliteViews?: boolean
 }
 
 /** Options, cancellation, and progress threaded into readers. */
@@ -185,7 +189,17 @@ export interface ReadContext extends ReadOptions {
   onProgress?: (stage: string, percent?: number) => void
   /** Non-fatal suggestions surfaced to the user (e.g. "this would fit landscape"). */
   onAdvice?: (
-    kind: 'landscape' | 'doc-tables' | 'doc-lists' | 'doc-images' | 'reformatted' | 'records-limited' | 'record-error' | 'photos-omitted',
+    kind:
+      | 'landscape'
+      | 'doc-tables'
+      | 'doc-lists'
+      | 'doc-images'
+      | 'reformatted'
+      | 'records-limited'
+      | 'record-error'
+      | 'photos-omitted'
+      | 'sqlite-wal'
+      | 'sqlite-stopped',
     message: string,
     suggestion?: { pageSize: PdfPageSize; landscape: boolean },
   ) => void

@@ -25,6 +25,9 @@ files:
 asarUnpack:
   - resources/**
   # tesseract's worker_threads scripts and wasm core cannot load from asar
+  # The sqlite worker is started by Node from a real file (sqlite-host.ts);
+  # its engine, resources/sqlite, is already unpacked by resources/** above.
+  - out/main/sqlite-worker.js
   - node_modules/tesseract.js/**
   - node_modules/tesseract.js-core/**
   - node_modules/@napi-rs/canvas/**

@@ -19,6 +19,8 @@ export const CORPUS_DIR = 'tests/corpus'
 const SKIP_PATHS = new Set([
   'package-lock.json',
   'src/core/assets/reveal.generated.ts',
+  // sql.js's loader, vendored byte for byte (scripts/build-sqlite-assets.mjs).
+  'resources/sqlite/sql-wasm.js',
   'tests/pii/corpus-vocabulary.txt',
   // The guard's own lists name the values they exist to exclude. Scanning them
   // makes every check trip on itself.
@@ -29,7 +31,7 @@ const SKIP_PATHS = new Set([
   'tests/pii/domain-exceptions.txt',
 ])
 const BINARY_EXT =
-  /\.(png|jpe?g|gif|ico|icns|svg|pdf|docx?|xlsx?|pptx?|odt|odp|ods|epub|msg|rtf|eml|ics|gz|zip|traineddata|woff2?|ttf|mobi|azw3?|azw4)$/i
+  /\.(png|jpe?g|gif|ico|icns|svg|pdf|docx?|xlsx?|pptx?|odt|odp|ods|epub|msg|rtf|eml|ics|gz|zip|traineddata|wasm|woff2?|ttf|mobi|azw3?|azw4)$/i
 
 /**
  * A minimal .gitignore matcher.

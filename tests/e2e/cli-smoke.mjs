@@ -83,6 +83,43 @@ run('bad usage exit 2', [md], { expectCode: 2, expectStderr: '--to is required' 
 // 8. missing input
 run('missing input exit 1', [join(work, 'nope.md'), '--to', 'html'], { expectCode: 1, expectStderr: 'ERROR' })
 
+// 9. SQLite, through the real worker host: printed, and exported every row.
+// The database is made with sql.js (a devDependency) here.
+const { createRequire } = await import('node:module')
+const initSqlJs = createRequire(import.meta.url)('sql.js')
+const SQL = await initSqlJs()
+const sqlDb = new SQL.Database()
+sqlDb.run(`CREATE TABLE products(id INTEGER PRIMARY KEY, name TEXT);
+  WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 6000)
+  INSERT INTO products SELECT i, 'product ' || i FROM n;
+  CREATE TABLE notes(body TEXT); INSERT INTO notes VALUES ('Smoke note');
+  CREATE VIEW recent AS SELECT name FROM products WHERE id > 5990;`)
+const shop = join(work, 'shop.sqlite')
+writeFileSync(shop, Buffer.from(sqlDb.export()))
+sqlDb.close()
+run('sqlite->pdf', [shop, '--to', 'pdf', '--out', join(work, 'shop.pdf')], { expectCode: 0, expectFiles: [join(work, 'shop.pdf')] })
+run('sqlite->csv with views', [shop, '--to', 'csv', '--sqlite-views', '--out', join(work, 'shop.csv')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'shop.notes.csv'), join(work, 'shop.products.csv'), join(work, 'shop.recent.csv')],
+})
+run('sqlite->xlsx', [shop, '--to', 'xlsx', '--out', join(work, 'shop.xlsx')], { expectCode: 0, expectFiles: [join(work, 'shop.xlsx')] })
+run('--sqlite-views with no database exit 2', [md, '--to', 'csv', '--sqlite-views'], {
+  expectCode: 2,
+  expectStderr: '--sqlite-views applies only to sqlite input',
+})
+if (existsSync(join(work, 'shop.products.csv'))) {
+  const lines = readFileSync(join(work, 'shop.products.csv'), 'utf8').trim().split(/\r?\n/)
+  const recent = existsSync(join(work, 'shop.recent.csv')) ? readFileSync(join(work, 'shop.recent.csv'), 'utf8').trim().split(/\r?\n/) : []
+  if (lines.length !== 6001 || recent.length !== 11) {
+    failures++
+    console.log(`FAIL  sqlite csv: ${lines.length - 1} product rows (want 6000), ${recent.length - 1} view rows (want 10)`)
+  }
+}
+if (existsSync(join(work, 'shop.pdf')) && readFileSync(join(work, 'shop.pdf')).subarray(0, 5).toString('latin1') !== '%PDF-') {
+  failures++
+  console.log('FAIL  shop.pdf is not a PDF')
+}
+
 // content sanity
 if (existsSync(join(work, 'spec.html'))) {
   const html = readFileSync(join(work, 'spec.html'), 'utf8')

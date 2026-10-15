@@ -58,6 +58,10 @@ export default defineConfig({
           index: resolve('src/main/index.ts'),
           // utilityProcess entry hosting the OCR pipeline
           'ocr-entry': resolve('src/main/ocr-entry.ts'),
+          // worker_threads script hosting sql.js (sqlite-host.ts). It must not
+          // share a chunk with index: it is unpacked from app.asar, and a chunk
+          // left inside the archive could not be required from outside it.
+          'sqlite-worker': resolve('src/main/sqlite-worker.ts'),
         },
       },
     },

@@ -18,6 +18,9 @@ const { mkdtemp, writeFile, readFile, rm, mkdir } = require('fs/promises')
 
 const core = require('../../out/e2e/core.cjs')
 const { createConverter, detect, getReader, TARGET_FORMATS, TABLE_TARGETS, allowedTargets } = core
+// The app's SQLite host (sql.js in a worker), built beside core by build:e2e-core.
+// Without it the converter refuses databases, as core alone does.
+const { createSqliteHost } = require('../../out/e2e/sqlite-host.js')
 
 /** Targets the app can also read back; others are verified by shape only. */
 function readerFor(format) {
@@ -86,7 +89,7 @@ async function main() {
     return
   }
   await mkdir(outDir, { recursive: true })
-  const conv = createConverter(renderHtmlToPdf)
+  const conv = createConverter(renderHtmlToPdf, { sqlite: createSqliteHost() })
   const results = []
 
   for (const input of inputs) {
@@ -101,7 +104,8 @@ async function main() {
     // Reference text: read the source through its reader, then flatten to text.
     let hubText = ''
     try {
-      const hub = await getReader(source)({ bytes, filename })
+      // Through the converter, not the bare registry: a database needs its engine.
+      const hub = source === 'sqlite' ? await conv.read({ bytes, filename }, source) : await getReader(source)({ bytes, filename })
       hubText = hub.html
     } catch (e) {
       results.push({ input: filename, source, target: '*', ok: false, note: `source unreadable: ${e.message}` })

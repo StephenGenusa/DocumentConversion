@@ -8,6 +8,12 @@
       "note": "Inlined into the app (src/core/assets/reveal.generated.ts) and into every slide deck it writes."
     },
     {
+      "name": "sql.js",
+      "package": "sql.js",
+      "license": "MIT",
+      "note": "The SQLite engine compiled to WebAssembly (sql-wasm.wasm) and its loader, shipped in resources/sqlite to read SQLite databases. SQLite itself is in the public domain."
+    },
+    {
       "name": "Tesseract OCR English trained data (eng.traineddata)",
       "version": "4.0.0",
       "license": "Apache-2.0",

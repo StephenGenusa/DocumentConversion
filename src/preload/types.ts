@@ -51,9 +51,17 @@ export type SourceFormat =
   | 'vcard'
   | 'djot'
   | 'textile'
+  | 'sqlite'
 
 export type DetectResult =
-  | { kind: 'ok'; format: SourceFormat; /** JSON that reads as a table of records. */ jsonTable?: boolean }
+  | {
+      kind: 'ok'
+      format: SourceFormat
+      /** JSON that reads as a table of records. */
+      jsonTable?: boolean
+      /** A SQLite database's number of views. */
+      viewCount?: number
+    }
   | { kind: 'archive' }
   | { kind: 'unsupported'; reason: string }
 
@@ -109,6 +117,8 @@ export interface ReadOptions {
   jsonAs?: 'table' | 'text'
   /** Transcripts: show each turn's time (the default) or leave times out. */
   transcriptTimestamps?: boolean
+  /** SQLite: each view's results after the tables. */
+  sqliteViews?: boolean
 }
 
 export interface BatchItemReq {

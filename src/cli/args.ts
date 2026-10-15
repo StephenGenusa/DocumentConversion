@@ -14,6 +14,8 @@ export interface CliRequest {
   jsonAs?: 'table' | 'text'
   /** Transcripts without their times. */
   noTimestamps?: boolean
+  /** SQLite: include each view's results. */
+  sqliteViews?: boolean
   /** Where a new slide starts, for the revealjs target. */
   split?: 'auto' | 'hr' | 'h1' | 'h2'
   landscape: boolean
@@ -39,6 +41,7 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--ocr]               OCR scanned PDFs and images (English)
   [--json-as <table|text>]  JSON records: a table (default) or formatted JSON
   [--no-timestamps]     subtitles and transcripts without their times
+  [--sqlite-views]      SQLite databases: include each view's results after the tables
   [--no-clobber]        fail instead of overwriting existing outputs
 Exit codes: 0 all succeeded, 1 any failed, 2 bad usage.`
 
@@ -68,6 +71,7 @@ export const FLAG_SCOPES: FlagScope[] = [
   // Flags from 1.4 on are strict.
   { flag: '--json-as', inputs: ['json'], strict: true },
   { flag: '--no-timestamps', inputs: ['subtitles'], strict: true },
+  { flag: '--sqlite-views', inputs: ['sqlite'], strict: true },
 ]
 
 /** The usage message for the first strict flag that cannot apply, or null. */
@@ -94,6 +98,7 @@ export function cliReadOptions(req: CliRequest): ReadOptions {
   return {
     ...(req.jsonAs ? { jsonAs: req.jsonAs } : {}),
     ...(req.noTimestamps ? { transcriptTimestamps: false } : {}),
+    ...(req.sqliteViews ? { sqliteViews: true } : {}),
   }
 }
 
@@ -181,6 +186,9 @@ export function parseArgs(argv: string[]): ParseResult {
       }
       case '--no-timestamps':
         req.noTimestamps = true
+        break
+      case '--sqlite-views':
+        req.sqliteViews = true
         break
       case '--merge':
         req.merge = true

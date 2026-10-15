@@ -2,8 +2,7 @@ import { escapeHtml } from './shell'
 
 /**
  * Record sources (spec D, "Record limits"): files that are rows of records
- * rather than a document. JSON arrays and JSON Lines today; SQLite and vCard
- * follow the same rule.
+ * rather than a document: JSON arrays, JSON Lines, vCard and SQLite.
  *
  *   printing (pdf, docx, html, epub, Kindle, slides, md, txt) and the editor
  *       at most PRINT_RECORD_LIMIT records per table, and the document says so
@@ -22,6 +21,13 @@ export interface RowSource {
   name: string
   header: string[]
   rows: AsyncIterable<string[]> | Iterable<string[]>
+  /** How many rows there are, when known up front: for the progress line. */
+  total?: number
+  /**
+   * Called once the writer is done with the sources, finished or not. A
+   * database's rows are read lazily from a worker that holds it open.
+   */
+  close?: () => Promise<void> | void
 }
 
 const fmt = (n: number): string => n.toLocaleString('en-US')

@@ -34,6 +34,7 @@ const SHORT: Record<SourceFormat, string> = {
   vcard: 'vcf',
   djot: 'dj',
   textile: 'textile',
+  sqlite: 'db',
 }
 
 export function InputList({
@@ -114,6 +115,17 @@ export function InputList({
                   onChange={(e) => onReadChange(item.id, { transcriptTimestamps: e.target.checked })}
                 />
                 Times
+              </label>
+            )}
+            {showsInput('sqliteViews', { source: item.source, viewCount: item.viewCount }) && onReadChange && (
+              <label title={item.html !== undefined ? 'Edited: changing this does not change the edited database' : undefined}>
+                <input
+                  type="checkbox"
+                  aria-label={`Include view results in ${item.label}`}
+                  checked={item.read?.sqliteViews ?? false}
+                  onChange={(e) => onReadChange(item.id, { sqliteViews: e.target.checked })}
+                />
+                Views
               </label>
             )}
             {/* Offered for every input, not only those that already carry hub

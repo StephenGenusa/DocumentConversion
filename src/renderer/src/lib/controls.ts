@@ -22,10 +22,12 @@ export interface ControlInput {
   imageMode?: 'embed' | 'ocr'
   /** JSON that reads as a table of records. */
   jsonTable?: boolean
+  /** A SQLite database's number of views. */
+  viewCount?: number
 }
 
 export type OutputControl = 'pdfOptions' | 'slideSplit'
-export type InputControl = 'imageMode' | 'ocrLanguage' | 'jsonAs' | 'timestamps'
+export type InputControl = 'imageMode' | 'ocrLanguage' | 'jsonAs' | 'timestamps' | 'sqliteViews'
 
 const OUTPUT_RULES: Record<OutputControl, (target: TargetFormat, inputs: ControlInput[]) => boolean> = {
   pdfOptions: (target) => target === 'pdf',
@@ -38,6 +40,8 @@ const INPUT_RULES: Record<InputControl, (input: ControlInput) => boolean> = {
   // Only where there is a choice: JSON that is records. Other JSON is a listing either way.
   jsonAs: (input) => input.source === 'json' && input.jsonTable === true,
   timestamps: (input) => input.source === 'subtitles',
+  // Views are listed in the schema either way; their results only exist if there are views.
+  sqliteViews: (input) => input.source === 'sqlite' && (input.viewCount ?? 0) > 0,
 }
 
 export function showsOutput(control: OutputControl, target: TargetFormat, inputs: ControlInput[]): boolean {
@@ -67,5 +71,19 @@ export function appliedOptions<P, S>(
 export function appliedReadOptions(source: SourceFormat, read: ReadOptions = {}): ReadOptions {
   if (source === 'json') return { jsonAs: read.jsonAs ?? 'table' }
   if (source === 'subtitles') return { transcriptTimestamps: read.transcriptTimestamps ?? true }
+  if (source === 'sqlite') return { sqliteViews: read.sqliteViews ?? false }
   return {}
+}
+
+/**
+ * The card's note on an edited copy of a record source: the editor is
+ * printing, so the copy holds the first 5,000 records (per table), and
+ * exporting it writes only those.
+ */
+export function editedCopyNote(source: SourceFormat): string {
+  if (source === 'sqlite') return 'Edited copy: tables are limited to 5,000 rows. Discard edits to export every row.'
+  return (
+    'This edited copy holds the first 5,000 records. Exporting it to CSV, JSON or Excel writes only those; to export ' +
+    'every record, remove it and add the file again without opening it in the editor.'
+  )
 }

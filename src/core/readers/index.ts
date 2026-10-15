@@ -28,6 +28,7 @@ import { readOpml } from './opml'
 import { readVcard, readVcardRows } from './vcard'
 import { readDjot } from './djot'
 import { readTextile } from './textile'
+import { sqliteReader, sqliteRowReader } from './sqlite'
 import type { RowSource } from '../records'
 
 export type Reader = (src: SourceInput, ctx?: ReadContext) => Promise<HubDocument>
@@ -61,6 +62,8 @@ const registered: Partial<Record<SourceFormat, Reader>> = {
   vcard: readVcard,
   djot: readDjot,
   textile: readTextile,
+  // Unbound: refuses. The converter binds the real engine (see convert.ts).
+  sqlite: sqliteReader(),
 }
 
 export function getReader(format: SourceFormat): Reader {
@@ -79,6 +82,7 @@ export type RowReader = (src: SourceInput, ctx?: ReadContext) => Promise<RowSour
 const rowReaders: Partial<Record<SourceFormat, RowReader>> = {
   json: readJsonRows,
   vcard: readVcardRows,
+  sqlite: sqliteRowReader(),
 }
 
 export function getRowReader(source: SourceFormat): RowReader | undefined {
