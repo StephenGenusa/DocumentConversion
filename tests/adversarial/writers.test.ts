@@ -707,18 +707,18 @@ describe('writeMarkdown — tables', () => {
     expect(counts.size).toBe(1)
   })
 
-  it('flattens inline formatting inside a cell to its text (accepted loss)', async () => {
-    // RULING (2026-08-31): tables are rebuilt from the extracted text grid so
-    // that spans, ragged rows, block content and pipes cannot corrupt a GFM
-    // table. Inline emphasis and links inside cells are lost as a consequence.
-    // Structural correctness beats cell-level styling for a content-focused
-    // converter; recorded in the round-3 spec addendum.
+  it('keeps inline formatting inside a cell as Markdown', async () => {
+    // RULING (2026-08-31) was that tables are rebuilt from the extracted text
+    // grid, losing emphasis and links in cells. Since 2026-10-16 the grid
+    // still decides the table's shape (spans, ragged rows, pipes), and a cell
+    // with only inline formatting is written as Markdown on its one line; a
+    // cell with block content is still its text.
     const html = T(
       tr('<th>A</th><th>B</th>') +
         tr('<td><strong>bold</strong></td><td><a href="http://x/">L</a></td>'),
     )
     const md = (await writeMarkdown(doc(html))).toString('utf8')
-    expect(md).toContain('| bold | L |')
+    expect(md).toContain('| **bold** | [L](http://x/) |')
     expect(md).not.toContain('<td>')
   })
 

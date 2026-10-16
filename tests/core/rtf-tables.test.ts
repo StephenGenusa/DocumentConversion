@@ -280,7 +280,7 @@ describe('rtf tables: the mixed fixture', () => {
   it('survives the markdown and csv writers as a real table', async () => {
     const html = await load()
     const md = (await writeMarkdown({ html })).toString('utf8')
-    expect(md).toContain('| Item | Qty | Notes |')
+    expect(md).toContain('| **Item** | **Qty** | **Notes** |')
     expect(md).toContain('| Widget | 3 | Ships Monday Backordered |')
     const csv = (await writeCsv({ html })).parts[0].bytes.toString('utf8')
     expect(csv).toContain('Item,Qty,Notes')

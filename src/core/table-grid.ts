@@ -5,7 +5,7 @@ import type { AnyNode, Element } from 'domhandler'
 /** A hostile or broken colspan must not allocate an unbounded row. */
 export const MAX_SPAN = 1000
 
-const BLOCK = new Set([
+export const BLOCK = new Set([
   'p',
   'div',
   'br',
@@ -40,7 +40,7 @@ function cellText(node: AnyNode): string {
   return BLOCK.has(el.name) ? ` ${inner} ` : inner
 }
 
-function normalizeText(node: Element): string {
+export function normalizeText(node: Element): string {
   return cellText(node).replace(/\s+/g, ' ').trim()
 }
 
@@ -79,6 +79,11 @@ export interface GridOptions {
    * it applies to; markdown renders the merge visually and does not.
    */
   fillRowspan?: boolean
+  /**
+   * What a cell becomes, in place of its plain text. Markdown writes a
+   * formatted cell as Markdown.
+   */
+  cellValue?: (cell: Element) => string
 }
 
 export function gridForElement(table: Element, opts: GridOptions = {}): string[][] {
@@ -103,7 +108,7 @@ export function gridForElement(table: Element, opts: GridOptions = {}): string[]
     )
     for (const cell of cells) {
       fillPending()
-      const text = normalizeText(cell)
+      const text = opts.cellValue ? opts.cellValue(cell) : normalizeText(cell)
       const colspan = span(cell.attribs.colspan)
       const rowspan = span(cell.attribs.rowspan)
       for (let i = 0; i < colspan; i++) {

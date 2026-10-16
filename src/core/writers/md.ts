@@ -5,7 +5,7 @@ import { parseDocument } from 'htmlparser2'
 import { findAll, removeElement, replaceElement } from 'domutils'
 import { Element, Text } from 'domhandler'
 import render from 'dom-serializer'
-import { gridForElement } from '../table-grid'
+import { BLOCK, gridForElement, normalizeText } from '../table-grid'
 import type { HubDocument } from '../types'
 import { mathClose, TEX_SHAPED } from '../rendered-blocks'
 
@@ -53,8 +53,44 @@ function escapeCell(value: string): string {
  */
 function pipeRow(cells: string[], width: number): string {
   let out = ''
-  for (let i = 0; i < width; i++) out += (i === 0 ? '| ' : ' ') + escapeCell(cells[i] ?? '') + ' |'
+  for (let i = 0; i < width; i++) out += (i === 0 ? '| ' : ' ') + (cells[i] ?? '') + ' |'
   return out
+}
+
+/** Inline formatting a pipe-table cell can carry as Markdown. */
+const CELL_FORMAT = new Set(['strong', 'b', 'em', 'i', 's', 'del', 'strike', 'code', 'a'])
+
+/**
+ * Whether a cell's formatting can be written as Markdown on one line: some
+ * inline formatting, and no block content but paragraph or div wrappers. A
+ * list, a nested table, a code block or a line break has no pipe-table form,
+ * so such a cell stays plain text, as all cells were before.
+ */
+function formattedCell(cell: Element): boolean {
+  let formatted = false
+  const walk = (el: Element): boolean => {
+    for (const child of el.children) {
+      if (child.type !== 'tag') continue
+      const c = child as Element
+      if (BLOCK.has(c.name) && c.name !== 'p' && c.name !== 'div') return false
+      if (CELL_FORMAT.has(c.name)) formatted = true
+      if (!walk(c)) return false
+    }
+    return true
+  }
+  return walk(cell) && formatted
+}
+
+/**
+ * One cell as pipe-table Markdown. A plain cell is its text, escaped; a
+ * formatted one goes through turndown, its paragraphs joined by spaces. Every
+ * pipe is escaped, in code and formulas too: GFM splits the row before it
+ * reads the inline syntax, and takes `\|` back as `|` there as well.
+ */
+function cellMarkdown(cell: Element): string {
+  if (!formattedCell(cell)) return escapeCell(normalizeText(cell))
+  const markdown = td.turndown(render(cell.children, { decodeEntities: true })).replace(/\s*\n\s*/g, ' ').trim()
+  return markdown.includes('|') ? markdown.replace(/\|/g, '\\|') : markdown
 }
 
 /**
@@ -102,7 +138,7 @@ function extractTablesForMarkdown(html: string): { prose: string; tableMarkdown:
   const dom = parseDocument(html)
   const rendered: string[] = []
   for (const table of findAll((el) => el.name === 'table', dom.children)) {
-    const grid = gridForElement(table)
+    const grid = gridForElement(table, { cellValue: cellMarkdown })
     // turndown-plugin-gfm dereferences node.rows[0].parentNode with no guard,
     // so a table with no rows at all (an empty CSV renders one) took the whole
     // conversion down. Nothing can be extracted from it either way.
