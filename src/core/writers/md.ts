@@ -7,7 +7,7 @@ import { Element, Text } from 'domhandler'
 import render from 'dom-serializer'
 import { gridForElement } from '../table-grid'
 import type { HubDocument } from '../types'
-import { TEX_SHAPED } from '../rendered-blocks'
+import { mathClose, TEX_SHAPED } from '../rendered-blocks'
 
 const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 td.use([tables, strikethrough])
@@ -215,11 +215,25 @@ const isMath = (node: Node | null): boolean =>
   node?.nodeName === 'CODE' && /(?:^|\s)language-math(?:\s|$)/.test((node as HTMLElement).getAttribute('class') ?? '')
 
 /**
- * `$TEX$` when the reader will take it back as math (it must look like TeX
- * and hold no `$`), else `$$TEX$$`, which is always math.
+ * `$TEX$` when the reader will take it back as math (it must look like
+ * TeX), else `${TEX}$`, whose braces make it so and which the reader takes
+ * off again (BRACED_PLAIN). Not `$$TEX$$`: in a sentence that is display
+ * math, as pandoc reads it. A bare `$` would end the formula, and is not TeX
+ * inside one, so it is written `\$`.
  */
 function inlineMath(tex: string): string {
-  return !tex.includes('$') && TEX_SHAPED.test(tex) ? `$${tex}$` : `$$${tex}$$`
+  const t = escapeBareDollars(tex)
+  return TEX_SHAPED.test(t) ? `$${t}$` : `\${${t}}$`
+}
+
+function escapeBareDollars(tex: string): string {
+  if (!tex.includes('$')) return tex
+  let out = ''
+  for (let i = 0; i < tex.length; i++) {
+    if (tex[i] === '\\') out += tex.slice(i, ++i + 1)
+    else out += tex[i] === '$' ? '\\$' : tex[i]
+  }
+  return out
 }
 
 /**
@@ -259,7 +273,7 @@ function escapeDollars(text: string): string {
   let i = 0
   for (let at = text.indexOf('$'); at !== -1; at = text.indexOf('$', i)) {
     const delim = text.startsWith('$$', at) ? '$$' : '$'
-    const close = text.indexOf(delim, at + delim.length)
+    const close = mathClose(text, at + delim.length, delim)
     const content = close === -1 ? '' : text.slice(at + delim.length, close)
     const opens = content !== '' && (delim === '$$' || TEX_SHAPED.test(content))
     out += text.slice(i, at) + (opens ? delim.replace(/\$/g, '\\$') : '$')

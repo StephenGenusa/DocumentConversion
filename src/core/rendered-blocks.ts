@@ -39,6 +39,30 @@ export function diagramLanguage(name: string | undefined | null): DiagramLanguag
  */
 export const TEX_SHAPED = /[\\{}^_]/
 
+/**
+ * Inline math whose TeX does not look like TeX (`x+y`, `n = 5`, common from
+ * Word equations) is written to Markdown as `${x+y}$`: the braces make it
+ * TeX-shaped, so it reads back inline, and a group around a whole formula
+ * draws the same. Pandoc reads it as the same inline math. The reader takes
+ * the braces off again when what they hold would not have been TeX-shaped,
+ * so the TeX comes back byte for byte.
+ */
+export const BRACED_PLAIN = /^\{([^\\{}^_]+)\}$/
+
+/**
+ * Where math opened with `delim` closes: the next `delim` at or after
+ * `from` that a backslash does not escape, or -1. `$\$5$` is the formula
+ * `\$5`, as pandoc and TeX read it. The reader and the Markdown writer
+ * share it.
+ */
+export function mathClose(src: string, from: number, delim: '$' | '$$'): number {
+  for (let i = from; i < src.length; i++) {
+    if (src[i] === '\\') i++
+    else if (src.startsWith(delim, i)) return i
+  }
+  return -1
+}
+
 /** What a document holds that a writer may draw. Readers report it; the input card keeps it. */
 export interface HubFeatures {
   diagrams: boolean

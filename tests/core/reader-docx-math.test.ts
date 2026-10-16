@@ -131,6 +131,20 @@ describe('Word equations through a conversion', () => {
     expect(md).toContain('$$\\frac{a}{b}$$')
   })
 
+  it('docx → md → docx: an equation that is not TeX-shaped stays inline, its TeX unchanged', async () => {
+    const bytes = await buildDocx({ body: `<w:p>${t('So ')}<m:oMath>${r('x+y')}</m:oMath>${t(' here.')}</w:p>` })
+    const asked: Array<{ source: string; display: boolean }> = []
+    const render: RenderBlocks = async (reqs) => {
+      asked.push(...reqs.map(({ source, display }) => ({ source, display })))
+      return reqs.map(() => ({ png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', width: 20, height: 16 }))
+    }
+    const conv = createConverter(async () => Buffer.from(''), { renderBlocks: render })
+    const md = (await conv.convert({ bytes, filename: 'e.docx' }, 'docx', 'md')).parts[0].bytes
+    expect(md.toString('utf8')).toContain('So ${x+y}$ here.')
+    await conv.convert({ bytes: md, filename: 'e.md' }, 'md', 'docx')
+    expect(asked).toEqual([{ source: 'x+y', display: false }])
+  })
+
   it('docx → docx: equations come back as pictures, not as Word equations', async () => {
     const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
     const PNG2 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='

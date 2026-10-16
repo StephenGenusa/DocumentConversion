@@ -194,8 +194,29 @@ describe('Markdown and text writers put the delimiters back', () => {
     expect(await toMd(`<pre><code class="language-math">${B}sum_i i</code></pre>`)).toBe(`$$${B}sum_i i$$`)
   })
 
-  it('writes inline math that would not read back with a single $ in $$', async () => {
-    expect(await toMd('<p>so <code class="language-math">x+y</code> here</p>')).toBe('so $$x+y$$ here')
+  it('writes inline math that would not read back with a single $ as ${…}$, and reads it back without the braces', async () => {
+    expect(await toMd('<p>so <code class="language-math">x+y</code> here</p>')).toBe('so ${x+y}$ here')
+    expect(await md('so ${x+y}$ here')).toBe('<p>so <code class="language-math">x+y</code> here</p>\n')
+    expect(await toMd('<p>with <code class="language-math">n = 5</code>, costing $5 and $10.</p>')).toBe('with ${n = 5}$, costing $5 and $10.')
+  })
+
+  it('keeps braces an author wrote around TeX', async () => {
+    expect(await md('so ${' + B + 'alpha}$ and ${a}{b}$ here')).toBe(
+      `<p>so <code class="language-math">{${B}alpha}</code> and <code class="language-math">{a}{b}</code> here</p>\n`,
+    )
+  })
+
+  it('writes a dollar inside inline TeX escaped, and an escaped one does not close the formula', async () => {
+    expect(await toMd(`<p>a <code class="language-math">${B}$5 + x_1</code> b</p>`)).toBe(`a $${B}$5 + x_1$ b`)
+    expect(await md(`a $${B}$5 + x_1$ b`)).toBe(`<p>a <code class="language-math">${B}$5 + x_1</code> b</p>\n`)
+    expect(await toMd('<p>a <code class="language-math">5$</code> b</p>')).toBe(`a $5${B}$$ b`)
+  })
+
+  it('keeps inline math inline through Markdown, as written by every version of the hub', async () => {
+    for (const tex of ['x+y', 'n = 5', `${B}alpha_i`, `${B}$5`, 'a < b']) {
+      const hub = `<p>so <code class="language-math">${tex.replace('<', '&lt;')}</code> here</p>\n`
+      expect(await md(await toMd(hub))).toBe(hub)
+    }
   })
 
   it('writes display math that a paragraph cannot hold as a math fence', async () => {
@@ -217,7 +238,7 @@ describe('Markdown and text writers put the delimiters back', () => {
 
   it('round-trips Markdown math and diagrams exactly', async () => {
     const source = [
-      `Let $${B}alpha_i < 2$ and $$x+y$$ hold, costing $5 and $10.`,
+      `Let $${B}alpha_i < 2$ and $${'{'}x+y}$ hold, costing $5 and $10.`,
       `$$${B}sum_{i=1}^n i$$`,
       '```mermaid\ngraph TD\n  A --> B\n```',
       '```dot\ndigraph { a -> b }\n```',

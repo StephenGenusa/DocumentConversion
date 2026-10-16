@@ -4,7 +4,7 @@ import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs'
 import { full as emoji } from 'markdown-it-emoji'
 import footnote from 'markdown-it-footnote'
 import { safeLabel } from '../footnotes'
-import { diagramLanguage, TEX_SHAPED } from '../rendered-blocks'
+import { BRACED_PLAIN, diagramLanguage, mathClose, TEX_SHAPED } from '../rendered-blocks'
 import { parseHTML } from 'linkedom'
 import { sanitizeToHub } from '../allowlist'
 import { notesToHub } from '../speaker-notes'
@@ -236,19 +236,21 @@ md.core.ruler.after('block', 'github_alerts', (state: StateCore) => {
  * when the span actually looks like TeX, so "costs $5 for the **bold** plan and
  * $10" keeps its emphasis instead of being swallowed as a formula. The
  * Markdown writer applies the same test, so what it writes reads back the same.
+ * Inline TeX that would not pass it is written as `${x+y}$`, and the braces
+ * are taken off here (BRACED_PLAIN). A `\$` inside the TeX does not close it.
  */
 md.inline.ruler.before('escape', 'math', (state, silent) => {
   const start = state.pos
   if (state.src.charCodeAt(start) !== 0x24) return false
   const display = state.src.startsWith('$$', start)
   const delim = display ? '$$' : '$'
-  const close = state.src.indexOf(delim, start + delim.length)
+  const close = mathClose(state.src, start + delim.length, delim)
   if (close === -1) return false
   const content = state.src.slice(start + delim.length, close)
   if (content === '' || (!display && !TEX_SHAPED.test(content))) return false
   if (!silent) {
     const tok = state.push(display ? 'math_display' : 'math_inline', 'code', 0)
-    tok.content = content
+    tok.content = display ? content : (BRACED_PLAIN.exec(content)?.[1] ?? content)
     tok.markup = delim
   }
   state.pos = close + delim.length
