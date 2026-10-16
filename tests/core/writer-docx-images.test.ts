@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
 import { writeDocx } from '../../src/core/writers/docx'
+import { createConverter } from '../../src/core/convert'
+import type { RenderBlocks, RenderRequest, RenderResult } from '../../src/core/rendered-blocks'
+// @ts-expect-error: a plain .mjs fixture library, no types.
+import { emf, tiff as makeTiff } from '../../scripts/fixtures/lib-tiff.mjs'
 
 // Two distinct 1x1 PNGs: enough for html-to-docx's image-size probe, and
 // different byte-for-byte so a de-duplicating pass must keep both.
@@ -88,5 +92,45 @@ describe('writeDocx image parts', () => {
     // Six drawings, two distinct blobs.
     expect(media.parts).toHaveLength(2)
     expect(media.used).toHaveLength(6)
+  })
+})
+
+describe('Word output of pictures html-to-docx cannot size (TIFF, EMF, WMF)', () => {
+  // html-to-docx sizes every picture with image-size, which reads no TIFF
+  // from memory and no EMF or WMF at all, and then gave up on the whole
+  // document: a Word file holding one of these could not be converted to Word.
+  const scan = (bigEndian = false): Buffer =>
+    makeTiff({ width: 12, height: 8, pixel: (x: number) => [x * 20, 90, 160], compression: 'lzw', bigEndian })
+  const tag = (mime: string, bytes: Buffer, alt: string): string => `<img src="data:${mime};base64,${bytes.toString('base64')}" alt="${alt}">`
+  const WMF = Buffer.from('d7cdc69a000000000000000000000000000000000000', 'hex')
+
+  it('writes the document, each such picture its alt text, every other picture kept', async () => {
+    const html =
+      `<p>Before</p><p>${tag('image/tiff', scan(), 'Scan')}</p><p>${tag('image/png', scan(true), 'Mislabelled')}</p>` +
+      `<p>${tag('image/x-emf', emf(), 'Drawing')}</p><p>${tag('image/x-wmf', WMF, 'Old drawing')}</p><p><img src="${red}" alt="Red"></p><p>After</p>`
+    const out = await writeDocx({ html })
+    const doc = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
+    for (const text of ['Before', 'After', '[Scan]', '[Mislabelled]', '[Drawing]', '[Old drawing]']) expect(doc).toContain(text)
+    expect((await inspect(out)).parts).toHaveLength(1)
+  })
+
+  it('gives Word a PNG or JPEG of a TIFF (render host), and says so for an EMF it cannot convert', async () => {
+    const calls: RenderRequest[] = []
+    const render: RenderBlocks = async (reqs) =>
+      reqs.map((r): RenderResult => {
+        calls.push(r)
+        return { png: BLUE, width: 12, height: 8 }
+      })
+    const notices: string[] = []
+    const conv = createConverter(async () => Buffer.from('%PDF-'), { renderBlocks: render })
+    const page = Buffer.from(`<p>${tag('image/tiff', scan(), 'Scan')}</p><p>${tag('image/x-emf', emf(), 'Drawing')}</p><p><img src="${red}" alt="Red"></p>`)
+    const out = (await conv.convert({ bytes: page, filename: 'p.html' }, 'html', 'docx', undefined, { onAdvice: (_k, m) => notices.push(m) })).parts[0].bytes
+    expect(calls.map((c) => [c.kind, c.source.slice(0, 16)])).toEqual([['picture', 'data:image/tiff;']])
+    const media = await inspect(out)
+    expect(media.parts).toHaveLength(2)
+    expect(media.parts.every((p) => p.endsWith('.png'))).toBe(true)
+    const doc = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
+    expect(doc).toContain('[image: Drawing]')
+    expect(notices).toEqual(['Picture 2 could not be stored for Word: EMF pictures are not converted'])
   })
 })

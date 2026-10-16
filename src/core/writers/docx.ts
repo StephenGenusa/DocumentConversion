@@ -13,6 +13,7 @@ import hljs, { highlightedRuns } from '../hljs'
 import { codeBlockText } from '../code-language'
 import type { HubDocument } from '../types'
 import { DOCX_OWN_LINE } from '../draw-blocks'
+import { wordTakes } from '../kindle-pictures'
 
 /**
  * html-to-docx tries to load every <img> and gives up on the whole document
@@ -40,9 +41,21 @@ const SAFE_IMAGE_DATA = /^data:image\/[\w.+-]+;base64,[A-Za-z0-9+/=\s]*$/i
  */
 const SVG_IMAGE = /^\s*data:image\/svg\+xml/i
 
+/**
+ * html-to-docx sizes every picture with image-size, which reads no TIFF from
+ * memory and no EMF or WMF at all, and the whole document then failed. So
+ * only the types it sizes are passed, told by their bytes (a page may label
+ * a TIFF as a PNG). Converter.write() gives Word a PNG or JPEG of a TIFF
+ * first (kindlePictures); what is still here becomes its alt text.
+ */
+function wordSizes(src: string): boolean {
+  const b64 = src.slice(src.indexOf(',') + 1, src.indexOf(',') + 1 + 64).replace(/\s+/g, '')
+  return wordTakes(Buffer.from(b64.slice(0, b64.length - (b64.length % 4)), 'base64'))
+}
+
 function dropUnresolvableImages(html: string): string {
   return replaceImages(html, (src, alt) => {
-    if (SAFE_IMAGE_DATA.test(src) && !SVG_IMAGE.test(src)) return null
+    if (SAFE_IMAGE_DATA.test(src) && !SVG_IMAGE.test(src) && wordSizes(src)) return null
     const text = alt?.trim()
     return text ? `<p>[${text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}]</p>` : ''
   })

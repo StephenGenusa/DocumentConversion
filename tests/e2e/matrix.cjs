@@ -348,6 +348,13 @@ async function main() {
           rec.note = `${book.pictures.length} pictures, ${book.resources ?? 0} resources${book.cover ? ', cover' : ''}`
           azw3Html = book.html
         }
+        if (tiffImages > 0 && target === 'docx') {
+          // Word gets a PNG or JPEG of each TIFF (its writer cannot embed one).
+          const zip = await JSZip.loadAsync(out)
+          const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
+          if (media.length < tiffImages) throw new Error(`docx kept ${media.length} pictures of ${tiffImages} TIFFs`)
+          rec.note = `${media.length} media for ${tiffImages} TIFFs`
+        }
         if (hasSvgImages && target === 'docx') {
           const zip = await JSZip.loadAsync(out)
           const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))

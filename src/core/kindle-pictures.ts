@@ -41,6 +41,46 @@ export const KINDLE_PICTURE_LIMITS = { max: 200, eachMs: 20_000 } as const
 /** What a KF8 image record may hold. */
 const STORABLE = new Set(['image/jpeg', 'image/png', 'image/gif'])
 
+/**
+ * The targets that get Kindle-style copies of the pictures they cannot take
+ * as they are. Word shows TIFF itself, but html-to-docx must size every
+ * picture it embeds and reads no TIFF from memory (nor EMF or WMF), so Word
+ * gets a PNG or JPEG of a TIFF the same way (no size limit of its own: the
+ * re-encoding's largest output is the host's).
+ */
+interface PictureTarget {
+  name: string
+  storable: ReadonlySet<string>
+  /** The largest picture stored as it is (Infinity: any size). */
+  maxBytes: number
+  /** The largest copy the render host may make. */
+  fitBytes: number
+  /** Why a picture nothing here decodes cannot be kept, by its type's name. */
+  cannot: (type: string) => string
+}
+const PICTURE_TARGETS: Partial<Record<TargetFormat, PictureTarget>> = {
+  azw3: {
+    name: 'Kindle',
+    storable: STORABLE,
+    maxBytes: KINDLE_IMAGE_MAX_BYTES,
+    fitBytes: KINDLE_IMAGE_MAX_BYTES,
+    cannot: (t) => `a Kindle cannot show ${t} pictures`,
+  },
+  docx: {
+    name: 'Word',
+    storable: new Set(['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp']),
+    maxBytes: Infinity,
+    fitBytes: MAX_PICTURE_BYTES,
+    cannot: (t) => `${t} pictures are not converted`,
+  },
+}
+
+/** The picture types the docx writer passes to html-to-docx, by their bytes: the ones it can size. */
+export function wordTakes(bytes: Buffer): boolean {
+  const mime = pictureMime(bytes)
+  return mime !== null && PICTURE_TARGETS.docx!.storable.has(mime)
+}
+
 /** The picture's type, by its signature (a declared type can lie), for the types a browser decodes. */
 export function pictureMime(bytes: Buffer): string | null {
   const known = imageMime(bytes)
@@ -60,10 +100,10 @@ function typeName(mime: string): string {
   return mime.replace(/^image\//, '').replace(/^(x-|vnd\.(ms-|microsoft\.)?)/, '').toUpperCase()
 }
 
-/** Whether a Kindle stores these bytes as they are: JPEG, PNG or GIF, under the limit. */
-export function storableAsIs(bytes: Buffer, maxBytes = KINDLE_IMAGE_MAX_BYTES): boolean {
-  const mime = imageMime(bytes)
-  return mime !== null && STORABLE.has(mime) && bytes.length <= maxBytes
+/** Whether these bytes are stored as they are: one of `storable` (a Kindle's JPEG, PNG or GIF unless given), under the limit. */
+export function storableAsIs(bytes: Buffer, maxBytes = KINDLE_IMAGE_MAX_BYTES, storable: ReadonlySet<string> = STORABLE): boolean {
+  const mime = pictureMime(bytes)
+  return mime !== null && storable.has(mime) && bytes.length <= maxBytes
 }
 
 const DATA_IMAGE = /^\s*data:(image\/[\w.+-]+)(?:;[^,]*)?;base64,([\s\S]*)$/i
@@ -102,16 +142,18 @@ function oneLine(text: string): string {
 const BASE64 = /^[A-Za-z0-9+/]+=*$/
 
 /**
- * Make every data: picture Kindle-ready, at write time, for azw3 (called by
- * Converter.write() after the SVG images have their PNG copies). Pictures a
- * Kindle stores as they are stay untouched; the others go to the render
+ * Make every data: picture Kindle-ready, at write time, for azw3, and give
+ * Word a copy of each picture its writer cannot embed (docx; called by
+ * Converter.write() after the SVG images have their PNG copies). Pictures
+ * the target stores as they are stay untouched; the others go to the render
  * host. Without a renderer, or for another target, the HTML is returned as
  * it came, and the writer turns what it cannot store into alt text
- * (kindleFallback).
+ * (kindleFallback; the docx writer's own guard).
  */
 export async function kindlePictures(html: string, target: TargetFormat, ctx: DrawContext): Promise<string> {
   const render = ctx.renderBlocks
-  if (!render || target !== 'azw3' || !/<img/i.test(html)) return html
+  const profile = PICTURE_TARGETS[target]
+  if (!render || !profile || !/<img/i.test(html)) return html
   const dom = parseDocument(html)
   interface Job {
     el: Element
@@ -121,16 +163,16 @@ export async function kindlePictures(html: string, target: TargetFormat, ctx: Dr
   const jobs: Job[] = []
   let changed = false
   const failed = (n: number, why: string): void =>
-    ctx.onAdvice?.('render-failed', `Picture ${n} could not be stored for Kindle: ${why}`)
+    ctx.onAdvice?.('render-failed', `Picture ${n} could not be stored for ${profile.name}: ${why}`)
   let number = 0
   for (const el of images(dom.children)) {
     const data = dataBytes(el.attribs.src ?? '')
     if (!data || data.declared === 'image/svg+xml') continue
     number++
-    if (storableAsIs(data.bytes)) continue
+    if (storableAsIs(data.bytes, profile.maxBytes, profile.storable)) continue
     const mime = pictureMime(data.bytes)
     if (!mime) {
-      failed(number, `a Kindle cannot show ${typeName(data.declared)} pictures`)
+      failed(number, profile.cannot(typeName(data.declared)))
       toPlaceholder(el)
       changed = true
     } else if (data.bytes.length > MAX_PICTURE_BYTES) {
@@ -149,7 +191,7 @@ export async function kindlePictures(html: string, target: TargetFormat, ctx: Dr
   if (jobs.length > max) {
     ctx.onAdvice?.(
       'render-failed',
-      `This document has ${jobs.length} pictures to convert for Kindle; the first ${max} were converted and the other ${jobs.length - max} are shown as their descriptions`,
+      `This document has ${jobs.length} pictures to convert for ${profile.name}; the first ${max} were converted and the other ${jobs.length - max} are shown as their descriptions`,
     )
   }
   const converted = jobs.slice(0, max)
@@ -159,12 +201,12 @@ export async function kindlePictures(html: string, target: TargetFormat, ctx: Dr
     let results: RenderResult[] | undefined
     try {
       results = await render(
-        unique.map((source) => ({ kind: 'picture', source, display: true, format: 'png', fit: { maxBytes: KINDLE_IMAGE_MAX_BYTES } })),
+        unique.map((source) => ({ kind: 'picture', source, display: true, format: 'png', fit: { maxBytes: profile.fitBytes } })),
         { signal: ctx.signal, timeoutMs: eachMs },
       )
     } catch (err) {
       if (ctx.signal?.aborted) throw err
-      ctx.onAdvice?.('render-failed', `Pictures could not be converted for Kindle: ${oneLine((err as Error)?.message ?? String(err))}`)
+      ctx.onAdvice?.('render-failed', `Pictures could not be converted for ${profile.name}: ${oneLine((err as Error)?.message ?? String(err))}`)
     }
     const bySource = new Map(unique.map((source, i) => [source, results?.[i]]))
     for (const job of converted) {
