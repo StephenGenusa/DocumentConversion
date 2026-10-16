@@ -141,6 +141,15 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('the AZW3 end-of-file record', () => {
+  it("is kindlegen's E9 8E 0D 0A, with pictures and without", async () => {
+    for (const html of ['<h1>One</h1><p>Text.</p>', `<h1>One</h1><p>${imgTag('image/png', png())}</p>`]) {
+      const book = parseBook(await writeAzw3({ html, title: 'T' }))
+      expect(book.records[book.records.length - 1].toString('hex')).toBe('e98e0d0a')
+    }
+  })
+})
+
 describe('AZW3 pictures (KF8 image records)', () => {
   it('stores each picture as an image record after the text and indices, and says where they start', async () => {
     const a = png()
@@ -250,8 +259,12 @@ describe('AZW3 pictures (KF8 image records)', () => {
       html: '<h1>Chapter One</h1><p>The first chapter body.</p><h1>Chapter Two</h1><p>Second &amp; last.</p><table><tr><td>a</td></tr></table>',
       title: 'Golden',
     })
-    expect(bytes.length).toBe(1661)
-    expect(createHash('sha256').update(bytes).digest('hex')).toBe('c3b6314af65ecba34c8734b3e05d46138712405ced60f96ffb6ed1374c290a77')
+    // The end-of-file record has since become kindlegen's four bytes (it was
+    // one NUL); with the old one put back, everything else is as it was.
+    expect(bytes.length).toBe(1664)
+    expect(bytes.subarray(-4).toString('hex')).toBe('e98e0d0a')
+    const before = Buffer.concat([bytes.subarray(0, -4), Buffer.from([0])])
+    expect(createHash('sha256').update(before).digest('hex')).toBe('c3b6314af65ecba34c8734b3e05d46138712405ced60f96ffb6ed1374c290a77')
   })
 })
 

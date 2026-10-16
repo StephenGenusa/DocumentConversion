@@ -64,6 +64,13 @@ async function resourcesOf(zip: JSZip): Promise<Resources> {
   return out
 }
 
+/**
+ * The record that ends the book: the four bytes kindlegen and Calibre write
+ * (E9 8E CR LF). A lone NUL was read fine so far, but a reader that looks
+ * for this marker to know where the resources stop would not find it.
+ */
+const EOF_RECORD = Buffer.from([0xe9, 0x8e, 0x0d, 0x0a])
+
 export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
   const html = kindleFallback(doc.html)
   const epub = await writeEpub(html === doc.html ? doc : { ...doc, html }, { notes: 'plain' })
@@ -215,7 +222,7 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
       ...skelRecords,
       ...fragRecords,
       ...resources.records,
-      Buffer.from('\0', 'latin1'),
+      EOF_RECORD,
     ],
   })
 }
