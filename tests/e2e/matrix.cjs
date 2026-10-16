@@ -41,6 +41,20 @@ function imageKind(buf) {
 }
 
 /**
+ * The SVG parts in a docx's word/media/: by extension or by content. Never by
+ * a substring of the name: html-to-docx names each part image-<nanoid>.<ext>,
+ * and about 1 name in 1,750 holds "svg" by chance (image-...esvGQu.png).
+ */
+async function svgMedia(zip, media) {
+  const found = []
+  for (const n of media) {
+    const head = (await zip.file(n).async('nodebuffer')).subarray(0, 256).toString('utf8')
+    if (/\.svgz?$/i.test(n) || /^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg\b/i.test(head)) found.push(n)
+  }
+  return found
+}
+
+/**
  * Read an AZW3 back: its text through mobi-parser, which resolves every
  * kindle:embed to a file it writes, and record 0's picture fields (first
  * resource, EXTH 125 count, EXTH 201 cover) read directly.
@@ -256,9 +270,10 @@ async function main() {
           // in the HTML-based outputs, an image/svg+xml item (never the
           // cover) in an EPUB.
           if (target === 'docx') {
-            const media = Object.keys((await JSZip.loadAsync(out)).files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
+            const zip = await JSZip.loadAsync(out)
+            const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
             if (!media.some((n) => n.endsWith('.png'))) throw new Error('docx has no PNG media for its diagrams')
-            if (media.some((n) => /svg/i.test(n))) throw new Error('docx has SVG media')
+            if ((await svgMedia(zip, media)).length) throw new Error('docx has SVG media')
             rec.note = `${media.length} media`
           } else if (target === 'html' || target === 'revealjs') {
             const drawn = out.toString('utf8').match(/src="data:image\/svg\+xml;base64,/g) ?? []
@@ -281,7 +296,7 @@ async function main() {
             const zip = await JSZip.loadAsync(out)
             const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
             if (!media.some((n) => n.endsWith('.png'))) throw new Error('docx has no PNG media for its formulas')
-            if (media.some((n) => /svg/i.test(n))) throw new Error('docx has SVG media')
+            if ((await svgMedia(zip, media)).length) throw new Error('docx has SVG media')
             const doc = await zip.file('word/document.xml').async('string')
             const lowered = (doc.match(/<w:position w:val="-\d+"\/>/g) ?? []).length
             if (/language-math/.test(hubText.replace(/<pre><code class="language-math">/g, '')) && lowered === 0) throw new Error('no inline formula is lowered onto the baseline in Word')
@@ -328,8 +343,8 @@ async function main() {
           const zip = await JSZip.loadAsync(out)
           const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
           if (!media.some((n) => n.endsWith('.png'))) throw new Error('docx has no PNG media for its SVG images')
-          if (media.some((n) => /svg/i.test(n))) throw new Error('docx has SVG media')
-          if (/svg/i.test(await zip.file('[Content_Types].xml').async('string'))) throw new Error('docx declares SVG content')
+          if ((await svgMedia(zip, media)).length) throw new Error('docx has SVG media')
+          if (/image\/svg\+xml|Extension="svgz?"/i.test(await zip.file('[Content_Types].xml').async('string'))) throw new Error('docx declares SVG content')
           rec.note = `${media.length} PNG media for SVG images`
         }
         const reader = readerFor(target)
