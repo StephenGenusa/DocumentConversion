@@ -326,6 +326,7 @@ function elementsOf(nodes: AnyNode[], name: string, out: Element[] = []): Elemen
 
 /** Blocks html-to-docx keeps after other content in a list item. */
 const KEPT_IN_ITEM = new Set(['ul', 'ol', 'pre', 'blockquote', 'table', 'hr', 'aside'])
+const KEPT_BLOCK = /^<(ul|ol|pre|blockquote|table|hr|aside)\b/i
 const HEADING = /^h[1-6]$/
 
 /**
@@ -361,10 +362,14 @@ function joinItemParagraphs(li: Element): string | null {
     if (inner) pieces[pieces.length - 1].push(HEADING.test(node.name) ? `<strong>${inner}</strong>` : inner)
   }
   flushInline()
-  // Nothing to join: the library already writes an item of one paragraph.
-  if (!pieces.some((run) => run.length > 1)) return null
+  // Nothing to join: the library already writes an item of one paragraph,
+  // and a list, code block or quote after it. A second paragraph AFTER such
+  // a block is lost all the same ("Step:", code, "Then this." in a loose
+  // Markdown list), so two stretches of text either side of one are joined.
+  const textRuns = pieces.filter((run) => run.length > 0 && !(run.length === 1 && KEPT_BLOCK.test(run[0])))
+  if (!pieces.some((run) => run.length > 1) && textRuns.length <= 1) return null
   return pieces
-    .map((run) => (run.length === 1 && /^<(ul|ol|pre|blockquote|table|hr|aside)\b/i.test(run[0]) ? run[0] : run.join('<br><br>')))
+    .map((run) => (run.length === 1 && KEPT_BLOCK.test(run[0]) ? run[0] : run.join('<br><br>')))
     .join('')
 }
 
@@ -477,9 +482,55 @@ function breakCodeLines(source: string): string {
   return serialize(dom.children)
 }
 
+/** The font html-to-docx itself gives a top-level code block. */
+const CODE_FONT = 'Courier'
+
+/**
+ * html-to-docx sets a <pre> in Courier only when the <pre> is a paragraph of
+ * its own: at the top level or in a table cell. In a list item the item's
+ * text and the block share one paragraph, the <pre> is read as a run, and its
+ * text came out in the body font. Inline <code> is never given a font at all.
+ *
+ * The one font the library honours on a run is a `font-family` on a <span>,
+ * so each piece of code text is wrapped in one. A span holding just text is
+ * the shape breakCodeLines already relies on; the spans that lost content
+ * (see unwrapSpans) are gone by now, so these are the only ones. Rewriting
+ * w:rFonts in document.xml afterwards would mean finding code runs again
+ * among the library's output, with nothing in it to tell them apart.
+ *
+ * A top-level or in-cell block already gets Courier from the library and is
+ * left alone.
+ */
+function monospaceCode(source: string): string {
+  if (!/<code\b|<pre\b/i.test(source)) return source
+  const dom = parseDocument(source)
+  const within = (el: Element, name: string): boolean => {
+    for (let p = el.parent; p; p = p.parent) if (isElement(p) && p.name === name) return true
+    return false
+  }
+  const targets = [
+    ...elementsOf(dom.children, 'pre').filter((pre) => within(pre, 'li')),
+    ...elementsOf(dom.children, 'code').filter((code) => !within(code, 'pre')),
+  ]
+  if (!targets.length) return source
+  const wrap = (nodes: AnyNode[]): void => {
+    for (const node of [...nodes]) {
+      if (node instanceof Text && node.data !== '') {
+        const parent = node.parent!
+        splice(parent, parent.children.indexOf(node), 1, [new Element('span', { style: `font-family: ${CODE_FONT}` }, [new Text(node.data)])])
+      } else if (isElement(node) && !(node.name === 'span' && node.attribs.style)) wrap(node.children)
+    }
+  }
+  for (const el of targets) wrap(el.children)
+  return serialize(dom.children)
+}
+
 export async function writeDocx(doc: HubDocument): Promise<Buffer> {
   const html = renderDocumentShell(
-    { ...doc, html: breakCodeLines(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain'))))) },
+    {
+      ...doc,
+      html: monospaceCode(breakCodeLines(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain')))))),
+    },
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)

@@ -74,3 +74,58 @@ describe('writeDocx keeps the lines of a code block apart', () => {
     expect(lines).toEqual(['graph TD', '  Alpha --> Beta'])
   })
 })
+
+/**
+ * The font of every run whose text holds `marker`: the w:rFonts ascii font,
+ * or '' for the body font. Word takes a run without rFonts in the body font.
+ */
+async function fontsOf(html: string, marker: string): Promise<string[]> {
+  const xml = await (await JSZip.loadAsync(await writeDocx({ html }))).file('word/document.xml')!.async('string')
+  const runs = [...xml.matchAll(/<w:r>([\s\S]*?)<\/w:r>/g)].map((m) => m[1])
+  const hits = runs.filter((r) => [...r.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].some((t) => t[1].includes(marker)))
+  expect(hits.length, `a run holding ${marker}`).toBeGreaterThan(0)
+  return hits.map((r) => /<w:rFonts\b[^>]*\bw:ascii="([^"]*)"/.exec(r)?.[1] ?? '')
+}
+
+describe('writeDocx sets code in a monospace font wherever it is', () => {
+  it('sets a top-level code block in Courier (as html-to-docx already does)', async () => {
+    expect(await fontsOf('<pre><code>alpha()\nbeta()</code></pre>', 'alpha')).toEqual(['Courier'])
+  })
+
+  it('sets a code block in a list item in Courier, lines still apart', async () => {
+    const html = '<ul><li><p>Step</p><pre><code>alpha()\n  beta()\n</code></pre></li></ul>'
+    expect(await fontsOf(html, 'alpha')).toEqual(['Courier'])
+    expect(await fontsOf(html, 'beta')).toEqual(['Courier'])
+    expect(await fontsOf(html, 'Step')).toEqual([''])
+    expect(await linesOf(html, 'alpha')).toEqual(['Step', 'alpha()', '  beta()'])
+  })
+
+  it('sets a code block in a nested list item in Courier', async () => {
+    const html = '<ol><li>Outer<ul><li>Inner<pre><code>alpha()\nbeta()</code></pre></li></ul></li></ol>'
+    expect(await fontsOf(html, 'alpha')).toEqual(['Courier'])
+    expect(await fontsOf(html, 'beta')).toEqual(['Courier'])
+    expect(await fontsOf(html, 'Inner')).toEqual([''])
+  })
+
+  it('sets inline code in a list item, a paragraph and a table cell in Courier', async () => {
+    expect(await fontsOf('<ul><li>use <code>alpha</code> now</li></ul>', 'alpha')).toEqual(['Courier'])
+    expect(await fontsOf('<ul><li>use <code>alpha</code> now</li></ul>', 'now')).toEqual([''])
+    expect(await fontsOf('<p>use <code>beta</code> now</p>', 'beta')).toEqual(['Courier'])
+    expect(await fontsOf('<table><tr><td>use <code>gamma</code></td></tr></table>', 'gamma')).toEqual(['Courier'])
+  })
+
+  it('sets a highlighted code block in a list item in Courier', async () => {
+    const html =
+      '<ol><li>Item<pre><code class="hljs language-js"><span class="hljs-keyword">const</span> alpha = <span class="hljs-number">1</span>\nbeta()</code></pre></li></ol>'
+    expect(await fontsOf(html, 'const')).toEqual(['Courier'])
+    expect(await fontsOf(html, 'beta')).toEqual(['Courier'])
+    expect(await linesOf(html, 'alpha')).toEqual(['Item', 'const alpha = 1', 'beta()'])
+  })
+
+  it('keeps the paragraph after a code block in a list item', async () => {
+    // A loose Markdown list: html-to-docx wrote nothing for "Then this."
+    const html = '<ol><li><p>Step one:</p><pre><code>alpha()</code></pre><p>Then this.</p></li></ol>'
+    expect(await linesOf(html, 'alpha')).toEqual(['Step one:', 'alpha()', 'Then this.'])
+    expect(await fontsOf(html, 'Then')).toEqual([''])
+  })
+})
