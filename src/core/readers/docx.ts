@@ -544,6 +544,264 @@ function dropBackLinks(li: Element): void {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Code blocks                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Code blocks, which mammoth reads as ordinary paragraphs: it keeps no font,
+ * and the paragraphs' leading spaces then collapse in every writer, so a
+ * listing came back as prose with its indentation gone.
+ *
+ * A paragraph is code when its style says so (Word's "HTML Preformatted",
+ * pandoc's "Source Code", a "Code" style) or when every run that shows text is
+ * in a monospace font, by its own font, its character style or its paragraph
+ * style. That covers our own docx writer, which sets a block in Courier as
+ * one paragraph with a break per line, and Word's one paragraph per line.
+ * Consecutive code paragraphs are one block. As with equations, each block is
+ * taken out of the XML before mammoth sees it and stands as a marker meanwhile;
+ * the block's text comes back as `<pre><code>`, and convert.ts guesses its
+ * language as it does for any unnamed block (Word keeps no language).
+ *
+ * Not code: a word of code in a sentence (the paragraph is not all
+ * monospace), a heading or list paragraph, and a one-line monospace paragraph
+ * in a table cell (an ID column, not a listing).
+ */
+
+/** Style names that mean a code block, compared lower case without spaces or dashes. */
+const CODE_STYLE_NAMES = new Set(['htmlpreformatted', 'preformattedtext', 'sourcecode', 'code', 'codeblock'])
+
+const MONOSPACE =
+  /\bmono\b|^(?:courier|consolas|menlo|monaco|lucida console|lucida sans typewriter|inconsolata|source code pro|cascadia code|fira code|andale mono)/i
+
+interface WordStyle {
+  id: string
+  name: string
+  basedOn?: string
+  /** The font the style's own run properties name, if any. */
+  font?: string
+}
+
+/** The font a run-properties fragment names: its ascii face, else hAnsi; a theme font is not monospace. */
+function rPrFont(rPr: string): string | undefined {
+  const fonts = /<w:rFonts\b([^>]*)>/.exec(rPr)?.[1]
+  if (!fonts) return undefined
+  const face = /\bw:(?:ascii|hAnsi)="([^"]*)"/.exec(fonts)?.[1]
+  if (face) return decodeXml(face)
+  return /\bw:(?:ascii|hAnsi)Theme="/.test(fonts) ? 'theme' : undefined
+}
+
+function parseWordStyles(xml: string): Map<string, WordStyle> {
+  const styles = new Map<string, WordStyle>()
+  for (const el of scanElements(xml, ['w:style'])) {
+    const id = /\bw:styleId="([^"]*)"/.exec(el.xml)?.[1]
+    if (!id) continue
+    const rPr = scanElements(el.inner, ['w:rPr'])[0]?.xml ?? ''
+    styles.set(id, {
+      id,
+      name: decodeXml(/<w:name\b[^>]*\bw:val="([^"]*)"/.exec(el.inner)?.[1] ?? id),
+      basedOn: /<w:basedOn\b[^>]*\bw:val="([^"]*)"/.exec(el.inner)?.[1],
+      font: rPrFont(rPr),
+    })
+  }
+  return styles
+}
+
+/** A style and the styles it is based on, nearest first. */
+function styleChain(styles: Map<string, WordStyle>, id: string | undefined): WordStyle[] {
+  const chain: WordStyle[] = []
+  for (let at = id; at !== undefined && chain.length < 16; ) {
+    const style = styles.get(at)
+    if (!style || chain.includes(style)) break
+    chain.push(style)
+    at = style.basedOn
+  }
+  return chain
+}
+
+const styleFont = (styles: Map<string, WordStyle>, id: string | undefined): string | undefined =>
+  styleChain(styles, id).find((s) => s.font !== undefined)?.font
+
+const codeName = (name: string): boolean => CODE_STYLE_NAMES.has(name.toLowerCase().replace(/[\s_-]+/g, ''))
+
+/** The paragraph style, or one it is based on, is a code style by its name or its id. */
+const isCodeStyle = (styles: Map<string, WordStyle>, id: string | undefined): boolean =>
+  (id !== undefined && codeName(id)) || styleChain(styles, id).some((s) => codeName(s.name) || codeName(s.id))
+
+/** A paragraph's text as written: tabs, breaks and spaces kept. Deleted text and field codes are left out. */
+function codeParagraphText(inner: string): string {
+  const body = inner
+    .replace(/<w:pPr\b[\s\S]*?<\/w:pPr>/, '')
+    .replace(/<w:del\b[\s\S]*?<\/w:del>/g, '')
+    .replace(/<w:instrText\b[\s\S]*?<\/w:instrText>/g, '')
+  let text = ''
+  for (const m of body.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>|<w:(tab|br|cr|noBreakHyphen)\b[^>]*\/>/g)) {
+    if (m[1] !== undefined) text += decodeXml(m[1])
+    else text += m[2] === 'tab' ? '\t' : m[2] === 'noBreakHyphen' ? '-' : '\n'
+  }
+  return text
+}
+
+interface CodeParagraph {
+  start: number
+  end: number
+  text: string
+}
+
+/**
+ * Whether one `<w:p>` is code, and its text if so; `byStyle` when its style
+ * says so rather than its fonts. With `fonts` false only the style counts.
+ */
+function asCodeParagraph(
+  paragraph: string,
+  styles: Map<string, WordStyle>,
+  inTable: boolean,
+  fonts: boolean,
+): { text: string; byStyle: boolean } | undefined {
+  const pPr = /^<w:p\b[^>]*>\s*(<w:pPr\b[\s\S]*?<\/w:pPr>)/.exec(paragraph)?.[1] ?? ''
+  if (/<w:numPr\b|<w:outlineLvl\b/.test(pPr)) return undefined
+  if (/<w:(?:drawing|pict|object|txbxContent)\b|<m:oMath/.test(paragraph)) return undefined
+  const pStyle = /<w:pStyle\b[^>]*\bw:val="([^"]*)"/.exec(pPr)?.[1]
+  if (pStyle && /^heading|^title$/i.test(pStyle)) return undefined
+  const text = codeParagraphText(paragraph)
+  if (isCodeStyle(styles, pStyle)) return { text, byStyle: true }
+  if (!fonts) return undefined
+  const paragraphFont = styleFont(styles, pStyle)
+  let shown = false
+  for (const r of scanElements(paragraph.replace(/<w:del\b[\s\S]*?<\/w:del>/g, ''), ['w:r'])) {
+    if (codeParagraphText(r.inner).trim() === '') continue
+    shown = true
+    const rPr = scanElements(r.inner, ['w:rPr'])[0]?.xml ?? ''
+    const rStyle = /<w:rStyle\b[^>]*\bw:val="([^"]*)"/.exec(rPr)?.[1]
+    const font = rPrFont(rPr) ?? styleFont(styles, rStyle) ?? paragraphFont
+    if (!font || !MONOSPACE.test(font)) return undefined
+  }
+  if (!shown) {
+    // An empty paragraph between two lines of code is a blank line in it.
+    const markFont = rPrFont(scanElements(pPr, ['w:rPr'])[0]?.xml ?? '') ?? paragraphFont
+    return markFont && MONOSPACE.test(markFont) ? { text, byStyle: false } : undefined
+  }
+  if (inTable && !text.includes('\n')) return undefined
+  return { text, byStyle: false }
+}
+
+/**
+ * Whether the document's own body face is monospace (its default paragraph
+ * style or its run defaults): a screenplay or a typewritten letter, where the
+ * font says nothing about code.
+ */
+function monospaceBody(stylesXml: string, styles: Map<string, WordStyle>): boolean {
+  const defaults = /<w:docDefaults\b[\s\S]*?<\/w:docDefaults>/.exec(stylesXml)?.[0] ?? ''
+  const normal = /<w:style\b(?=[^>]*\bw:type="paragraph")(?=[^>]*\bw:default="(?:1|true)")[^>]*\bw:styleId="([^"]*)"/.exec(stylesXml)?.[1]
+  const face = styleFont(styles, normal) ?? rPrFont(defaults)
+  return face !== undefined && MONOSPACE.test(face)
+}
+
+/**
+ * Past this many paragraphs with text, a document whose paragraphs are nearly
+ * all (MONOSPACE_SHARE) monospace by their fonts alone is set in that face, not
+ * full of code. Our own writer makes a code block one paragraph, so its output
+ * never comes near.
+ */
+const MONOSPACE_DOCUMENT_MIN = 20
+const MONOSPACE_SHARE = 0.8
+
+/**
+ * Replace each run of code paragraphs in `xml` (word/document.xml) with one
+ * marker paragraph, appending each block's text to `blocks` in order.
+ */
+export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, blocks: string[]): string {
+  const styles = parseWordStyles(stylesXml)
+  // Where each table lies, to tell a paragraph in a cell.
+  const tables: [number, number][] = []
+  let from = 0
+  for (const t of scanElements(xml, ['w:tbl'])) {
+    const at = xml.indexOf(t.xml, from)
+    if (at < 0) continue
+    tables.push([at, at + t.xml.length])
+    from = at + t.xml.length
+  }
+  const inTable = (at: number): boolean => tables.some(([s, e]) => at > s && at < e)
+
+  const fonts = !monospaceBody(stylesXml, styles)
+  const found: { start: number; end: number; code?: { text: string; byStyle: boolean } }[] = []
+  let shown = 0
+  let byFont = 0
+  let cursor = 0
+  for (const p of scanElements(xml, ['w:p'])) {
+    const at = xml.indexOf(p.xml, cursor)
+    if (at < 0) continue
+    cursor = at + p.xml.length
+    const code = asCodeParagraph(p.xml, styles, inTable(at), fonts)
+    found.push({ start: at, end: cursor, code })
+    if (!/<w:t(?:\s[^>]*)?>[^<]*\S/.test(p.xml)) continue
+    shown++
+    if (code && !code.byStyle) byFont++
+  }
+  const setInMonospace = shown >= MONOSPACE_DOCUMENT_MIN && byFont > shown * MONOSPACE_SHARE
+
+  const groups: CodeParagraph[][] = []
+  let group: CodeParagraph[] = []
+  const close = (): void => {
+    // Blank lines at either end of a block are not part of it.
+    while (group.length && group[0].text.trim() === '') group.shift()
+    while (group.length && group[group.length - 1].text.trim() === '') group.pop()
+    if (group.length) groups.push(group)
+    group = []
+  }
+  for (const { start, end, code } of found) {
+    if (!code || (setInMonospace && !code.byStyle)) close()
+    else {
+      if (group.length && xml.slice(group[group.length - 1].end, start).trim() !== '') close()
+      group.push({ start, end, text: code.text })
+    }
+  }
+  close()
+  if (groups.length === 0) return xml
+
+  let out = ''
+  let last = 0
+  for (const g of groups) {
+    out += xml.slice(last, g[0].start) + `<w:p><w:r><w:t>${marker}${blocks.length}\ue001</w:t></w:r></w:p>`
+    blocks.push(g.map((p) => p.text).join('\n'))
+    last = g[g.length - 1].end
+  }
+  return out + xml.slice(last)
+}
+
+/** The package with its code blocks replaced by markers, or undefined when it has none. */
+async function extractCodeBlocks(bytes: Buffer): Promise<{ bytes: Buffer; marker: string; blocks: string[] } | undefined> {
+  try {
+    const zip = await JSZip.loadAsync(bytes)
+    const doc = zip.files['word/document.xml']
+    if (!doc) return undefined
+    const xml = await doc.async('string')
+    const stylesXml = (await zip.files['word/styles.xml']?.async('string')) ?? ''
+    // Cheap test first: no monospace face or code style named anywhere, no code.
+    if (!MONOSPACE_HINT.test(xml) && !MONOSPACE_HINT.test(stylesXml)) return undefined
+    const marker = uniqueMarker([xml], 'code')
+    const blocks: string[] = []
+    const taken = takeCodeBlocks(xml, stylesXml, marker, blocks)
+    if (blocks.length === 0) return undefined
+    zip.file('word/document.xml', taken)
+    return { bytes: await zip.generateAsync({ type: 'nodebuffer' }), marker, blocks }
+  } catch {
+    return undefined
+  }
+}
+
+/** Any font name or style name that could make a paragraph code. */
+const MONOSPACE_HINT = /mono|courier|consolas|menlo|monaco|lucida|inconsolata|source ?code|cascadia|fira code|andale|preformatted|w:val="code/i
+
+/** Each code block's marker paragraph as `<pre><code>`; a marker found anywhere else as its text. */
+export function restoreCodeBlocks(html: string, marker: string, blocks: string[]): string {
+  const m = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const text = (n: string): string => escapeHtml(blocks[Number(n)] ?? '')
+  return html
+    .replace(new RegExp(`<p>${m}(\\d+)\ue001</p>`, 'g'), (_, n: string) => `<pre><code>${text(n)}</code></pre>`)
+    .replace(new RegExp(`${m}(\\d+)\ue001`, 'g'), (_, n: string) => text(n))
+}
+
+/* -------------------------------------------------------------------------- */
 /* Word equations                                                              */
 /* -------------------------------------------------------------------------- */
 
@@ -572,12 +830,17 @@ const MATH_PARTS = ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xm
 
 /** A marker prefix the text of none of the parts contains. */
 export function equationMarker(xmls: string[]): string {
+  return uniqueMarker(xmls, 'eq')
+}
+
+/** `\ue000` and `base`, made longer until no part's text contains it. */
+function uniqueMarker(xmls: string[], base: string): string {
   // The text as mammoth will see it: a private-use character can be written
   // as a character reference too.
   const reference = new RegExp(`&#(?:x0*e000|0*${0xe000});`, 'gi')
   const texts = xmls.map((x) => x.replace(reference, '\ue000'))
-  let marker = '\ue000eq'
-  for (let i = 0; texts.some((t) => t.includes(marker)); i++) marker = `\ue000eq${i.toString(36)}x`
+  let marker = `\ue000${base}`
+  for (let i = 0; texts.some((t) => t.includes(marker)); i++) marker = `\ue000${base}${i.toString(36)}x`
   return marker
 }
 
@@ -698,10 +961,13 @@ function equationNotice(equations: WordEquation[], ctx?: ReadContext): void {
 
 export async function readDocx(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
   const ledger = createImageLedger(archiveInlineBudget(src.bytes.byteLength))
-  const math = await extractEquations(src.bytes)
+  // Code first: a paragraph holding an equation is never code, and the code's
+  // text then never carries an equation marker.
+  const code = await extractCodeBlocks(src.bytes)
+  const math = await extractEquations(code?.bytes ?? src.bytes)
   // The package mammoth and the list scan read: with markers where equations
   // were, so a paragraph holding only an equation is not taken for empty.
-  const bytes = math?.bytes ?? src.bytes
+  const bytes = math?.bytes ?? code?.bytes ?? src.bytes
   const [{ value }, flags, header, numIds] = await Promise.all([
     mammoth.convertToHtml({ buffer: bytes }, { convertImage: budgetedImageConverter(ledger) }),
     headerFlags(bytes),
@@ -713,5 +979,7 @@ export async function readDocx(src: SourceInput, ctx?: ReadContext): Promise<Hub
   const html = keepTabsVisible(
     mergeInterruptedOrderedLists(promoteHeaderRows(replaceUninlinedImages(converted), flags), numIds),
   )
-  return withHeaderTitle(wordNotesToHub(html), header)
+  // After keepTabsVisible: a tab in code stays a tab.
+  const withCode = code ? restoreCodeBlocks(html, code.marker, code.blocks) : html
+  return withHeaderTitle(wordNotesToHub(withCode), header)
 }
