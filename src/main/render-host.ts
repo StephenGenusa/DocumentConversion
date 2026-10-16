@@ -15,7 +15,8 @@ import { MAX_PICTURE_BYTES, MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBl
  * core/svg-images.ts), and re-encodes raster pictures a Kindle cannot store
  * as they are (kind `picture`, core/kindle-pictures.ts): a picture is
  * decoded only here, in the sandboxed page, so a malformed one can at worst
- * crash that page, never the app.
+ * crash that page, never the app. Chromium decodes no TIFF, so the page
+ * does that with UTIF.js, loaded the first time a TIFF comes.
  *
  *   window      hidden, sandboxed, context-isolated, no preload, JavaScript
  *               on (the engines are scripts). Created on first need, closed
@@ -53,7 +54,8 @@ export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
   dot: '3.31.0',
   math: '3.2.2',
   svg: 'raster-1',
-  picture: 'reencode-1',
+  // 2: TIFF is decoded (UTIF.js 4.1.0, pako 1.0.11), where it was refused.
+  picture: 'reencode-2',
 }
 
 /** The largest source of each kind: a diagram's text, a whole SVG image, or a picture's data: URL. */
@@ -61,7 +63,7 @@ const maxSourceBytes = (kind: RenderKind): number =>
   kind === 'svg' ? MAX_SVG_IMAGE_BYTES : kind === 'picture' ? Math.ceil(MAX_PICTURE_BYTES / 3) * 4 + 64 : MAX_SOURCE_BYTES
 
 /** A picture's source: a base64 data: URL of a raster image type, nothing else. */
-const PICTURE_SOURCE = /^data:image\/(?:png|jpeg|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon);base64,[A-Za-z0-9+/]+=*$/
+const PICTURE_SOURCE = /^data:image\/(?:png|jpeg|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon|tiff);base64,[A-Za-z0-9+/]+=*$/
 
 /** What a re-encoded picture must start with, by type. */
 function isEncoded(b64: string, mime: string): boolean {
@@ -74,6 +76,9 @@ function isEncoded(b64: string, mime: string): boolean {
 
 /** The engine files the page may load, by kind. */
 const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.min.js', dot: 'viz-global.js', math: 'tex-svg-full.js' }
+
+/** The TIFF decoder and the inflate it uses, which the page loads for a TIFF picture. */
+const DECODER_FILES = ['pako-inflate.min.js', 'utif.js']
 
 /** Who is waiting: visible editor blocks first, conversions next, editor prefetch last. */
 export type RenderPriority = 'visible' | 'convert' | 'prefetch'
@@ -203,7 +208,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
   const cache = new Lru(opts.cacheEntries ?? 2000, opts.cacheBytes ?? 64 * 1024 * 1024)
   const fold = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
   const allowedFiles = new Set(
-    [pagePath, join(pageDir, 'host.js'), ...Object.values(ENGINE_FILES).map((f) => join(pageDir, f!))].map(fold),
+    [pagePath, join(pageDir, 'host.js'), ...[...Object.values(ENGINE_FILES), ...DECODER_FILES].map((f) => join(pageDir, f!))].map(fold),
   )
 
   const queue: Job[] = []

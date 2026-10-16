@@ -578,6 +578,12 @@ export const READING_ROOM = {
   webpAlt: 'Media shelves after refitting',
   flowIntro: 'Returned volumes reach the shelves in three steps:',
   flow: ['Returned', 'Sorted', 'Reshelved'],
+  scansTitle: 'Scans from the old handbook',
+  scansIntro: 'The old handbook survives only as scans, kept the way the scanner saved them.',
+  scanAlt: 'Scanned photograph of the reading room',
+  lineScanAlt: 'Scanned line drawing of the shelving',
+  drawingAlt: 'Shelf diagram drawn in an old word processor',
+  scansAfter: 'Volunteers hope to redraw the shelf diagram one day.',
 }
 
 /**

@@ -42,6 +42,25 @@
       "note": "Copyright (c) 2015-2021 Martin Hensel. The parser for the \\ce and \\pu commands, bundled by the MathJax project into its tex-svg-full.js, shipped in resources/render."
     },
     {
+      "name": "UTIF.js",
+      "package": "utif2",
+      "license": "MIT",
+      "note": "Photopea's TIFF decoder (UTIF.js, from the utif2 package), shipped in resources/render to convert TIFF pictures for Kindle books; the render page has no TIFF decoder of its own. The file carries a JPEG decoder adapted from pdf.js, listed separately."
+    },
+    {
+      "name": "pdf.js JPEG decoder (in UTIF.js)",
+      "version": "4.1.0",
+      "license": "Apache-2.0",
+      "licenseFrom": "node_modules/pdfjs-dist/LICENSE",
+      "note": "Copyright Mozilla Foundation. The JPEG decoder of pdf.js, adapted by the UTIF.js project into its UTIF.js (utif2 4.1.0), shipped in resources/render for TIFF pictures that hold JPEG."
+    },
+    {
+      "name": "pako (inflate)",
+      "package": "pako",
+      "license": "(MIT AND Zlib)",
+      "note": "zlib's inflate in JavaScript (dist/pako_inflate.min.js), shipped in resources/render for UTIF.js to read Deflate-compressed TIFF pictures. The same pako release the app already carries as a dependency of JSZip."
+    },
+    {
       "name": "reveal.js",
       "package": "reveal.js",
       "license": "MIT",

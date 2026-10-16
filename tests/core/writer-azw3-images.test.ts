@@ -9,6 +9,8 @@ import { writeAzw3 } from '../../src/core/writers/azw3'
 import { kindlePictures, KINDLE_IMAGE_MAX_BYTES, pictureMime, storableAsIs } from '../../src/core/kindle-pictures'
 import { createConverter } from '../../src/core/convert'
 import type { RenderBlocks, RenderRequest, RenderResult } from '../../src/core/rendered-blocks'
+// @ts-expect-error: a plain .mjs fixture library, no types.
+import { emf, tiff as makeTiff } from '../../scripts/fixtures/lib-tiff.mjs'
 
 /*
  * Pictures in AZW3 (KF8). Read back two ways: our own record-level parse of
@@ -65,6 +67,11 @@ function bmp(): Buffer {
 }
 /** A TIFF header and nothing a decoder can use. */
 const TIFF = Buffer.from('49492a000800000000000000', 'hex')
+/** A real TIFF (LZW, as scanners write), and a big-endian one. */
+const tiffPicture = (bigEndian = false): Buffer =>
+  makeTiff({ width: 40, height: 30, pixel: (x: number, y: number) => [x * 6, y * 8, 128], compression: 'lzw', bigEndian })
+/** Word's vector picture format, which nothing here draws. */
+const EMF: Buffer = emf()
 
 const uri = (mime: string, bytes: Buffer) => `data:${mime};base64,${bytes.toString('base64')}`
 const imgTag = (mime: string, bytes: Buffer, attrs = 'alt="picture"') => `<img src="${uri(mime, bytes)}" ${attrs}>`
@@ -254,7 +261,11 @@ describe('AZW3 pictures (KF8 image records)', () => {
     expect(pictureMime(png())).toBe('image/png')
     expect(pictureMime(webp())).toBe('image/webp')
     expect(pictureMime(bmp())).toBe('image/bmp')
-    expect(pictureMime(TIFF)).toBeNull()
+    expect(pictureMime(TIFF)).toBe('image/tiff')
+    expect(pictureMime(tiffPicture())).toBe('image/tiff')
+    expect(pictureMime(tiffPicture(true))).toBe('image/tiff')
+    expect(pictureMime(EMF)).toBeNull()
+    expect(storableAsIs(tiffPicture())).toBe(false)
     expect(storableAsIs(png())).toBe(true)
     expect(storableAsIs(webp())).toBe(false)
     expect(storableAsIs(png(), 10)).toBe(false)
@@ -340,16 +351,25 @@ describe('AZW3 through the converter', () => {
     const conv = createConverter(pdf, { renderBlocks: render })
     const big = noisePng(1500, 1300)
     const kept = png(41, 31)
-    const page = Buffer.from(`<p>${imgTag('image/webp', webp())}${imgTag('image/bmp', bmp())}${imgTag('image/png', big)}${imgTag('image/png', kept)}</p>`)
+    // Two TIFFs, one labelled as a PNG: the bytes say what a picture is.
+    const scan = tiffPicture(true)
+    const page = Buffer.from(
+      `<p>${imgTag('image/webp', webp())}${imgTag('image/bmp', bmp())}${imgTag('image/png', big)}${imgTag('image/png', kept)}` +
+        `${imgTag('image/tiff', tiffPicture())}${imgTag('image/png', scan)}</p>`,
+    )
     const out = await conv.convert({ bytes: page, filename: 'p.html' }, 'html', 'azw3')
     expect(calls.map((c) => [c.kind, c.source.slice(0, 15), c.fit])).toEqual([
       ['picture', 'data:image/webp', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
       ['picture', 'data:image/bmp;', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
       ['picture', 'data:image/png;', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
+      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
+      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
     ])
+    expect(calls[4].source).toBe(`data:image/tiff;base64,${scan.toString('base64')}`)
+    expect(calls[3].source).toBe(`data:image/tiff;base64,${tiffPicture().toString('base64')}`)
     const book = parseBook(out.parts[0].bytes)
     const refs = embeds(book.text)
-    expect(refs.map((r) => r.mime)).toEqual(['image/jpeg', 'image/png', 'image/jpeg', 'image/png'])
+    expect(refs.map((r) => r.mime)).toEqual(['image/jpeg', 'image/png', 'image/jpeg', 'image/png', 'image/jpeg', 'image/jpeg'])
     expect(book.resources.map((r) => r.toString('base64'))).toEqual([JPEG, PNG_OUT, kept.toString('base64')])
   }, 30_000)
 
@@ -357,16 +377,21 @@ describe('AZW3 through the converter', () => {
     const render: RenderBlocks = async (requests) => requests.map(() => ({ error: 'the picture could not be decoded' }))
     const conv = createConverter(pdf, { renderBlocks: render })
     const notices: string[] = []
-    const page = Buffer.from(`<p>${imgTag('image/tiff', TIFF, 'alt="Bridge survey"')}</p><p>${imgTag('image/webp', webp(), 'alt="Media shelves"')}</p>`)
+    const page = Buffer.from(
+      `<p>${imgTag('image/x-emf', EMF, 'alt="Bridge survey"')}</p><p>${imgTag('image/webp', webp(), 'alt="Media shelves"')}</p>` +
+        `<p>${imgTag('image/tiff', TIFF, 'alt="Empty scan"')}</p>`,
+    )
     const out = await conv.convert({ bytes: page, filename: 'p.html' }, 'html', 'azw3', undefined, {
       onAdvice: (_kind, message) => notices.push(message),
     })
     const book = parseBook(out.parts[0].bytes)
     expect(book.text).toContain('[image: Bridge survey]')
     expect(book.text).toContain('[image: Media shelves]')
+    expect(book.text).toContain('[image: Empty scan]')
     expect(notices).toEqual([
-      'Picture 1 could not be stored for Kindle: a Kindle cannot show TIFF pictures',
+      'Picture 1 could not be stored for Kindle: a Kindle cannot show EMF pictures',
       'Picture 2 could not be stored for Kindle: the picture could not be decoded',
+      'Picture 3 could not be stored for Kindle: the picture could not be decoded',
     ])
   })
 

@@ -23,6 +23,9 @@ const SKIP_PATHS = new Set([
   'resources/sqlite/sql-wasm.js',
   // viz-js's Graphviz build, vendored byte for byte (scripts/build-render-assets.mjs).
   'resources/render/viz-global.js',
+  // UTIF.js and pako's inflate, vendored byte for byte (scripts/build-render-assets.mjs).
+  'resources/render/utif.js',
+  'resources/render/pako-inflate.min.js',
   // Third-party licence texts, copied word for word (scripts/notices/vendored.json).
   'scripts/notices/texts/viz-js-3.31.0-LICENSE',
   'scripts/notices/texts/graphviz-16.1.0-LICENSE',

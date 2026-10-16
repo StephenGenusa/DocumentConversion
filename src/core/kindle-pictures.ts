@@ -12,13 +12,16 @@ import type { TargetFormat } from './types'
  * Pictures for a Kindle book (AZW3/KF8). A KF8 image record holds a JPEG,
  * PNG or GIF, and this app stores one exactly as the document has it when it
  * is one of those and under the size limit. Anything else - WebP, BMP, AVIF,
- * ICO, or a picture over the limit - is re-encoded by the render host (kind
- * `picture`): decoded in its sandboxed page, never in the main process,
- * where a malformed file can take the app down (Skia, in @napi-rs/canvas,
- * crashes on some), and answered as PNG when it has transparency, JPEG when
- * not. What cannot be stored becomes its alt text, with a notice, so a book
- * never holds a reference to nothing. SVG images do not reach here: they
- * get PNG copies first (svg-images.ts).
+ * ICO, TIFF, or a picture over the limit - is re-encoded by the render host
+ * (kind `picture`): decoded in its sandboxed page, never in the main
+ * process, where a malformed file can take the app down (Skia, in
+ * @napi-rs/canvas, crashes on some), and answered as PNG when it has
+ * transparency, JPEG when not. Chromium has no TIFF decoder, so the page
+ * decodes TIFF with UTIF.js (vendored in resources/render). What cannot be
+ * stored becomes its alt text, with a notice, so a book never holds a
+ * reference to nothing: EMF and WMF (Word's vector pictures, which nothing
+ * here can draw), and anything unrecognised. SVG images do not reach here:
+ * they get PNG copies first (svg-images.ts).
  *
  * Size limit, per picture: 5 MB. Classic MOBI capped image records at about
  * 127 KB (64 KB on early readers), and kindlegen's MOBI7 half still shrinks
@@ -47,7 +50,14 @@ export function pictureMime(bytes: Buffer): string | null {
     return 'image/avif'
   }
   if (bytes.length >= 6 && bytes.readUInt32BE(0) === 0x00000100 && bytes.readUInt16LE(4) > 0) return 'image/x-icon'
+  // TIFF, either byte order. Not BigTIFF (43), which UTIF.js does not read.
+  if (bytes.length >= 8 && (bytes.toString('latin1', 0, 4) === 'II*\0' || bytes.toString('latin1', 0, 4) === 'MM\0*')) return 'image/tiff'
   return null
+}
+
+/** What a picture's type is called in a notice: "EMF" for image/x-emf, "TIFF" for image/tiff. */
+function typeName(mime: string): string {
+  return mime.replace(/^image\//, '').replace(/^(x-|vnd\.(ms-|microsoft\.)?)/, '').toUpperCase()
 }
 
 /** Whether a Kindle stores these bytes as they are: JPEG, PNG or GIF, under the limit. */
@@ -120,7 +130,7 @@ export async function kindlePictures(html: string, target: TargetFormat, ctx: Dr
     if (storableAsIs(data.bytes)) continue
     const mime = pictureMime(data.bytes)
     if (!mime) {
-      failed(number, `a Kindle cannot show ${data.declared.replace(/^image\//, '').toUpperCase()} pictures`)
+      failed(number, `a Kindle cannot show ${typeName(data.declared)} pictures`)
       toPlaceholder(el)
       changed = true
     } else if (data.bytes.length > MAX_PICTURE_BYTES) {

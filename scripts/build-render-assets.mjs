@@ -1,5 +1,6 @@
 /**
- * Vendor the diagram and formula engines into resources/render/ (spec B5).
+ * Vendor the diagram and formula engines, and the TIFF decoder, into
+ * resources/render/ (spec B5).
  *
  * The render host (src/main/render-host.ts) draws in a hidden, offline window
  * from a bundled page, resources/render/host.html, which loads each engine
@@ -50,6 +51,24 @@ const ENGINES = [
     from: 'es5/tex-svg-full.js',
     to: 'tex-svg-full.js',
     sha256: 'a4354ff94fd868aea0cc6eaaa79a57fda0588646fc46ee3700a349ee0a11cbe6',
+  },
+  {
+    // A TIFF decoder (Photopea's UTIF.js, the maintained utif2 release): the
+    // page has none of its own, and a Kindle stores no TIFF. It carries a
+    // JPEG decoder adapted from pdf.js, for TIFFs holding JPEG.
+    pkg: 'utif2',
+    version: '4.1.0',
+    from: 'UTIF.js',
+    to: 'utif.js',
+    sha256: '290e83d171a73f604b2d1723861b0b55ba7308f79a8bb594360e627474fb30d1',
+  },
+  {
+    // zlib's inflate, which UTIF.js calls for Deflate-compressed TIFFs.
+    pkg: 'pako',
+    version: '1.0.11',
+    from: 'dist/pako_inflate.min.js',
+    to: 'pako-inflate.min.js',
+    sha256: '2ca27e9a8dae569cdeac42752ed1aed1afeff7f19282d3cc12c0aaa54a08bc04',
   },
 ]
 

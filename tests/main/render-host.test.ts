@@ -83,6 +83,11 @@ interface HarnessResult {
   pictureSkiaCrash: Picture
   pictureGarbage: Picture
   pictureTiff: Picture
+  pictureTiffLzw: Picture
+  pictureTiffAlpha: Picture
+  pictureTiffBilevel: Picture
+  pictureTiffPixels: string[] | string
+  pictureTiffVast: Picture
   pictureAfter: Picture
   order: string[]
   cancelled: string
@@ -135,7 +140,12 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
   it('requests nothing but the bundled page and the engine beside it', () => {
     const files = result.requests.map((r) => decodeURIComponent(new URL(r.url).pathname).split('/').pop())
     expect(result.requests.every((r) => r.allowed && r.url.startsWith('file://'))).toBe(true)
-    expect(new Set(files)).toEqual(new Set(['host.html', 'host.js', 'mermaid.min.js', 'viz-global.js', 'tex-svg-full.js']))
+    expect(new Set(files)).toEqual(
+      new Set(['host.html', 'host.js', 'mermaid.min.js', 'viz-global.js', 'tex-svg-full.js', 'pako-inflate.min.js', 'utif.js']),
+    )
+    // The TIFF decoder, once, with the inflate it needs loaded first.
+    expect(files.filter((f) => f === 'utif.js').length).toBe(1)
+    expect(files.indexOf('pako-inflate.min.js')).toBeLessThan(files.indexOf('utif.js'))
     // Each engine is loaded once per window, not once per diagram (the run
     // opens four windows: first use, after each of two time-outs, after idle).
     expect(files.filter((f) => f === 'mermaid.min.js').length).toBeLessThanOrEqual(4)
@@ -344,11 +354,19 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     expect(result.pictureAlpha.width).toBeLessThan(200)
   })
 
+  it('decodes TIFF in the page (Chromium has no decoder for it): JPEG, or PNG where it has transparency', () => {
+    expect(result.pictureTiffLzw).toEqual({ type: 'jpeg', bytes: expect.any(Number), width: 300, height: 200, magicOk: true })
+    expect(result.pictureTiffAlpha).toMatchObject({ type: 'png', width: 60, height: 40, magicOk: true })
+    expect(result.pictureTiffBilevel).toMatchObject({ type: 'jpeg', width: 97, height: 31, magicOk: true })
+    expect(result.pictureTiffPixels).toEqual(['#ff0000', '#0000ff'])
+  })
+
   it('decodes pictures only in the page: a malformed one costs an answer, never the app', () => {
     // Whatever the page made of it, the host is still answering afterwards.
     expect(result.pictureSkiaCrash.error ?? result.pictureSkiaCrash.type).toBeTruthy()
     expect(result.pictureGarbage.error).toBeTruthy()
-    expect(result.pictureTiff.error).toBe('it is not a picture this app reads')
+    expect(result.pictureTiff.error).toBe('the TIFF holds no picture')
+    expect(result.pictureTiffVast.error).toBe('the TIFF picture is too large to convert')
     expect(result.pictureAfter).toMatchObject({ type: 'jpeg', width: 20, height: 10, magicOk: true })
   })
 

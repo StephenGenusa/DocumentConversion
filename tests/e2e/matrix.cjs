@@ -223,7 +223,9 @@ async function main() {
       ).length
     const hasNestedSvgImages = nestedIn(hubText) > 0
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
-    const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp)[;,]/i.test(hubText)
+    const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp|tiff)[;,]/i.test(hubText)
+    // TIFF pictures, which a Kindle book gets as JPEG or PNG (decoded in the render host).
+    const tiffImages = (hubText.match(/src="data:image\/tiff[;,]/gi) ?? []).length
     // Code highlight.js finds tokens in (a shell prompt line may hold none).
     const hasColouredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
@@ -341,6 +343,7 @@ async function main() {
           if ((hasDiagrams || hasSvgImages || hasRasterImages || hasMath) && book.pictures.length === 0) throw new Error('azw3 lost its pictures')
           if ((hasDiagrams || hasSvgImages || hasMath) && !book.pictures.some((p) => imageKind(p) === 'png')) throw new Error('azw3 has no PNG for its diagrams, formulas or SVG images')
           if (/svg/i.test(book.html.replace(/<img[^>]*>/g, ''))) throw new Error('azw3 text still holds SVG')
+          if (book.pictures.length < tiffImages) throw new Error(`azw3 kept ${book.pictures.length} pictures of ${tiffImages} TIFFs`)
           if (book.cover && (hasDiagrams || hasMath) && !hasSvgImages && !hasRasterImages) throw new Error('a drawn diagram or formula is the azw3 cover')
           rec.note = `${book.pictures.length} pictures, ${book.resources ?? 0} resources${book.cover ? ', cover' : ''}`
           azw3Html = book.html

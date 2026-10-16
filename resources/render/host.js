@@ -8,31 +8,46 @@
   /** The label font stack (spec B5, B8): metric-compatible on Windows, macOS and Linux. */
   var FONT = 'Arial, "Liberation Sans", Helvetica, sans-serif'
 
-  /** The engine files beside this page, by kind. */
-  var ENGINE_FILES = { mermaid: 'mermaid.min.js', dot: 'viz-global.js', math: 'tex-svg-full.js' }
+  /**
+   * The engine files beside this page, by kind, each list loaded in order:
+   * the TIFF decoder (UTIF.js) finds zlib's inflate (pako) as a global.
+   */
+  var ENGINE_FILES = {
+    mermaid: ['mermaid.min.js'],
+    dot: ['viz-global.js'],
+    math: ['tex-svg-full.js'],
+    tiff: ['pako-inflate.min.js', 'utif.js'],
+  }
 
   var loading = {}
 
-  /** Load an engine's file once; later calls share the first load. */
+  function loadScript(kind, file) {
+    return new Promise(function (resolve, reject) {
+      var script = document.createElement('script')
+      script.src = file
+      script.onload = function () {
+        resolve()
+      }
+      script.onerror = function () {
+        reject(new Error('The ' + kind + ' engine could not be loaded'))
+      }
+      document.head.appendChild(script)
+    })
+  }
+
+  /** Load an engine's files once; later calls share the first load. */
   function load(kind) {
     if (!ENGINE_FILES[kind]) return Promise.reject(new Error('Unknown engine ' + kind))
     if (!loading[kind]) {
-      loading[kind] = new Promise(function (resolve, reject) {
-        var script = document.createElement('script')
-        script.src = ENGINE_FILES[kind]
-        script.onload = function () {
-          try {
-            if (kind === 'mermaid') setUpMermaid()
-            resolve()
-          } catch (err) {
-            reject(err)
-          }
-        }
-        script.onerror = function () {
-          reject(new Error('The ' + kind + ' engine could not be loaded'))
-        }
-        document.head.appendChild(script)
-      })
+      loading[kind] = ENGINE_FILES[kind]
+        .reduce(function (done, file) {
+          return done.then(function () {
+            return loadScript(kind, file)
+          })
+        }, Promise.resolve())
+        .then(function () {
+          if (kind === 'mermaid') setUpMermaid()
+        })
       // A failed load may be retried by the next request.
       loading[kind].catch(function () {
         delete loading[kind]
@@ -155,6 +170,44 @@
     return { b64: b64, bytes: (b64.length * 3) / 4 - pad }
   }
 
+  /** The most pixels a TIFF is decoded at: its RGBA copy is four bytes a pixel. */
+  var MAX_TIFF_PIXELS = 50 * 1000 * 1000
+
+  /**
+   * A TIFF (a base64 data: URL), decoded by UTIF.js onto a canvas: Chromium
+   * decodes no TIFF itself. The first page, which is what Word and every
+   * other viewer show. Its size is read before anything is decoded, so a
+   * TIFF claiming a vast picture is refused rather than allocated.
+   */
+  async function tiffCanvas(src) {
+    await load('tiff')
+    var text = atob(src.slice(src.indexOf(',') + 1))
+    var bytes = new Uint8Array(text.length)
+    for (var i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
+    var UTIF = window.UTIF
+    var ifds = UTIF.decode(bytes.buffer, { parseMN: false, debug: false })
+    var page = ifds.filter(function (d) {
+      return d.t256 && d.t257
+    })[0]
+    if (!page) throw new Error('the TIFF holds no picture')
+    var w = page.t256[0]
+    var h = page.t257[0]
+    if (!(w > 0 && h > 0)) throw new Error('the picture has no size')
+    if (w * h > MAX_TIFF_PIXELS) throw new Error('the TIFF picture is too large to convert')
+    UTIF.decodeImage(bytes.buffer, page, ifds)
+    if (!page.data) throw new Error('the TIFF picture could not be decoded')
+    var rgba = UTIF.toRGBA8(page)
+    if (rgba.length !== w * h * 4) throw new Error('the TIFF picture could not be decoded')
+    var canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    var g = canvas.getContext('2d')
+    var data = g.createImageData(w, h)
+    data.data.set(rgba)
+    g.putImageData(data, 0, 0)
+    return canvas
+  }
+
   /**
    * A raster picture (a data: URL the main process built from the document's
    * bytes) decoded here, in the sandbox, and re-encoded to fit `maxBytes`:
@@ -163,11 +216,16 @@
    * its size in pixels.
    */
   async function reencode(src, maxBytes) {
-    var img = new Image()
-    img.src = src
-    await img.decode()
-    var width = img.naturalWidth
-    var height = img.naturalHeight
+    var img
+    if (/^data:image\/tiff;/.test(src)) {
+      img = await tiffCanvas(src)
+    } else {
+      img = new Image()
+      img.src = src
+      await img.decode()
+    }
+    var width = img.naturalWidth || img.width
+    var height = img.naturalHeight || img.height
     if (!(width > 0 && height > 0)) throw new Error('the picture has no size')
     var s0 = Math.min(1, MAX_SIDE / width, MAX_SIDE / height)
     var full = document.createElement('canvas')

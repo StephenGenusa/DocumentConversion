@@ -177,6 +177,19 @@ async function main() {
     out.pictureSkiaCrash = await picture(`data:image/png;base64,${SKIA_CRASH}`, 5 * 1024 * 1024)
     out.pictureGarbage = await picture(uri('image/webp', Buffer.from('RIFF0000WEBPnot a picture at all')), 5 * 1024 * 1024)
     out.pictureTiff = await picture(uri('image/tiff', Buffer.from('49492a0008000000', 'hex')), 5 * 1024 * 1024)
+    // Real TIFFs (Chromium decodes none; the page uses UTIF.js), made here.
+    const { tiff } = await import(require('path').join(__dirname, '..', '..', 'scripts', 'fixtures', 'lib-tiff.mjs'))
+    const shade = (x, y) => [(x * 5) & 255, (y * 3) & 255, 160, x < 10 ? 0 : 255]
+    out.pictureTiffLzw = await picture(uri('image/tiff', tiff({ width: 300, height: 200, pixel: shade, compression: 'lzw' })), 5 * 1024 * 1024)
+    out.pictureTiffAlpha = await picture(uri('image/tiff', tiff({ width: 60, height: 40, pixel: shade, kind: 'rgba', compression: 'deflate' })), 5 * 1024 * 1024)
+    out.pictureTiffBilevel = await picture(uri('image/tiff', tiff({ width: 97, height: 31, pixel: shade, kind: 'bilevel', compression: 'packbits', bigEndian: true })), 5 * 1024 * 1024)
+    {
+      // Two of its pixels, as the page drew them (one transparent pixel keeps it PNG): the colours kept, not only the size.
+      const r = await host.render({ kind: 'picture', source: uri('image/tiff', tiff({ width: 40, height: 4, pixel: (x, y) => (x + y === 0 ? [0, 0, 0, 0] : x < 20 ? [255, 0, 0, 255] : [0, 0, 255, 255]), kind: 'rgba' })), display: true, format: 'png', fit: { maxBytes: 5 * 1024 * 1024 } })
+      out.pictureTiffPixels = r.png ? [pngPixel(r.png, 5, 1), pngPixel(r.png, 35, 1)] : r.error
+    }
+    // A TIFF that claims a vast picture: refused before anything is allocated.
+    out.pictureTiffVast = await picture(uri('image/tiff', tiff({ width: 2, height: 2, pixel: shade, kind: 'gray', claim: { width: 100000, height: 100000 } })), 5 * 1024 * 1024)
     out.pictureAfter = await picture(uri('image/webp', canvas(20, 10, false).toBuffer('image/webp')), 5 * 1024 * 1024)
   }
 

@@ -279,6 +279,7 @@ desk
 desktop
 detail
 devi
+diagram
 different
 differently
 digraph
@@ -297,6 +298,7 @@ doesn
 doesn't
 dot
 down
+drawing
 drawn
 draws
 dress
@@ -459,6 +461,7 @@ holds
 holiday
 home
 honestly
+hope
 horseplay
 hours
 household
@@ -678,6 +681,7 @@ off
 often
 oint
 olarkspur
+old
 omega
 on
 onboarding
@@ -780,6 +784,7 @@ procedure
 procedures
 process
 processed
+processor
 prod
 products
 professionalism
@@ -826,6 +831,7 @@ receiving
 record
 recording
 records
+redraw
 refer
 reference
 referenced
@@ -896,8 +902,12 @@ run
 safety
 same
 satisfaction
+saved
 says
 sbraddock
+scanned
+scanner
+scans
 scene
 schedule
 scheme
@@ -1030,6 +1040,7 @@ supervisor
 supervisors
 supply
 surname
+survives
 systems
 tab
 table

@@ -4,6 +4,12 @@
 # against — a failure that appears only after cloning, never locally.
 tests/corpus/**   -text
 tests/fixtures/** -text
+# Vendored engines are pinned by SHA-256 (scripts/build-render-assets.mjs):
+# their bytes, line endings included, are the ones reviewed. UTIF.js has CRLF.
+resources/render/*.min.js -text
+resources/render/utif.js  -text
+resources/render/viz-global.js -text
+resources/render/tex-svg-full.js -text
 
 # Everything else keeps normal text handling.
 *.ts   text eol=lf

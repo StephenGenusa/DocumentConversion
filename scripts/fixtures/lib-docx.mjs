@@ -39,14 +39,16 @@ export function listItem(numId, text, ilvl = 0) {
   )
 }
 
-/** One inline `<w:drawing>` run referencing relationship `rId`. Returned bare, for embedding in a `<w:p>`. */
-function drawingRun(rId, id) {
-  const cx = 914400 // 1 inch, in EMU
-  const cy = 274320 // 0.3 inch
+/**
+ * One inline `<w:drawing>` run referencing relationship `rId`. Returned bare,
+ * for embedding in a `<w:p>`. `descr` is the picture's alt text; the size is
+ * in EMU (914400 an inch).
+ */
+function drawingRun(rId, id, { descr, cx = 914400, cy = 274320 } = {}) {
   return (
     `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
     `<wp:extent cx="${cx}" cy="${cy}"/>` +
-    `<wp:docPr id="${id}" name="Picture ${id}"/>` +
+    `<wp:docPr id="${id}" name="Picture ${id}"${descr ? ` descr="${descr}"` : ''}/>` +
     `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
     `<pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="Picture ${id}"/><pic:cNvPicPr/></pic:nvPicPr>` +
     `<pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
@@ -60,6 +62,11 @@ function drawingRun(rId, id) {
 export function imageParagraph(rIds, idStart) {
   const runs = rIds.map((rId, i) => drawingRun(rId, idStart + i)).join('')
   return `<w:p>${runs}</w:p>`
+}
+
+/** A `<w:p>` holding one picture from `media` (buildDocx), by its index there. */
+export function mediaParagraph(index, { descr, cx, cy } = {}) {
+  return `<w:p>${drawingRun(`rMedia${index + 1}`, 100 + index, { descr, cx, cy })}</w:p>`
 }
 
 /**
@@ -81,8 +88,11 @@ export function imageRelIds(count) {
  *
  * `footnotes` / `endnotes` are the bodies (`<w:p>…`) of notes 1, 2, …; the
  * body refers to note N with `noteRef('footnote', N)`.
+ *
+ * `media` is pictures of any type, as `{ bytes, ext, contentType }`, stored as
+ * word/media/media<N>.<ext>; the body shows picture i with `mediaParagraph(i)`.
  */
-export async function buildDocx({ body, headers = {}, footers = {}, numberingXml, imageCount = 0, footnotes = [], endnotes = [] }) {
+export async function buildDocx({ body, headers = {}, footers = {}, numberingXml, imageCount = 0, media = [], footnotes = [], endnotes = [] }) {
   const zip = new JSZip()
   const rels = []
   const refs = { header: [], footer: [] }
@@ -110,6 +120,14 @@ export async function buildDocx({ body, headers = {}, footers = {}, numberingXml
     )
     mediaFiles.push([`word/media/${file}`, TINY_PNG])
   }
+  const mediaTypes = new Map()
+  media.forEach(({ bytes, ext, contentType }, i) => {
+    rels.push(
+      `<Relationship Id="rMedia${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/media${i + 1}.${ext}"/>`,
+    )
+    mediaFiles.push([`word/media/media${i + 1}.${ext}`, bytes])
+    if (ext !== 'png') mediaTypes.set(ext, contentType)
+  })
 
   const notes = { footnote: footnotes, endnote: endnotes }
   const noteOverrides = []
@@ -145,6 +163,7 @@ export async function buildDocx({ body, headers = {}, footers = {}, numberingXml
       `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
       `<Default Extension="xml" ContentType="application/xml"/>` +
       `<Default Extension="png" ContentType="image/png"/>` +
+      [...mediaTypes].map(([ext, type]) => `<Default Extension="${ext}" ContentType="${type}"/>`).join('') +
       `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
       (numberingXml
         ? '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>'
