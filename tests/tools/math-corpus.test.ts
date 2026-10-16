@@ -20,6 +20,7 @@ import { parseDocument } from 'htmlparser2'
 import { textContent } from 'domutils'
 import { detect } from '../../src/core/detect'
 import { getReader } from '../../src/core/readers'
+import { carryDefinitions } from '../../src/core/tex-definitions'
 
 const ROOT = resolve(__dirname, '..', '..')
 const FILES = (process.env.MATH_FILES ?? '').split('|').filter(Boolean)
@@ -28,24 +29,28 @@ const FORMULA = /<pre><code class="language-math">([\s\S]*?)<\/code><\/pre>|<cod
 
 describe('math real-corpus check', () => {
   it.skipIf(FILES.length === 0 || !hasDisplay)('draws or reports every formula', async () => {
-    const formulas: Array<{ file: string; source: string; display: boolean }> = []
+    // `drawn` as a conversion draws it: after the definitions earlier formulas of the same file made.
+    const formulas: Array<{ file: string; source: string; display: boolean; drawn: string }> = []
     for (const file of FILES) {
       const bytes = await readFile(file)
       const det = detect(bytes, basename(file))
       if (det.kind !== 'ok') throw new Error(`${file}: ${det.kind}`)
       const { html } = await getReader(det.format)({ bytes, filename: basename(file) })
+      const own: Array<{ file: string; source: string; display: boolean }> = []
       for (const m of html.matchAll(FORMULA)) {
         const display = m[1] !== undefined
         const source = textContent(parseDocument(display ? m[1] : m[2], { decodeEntities: true }))
-        if (source.trim()) formulas.push({ file: basename(file), source, display })
+        if (source.trim()) own.push({ file: basename(file), source, display })
       }
+      const carried = carryDefinitions(own.map((f) => f.source))
+      own.forEach((f, k) => formulas.push({ ...f, drawn: carried[k] }))
     }
     const dir = await mkdtemp(join(tmpdir(), 'docconv-math-corpus-'))
     try {
       const hostJs = join(dir, 'render-host.js')
       await build({ entryPoints: [join(ROOT, 'src/main/render-host.ts')], bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outfile: hostJs, logLevel: 'silent' })
       const list = join(dir, 'formulas.json')
-      await writeFile(list, JSON.stringify(formulas.map(({ source, display }) => ({ source, display }))))
+      await writeFile(list, JSON.stringify(formulas.map(({ drawn, display }) => ({ source: drawn, display }))))
       const electron = require('electron') as unknown as string
       const stdout = await new Promise<string>((done, fail) =>
         execFile(
