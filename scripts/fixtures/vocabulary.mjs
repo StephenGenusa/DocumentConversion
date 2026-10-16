@@ -215,6 +215,19 @@ export const FORM_XLS = {
   ],
 }
 
+export const STOCK_ODS = {
+  sheet: 'Stock',
+  headers: ['Catalogue', 'Description', 'Group', 'Count'],
+  notesSheet: 'Notes',
+  notes: [
+    'Bold rows are reordered first.',
+    'Struck items are withdrawn from the catalogue.',
+    'Underlined groups are shared between branches.',
+  ],
+  wide: 'Seasonal stock',
+  twoLines: ['Second shelf', 'Top bay'],
+}
+
 export const REVIEW_RTF = {
   salutation: (p) => `${p.last}, I have completed my review of request ${REVIEW_REF}. No further changes are needed at this time.`,
   items: [

@@ -376,6 +376,7 @@ function joinItemParagraphs(li: Element): string | null {
  *   <td><table>…</table></td>        a table nested in a cell (or th, or li)
  *   <td><div><p>…</p></div></td>     a div holding blocks in a cell (or li)
  *   <li><p>one</p><p>two</p></li>    every paragraph of an item after the first
+ *   <td>a <b>b</b> c</td>             not lost, but each piece made its own paragraph
  *
  * A div of inline text survives, as do a paragraph, list, quote or code block
  * in a cell. One old-style page, laid out as a table with a navigation table
@@ -402,6 +403,15 @@ export function flattenForDocx(source: string): string {
   for (const div of elementsOf(dom.children, 'div').reverse()) {
     if (!contained(div) || !holdsBlock(div)) continue
     replaceWith(div, asBlocks(div.children))
+    changed = true
+  }
+  // A cell's inline formatting: html-to-docx gives each inline child of a
+  // <td> its own paragraph, so "a <strong>b</strong> c" came out as three
+  // lines. Inside a <p> they are runs of one paragraph, as anywhere else.
+  for (const cell of [...elementsOf(dom.children, 'td'), ...elementsOf(dom.children, 'th')]) {
+    // A picture is left where it is: dedupeMedia expects its cell form.
+    if (!cell.children.some((c) => isElement(c) && !BLOCK.has(c.name)) || elementsOf(cell.children, 'img').length) continue
+    splice(cell, 0, cell.children.length, [...parseDocument(asBlocks(cell.children)).children])
     changed = true
   }
   for (const li of elementsOf(dom.children, 'li').reverse()) {

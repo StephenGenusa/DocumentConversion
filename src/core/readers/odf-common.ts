@@ -64,12 +64,18 @@ const FORMAT_TAGS: [number, string][] = [
  */
 type TextFormat = { set: number; on: number }
 type StyleEntry = { parent?: string; format: TextFormat }
-export type OdfStyles = { text: Map<string, StyleEntry>; paragraph: Map<string, StyleEntry> }
+/** `cell` is the spreadsheet family, `table-cell`: a whole cell's look. */
+export type OdfStyles = { text: Map<string, StyleEntry>; paragraph: Map<string, StyleEntry>; cell: Map<string, StyleEntry> }
 
-const NO_STYLES: OdfStyles = { text: new Map(), paragraph: new Map() }
+const NO_STYLES: OdfStyles = { text: new Map(), paragraph: new Map(), cell: new Map() }
 
-function attr(attrs: string, name: string): string | undefined {
-  return new RegExp(`\\b${name}="([^"]*)"`).exec(attrs)?.[1]
+const ATTR_PATTERNS = new Map<string, RegExp>()
+
+/** An attribute's raw value. The patterns are kept: this runs per span and per cell. */
+export function attr(attrs: string, name: string): string | undefined {
+  let re = ATTR_PATTERNS.get(name)
+  if (!re) ATTR_PATTERNS.set(name, (re = new RegExp(`\\b${name}="([^"]*)"`)))
+  return re.exec(attrs)?.[1]
 }
 
 function textFormat(props: string): TextFormat {
@@ -98,15 +104,16 @@ function textFormat(props: string): TextFormat {
   return { set, on }
 }
 
-function parseOdfStyles(xml: string): OdfStyles {
-  const styles: OdfStyles = { text: new Map(), paragraph: new Map() }
+export function parseOdfStyles(xml: string): OdfStyles {
+  const styles: OdfStyles = { text: new Map(), paragraph: new Map(), cell: new Map() }
   for (const m of xml.matchAll(/<style:style\b([^>]*?)(?:\/>|>([\s\S]*?)<\/style:style>)/g)) {
     const attrs = m[1]
     const name = attr(attrs, 'style:name')
     const family = attr(attrs, 'style:family')
-    if (name === undefined || (family !== 'text' && family !== 'paragraph')) continue
+    const map = family === 'text' || family === 'paragraph' ? styles[family] : family === 'table-cell' ? styles.cell : undefined
+    if (name === undefined || !map) continue
     const props = /<style:text-properties\b([^>]*)>/.exec(m[2] ?? '')?.[1] ?? ''
-    styles[family].set(name, { parent: attr(attrs, 'style:parent-style-name'), format: textFormat(props) })
+    map.set(name, { parent: attr(attrs, 'style:parent-style-name'), format: textFormat(props) })
   }
   return styles
 }
@@ -151,10 +158,10 @@ const mark = (bits: number): string => String.fromCharCode(MARK_BASE + bits)
  * is left out on purpose: heading styles are bold by default, and an <h1>
  * wrapped whole in <strong> says nothing the <h1> did not.
  */
-function markFormatting(xml: string): string {
+function markFormatting(xml: string, base = 0): string {
   const styles = documentStyles
   if (styles === NO_STYLES) return xml
-  const stack = [0]
+  const stack = [base]
   const boundary = /<(\/?)(text:span|text:p|text:h)\b([^>]*?)(\/?)>/g
   return xml.replace(boundary, (tag, close: string, name: string, attrs: string, empty: string) => {
     if (empty) return tag
@@ -180,14 +187,14 @@ function markFormatting(xml: string): string {
  * change keeps the outer tags that still apply open: bold, then bold italic,
  * reads `<strong>a <em>b</em></strong>`.
  */
-function marksToHtml(text: string): string {
+function marksToHtml(text: string, drop = 0): string {
   let out = ''
   let open: string[] = []
   let want: string[] = []
   for (const ch of text) {
     const code = ch.charCodeAt(0)
     if (code >= MARK_BASE && code < MARK_BASE + 64) {
-      want = FORMAT_TAGS.filter(([bit]) => (code - MARK_BASE) & bit).map(([, tag]) => tag)
+      want = FORMAT_TAGS.filter(([bit]) => (code - MARK_BASE) & ~drop & bit).map(([, tag]) => tag)
       continue
     }
     if (open !== want) {
@@ -362,15 +369,17 @@ export function odfRich(xml: string): { text: string; html: string } {
   return { text: marked.replace(MARKS, ''), html: marksToHtml(escapeHtml(marked)) }
 }
 
-function odfMarked(xml: string): string {
+function odfMarked(xml: string, base = 0): string {
   const notes: string[] = []
-  const main = odfInline(liftOdfNotes(xml, notes))
+  // Most fragments hold neither, and the lift walks every element of them.
+  const lift = xml.includes('<text:note') || xml.includes('<office:annotation')
+  const main = odfInline(lift ? liftOdfNotes(xml, notes) : xml, base)
   return [main, ...notes].filter((part) => part !== '').join(' ')
 }
 
 /** The tag strip and whitespace collapse, with notes already lifted out. */
-function odfInline(xml: string): string {
-  return markFormatting(xml)
+function odfInline(xml: string, base = 0): string {
+  return markFormatting(xml, base)
     .replace(/<text:s\b[^>]*?\/?>/g, (tag) => {
       const count = Number(/\btext:c="(\d+)"/.exec(tag)?.[1] ?? 1)
       return ' '.repeat(Number.isFinite(count) ? Math.min(Math.max(count, 1), 100) : 1)
@@ -450,3 +459,92 @@ export function appendOdfList(parts: string[], listXml: string, listInner: strin
 }
 
 export type ListRun = { style: string; index: number } | null
+
+/*
+ * Spreadsheet cells (ods-format.ts). A cell's text takes the cell style's
+ * formatting first, then its paragraphs' and spans' on top, so the cell style
+ * is simply where the formatting stack starts.
+ */
+
+/** The formatting bits a `table-cell` style turns on, parents included. */
+export function odfCellStyleBits(styles: OdfStyles, name: string | undefined): number {
+  return resolveStyle(styles.cell, name).on
+}
+
+/** The names of the styles in `maps` that turn on one of the formatting kinds. */
+function formattingNames(maps: Map<string, StyleEntry>[]): Set<string> {
+  const names = new Set<string>()
+  for (const map of maps) for (const name of map.keys()) if (resolveStyle(map, name).on !== 0) names.add(name)
+  return names
+}
+
+/** True when any style in `styles` turns on one of the formatting kinds. */
+export function odfStylesFormat(styles: OdfStyles): boolean {
+  return formattingNames([styles.text, styles.paragraph, styles.cell]).size > 0
+}
+
+/** The text and paragraph styles that turn formatting on: a cell naming none of them needs no marking. */
+export function odfFormattingTextStyles(styles: OdfStyles): Set<string> {
+  return formattingNames([styles.text, styles.paragraph])
+}
+
+/**
+ * One cell's paragraphs as marked text, joined by "\n" the way SheetJS joins
+ * them, so the plain text can be held up against the value SheetJS read.
+ * Call inside withOdfStyles. A comment is dropped, as SheetJS drops it.
+ */
+const PARAGRAPH_OPEN = /<text:[ph][\s>/]/g
+
+export function odfCellMarked(cellInner: string, base: number): string {
+  const paragraphs: string[] = []
+  // The usual cell is one paragraph and nothing else, and needs no element walk.
+  if (!cellInner.includes('<office:annotation') && cellInner.match(PARAGRAPH_OPEN)?.length === 1) {
+    return mark(base) + odfMarked(cellInner, base) + mark(base)
+  }
+  for (const para of scanElements(stripOdfComments(cellInner), ['text:p', 'text:h'])) {
+    paragraphs.push(mark(base) + odfMarked(para.xml, base) + mark(base))
+  }
+  return paragraphs.join('\n')
+}
+
+/** Marked text without its marks. */
+export const odfMarkedText = (marked: string): string => marked.replace(MARKS, '')
+
+/**
+ * The single set of formatting bits every visible character of `marked` is in,
+ * 0 for none, or -1 when it changes part way through.
+ */
+export function odfMarkedUniformBits(marked: string): number {
+  let bits = 0
+  let seen = -2
+  for (const ch of marked) {
+    const code = ch.charCodeAt(0)
+    if (code >= MARK_BASE && code < MARK_BASE + 64) bits = code - MARK_BASE
+    else if (!/\s/.test(ch)) {
+      if (seen === -2) seen = bits
+      else if (seen !== bits) return -1
+    }
+  }
+  return seen === -2 ? 0 : seen
+}
+
+/** True when some visible character of `marked` is formatted. */
+export function odfMarkedHasFormat(marked: string): boolean {
+  let bits = 0
+  for (const ch of marked) {
+    const code = ch.charCodeAt(0)
+    if (code >= MARK_BASE && code < MARK_BASE + 64) bits = code - MARK_BASE
+    else if (bits !== 0 && !/\s/.test(ch)) return true
+  }
+  return false
+}
+
+/** Marked text as escaped hub HTML, leaving out the bits in `drop`. */
+export function odfMarkedHtml(marked: string, drop = 0): string {
+  return marksToHtml(escapeHtml(marked), drop)
+}
+
+/** Plain text in one set of formatting bits, as escaped hub HTML. */
+export function odfFormattedHtml(text: string, bits: number, drop = 0): string {
+  return marksToHtml(mark(bits) + escapeHtml(text), drop)
+}

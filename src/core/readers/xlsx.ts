@@ -1,7 +1,9 @@
 import * as XLSX from 'xlsx'
 import { ConversionError } from '../errors'
 import { escapeHtml } from '../shell'
-import { rowsToHtmlTable, looksLikeHeader, trimTrailingEmpty, MAX_TABLE_CELLS, type CellMerge } from './csv'
+import { rowsToHtmlTable, looksLikeHeader, trimTrailingEmpty, MAX_TABLE_CELLS, type CellMerge, type RichCell } from './csv'
+import { odsCellFormatting, type OdsFormatting } from './ods-format'
+import { odfFormattedHtml, odfMarkedHtml, odfMarkedText, odfMarkedUniformBits } from './odf-common'
 import type { HubDocument, SourceInput } from '../types'
 
 /**
@@ -77,11 +79,53 @@ function alignMerges(raw: CellMerge[], origin: { r: number; c: number }, height:
   return out
 }
 
+/**
+ * An .ods file's cell formatting, which SheetJS does not keep (ods-format.ts).
+ * The package is opened a second time, as SheetJS hands back no part of it,
+ * with SheetJS's own zip reader: it is several times quicker than JSZip at
+ * this, which matters on a 50,000-row sheet.
+ */
+function odsFormatting(bytes: Buffer): OdsFormatting | null {
+  const zip = XLSX.CFB.read(bytes, { type: 'buffer' })
+  const part = (name: string): string => {
+    const content = XLSX.CFB.find(zip, name)?.content
+    return content ? Buffer.from(content as Uint8Array).toString('utf8') : ''
+  }
+  const content = part('content.xml')
+  return content ? odsCellFormatting(content, part('styles.xml')) : null
+}
+
+const BOLD = 1
+const sameText = (a: string, b: string): boolean => a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim()
+
+/**
+ * The formatted HTML for a cell of `rows`, by way of its address in the sheet.
+ *
+ * The formatted text is used only when it reads the same as SheetJS's value;
+ * a number cell's shown text is SheetJS's own formatting of the number, so it
+ * can differ, and then the value keeps the formatting if the whole cell had
+ * one. A header cell drops bold, which a `<th>` already has — as an ODF
+ * heading's own bold is dropped.
+ */
+function richCells(format: Map<string, string>, rows: string[][], origin: { r: number; c: number }): RichCell {
+  return (r, c, header) => {
+    const value = rows[r]?.[c] ?? ''
+    if (value === '') return undefined
+    const marked = format.get(`${r + origin.r},${c + origin.c}`)
+    if (marked === undefined) return undefined
+    const drop = header ? BOLD : 0
+    if (sameText(odfMarkedText(marked), value)) return odfMarkedHtml(marked, drop)
+    const bits = odfMarkedUniformBits(marked)
+    return bits > 0 ? odfFormattedHtml(value, bits, drop) : undefined
+  }
+}
+
 function buildDocument(src: SourceInput): HubDocument {
   // raw:false yields formatted strings — formulas export their computed values.
   const wb = XLSX.read(src.bytes, { type: 'buffer' })
+  const formatting = wb.bookType === 'ods' ? odsFormatting(src.bytes) : null
   const sections: string[] = []
-  for (const name of wb.SheetNames) {
+  for (const [index, name] of wb.SheetNames.entries()) {
     const ws = wb.Sheets[name]
     // The saved range is whatever Excel last touched, so it routinely runs
     // dozens of blank columns past the last real value. Trim before counting:
@@ -100,9 +144,12 @@ function buildDocument(src: SourceInput): HubDocument {
     }
     if (rows.length === 0) continue
     const width = rows.reduce((max, row) => Math.max(max, row.length), 0)
-    const merges = alignMerges((ws['!merges'] ?? []) as CellMerge[], usedRangeOrigin(ws), rows.length, width)
+    const origin = usedRangeOrigin(ws)
+    const merges = alignMerges((ws['!merges'] ?? []) as CellMerge[], origin, rows.length, width)
+    const format = formatting?.[index]
+    const rich = format && format.size > 0 ? richCells(format, rows, origin) : undefined
     sections.push(
-      `<h2>${escapeHtml(name)}</h2>${rowsToHtmlTable(rows, looksLikeHeader(rows), merges)}`,
+      `<h2>${escapeHtml(name)}</h2>${rowsToHtmlTable(rows, looksLikeHeader(rows), merges, rich)}`,
     )
   }
   return { html: sections.join('\n'), title: src.filename }

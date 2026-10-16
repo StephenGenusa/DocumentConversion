@@ -91,3 +91,22 @@ describe('docx writer keeps content html-to-docx drops inside cells', () => {
     expect(flattenForDocx(handled)).toBe(handled)
   })
 })
+
+describe('docx writer keeps a cell of formatted text one paragraph', () => {
+  it('puts inline content in a cell into one paragraph', async () => {
+    expect(flattenForDocx('<table><tr><td>a <strong>b</strong> c</td><th><em>d</em></th></tr></table>')).toBe(
+      '<table><tr><td><p>a <strong>b</strong> c</p></td><th><p><em>d</em></p></th></tr></table>',
+    )
+    const xml = await (await JSZip.loadAsync(await writeDocx({ html: '<table><tr><td>ALPHA <strong>BETA</strong> GAMMA</td></tr></table>' })))
+      .file('word/document.xml')!
+      .async('string')
+    const cell = /<w:tc>[\s\S]*?<\/w:tc>/.exec(xml)![0]
+    expect(cell.match(/<w:p>/g)).toHaveLength(1)
+    expect(cell).toMatch(/<w:b\/>[\s\S]*BETA/)
+  })
+
+  it('leaves a cell of plain text alone', () => {
+    const plain = '<table><tr><td>plain text</td></tr></table>'
+    expect(flattenForDocx(plain)).toBe(plain)
+  })
+})

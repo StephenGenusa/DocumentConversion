@@ -61,7 +61,13 @@ export function trimTrailingEmpty(rows: string[][]): string[][] {
  * Ignoring them collapsed form-style sheets (one workbook had 73 merges,
  * including a header spanning C1:N1) into misaligned columns.
  */
-export function rowsToHtmlTable(rows: string[][], header: boolean, merges: CellMerge[] = []): string {
+/**
+ * `rich`, when given, may return a cell's HTML in place of its escaped value —
+ * the .ods reader's formatted text. `header` says the cell is a `<th>`.
+ */
+export type RichCell = (r: number, c: number, header: boolean) => string | undefined
+
+export function rowsToHtmlTable(rows: string[][], header: boolean, merges: CellMerge[] = [], rich?: RichCell): string {
   const anchors = new Map<string, { colspan: number; rowspan: number }>()
   const covered = new Set<string>()
   for (const m of merges) {
@@ -81,7 +87,7 @@ export function rowsToHtmlTable(rows: string[][], header: boolean, merges: CellM
     const attrs = span
       ? (span.colspan > 1 ? ` colspan="${span.colspan}"` : '') + (span.rowspan > 1 ? ` rowspan="${span.rowspan}"` : '')
       : ''
-    return `<${tag}${attrs}>${escapeHtml(value)}</${tag}>`
+    return `<${tag}${attrs}>${rich?.(r, c, tag === 'th') ?? escapeHtml(value)}</${tag}>`
   }
   const tr = (row: string[], tag: string, r: number): string =>
     `<tr>${row.map((v, c) => cell(tag, v, r, c)).join('')}</tr>`

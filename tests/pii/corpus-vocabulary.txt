@@ -108,6 +108,7 @@ bit
 bits
 bmatrix
 board
+bold
 boldsymbol
 book
 bookend
@@ -428,6 +429,7 @@ grids
 grievance
 group
 grouping
+groups
 grow
 guess
 guidance
@@ -840,6 +842,7 @@ reliably
 remote
 renewal
 renewals
+reordered
 repairs
 repeat
 replace
@@ -886,6 +889,7 @@ route
 routes
 routine
 row
+rows
 royal
 rules
 run
@@ -897,6 +901,7 @@ sbraddock
 scene
 schedule
 scheme
+seasonal
 seating
 second
 section
@@ -920,6 +925,7 @@ severe
 sgn
 shape
 share
+shared
 sharepoint
 sheet
 shelf
@@ -1102,6 +1108,7 @@ uncollected
 under
 underbrace
 underline
+underlined
 underneath
 underset
 undirected
