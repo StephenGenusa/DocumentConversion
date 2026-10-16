@@ -25,9 +25,23 @@ import { DOMParser } from 'linkedom'
  * Elements are matched by local name whatever their prefix or namespace, so
  * `<html:script>` goes the same way as `<script>`.
  *
+ * One <image> is kept: an SVG picture nested in this one as a data: URI
+ * (icons placed in a plan, a logo in a chart). Its SVG goes through all of
+ * the above, and is written back as base64, so what is nested is as clean as
+ * what nests it; MAX_NESTING levels deep at most. Any other <image> - a
+ * remote file, a raster, something that is not an SVG - is still dropped.
+ * A nested <svg> element is ordinary SVG and is cleaned with the rest.
+ *
  * Returns null when the input is not an SVG document at all.
  */
 export function sanitizeSvg(svg: string): string | null {
+  return sanitizeAt(svg, 0)
+}
+
+/** How many SVG images may be nested inside one another below the outer SVG. */
+const MAX_NESTING = 4
+
+function sanitizeAt(svg: string, depth: number): string | null {
   let doc: Document
   try {
     doc = new DOMParser().parseFromString(svg, 'image/svg+xml') as unknown as Document
@@ -37,8 +51,47 @@ export function sanitizeSvg(svg: string): string | null {
   const root = doc.documentElement
   if (!root || localName(root) !== 'svg') return null
   cleanAttributes(root)
-  clean(root)
+  clean(root, depth)
   return root.toString()
+}
+
+const SVG_DATA_URI = /^\s*data:image\/svg\+xml((?:;[^,]*)?),([\s\S]*)$/i
+
+/** The SVG markup in a data URI (base64, percent-encoded or raw), or null when it is not an SVG one. */
+export function decodeSvgDataUri(src: string): string | null {
+  const m = SVG_DATA_URI.exec(src)
+  if (!m) return null
+  const [, params, payload] = m
+  let text: string
+  if (/;\s*base64\s*$/i.test(params)) {
+    text = Buffer.from(payload, 'base64').toString('utf8')
+  } else {
+    try {
+      text = decodeURIComponent(payload)
+    } catch {
+      text = payload
+    }
+  }
+  return text.replace(/^\uFEFF/, '')
+}
+
+export function svgDataUri(svg: string): string {
+  return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`
+}
+
+/**
+ * A nested SVG image's reference, cleaned: the attribute that holds it (href
+ * or xlink:href, as written) and the sanitised SVG as a base64 data URI. Null
+ * when the <image> is anything else, or nested too deep.
+ */
+function nestedSvgImage(el: Element, depth: number): { name: string; src: string } | null {
+  if (depth >= MAX_NESTING) return null
+  const refs = [...el.attributes].filter((a) => attrLocalName(a.name) === 'href')
+  // Two references (href and xlink:href) could disagree on what is shown.
+  if (refs.length !== 1) return null
+  const svg = decodeSvgDataUri(refs[0].value ?? '')
+  const clean = svg === null ? null : sanitizeAt(svg, depth + 1)
+  return clean === null ? null : { name: refs[0].name, src: svgDataUri(clean) }
 }
 
 /** Elements removed with everything inside them. Lower-cased local names. */
@@ -86,11 +139,19 @@ function attrLocalName(name: string): string {
   return colon >= 0 ? lower.slice(colon + 1) : lower
 }
 
-function clean(el: Element): void {
+function clean(el: Element, depth: number): void {
   for (const child of [...el.childNodes]) {
     if (child.nodeType === 1) {
       const element = child as Element
       const name = localName(element)
+      const nested = name === 'image' ? nestedSvgImage(element, depth) : null
+      if (nested) {
+        element.setAttribute(nested.name, nested.src)
+        cleanAttributes(element, nested.name)
+        // Nothing inside an <image> is drawn.
+        element.replaceChildren()
+        continue
+      }
       if (DROPPED_ELEMENTS.has(name) || (ANIMATION.has(name) && animatesAReference(element))) {
         element.remove()
         continue
@@ -100,7 +161,7 @@ function clean(el: Element): void {
         continue
       }
       cleanAttributes(element)
-      clean(element)
+      clean(element, depth)
     } else if (child.nodeType !== 3 && child.nodeType !== 4) {
       // Comments, processing instructions: nothing an SVG needs.
       child.remove()
@@ -108,8 +169,10 @@ function clean(el: Element): void {
   }
 }
 
-function cleanAttributes(el: Element): void {
+/** Removes the unsafe attributes; `keep` is a nested SVG image's reference, already cleaned. */
+function cleanAttributes(el: Element, keep?: string): void {
   for (const attr of [...el.attributes]) {
+    if (attr.name === keep) continue
     const name = attrLocalName(attr.name)
     const value = attr.value ?? ''
     if (

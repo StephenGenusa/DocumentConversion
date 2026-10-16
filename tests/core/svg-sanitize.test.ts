@@ -118,6 +118,58 @@ describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
     expect(out).not.toContain('note')
   })
 
+  it('keeps an SVG nested as an <svg> element, cleaned like the rest', () => {
+    const out = clean('<svg x="2" y="2" width="6" height="6" viewBox="0 0 6 6" onload="alert(1)"><script>alert(2)</script><rect width="6" height="6"/></svg>')
+    expect(out).toMatch(/<svg x="2" y="2" width="6" height="6" viewBox="0 0 6 6"><rect width="6" height="6" \/><\/svg><\/svg>$/)
+  })
+
+  it('keeps an SVG image nested in an SVG, sanitised as the outer one is', () => {
+    const inner =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4" onload="alert(1)"><script>alert(2)</script>' +
+      '<foreignObject><div xmlns="http://www.w3.org/1999/xhtml">html</div></foreignObject>' +
+      '<image href="http://evil.invalid/a.png"/><style>@import url(http://evil.invalid/a.css);</style>' +
+      '<circle r="2" fill="url(http://evil.invalid/p.svg#g)"/><rect width="4" height="4" fill="#0a0"/></svg>'
+    const forms = [
+      `data:image/svg+xml;base64,${Buffer.from(inner).toString('base64')}`,
+      `data:image/svg+xml;charset=utf-8,${encodeURIComponent(inner)}`,
+      `data:image/svg+xml,${inner.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')}`,
+    ]
+    for (const [i, src] of forms.entries()) {
+      const attr = i === 1 ? 'xlink:href' : 'href'
+      const out = clean(`<image x="1" y="1" width="4" height="4" ${attr}="${src}"/>`)
+      const m = new RegExp(`<image x="1" y="1" width="4" height="4" ${attr}="data:image/svg\\+xml;base64,([A-Za-z0-9+/=]+)" />`).exec(out)
+      expect(m, out).not.toBeNull()
+      const kept = Buffer.from(m![1], 'base64').toString('utf8')
+      expect(kept).toContain('<rect width="4" height="4" fill="#0a0" />')
+      expect(kept).toContain('<circle r="2" />')
+      for (const bad of ['alert', 'script', 'foreignObject', 'html', 'evil', '@import', '<image', 'onload']) expect(kept, bad).not.toContain(bad)
+    }
+  })
+
+  it('sanitises an SVG image nested several deep, and drops one nested too deep or not an SVG', () => {
+    const svgUri = (svg: string): string => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+    const level = (inner: string): string => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><rect width="1"/><image href="${inner}"/><script>x()</script></svg>`
+    let src = svgUri('<svg xmlns="http://www.w3.org/2000/svg"><script>deep()</script><circle r="1"/></svg>')
+    for (let i = 0; i < 2; i++) src = svgUri(level(src))
+    // Three levels below the outer one: kept, every level clean.
+    let out = clean(`<image href="${src}"/>`)
+    let depth = 0
+    for (let m = /href="data:image\/svg\+xml;base64,([^"]+)"/.exec(out); m; m = /href="data:image\/svg\+xml;base64,([^"]+)"/.exec(out)) {
+      out = Buffer.from(m[1], 'base64').toString('utf8')
+      expect(out).not.toContain('script')
+      depth++
+    }
+    expect(depth).toBe(3)
+    expect(out).toContain('<circle r="1" />')
+    // Deeper than that: the innermost picture is dropped, the rest kept.
+    for (let i = 0; i < 4; i++) src = svgUri(level(src))
+    expect(clean(`<image href="${src}"/>`)).toContain('<image href="data:image/svg+xml;base64,')
+    // Not an SVG, a remote SVG, or a raster: dropped, as before.
+    for (const href of [svgUri('<html><body>x</body></html>'), 'http://evil.invalid/a.svg', 'data:image/png;base64,iVBORw0KGgo=']) {
+      expect(clean(`<image href="${href}"/><rect width="1"/>`), href).not.toContain('<image')
+    }
+  })
+
   it('refuses what is not an SVG', () => {
     expect(sanitizeSvg('<html><body>x</body></html>')).toBeNull()
     expect(sanitizeSvg('')).toBeNull()

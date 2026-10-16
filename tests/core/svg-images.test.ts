@@ -128,6 +128,26 @@ describe('readSvg (spec D10, B6)', () => {
     expect(svg).toContain('<rect')
   })
 
+  it('keeps the SVG images nested in a file, each cleaned, in every output that shows SVG', async () => {
+    const bytes = fixture('reading-room-marked-plan.svg')
+    const nested = (svg: string): string[] =>
+      [...svg.matchAll(/<image [^>]*href="(data:image\/svg\+xml;base64,[^"]+)"/g)].map((m) => decodeSvgDataUri(m[1])!)
+    const hub = await readSvg({ bytes, filename: 'reading-room-marked-plan.svg' })
+    const markers = nested(decodedSrc(hub.html))
+    expect(markers).toHaveLength(3)
+    for (const m of markers) {
+      expect(m).toContain('<circle')
+      expect(m).not.toContain('script')
+      expect(m).not.toContain('127.0.0.1')
+    }
+    const conv = createConverter(pdf)
+    const html = (await conv.convert({ bytes, filename: 'reading-room-marked-plan.svg' }, 'svg', 'html')).parts[0].bytes.toString('utf8')
+    expect(nested(decodedSrc(html))).toEqual(markers)
+    const epub = await JSZip.loadAsync((await conv.convert({ bytes, filename: 'reading-room-marked-plan.svg' }, 'svg', 'epub')).parts[0].bytes)
+    const item = Object.keys(epub.files).find((n) => n.endsWith('.svg'))!
+    expect(nested(await epub.file(item)!.async('string'))).toEqual(markers)
+  })
+
   it('refuses a file that is not an SVG', async () => {
     await expect(readSvg({ bytes: Buffer.from('<?xml version="1.0"?><note/>'), filename: 'x.svg' })).rejects.toMatchObject({
       code: 'image-unsupported',

@@ -76,6 +76,7 @@ interface HarnessResult {
   svgImage: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
   svgHostile: { width?: number; height?: number; error?: string; magic?: string }
   svgNotOne: string | null
+  svgNested: { left?: string; right?: string; error?: string }
   pictureWebp: Picture
   pictureShrunk: Picture
   pictureAlpha: Picture
@@ -327,6 +328,11 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     expect(result.svgHostile).toMatchObject({ width: 40, height: 20, magic: 'PNG' })
     expect(result.requests.some((r) => r.url.includes('127.0.0.1'))).toBe(false)
     expect(result.svgNotOne).toBe('it is not a readable SVG')
+  })
+
+  it('draws an SVG image nested in an SVG image, without the request its script would make', () => {
+    expect(result.svgNested).toEqual({ left: '#0000ff', right: '#ff0000' })
+    expect(result.requests.some((r) => r.url.includes('/nested'))).toBe(false)
   })
 
   it('re-encodes a picture a Kindle cannot store: WebP to JPEG, PNG with transparency kept as PNG, each under its size', () => {

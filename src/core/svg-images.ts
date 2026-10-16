@@ -3,7 +3,7 @@ import { parseDocument } from 'htmlparser2'
 import { Element, type ChildNode } from 'domhandler'
 import { removeElement, replaceElement } from 'domutils'
 import serialize from 'dom-serializer'
-import { sanitizeSvg } from './svg-sanitize'
+import { decodeSvgDataUri, sanitizeSvg, svgDataUri } from './svg-sanitize'
 import { DOCX_MAX_WIDTH, rendersBlocks, type DrawContext } from './draw-blocks'
 import { imagePlaceholder } from './inline-images'
 import { MAX_SVG_IMAGE_BYTES, type RenderResult } from './rendered-blocks'
@@ -49,33 +49,11 @@ export const SVG_IMAGE_LIMITS = { max: 100, eachMs: 10_000, maxBytes: MAX_SVG_IM
  */
 const DOCX_MAX_HEIGHT = 864
 
-const SVG_DATA_URI = /^\s*data:image\/svg\+xml((?:;[^,]*)?),([\s\S]*)$/i
-
 export function isSvgDataUri(src: string | undefined): boolean {
-  return typeof src === 'string' && SVG_DATA_URI.test(src)
+  return typeof src === 'string' && /^\s*data:image\/svg\+xml(?:;[^,]*)?,/i.test(src)
 }
 
-/** The SVG markup in a data URI (base64, percent-encoded or raw), or null when it is not an SVG one. */
-export function decodeSvgDataUri(src: string): string | null {
-  const m = SVG_DATA_URI.exec(src)
-  if (!m) return null
-  const [, params, payload] = m
-  let text: string
-  if (/;\s*base64\s*$/i.test(params)) {
-    text = Buffer.from(payload, 'base64').toString('utf8')
-  } else {
-    try {
-      text = decodeURIComponent(payload)
-    } catch {
-      text = payload
-    }
-  }
-  return text.replace(/^﻿/, '')
-}
-
-export function svgDataUri(svg: string): string {
-  return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`
-}
+export { decodeSvgDataUri, svgDataUri }
 
 /** CSS px per unit, for the absolute lengths an SVG's width and height may use (1em = 16px, 1ex = 8px). */
 const UNIT_PX: Record<string, number> = {

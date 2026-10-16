@@ -27,6 +27,41 @@ const HOSTILE = [
 /** An SVG with its text content taken out (style elements kept): what is left is tags and attributes. */
 const markupOnly = (svg) => svg.replace(/(<style[^>]*>[\s\S]*?<\/style>)|>[^<]*</g, (m, style) => style || '><')
 
+/**
+ * The RGB of one pixel of a PNG the page made (8-bit RGBA, not interlaced:
+ * what canvas.toDataURL writes), as #rrggbb.
+ */
+function pngPixel(b64, x, y) {
+  const bytes = Buffer.from(b64, 'base64')
+  const width = bytes.readUInt32BE(16)
+  const idat = []
+  for (let at = 8; at < bytes.length; ) {
+    const len = bytes.readUInt32BE(at)
+    if (bytes.toString('latin1', at + 4, at + 8) === 'IDAT') idat.push(bytes.subarray(at + 8, at + 8 + len))
+    at += 12 + len
+  }
+  const raw = require('zlib').inflateSync(Buffer.concat(idat))
+  const stride = width * 4
+  let prev = Buffer.alloc(stride)
+  let row
+  for (let r = 0; r <= y; r++) {
+    const filter = raw[r * (stride + 1)]
+    const line = raw.subarray(r * (stride + 1) + 1, (r + 1) * (stride + 1))
+    row = Buffer.alloc(stride)
+    for (let i = 0; i < stride; i++) {
+      const a = i >= 4 ? row[i - 4] : 0
+      const b = prev[i]
+      const c = i >= 4 ? prev[i - 4] : 0
+      const p = a + b - c
+      const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c)
+      const pred = [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][filter]
+      row[i] = (line[i] + pred) & 0xff
+    }
+    prev = row
+  }
+  return '#' + [0, 1, 2].map((k) => row[x * 4 + k].toString(16).padStart(2, '0')).join('')
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function main() {
@@ -98,6 +133,15 @@ async function main() {
     '<script>fetch("http://127.0.0.1:9/script")</script></svg>'
   out.svgHostile = pngSize(await host.render({ kind: 'svg', source: HOSTILE_SVG, display: true, format: 'png' }))
   out.svgNotOne = (await host.render({ kind: 'svg', source: '<note/>', display: true, format: 'png' })).error ?? null
+  // An SVG image nested in one (an icon placed in a plan): drawn, after the host's own sanitising.
+  {
+    const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><script>fetch("http://127.0.0.1:9/nested")</script><rect width="4" height="4" fill="#ff0000"/></svg>'
+    const NESTED =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="#0000ff"/>' +
+      `<image x="20" y="0" width="20" height="20" href="data:image/svg+xml;base64,${Buffer.from(ICON).toString('base64')}"/></svg>`
+    const r = await host.render({ kind: 'svg', source: NESTED, display: true, format: 'png' })
+    out.svgNested = r.png ? { left: pngPixel(r.png, 10, 20), right: pngPixel(r.png, 70, 20) } : { error: r.error }
+  }
 
   // Pictures (kind `picture`, Kindle): decoded in the page, re-encoded to fit.
   {

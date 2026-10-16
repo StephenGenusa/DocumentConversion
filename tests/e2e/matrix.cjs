@@ -216,6 +216,12 @@ async function main() {
     const hasMath = /<code class="language-math">/.test(hubText)
     // SVG images (an .svg input, or an SVG <img> in a page): Word gets PNG copies (spec D10).
     const hasSvgImages = /src="data:image\/svg\+xml/i.test(hubText)
+    // SVG images nested in an SVG image (<image href="data:image/svg+xml…">), which B6 keeps, cleaned.
+    const nestedIn = (text) =>
+      [...text.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)].filter((m) =>
+        /<image\b[^>]*href="data:image\/svg\+xml/.test(Buffer.from(m[1], 'base64').toString('utf8')),
+      ).length
+    const hasNestedSvgImages = nestedIn(hubText) > 0
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
     const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp)[;,]/i.test(hubText)
     // Code highlight.js finds tokens in (a shell prompt line may hold none).
@@ -346,6 +352,18 @@ async function main() {
           if ((await svgMedia(zip, media)).length) throw new Error('docx has SVG media')
           if (/image\/svg\+xml|Extension="svgz?"/i.test(await zip.file('[Content_Types].xml').async('string'))) throw new Error('docx declares SVG content')
           rec.note = `${media.length} PNG media for SVG images`
+        }
+        if (hasNestedSvgImages && (target === 'html' || target === 'epub')) {
+          let found = 0
+          if (target === 'html') found = nestedIn(out.toString('utf8'))
+          else {
+            const zip = await JSZip.loadAsync(out)
+            for (const n of Object.keys(zip.files).filter((n) => n.endsWith('.svg'))) {
+              if (/<image\b[^>]*href="data:image\/svg\+xml/.test(await zip.file(n).async('string'))) found++
+            }
+          }
+          if (found === 0) throw new Error(`${target} lost the SVG images nested in an SVG image`)
+          rec.note = `${rec.note ? rec.note + ', ' : ''}nested SVG images kept`
         }
         const reader = readerFor(target)
         if (reader || azw3Html !== undefined) {

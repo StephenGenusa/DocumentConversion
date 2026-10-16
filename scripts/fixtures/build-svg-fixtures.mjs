@@ -9,6 +9,12 @@
  *                              xml-stylesheet and an external entity. It opens
  *                              with a BOM, an XML prolog and comments, so the
  *                              content sniff is exercised too.
+ *   reading-room-marked-plan.svg
+ *                              the plan with the quiet seating marker placed
+ *                              on it three times as nested SVG images
+ *                              (<image href="data:image/svg+xml;base64,…">),
+ *                              one of them carrying a script: B6 keeps the
+ *                              nested pictures and cleans them.
  *   reading-room-page.html     a page showing the plan as an SVG <img> (a
  *                              base64 data URI) and a small marker as a
  *                              percent-encoded one: the shape that gave Word
@@ -90,6 +96,20 @@ const marker =
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
   `<circle cx="12" cy="12" r="10" fill="#2f5d8a"/><circle cx="12" cy="12" r="4" fill="#ffffff"/></svg>`
 
+/** The marker as a nested SVG image, at (x, y), 24 px across. */
+const placedMarker = (x, y, svg = marker) =>
+  `  <image x="${x}" y="${y}" width="24" height="24" href="data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}"/>`
+
+const markedPlan = `<?xml version="1.0" encoding="UTF-8"?>\n${plan({
+  root: '',
+  inside: [
+    `  <desc>${R.iconAlt}</desc>`,
+    placedMarker(210, 60),
+    placedMarker(210, 150),
+    placedMarker(420, 240, marker.replace('</svg>', `<script>fetch('http://127.0.0.1:9/marker')</script></svg>`)),
+  ].join('\n'),
+})}\n`
+
 const page = [
   '<!doctype html>',
   '<html lang="en">',
@@ -109,6 +129,7 @@ for (const [name, text] of [
   ['reading-room-plan.svg', clean],
   ['reading-room-hostile.svg', hostile],
   ['reading-room-page.html', page],
+  ['reading-room-marked-plan.svg', markedPlan],
 ]) {
   writeFileSync(corpus(name), text)
   console.log(`wrote ${corpus(name)}`)
