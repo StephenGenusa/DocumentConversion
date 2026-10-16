@@ -237,6 +237,13 @@
    */
   var DOT_FONT = 'Arial'
 
+  /**
+   * Graphviz's default label size is 14 pt, which shows at 18.7 px once the
+   * picture is sized in px; Mermaid's labels are 16 px (its root rule). 12 pt
+   * is 16 px, so diagrams of both kinds side by side read alike.
+   */
+  var DOT_FONT_SIZE = '12'
+
   var vizReady = null
 
   /** One viz-js instance, made once; after a crash inside it, made again. */
@@ -323,10 +330,10 @@
     try {
       result = instance.render(source, {
         format: 'svg',
-        // Defaults only: a font the graph, a node or an edge names is kept.
-        graphAttributes: { fontname: DOT_FONT },
-        nodeAttributes: { fontname: DOT_FONT },
-        edgeAttributes: { fontname: DOT_FONT },
+        // Defaults only: a font or size the graph, a node or an edge names is kept.
+        graphAttributes: { fontname: DOT_FONT, fontsize: DOT_FONT_SIZE },
+        nodeAttributes: { fontname: DOT_FONT, fontsize: DOT_FONT_SIZE },
+        edgeAttributes: { fontname: DOT_FONT, fontsize: DOT_FONT_SIZE },
       })
     } catch (err) {
       // Graphviz itself stopped (out of memory, say): start a fresh one next time.

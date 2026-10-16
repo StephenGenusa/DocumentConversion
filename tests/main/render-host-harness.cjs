@@ -204,6 +204,23 @@ async function main() {
     out.dotUndirected = size(await dot('graph links { a -- b; b -- c }'))
     const own = await dot('digraph { node [fontname="Courier"]; a -> b; c [fontname="Times-Roman"] }')
     out.dotOwnFont = own.svg ? fonts(own.svg) : [own.error]
+    // Label sizes as shown, in CSS px: Graphviz writes points in its viewBox,
+    // and the picture is sized in px; Mermaid writes px in its stylesheet.
+    const shownPx = (svg) => {
+      const box = (/viewBox="([^"]*)"/.exec(svg) || [])[1]
+      const scale = box ? Number(/width="([0-9.]+)"/.exec(svg)[1]) / Number(box.trim().split(/[\s,]+/)[2]) : 1
+      return [...new Set([...svg.matchAll(/font-size="([0-9.]+)"/g)].map((m) => Math.round(Number(m[1]) * scale * 10) / 10))]
+    }
+    const flow = await host.render({ kind: 'mermaid', source: 'flowchart LR\n  A[Start] -->|go| B[End]', display: true, format: 'svg' })
+    // The diagram's own rule (#mmdN{…}): what its node and edge labels inherit.
+    const mermaidPx = flow.svg ? Number((/#[\w-]+\{[^}]*?font-size:\s*([0-9.]+)px/.exec(flow.svg) || [])[1]) : null
+    const plain = await dot('digraph { a -> b [label="an edge"]; label="A graph" }')
+    const sized = await dot('digraph { node [fontsize=20]; a -> b [label="an edge" fontsize=9]; label="A graph"; fontsize=30 }')
+    out.labelPx = {
+      mermaid: mermaidPx,
+      dot: plain.svg ? shownPx(plain.svg) : [plain.error],
+      dotOwnSize: sized.svg ? shownPx(sized.svg) : [sized.error],
+    }
     out.dotBroken = (await dot('digraph { a -> }')).error ?? null
     out.dotWrongEdge = (await dot('graph { a -> b }')).error ?? null
     out.dotEmpty = (await dot('')).error ?? null

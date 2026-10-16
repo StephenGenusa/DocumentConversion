@@ -61,6 +61,7 @@ interface HarnessResult {
   dotNeato: { width?: number; height?: number; error?: string }
   dotUndirected: { width?: number; height?: number; error?: string }
   dotOwnFont: string[]
+  labelPx: { mermaid: number | null; dot: Array<number | string>; dotOwnSize: Array<number | string> }
   dotBroken: string | null
   dotWrongEdge: string | null
   dotEmpty: string | null
@@ -262,6 +263,14 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
       expect(result.dotNeato.height).toBeLessThan(result.dotLayered.height! * 0.7)
       expect(result.dotUndirected.error).toBeUndefined()
       expect(result.dotUndirected.height).toBeGreaterThan(100)
+    })
+
+    it("sets labels at Mermaid's size, and keeps a size the source names", () => {
+      // Graphviz's own default, 14 pt, showed at 18.7 px beside Mermaid's 16.
+      expect(result.labelPx.mermaid).toBe(16)
+      expect(result.labelPx.dot).toEqual([16])
+      // fontsize=30 on the graph, 20 on nodes, 9 on the edge: points, shown in px.
+      expect([...result.labelPx.dotOwnSize].sort()).toEqual([12, 26.7, 40])
     })
 
     it('keeps a font the source names', () => {
