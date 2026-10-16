@@ -178,6 +178,8 @@ async function main() {
     // A definition in one formula does not carry over to the next.
     out.mathDefines = pick(await math('\\newcommand{\\R}{\\mathbb{R}} x \\in \\R'))
     out.mathLeaked = (await math('y \\in \\R')).error ?? null
+    // What core/tex-definitions.ts hands the host: definitions in front of the formula, a display environment too.
+    out.mathCarried = (await math('\\newcommand{\\vv}[1]{\\mathbf{#1}}\\DeclareMathOperator*{\\argmax}{arg\\,max}\\begin{align} \\vv{x} &= \\argmax_y f \\tag{2} \\end{align}', true)).error ?? null
     out.mathPackages = {
       boldsymbol: (await math('\\boldsymbol{\\beta}')).error ?? null,
       mhchem: (await math('\\ce{H2O}')).error ?? null,

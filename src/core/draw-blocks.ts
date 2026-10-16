@@ -12,6 +12,7 @@ import {
   type RenderRequest,
   type RenderResult,
 } from './rendered-blocks'
+import { carryDefinitions } from './tex-definitions'
 
 /*
  * Drawing a document's diagrams for output (spec B3, B5, B7), at write time.
@@ -230,18 +231,22 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
     display: boolean
     source: string
     number: number
+    /** What is drawn: the source, after the definitions it uses from earlier formulas. */
+    drawn: string
   }
   const formulas: Formula[] = []
   for (const m of html.matchAll(FORMULA_SOURCE)) {
     const display = m[1] !== undefined
     const source = decodeText(display ? m[1] : m[2])
     if (!source.trim()) continue
-    formulas.push({ start: m.index, end: m.index + m[0].length, display, source, number: formulas.length + 1 })
+    formulas.push({ start: m.index, end: m.index + m[0].length, display, source, number: formulas.length + 1, drawn: source })
   }
   if (formulas.length === 0) return html
 
   const { max, eachMs, totalMs, batch } = RENDER_LIMITS.formulas
   const drawn = formulas.slice(0, max)
+  // Each formula is drawn alone; a \newcommand in one reaches the later ones here.
+  carryDefinitions(drawn.map((f) => f.source)).forEach((tex, k) => (drawn[k].drawn = tex))
   if (formulas.length > max) {
     const n = (v: number): string => v.toLocaleString('en-US')
     ctx.onAdvice?.(
@@ -251,7 +256,7 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
   }
 
   const format = renderedFormatFor(target, ctx.format)
-  const keyOf = (f: Formula): string => JSON.stringify([f.display, f.source])
+  const keyOf = (f: Formula): string => JSON.stringify([f.display, f.drawn])
   const unique = [...new Map(drawn.map((f) => [keyOf(f), f])).values()]
   const byKey = new Map<string, RenderResult>()
   const started = Date.now()
@@ -265,7 +270,7 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
     let results: RenderResult[]
     try {
       results = await render(
-        part.map(({ source, display }) => ({ kind: 'math', source, display, format })),
+        part.map(({ drawn: source, display }) => ({ kind: 'math', source, display, format })),
         { signal: ctx.signal, timeoutMs: eachMs },
       )
     } catch (err) {

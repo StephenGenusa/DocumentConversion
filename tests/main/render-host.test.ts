@@ -54,6 +54,7 @@ interface HarnessResult {
   mathRecursive: string | null
   mathDefines: any
   mathLeaked: string | null
+  mathCarried: string | null
   mathPackages: Record<string, string | null>
   dotDigraph: { width?: number; height?: number; error?: string; fonts: string[]; head: string | null; hasDoctype: boolean | null }
   dotPng: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
@@ -230,6 +231,10 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     it("keeps one formula's definitions out of the next", () => {
       expect(result.mathDefines.error).toBeUndefined()
       expect(result.mathLeaked).toBe('Undefined control sequence \\R')
+    })
+
+    it('draws a formula with definitions carried in front of it, a display environment and its tag too', () => {
+      expect(result.mathCarried).toBeNull()
     })
 
     it('has the extensions notebooks use, from the one file', () => {

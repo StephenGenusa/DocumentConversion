@@ -123,6 +123,25 @@ describe('drawing formulas (step 18)', () => {
     expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Formula 1 could not be drawn: Undefined control sequence \\foo')
   })
 
+  it("carries a formula's \\newcommand into the later ones that use it; alt and notices stay each formula's own", async () => {
+    const { render, calls } = fakeRenderer()
+    const onAdvice = vi.fn()
+    const def = '\\newcommand{\\vv}[1]{\\mathbf{#1}}'
+    const html = `<p>${inline('\\vv{a}')}</p>${display(`${def} \\vv{b}`)}<p>${inline('\\vv{c}')} ${inline('\\foo')}</p>`
+    const out = await drawBlocks(html, 'html', { renderBlocks: render, onAdvice })
+    expect(calls.flat().map((r) => r.source)).toEqual(['\\vv{a}', `${def} \\vv{b}`, `${def}\\vv{c}`, '\\foo'])
+    expect(out).toContain('alt="\\vv{c}"')
+    expect(onAdvice).toHaveBeenCalledTimes(1)
+    expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Formula 4 could not be drawn: Undefined control sequence \\foo')
+  })
+
+  it('carries nothing from one conversion into the next', async () => {
+    const { render, calls } = fakeRenderer()
+    await drawBlocks(`<p>${inline('\\def\\vv{v}\\vv')}</p>`, 'html', { renderBlocks: render })
+    await drawBlocks(`<p>${inline('\\vv')}</p>`, 'html', { renderBlocks: render })
+    expect(calls.flat().map((r) => r.source)).toEqual(['\\def\\vv{v}\\vv', '\\vv'])
+  })
+
   it('asks once for a repeated formula, keyed by display too, and gives each 2 s', async () => {
     const { render, calls, timeouts } = fakeRenderer()
     const out = await drawBlocks(`<p>${inline('x')} ${inline('x')}</p>${display('x')}`, 'html', { renderBlocks: render })

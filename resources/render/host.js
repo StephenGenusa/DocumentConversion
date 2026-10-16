@@ -482,8 +482,10 @@
   /**
    * What one formula defined (\def, \newcommand, \newenvironment, \let,
    * \DeclareMathOperator…) must not carry over to the next one: each is
-   * drawn on its own, as it would be in the editor, so a document's
-   * formulas cannot change each other. MathJax keeps those definitions in
+   * drawn on its own, as it would be in the editor, so its drawing can be
+   * cached and nothing reaches another document. (A document's definitions
+   * reach its own later formulas in their source: core/tex-definitions.ts.)
+   * MathJax keeps those definitions in
    * maps of their own; they are emptied, and its labels and equation
    * numbers reset, after every formula.
    */
