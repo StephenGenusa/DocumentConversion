@@ -531,6 +531,9 @@ try {
   check('choosing Python again colours it and saves class="language-python"', back.spans > 0 && /^<pre><code class="language-python"># Totals/.test(back.html), JSON.stringify(back).slice(0, 200))
   // Real typing (through the DOM, not a command) right beside the picker, at the block's start.
   await js(`${EDITOR}.editor.commands.focus(1)`)
+  // Tiptap focuses the view on the next animation frame; until then the page's
+  // caret is wherever it was last (by the picker), and typed text goes there.
+  await waitFor(`${EDITOR}.editor.view.hasFocus() && getSelection().anchorNode?.nodeType === Node.TEXT_NODE && getSelection().anchorOffset === 0`, 'the caret at the start of the code')
   {
     const id = ++seq
     await new Promise((r) => {
