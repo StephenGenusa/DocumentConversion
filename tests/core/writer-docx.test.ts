@@ -141,7 +141,7 @@ const RPR_ORDER = ['rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCap
  */
 async function formatsOf(html: string, marker: string, xml?: string): Promise<string[]> {
   xml ??= await documentXml(html)
-  expect(xml).not.toMatch(/w:color w:val="0D0C/i)
+  expect(xml).not.toMatch(/w:color w:val="0D0[BC]/i)
   const hits: string[] = []
   for (const m of xml.matchAll(/<w:hyperlink\b[^>]*>[\s\S]*?<\/w:hyperlink>|<w:r>[\s\S]*?<\/w:r>/g)) {
     const inLink = m[0].startsWith('<w:hyperlink')
@@ -377,5 +377,64 @@ describe('writeDocx writes merged cells in schema order', () => {
     const rows = [...xml.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((m) => m[0])
     const last = rows[rows.length - 1]
     expect(last).toMatch(/<w:tcPr><w:gridSpan w:val="2"\/><w:vMerge w:val="continue"\/>/)
+  })
+})
+
+/**
+ * Inside a <pre>, html-to-docx keeps only the innermost tag, and the bold of
+ * a <strong> ran on through the rest of the block, its link and its later
+ * lines included.
+ */
+describe('writeDocx keeps formatting inside a code block', () => {
+  it('keeps nested formatting and a link, in Courier, line by line', async () => {
+    const html = '<pre><code>run <strong>bold <em>both</em></strong> and <a href="https://example.com/">link</a>\nnext</code></pre>'
+    const xml = await documentXml(html)
+    expect(await formatsOf(html, 'run', xml)).toEqual(['mono'])
+    expect(await formatsOf(html, 'bold', xml)).toEqual(['b+mono'])
+    expect(await formatsOf(html, 'both', xml)).toEqual(['b+i+mono'])
+    expect(await formatsOf(html, 'and', xml)).toEqual(['mono'])
+    expect(await formatsOf(html, 'link', xml)).toEqual(['link+mono'])
+    expect(await formatsOf(html, 'next', xml)).toEqual(['mono'])
+    expect(await linesOf(html, 'run')).toEqual(['run bold both and link', 'next'])
+  })
+
+  it('neither strikes nor underlines the indent or the space beside such text', async () => {
+    const html = '<pre><code>if alpha:\n    <s>beta</s> <u>gamma</u>()</code></pre>'
+    expect(await linesOf(html, 'alpha')).toEqual(['if alpha:', '    beta gamma()'])
+    const xml = await documentXml(html)
+    const runs = [...xml.matchAll(/<w:r>[\s\S]*?<\/w:r>/g)].map((m) => m[0])
+    const drawn = runs.filter((r) => /<w:strike\/>|<w:u /.test(r)).map((r) => /<w:t[^>]*>([^<]*)<\/w:t>/.exec(r)?.[1])
+    expect(drawn).toEqual(['beta', 'gamma'])
+    const spaces = runs.filter((r) => /<w:t[^>]*>\s+<\/w:t>/.test(r))
+    expect(spaces.length).toBe(2)
+    for (const r of spaces) expect(r).toMatch(/w:ascii="Courier"/)
+  })
+
+  it('keeps the indent in front of formatted text', async () => {
+    const html = '<pre><code>if alpha:\n    <strong>beta</strong>()\n\t<em>gamma</em></code></pre>'
+    expect(await linesOf(html, 'alpha')).toEqual(['if alpha:', '    beta()', '\tgamma'])
+    expect(await formatsOf(html, 'beta')).toEqual(['b+mono'])
+  })
+
+  it('does the same in a list item and a table cell', async () => {
+    const item = '<ul><li><p>Step</p><pre><code>alpha <strong>beta</strong>\n  <s>gamma</s> <a href="https://example.com/">delta</a></code></pre><p>After</p></li></ul>'
+    expect(await formatsOf(item, 'beta')).toEqual(['b+mono'])
+    expect(await formatsOf(item, 'gamma')).toEqual(['mono+strike'])
+    expect(await formatsOf(item, 'delta')).toEqual(['link+mono'])
+    expect(await formatsOf(item, 'Step')).toEqual([''])
+    expect(await formatsOf(item, 'After')).toEqual([''])
+    expect(await linesOf(item, 'alpha')).toEqual(['Step', 'alpha beta', '  gamma delta', 'After'])
+    const cell = '<table><tr><td><pre><code>alpha <em>beta</em>\ngamma</code></pre></td></tr></table>'
+    expect(await formatsOf(cell, 'beta')).toEqual(['i+mono'])
+    expect(await linesOf(cell, 'alpha')).toEqual(['alpha beta', 'gamma'])
+  })
+
+  it('still colours a highlighted block run by run, in Courier', async () => {
+    const html = '<pre><code class="language-python">def alpha():\n    return 1</code></pre>'
+    const xml = await documentXml(html)
+    expect(await formatsOf(html, 'def', xml)).toEqual(['mono'])
+    const colours = new Set([...xml.matchAll(/<w:color w:val="([0-9A-Fa-f]{6})"\/>/g)].map((m) => m[1]))
+    expect(colours.size).toBeGreaterThan(1)
+    expect(await linesOf(html, 'alpha')).toEqual(['def alpha():', '    return 1'])
   })
 })

@@ -643,8 +643,8 @@ const FORMAT_BITS: Record<string, number> = {
 const MONOSPACE = new Set(['code', 'kbd', 'samp', 'tt'])
 /** Inline elements html-to-docx writes an empty run for: their text is kept, unformatted. */
 const TRANSPARENT = new Set(['span', 'small', 'big', 'abbr', 'acronym', 'time', 'data', 'bdi', 'bdo', 'font', 'q'])
-/** Left exactly as they are: a code block keeps its own line-break spans. */
-const UNTOUCHED = new Set(['pre', 'svg', 'math', 'script', 'style'])
+/** Left exactly as they are. */
+const UNTOUCHED = new Set(['svg', 'math', 'script', 'style'])
 
 /**
  * The stand-in colour: `0D0C` and the formatting bits as two hex digits.
@@ -655,6 +655,10 @@ const STAND_IN = /<w:color w:val="0D0C([0-9A-Fa-f]{2})"\/>/
 interface Look {
   bits: number
   font?: string
+  /** A highlighted code block's colour for this run (colourCode's spans). */
+  colour?: string
+  /** Inside a <pre>: a line break is kept in its span (see breakCodeLines). */
+  pre?: boolean
 }
 
 /**
@@ -684,13 +688,17 @@ interface Look {
  *  - a <br> inside formatting, and the text of a tag it does not know
  *    (<kbd>, <small>, <abbr>), were not written at all.
  *
- * A code block is left alone: breakCodeLines and monospaceCode have shaped it.
+ * A code block is flattened the same way, once breakCodeLines and
+ * monospaceCode have shaped it: html-to-docx keeps only the innermost tag
+ * there too, and a <strong>'s bold ran on to the end of the block. Every
+ * piece of its text is given the code font, a highlighted block's runs keep
+ * their colour, and its line-break spans stay as they are.
  */
 function flattenFormatting(source: string): string {
-  if (!/<(strong|b|em|i|cite|var|dfn|u|ins|s|del|strike|sup|sub|mark|code|kbd|samp|tt|span|small|big|abbr|acronym|time|data|bdi|bdo|font|q|a)\b/i.test(source)) {
+  if (!/<(strong|b|em|i|cite|var|dfn|u|ins|s|del|strike|sup|sub|mark|code|kbd|samp|tt|span|small|big|abbr|acronym|time|data|bdi|bdo|font|q|a|pre)\b/i.test(source)) {
     return source
   }
-  const dom = parseDocument(source)
+  const dom = parseDocument(source.replace(KEPT, ''))
 
   const lookOf = (el: Element, look: Look): Look | null => {
     const bit = FORMAT_BITS[el.name]
@@ -701,25 +709,44 @@ function flattenFormatting(source: string): string {
     }
     if (MONOSPACE.has(el.name)) return { ...look, font: CODE_FONT }
     if (el.name === 'span') {
-      // monospaceCode's spans: the only ones left by now.
+      // monospaceCode's and colourCode's spans: the only ones left by now.
       const font = /font-family:\s*([^;]+)/i.exec(el.attribs.style ?? '')?.[1]?.trim()
-      return font ? { ...look, font } : look
+      const colour = /(?:^|;)\s*color:\s*([^;]+)/i.exec(el.attribs.style ?? '')?.[1]?.trim()
+      return { ...look, ...(font ? { font } : {}), ...(colour ? { colour } : {}) }
     }
     if (TRANSPARENT.has(el.name)) return look
     return null
   }
 
   const styleOf = (look: Look): string =>
-    [look.bits ? `color: #0D0C${look.bits.toString(16).toUpperCase().padStart(2, '0')}` : '', look.font ? `font-family: ${look.font}` : '']
+    [
+      look.bits ? `color: #0D0C${look.bits.toString(16).toUpperCase().padStart(2, '0')}` : look.colour ? `color: ${look.colour}` : '',
+      look.font ? `font-family: ${look.font}` : '',
+    ]
       .filter(Boolean)
       .join('; ')
 
+  const lineBreak = (el: Element): boolean => el.name === 'br' || (el.name === 'span' && el.children.length > 0 && el.children.every((c) => isElement(c) && c.name === 'br'))
+
   const restyle = (node: AnyNode, look: Look): AnyNode[] => {
     if (node instanceof Text) {
-      if (node.data === '' || (!look.bits && !look.font)) return [node]
+      if (node.data === '' || (!look.bits && !look.font && !look.colour)) return [node]
       return [new Element('span', { style: styleOf(look) }, [new Text(node.data)])]
     }
     if (!isElement(node) || UNTOUCHED.has(node.name)) return [node]
+    if (look.pre && lineBreak(node)) return [node.name === 'br' ? new Element('span', {}, [node]) : node]
+    if (node.name === 'pre') {
+      splice(node, 0, node.children.length, node.children.flatMap((child) => restyle(child, { ...look, font: CODE_FONT, pre: true })))
+      joinSpaces(node)
+      if (!elementsOf(node.children, 'a').length) return [node]
+      // html-to-docx writes the runs of a <pre> itself and makes no hyperlink
+      // of an <a> there; it does in a paragraph's own children. Every run now
+      // names its font, so a <p> looks the same; in a list item, where the
+      // block is a run of the item's paragraph, its pieces join the item's.
+      if (node.parent instanceof Element && node.parent.name === 'li') return [...node.children]
+      node.name = 'p'
+      return [node]
+    }
     const own = lookOf(node, look)
     let kids = node.children.flatMap((child) => restyle(child, own ?? look))
     if (node.name === 'q') kids = [new Text('\u201C'), ...kids, new Text('\u201D')]
@@ -736,7 +763,7 @@ function flattenFormatting(source: string): string {
     const fresh = restyle(node, { bits: 0 })
     splice(dom, dom.children.indexOf(node), 1, fresh)
   }
-  return serialize(dom.children)
+  return serialize(dom.children).replace(KEPT, (c) => (c === KEPT_SPACE ? '&#32;' : '&#9;'))
 }
 
 /** A text node, or one of flattenFormatting's spans holding just text: its Text. */
@@ -757,11 +784,25 @@ function drawsLine(node: AnyNode): boolean {
 }
 
 /**
+ * Stand-ins for a space and a tab kept as a piece of their own (see
+ * joinSpaces), written out as character references once serialised.
+ * Private-use, so never real content.
+ */
+const KEPT_SPACE = '\uE003'
+const KEPT_TAB = '\uE004'
+const KEPT = /[\uE003\uE004]/g
+
+/**
  * Join each whitespace-only piece of inline text to the text beside it, as
  * html-to-docx drops it otherwise: to plain text after it if there is some,
  * else to a neighbour that draws no line through a space (`~~a~~ b` must not
  * strike the space), the one before first. Whitespace between blocks has no
  * text beside it and is left alone.
+ *
+ * With only a struck, underlined or highlighted neighbour (`~~a~~ __b__`, or
+ * the indent in front of struck code), the piece stays apart, in its own
+ * font, its spaces written as `&#32;`: html-to-docx drops white space between
+ * two tags (its minifier), not a character reference.
  */
 function joinSpaces(parent: Element): void {
   for (let i = 0; i < parent.children.length; i++) {
@@ -772,10 +813,16 @@ function joinSpaces(parent: Element): void {
     const next = parent.children[i + 1]
     const before = leafText(prev)
     const after = leafText(next)
-    if (after && (next instanceof Text || (!drawsLine(next) && (!before || drawsLine(prev))))) after.data = own.data + after.data
-    else if (before) before.data += own.data
-    else if (after) after.data = own.data + after.data
-    else continue
+    const into = after && (next instanceof Text || (!drawsLine(next) && (!before || drawsLine(prev)))) ? next : before ? prev : after ? next : null
+    if (!into) continue
+    if (drawsLine(into)) {
+      const font = isElement(node) ? /font-family:\s*([^;]+)/i.exec(node.attribs.style ?? '')?.[1]?.trim() : undefined
+      const kept = new Text(own.data.replace(/ /g, KEPT_SPACE).replace(/\t/g, KEPT_TAB))
+      splice(parent, i, 1, [font ? new Element('span', { style: `font-family: ${font}` }, [kept]) : kept])
+      continue
+    }
+    if (into === next) after!.data = own.data + after!.data
+    else before!.data += own.data
     splice(parent, i, 1, [])
     i--
   }
