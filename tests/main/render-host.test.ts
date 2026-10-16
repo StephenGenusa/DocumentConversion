@@ -55,6 +55,9 @@ interface HarnessResult {
   mathDefines: any
   mathLeaked: string | null
   mathCarried: string | null
+  mathShortcuts: Record<string, string>
+  mathOwnShortcut: Record<string, string>
+  mathSiunitx: Record<string, string | null>
   mathPackages: Record<string, string | null>
   dotDigraph: { width?: number; height?: number; error?: string; fonts: string[]; head: string | null; hasDoctype: boolean | null }
   dotPng: { width?: number; height?: number; error?: string; magic?: string; pixelWidth?: number; pixelHeight?: number }
@@ -230,7 +233,19 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
 
     it("keeps one formula's definitions out of the next", () => {
       expect(result.mathDefines.error).toBeUndefined()
-      expect(result.mathLeaked).toBe('Undefined control sequence \\R')
+      expect(result.mathLeaked).toBe('Undefined control sequence \\Reals')
+    })
+
+    it('draws the home-made shortcuts \\R \\N \\Z \\C \\Q as blackboard bold, unless the formula defines its own', () => {
+      expect(result.mathShortcuts).toEqual({ R: 'same', N: 'same', Z: 'same', C: 'same', Q: 'same' })
+      expect(result.mathOwnShortcut).toEqual({ newcommand: 'same', renewcommand: 'same', def: 'same', after: 'same' })
+    })
+
+    it('draws siunitx quantities: the number, a thin space, the unit upright; an unknown unit is named as such', () => {
+      const { unknownUnit, unclosed, ...drawn } = result.mathSiunitx
+      expect(drawn).toEqual({ SI: 'same', exponent: 'same', prefixes: 'same', micro: 'same', literal: 'same', num: 'same', celsius: 'same' })
+      expect(unknownUnit).toBe('siunitx unit \\furlong is not supported')
+      expect(unclosed).toBe('Missing close brace in \\SI')
     })
 
     it('draws a formula with definitions carried in front of it, a display environment and its tag too', () => {

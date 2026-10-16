@@ -382,7 +382,17 @@
         packages: TEX_PACKAGES,
         // \bm is the bm package's bold math, common in papers and notebooks;
         // MathJax has no bm package, and \boldsymbol draws the same thing.
-        macros: { bm: ['\\boldsymbol{#1}', 1] },
+        // The shortcuts papers and notebooks define for themselves (number
+        // sets in blackboard bold). Defaults only: a formula's own
+        // \newcommand or \def of the same name is drawn instead.
+        macros: {
+          bm: ['\\boldsymbol{#1}', 1],
+          R: '\\mathbb{R}',
+          N: '\\mathbb{N}',
+          Z: '\\mathbb{Z}',
+          C: '\\mathbb{C}',
+          Q: '\\mathbb{Q}',
+        },
         // Without this an error becomes a red message drawn in the formula.
         formatError: function (jax, err) {
           throw err
@@ -513,8 +523,180 @@
     }
   }
 
+  // siunitx (\SI, \si, \num and their version 3 names \qty, \unit), which
+  // MathJax does not have: a basic form of it, written out in TeX before
+  // the formula is drawn. A number (3e8 as 3×10⁸), a thin space and the
+  // unit upright, its parts a thin space apart and \per as a power of -1,
+  // as siunitx draws them by default. Options are ignored. A unit macro
+  // not listed here, and the commands not done at all, are errors naming
+  // them, so the formula keeps its source with a notice that says why.
+
+  var SI_PREFIXES = {
+    yocto: 'y', zepto: 'z', atto: 'a', femto: 'f', pico: 'p', nano: 'n', micro: '\\mu ', milli: 'm', centi: 'c',
+    deci: 'd', deca: 'da', deka: 'da', hecto: 'h', kilo: 'k', mega: 'M', giga: 'G', tera: 'T', peta: 'P', exa: 'E',
+    zetta: 'Z', yotta: 'Y',
+  }
+
+  var SI_UNITS = {
+    metre: 'm', meter: 'm', gram: 'g', kilogram: 'kg', second: 's', ampere: 'A', kelvin: 'K', mole: 'mol',
+    candela: 'cd', hertz: 'Hz', newton: 'N', pascal: 'Pa', joule: 'J', watt: 'W', coulomb: 'C', volt: 'V',
+    farad: 'F', ohm: '\\Omega ', siemens: 'S', weber: 'Wb', tesla: 'T', henry: 'H', lumen: 'lm', lux: 'lx',
+    becquerel: 'Bq', gray: 'Gy', sievert: 'Sv', katal: 'kat', radian: 'rad', steradian: 'sr', litre: 'L',
+    liter: 'L', minute: 'min', hour: 'h', day: 'd', hectare: 'ha', tonne: 't', electronvolt: 'eV', dalton: 'Da',
+    astronomicalunit: 'au', bar: 'bar', angstrom: '\\mathring{A}', bel: 'B', decibel: 'dB', neper: 'Np',
+    percent: '\\%', degreeCelsius: '{}^{\\circ}C', degree: '{}^{\\circ}', arcminute: "'", arcsecond: "''",
+  }
+
+  /** Units written straight after the number, as siunitx does: 90°, not 90 °. */
+  var SI_CLOSE = { degree: 1, arcminute: 1, arcsecond: 1 }
+
+  /** The siunitx commands read here, and those that are only named as not supported. */
+  var SI_COMMANDS = /\\(SI|si|num|qty|unit|ang|SIrange|SIlist|numrange|numlist|qtyrange|qtylist|sisetup)(?![A-Za-z])/g
+  var SI_ARGS = { SI: 2, qty: 2, si: 1, unit: 1, num: 1, ang: 1 }
+
+  /** The end of the argument at `i` (a group or one token), -1 for an unclosed group, null for none. */
+  function siArgEnd(s, i) {
+    if (s[i] === '{') {
+      var depth = 0
+      for (var j = i; j < s.length; j++) {
+        if (s[j] === '\\') j++
+        else if (s[j] === '{') depth++
+        else if (s[j] === '}' && --depth === 0) return j + 1
+      }
+      return -1
+    }
+    if (s[i] === '\\') {
+      var word = /^\\[A-Za-z]+/.exec(s.slice(i))
+      return i + (word ? word[0].length : 2)
+    }
+    return i < s.length && s[i] !== '}' ? i + 1 : null
+  }
+
+  var ungroup = function (arg) {
+    return arg[0] === '{' ? arg.slice(1, -1) : arg
+  }
+
+  /** A siunitx number: 3e8 → 3\times10^{8}, 1.2+-0.1 → 1.2\pm0.1, a decimal comma kept as one. */
+  function siNumber(text) {
+    var t = text.trim().replace(/\+-/g, '\\pm ')
+    var m = /^([-+]?)(\d*[.,]?\d+)(?:[eE]([-+]?\d+))?$/.exec(t.replace(/\s+/g, ''))
+    if (!m) return t
+    var mantissa = m[1] + m[2].replace(',', '{,}')
+    return m[3] === undefined ? mantissa : mantissa + '\\times10^{' + m[3].replace(/^\+/, '') + '}'
+  }
+
+  /** A siunitx unit: macros (\kilo\metre\per\second\squared) or literal text (km/s), upright. */
+  function siUnit(text) {
+    var parts = []
+    var prefix = ''
+    var power = null
+    var per = false
+    var literal = ''
+    var close = false
+    var count = 0
+    function add(sym) {
+      parts.push({ sym: prefix + sym, power: power, per: per })
+      prefix = ''
+      power = null
+      per = false
+    }
+    function endLiteral() {
+      if (literal) add(literal)
+      literal = ''
+    }
+    function powerOfLast(p) {
+      endLiteral()
+      if (!parts.length) throw new Error('siunitx: a power with no unit before it')
+      parts[parts.length - 1].power = p
+    }
+    var tokens = text.match(/\\[A-Za-z]+|\{(?:[^{}]|\{[^{}]*\})*\}|\s+|[\s\S]/g) || []
+    for (var i = 0; i < tokens.length; i++) {
+      var tok = tokens[i]
+      var name = tok[0] === '\\' && tok.length > 1 && /^\\[A-Za-z]+$/.test(tok) ? tok.slice(1) : null
+      var next = function () {
+        var arg = tokens[++i]
+        if (arg === undefined) throw new Error('Missing argument for ' + tok)
+        return ungroup(arg).trim()
+      }
+      if (name === null) {
+        if (/^\s+$/.test(tok) || tok === '.' || tok === '~') endLiteral()
+        else literal += tok
+        continue
+      }
+      endLiteral()
+      if (Object.prototype.hasOwnProperty.call(SI_PREFIXES, name)) prefix += SI_PREFIXES[name]
+      else if (Object.prototype.hasOwnProperty.call(SI_UNITS, name)) {
+        count++
+        close = Boolean(SI_CLOSE[name]) && !prefix
+        add(SI_UNITS[name])
+      } else if (name === 'per') per = true
+      else if (name === 'square') power = '2'
+      else if (name === 'cubic') power = '3'
+      else if (name === 'raiseto') power = next()
+      else if (name === 'squared') powerOfLast('2')
+      else if (name === 'cubed') powerOfLast('3')
+      else if (name === 'tothe') powerOfLast(next())
+      else throw new Error('siunitx unit ' + tok + ' is not supported')
+    }
+    endLiteral()
+    var tex = parts
+      .map(function (p) {
+        var exp = p.per ? (p.power ? '-' + p.power : '-1') : p.power
+        return exp ? p.sym + '^{' + exp + '}' : p.sym
+      })
+      .join('\\,')
+    return { tex: '\\mathrm{' + tex + '}', close: close && count === 1 && parts.length === 1 }
+  }
+
+  /** The formula with its siunitx commands written out in plain TeX. */
+  function siunitx(source) {
+    if (source.indexOf('\\') < 0) return source
+    var out = ''
+    var at = 0
+    SI_COMMANDS.lastIndex = 0
+    for (var m = SI_COMMANDS.exec(source); m; m = SI_COMMANDS.exec(source)) {
+      // \\SI is a line break and the letters SI.
+      if (!/(^|[^\\])(\\\\)*$/.test(source.slice(0, m.index))) continue
+      var cmd = m[1]
+      if (!SI_ARGS[cmd]) throw new Error('siunitx \\' + cmd + ' is not supported')
+      var i = m.index + m[0].length
+      while (/\s/.test(source[i] || '')) i++
+      if (source[i] === '[') {
+        var opt = /^\[[^\]]*\]/.exec(source.slice(i))
+        if (opt) i += opt[0].length
+      }
+      var args = []
+      for (var k = 0; k < SI_ARGS[cmd]; k++) {
+        while (/\s/.test(source[i] || '')) i++
+        var end = siArgEnd(source, i)
+        if (end === -1) throw new Error('Missing close brace in \\' + cmd)
+        if (end === null) break
+        args.push(source.slice(i, end))
+        i = end
+      }
+      // \qty with other than two arguments is not siunitx's (physics has one).
+      if (args.length < SI_ARGS[cmd]) {
+        if (cmd === 'qty') continue
+        throw new Error('Missing argument for \\' + cmd)
+      }
+      var tex
+      if (cmd === 'num') tex = siNumber(ungroup(args[0]))
+      else if (cmd === 'ang') tex = siNumber(ungroup(args[0])) + '^{\\circ}'
+      else if (cmd === 'si' || cmd === 'unit') tex = siUnit(ungroup(args[0])).tex
+      else {
+        var unit = siUnit(ungroup(args[1]))
+        tex = siNumber(ungroup(args[0])) + (unit.close ? '' : '\\,') + unit.tex
+      }
+      out += source.slice(at, m.index) + tex
+      at = i
+      SI_COMMANDS.lastIndex = i
+    }
+    return out + source.slice(at)
+  }
+
   async function mathSvg(source, display) {
     var MathJax = await mathjax()
+    source = siunitx(source)
     var node
     try {
       node = MathJax.tex2svg(source, { display: Boolean(display), em: EM, ex: EX, containerWidth: 80 * EM })

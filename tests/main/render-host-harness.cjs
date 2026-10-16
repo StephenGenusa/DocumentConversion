@@ -176,8 +176,32 @@ async function main() {
     out.mathHref = (await math('\\href{http://127.0.0.1:9/x}{y}')).error ?? null
     out.mathRecursive = (await math('\\def\\a{\\a\\a}\\a')).error ?? null
     // A definition in one formula does not carry over to the next.
-    out.mathDefines = pick(await math('\\newcommand{\\R}{\\mathbb{R}} x \\in \\R'))
-    out.mathLeaked = (await math('y \\in \\R')).error ?? null
+    out.mathDefines = pick(await math('\\newcommand{\\Reals}{\\mathbb{R}} x \\in \\Reals'))
+    out.mathLeaked = (await math('y \\in \\Reals')).error ?? null
+    // Drawn as `b` is, or the error `a` got.
+    const sameAs = async (a, b) => {
+      const [x, y] = [await math(a), await math(b)]
+      return x.error ?? y.error ?? (drawing(x.svg) === drawing(y.svg) ? 'same' : 'different')
+    }
+    out.mathShortcuts = {}
+    for (const letter of 'RNZCQ') out.mathShortcuts[letter] = await sameAs(`\\${letter}^n`, `\\mathbb{${letter}}^n`)
+    out.mathOwnShortcut = {
+      newcommand: await sameAs('\\newcommand{\\R}{\\mathcal{R}}\\R', '\\mathcal{R}'),
+      renewcommand: await sameAs('\\renewcommand{\\C}{\\mathrm{C}}\\C', '\\mathrm{C}'),
+      def: await sameAs('\\def\\N{\\mathbf{N}}\\N', '\\mathbf{N}'),
+      after: await sameAs('\\R', '\\mathbb{R}'),
+    }
+    out.mathSiunitx = {
+      SI: await sameAs('\\SI{9.81}{\\metre\\per\\second\\squared}', '9.81\\,\\mathrm{m\\,s^{-2}}'),
+      exponent: await sameAs('\\SI{3e8}{\\metre\\per\\second}', '3\\times10^{8}\\,\\mathrm{m\\,s^{-1}}'),
+      prefixes: await sameAs('\\SI[round-mode=places]{-1.5}{\\kilo\\gram\\square\\metre}', '-1.5\\,\\mathrm{kg\\,m^{2}}'),
+      micro: await sameAs('\\si{\\micro\\second}', '\\mathrm{\\mu s}'),
+      literal: await sameAs('\\si{kg.m/s^2}', '\\mathrm{kg\\,m/s^2}'),
+      num: await sameAs('\\num{6.022e23}', '6.022\\times10^{23}'),
+      celsius: await sameAs('\\SI{20}{\\degreeCelsius}', '20\\,\\mathrm{{}^{\\circ}C}'),
+      unknownUnit: (await math('\\SI{1}{\\furlong}')).error ?? null,
+      unclosed: (await math('\\SI{1}{\\metre')).error ?? null,
+    }
     // What core/tex-definitions.ts hands the host: definitions in front of the formula, a display environment too.
     out.mathCarried = (await math('\\newcommand{\\vv}[1]{\\mathbf{#1}}\\DeclareMathOperator*{\\argmax}{arg\\,max}\\begin{align} \\vv{x} &= \\argmax_y f \\tag{2} \\end{align}', true)).error ?? null
     out.mathPackages = {
