@@ -121,6 +121,15 @@ async function waitFor(expression, what) {
   }
   throw new Error(`never happened: ${what}`)
 }
+// The checks run on a real desktop, where another window may hold the
+// keyboard focus; the page then gets no focus events (the language picker
+// fills its list on focus) and the checks depended on what else was open.
+// Chromium's focus emulation has the page behave as the focused window.
+await new Promise((r) => {
+  const id = ++seq
+  pending.set(id, r)
+  ws.send(JSON.stringify({ id, method: 'Emulation.setFocusEmulationEnabled', params: { enabled: true } }))
+})
 
 /** A one-off DevTools-protocol session on any target (a page, or the main process). */
 async function session(wsUrl) {
