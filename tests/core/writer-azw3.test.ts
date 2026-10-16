@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { initKf8File } from '@lingo-reader/mobi-parser'
+import { initKf8File } from '../kf8-reader.mjs'
 import { writeAzw3 } from '../../src/core/writers/azw3'
 
 /**

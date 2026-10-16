@@ -24,9 +24,10 @@ const { createSqliteHost } = require('../../out/e2e/sqlite-host.js')
 // The app's render host (spec B5), so diagrams are drawn as they are in the app.
 const { createRenderHost } = require('../../out/e2e/render-host.js')
 const JSZip = require('jszip')
-// An independent KF8 reader, for reading AZW3 output back (pictures included).
-// ESM only, whatever its "require" export says, so imported when first used.
-const kf8Reader = () => import('@lingo-reader/mobi-parser')
+// An independent KF8 reader, for reading AZW3 output back (pictures included),
+// with kindle:embed read in base 32 (see tests/kf8-reader.mjs). ESM only,
+// whatever its "require" export says, so imported when first used.
+const kf8Reader = () => import('../kf8-reader.mjs')
 
 /** Targets that draw a document's Mermaid and Graphviz diagrams (spec B3; Word and Kindle as PNG). */
 const DRAWING_TARGETS = ['pdf', 'html', 'revealjs', 'epub', 'azw4', 'docx', 'azw3']

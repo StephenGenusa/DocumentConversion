@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createCanvas } from '@napi-rs/canvas'
-import { initKf8File } from '@lingo-reader/mobi-parser'
+import { initKf8File } from '../kf8-reader.mjs'
 import { writeAzw3 } from '../../src/core/writers/azw3'
 import { kindlePictures, KINDLE_IMAGE_MAX_BYTES, pictureMime, storableAsIs } from '../../src/core/kindle-pictures'
 import { createConverter } from '../../src/core/convert'
@@ -190,9 +190,20 @@ describe('AZW3 pictures (KF8 image records)', () => {
     expect(readFileSync(srcs[1]).equals(a)).toBe(true)
   })
 
+  it('gives an independent reader every one of 40 pictures, in order', async () => {
+    // Past the 32nd ("0010" in base 32), where mobi-parser on its own
+    // (base 36) loads the wrong record; read through tests/kf8-reader.mjs.
+    const pictures = Array.from({ length: 40 }, (_, i) => png(10 + i, 12))
+    const out = await writeAzw3({ html: `<h1>Many</h1>${pictures.map((p) => `<p>${imgTag('image/png', p)}</p>`).join('')}`, title: 'T' })
+    const kf8 = await readBack(out)
+    const srcs = kf8.getSpine().flatMap((item) => [...kf8.loadChapter(item.id)!.html.matchAll(/<img[^>]+src="([^"]+)"/g)].map((m) => m[1]))
+    expect(srcs).toHaveLength(40)
+    srcs.forEach((src, i) => expect(readFileSync(src).equals(pictures[i]), `picture ${i + 1}`).toBe(true))
+  })
+
   it('numbers kindle:embed in base 32, past the single digits', async () => {
-    // mobi-parser reads these numbers in base 36, so it is not the judge
-    // here: from 32 pictures on ("0010") the two disagree.
+    // Checked on the bytes as well, so the reader's own fix-up is not the
+    // only judge: from 32 pictures on ("0010") base 32 and 36 disagree.
     const pictures = Array.from({ length: 35 }, (_, i) => png(10 + i, 10))
     const book = parseBook(await writeAzw3({ html: pictures.map((p) => `<p>${imgTag('image/png', p)}</p>`).join(''), title: 'T' }))
     const ids = [...book.text.matchAll(/kindle:embed:([0-9A-V]{4})/g)].map((m) => m[1])
