@@ -89,3 +89,14 @@ describe('splitSlides', () => {
     expect(splitSlides('<aside><p>orphan</p></aside>')).toEqual([])
   })
 })
+
+describe('splitSlides keeps entities as they came', () => {
+  it('does not decode &gt;, &lt; or &amp; on the way through', () => {
+    expect(bodies('<p>a &gt; b &lt; c &amp; d</p>')).toEqual(['<p>a &gt; b &lt; c &amp; d</p>'])
+    expect(splitSlides('<p>x</p><aside><p>&lt;y&gt;</p></aside>')[0].notes).toEqual(['<p>&lt;y&gt;</p>'])
+  })
+
+  it('still finds no substance in a stray non-breaking space', () => {
+    expect(bodies('&nbsp;<h1>A</h1>')).toEqual(['<h1>A</h1>'])
+  })
+})

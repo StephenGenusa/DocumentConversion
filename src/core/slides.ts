@@ -1,5 +1,6 @@
 import { parseDocument } from 'htmlparser2'
 import { isTag, isText } from 'domhandler'
+import { textContent } from 'domutils'
 import render from 'dom-serializer'
 import type { AnyNode, Element } from 'domhandler'
 import { SPEAKER_NOTES_TAG } from './speaker-notes'
@@ -36,9 +37,12 @@ export interface SlideOptions {
 
 const isElement = (node: AnyNode): node is Element => isTag(node)
 
-/** Whether a node is worth putting on a slide at all. */
+/**
+ * Whether a node is worth putting on a slide at all. Text is still undecoded
+ * here (see splitSlides), so a stray `&nbsp;` is decoded to be judged.
+ */
 function hasSubstance(node: AnyNode): boolean {
-  if (isText(node)) return node.data.trim().length > 0
+  if (isText(node)) return (node.data.includes('&') ? textContent(parseDocument(node.data)) : node.data).trim().length > 0
   return isElement(node)
 }
 
@@ -53,7 +57,10 @@ function resolveRule(nodes: AnyNode[], requested: SplitOn): 'hr' | 'h1' | 'h2' {
 }
 
 export function splitSlides(html: string, options: SlideOptions = {}): Slide[] {
-  const doc = parseDocument(html)
+  // Read and written back without decoding, so text keeps its entities as it
+  // came: decoded and written raw, `&gt;` came out a bare `>`, and `&lt;b&gt;`
+  // a tag.
+  const doc = parseDocument(html, { decodeEntities: false })
   const nodes = doc.children.filter(hasSubstance)
   if (nodes.length === 0) return []
 

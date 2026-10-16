@@ -102,3 +102,28 @@ describe('the reveal.js writer', () => {
     })
   })
 })
+
+describe('the reveal.js writer keeps text escaped', () => {
+  it('keeps &gt;, &lt; and &amp; in code, prose, notes and links as they came', async () => {
+    const html = await deck(
+      '<h1>A</h1><pre><code>if a &gt; b &amp;&amp; c &lt; d</code></pre>' +
+        '<p>Use &lt;script&gt; tags &amp; <a href="https://example.com/?a=1&amp;b=2">more</a></p>' +
+        '<aside><p>say a &lt;b&gt; c</p></aside>',
+    )
+    const markup = html.replace(/<script>[\s\S]*?<\/script>/g, '').replace(/<style>[\s\S]*?<\/style>/g, '')
+    expect(markup).toContain('<pre><code>if a &gt; b &amp;&amp; c &lt; d</code></pre>')
+    expect(markup).toContain('Use &lt;script&gt; tags &amp; ')
+    expect(markup).toContain('href="https://example.com/?a=1&amp;b=2"')
+    expect(markup).toContain('<aside class="notes"><p>say a &lt;b&gt; c</p></aside>')
+    expect(markup).not.toContain('<script> tags')
+    expect(markup).not.toContain('<b>')
+  })
+
+  it('still colours code with a language, its entities intact', async () => {
+    const html = await deck('<pre><code class="language-js">if (a &gt; b &amp;&amp; c &lt; d) {}</code></pre>')
+    expect(html).toContain('&gt;')
+    expect(html).toContain('&amp;&amp;')
+    expect(html).toContain('&lt;')
+    expect(html).toContain('hljs-keyword')
+  })
+})
