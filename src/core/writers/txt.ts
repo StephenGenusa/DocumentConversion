@@ -57,6 +57,17 @@ function mathAsText(html: string): string {
     .replace(/<code class="language-math">([\s\S]*?)<\/code>/g, '$$$1$$')
 }
 
+/**
+ * A code block prints as its text. A link inside one (a page's code linking a
+ * name to its docs) would otherwise have its address run into the code beside
+ * it, so its tags go and its text stays. (html-to-text's selectors cannot say
+ * "an `a` inside a `pre`".)
+ */
+function codeLinksAsText(html: string): string {
+  if (!html.includes('<pre')) return html
+  return html.replace(/<pre\b[\s\S]*?<\/pre>/g, (block) => block.replace(/<a\b[^>]*>|<\/a>/g, ''))
+}
+
 export async function writeTxt(doc: HubDocument): Promise<Buffer> {
-  return Buffer.from(toText(mathAsText(footnotesForOutput(doc.html, 'text'))), 'utf8')
+  return Buffer.from(toText(codeLinksAsText(mathAsText(footnotesForOutput(doc.html, 'text')))), 'utf8')
 }

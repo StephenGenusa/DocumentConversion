@@ -182,7 +182,7 @@ function prepare(raw: string): string {
     if (!root) return raw
     stripHiddenContent(root)
     dropUnresolvableImages(root)
-    tagForeignCodeBlocks(root)
+    tagForeignCodeBlocks(root, { keepMarkup: true })
     return root.innerHTML
   } catch {
     // A page linkedom cannot parse must still convert; the sanitizer below is

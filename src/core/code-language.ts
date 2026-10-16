@@ -141,18 +141,46 @@ function codeText(el: Element): string {
   return (el.textContent ?? '').replace(/\r\n?/g, '\n')
 }
 
+/** The author's inline markup a code block keeps when a file is read (see keepMarkup). */
+const KEPT_IN_CODE = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'a', 'sup', 'sub'])
+
+/**
+ * The code's content with only the author's inline markup left in it: bold,
+ * italic, links and the like stay (the sanitizer then trims their attributes),
+ * `<br>` becomes the line break it draws, and any other element — a
+ * highlighter's span, a `<font>`, a stray `<code>` — gives up its text.
+ */
+function codeWithMarkup(from: Element, into: Element): void {
+  const doc = from.ownerDocument
+  for (const node of Array.from(from.childNodes)) {
+    if (node.nodeType === 3) into.appendChild(doc.createTextNode((node.textContent ?? '').replace(/\r\n?/g, '\n')))
+    if (node.nodeType !== 1) continue
+    const el = node as Element
+    const tag = el.tagName.toLowerCase()
+    if (tag === 'br') into.appendChild(doc.createTextNode('\n'))
+    else if (KEPT_IN_CODE.has(tag)) {
+      const kept = doc.createElement(tag)
+      for (const attr of Array.from(el.attributes)) kept.setAttribute(attr.name, attr.value)
+      codeWithMarkup(el, kept)
+      into.appendChild(kept)
+    } else codeWithMarkup(el, into)
+  }
+}
+
 /**
  * Give every `<pre>` in `root` exactly one `<code>` holding its text, classed
  * `language-X` when the page named a language anywhere it is conventionally
  * named. Runs before sanitising, while the classes and attributes are there.
  *
- * The code's own markup goes: a highlighter's spans are colour the writers
- * will redraw, and a code block's content is text. Left in, they made the
- * write-time highlighter print `<span>` literally.
+ * A highlighter's spans go: they are colour the writers will redraw, and left
+ * in, they made the write-time highlighter print `<span>` literally. With
+ * `keepMarkup` (a file being read) the author's bold, italic and links stay,
+ * as the page showed them; without it (a paste into the editor, whose code
+ * block holds text only) the block is text.
  *
  * A diagram or formula block keeps its class and its text untouched.
  */
-export function tagForeignCodeBlocks(root: Element): void {
+export function tagForeignCodeBlocks(root: Element, opts?: { keepMarkup?: boolean }): void {
   for (const pre of Array.from(root.querySelectorAll('pre'))) {
     const children = Array.from(pre.childNodes).filter((n) => !(n.nodeType === 3 && !(n.textContent ?? '').trim()))
     const only = children.length === 1 && children[0].nodeType === 1 ? (children[0] as Element) : null
@@ -167,10 +195,10 @@ export function tagForeignCodeBlocks(root: Element): void {
     }
     // A `language-X` highlight.js does not know is still the author's word for it.
     const kept = lang ? `language-${lang}` : /(?:^|\s)(language-[\w+-]+)(?:\s|$)/.exec(ownClass)?.[1]
-    const text = codeText(code ?? pre)
     const fresh = pre.ownerDocument.createElement('code')
     if (kept) fresh.setAttribute('class', kept)
-    fresh.textContent = text
+    if (opts?.keepMarkup) codeWithMarkup(code ?? pre, fresh)
+    else fresh.textContent = codeText(code ?? pre)
     pre.replaceChildren(fresh)
   }
 }
@@ -357,12 +385,13 @@ export function codeBlockText(body: string): string {
 /**
  * Hub HTML with a guessed `language-X` on each code block that has no class.
  * A block with any class is someone's decision, `language-plaintext` included,
- * and an inline `<code>` is never guessed.
+ * and an inline `<code>` is never guessed. Nor is a block the author formatted
+ * (bold, a link): colouring it would print the text without that markup.
  */
 export function guessCodeLanguages(html: string): string {
   if (!html.includes('<pre')) return html
   return html.replace(/(<pre(?:\s[^>]*)?>\s*)<code>([\s\S]*?)<\/code>/g, (match, open: string, body: string) => {
-    if (/\bnb-/.test(open)) return match
+    if (/\bnb-/.test(open) || /<(?!br\b)[a-z]/i.test(body)) return match
     const lang = guessLanguage(codeBlockText(body))
     return lang ? `${open}<code class="language-${lang}">${body}</code>` : match
   })
