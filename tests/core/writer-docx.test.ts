@@ -438,3 +438,46 @@ describe('writeDocx keeps formatting inside a code block', () => {
     expect(await linesOf(html, 'alpha')).toEqual(['def alpha():', '    return 1'])
   })
 })
+
+/** The w:color of every run whose text holds `marker`, or '' for none. */
+async function coloursOf(html: string, marker: string): Promise<string[]> {
+  const xml = await documentXml(html)
+  expect(xml).not.toMatch(/w:color w:val="0D0[BC]/i)
+  return [...xml.matchAll(/<w:r>[\s\S]*?<\/w:r>/g)]
+    .map((m) => m[0])
+    .filter((r) => [...r.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].some((t) => t[1].includes(marker)))
+    .map((r) => /<w:color w:val="([^"]*)"\/>/.exec(r)?.[1]?.toUpperCase() ?? '')
+}
+
+/**
+ * html-to-docx gives every run of a <p>, heading or cell that paragraph's
+ * `color`, but a formatted run carries its stand-in colour instead, so the
+ * bold words of a red paragraph came out black.
+ */
+describe('writeDocx keeps a paragraph colour on formatted text', () => {
+  it('colours plain and formatted runs alike', async () => {
+    const html = '<p style="color: #C00000">plain <strong>alpha</strong> <em><s>beta</s></em> <code>gamma</code> end</p>'
+    expect(await coloursOf(html, 'plain')).toEqual(['C00000'])
+    expect(await coloursOf(html, 'gamma')).toEqual(['C00000'])
+    expect(await coloursOf(html, 'alpha')).toEqual(['C00000'])
+    expect(await coloursOf(html, 'beta')).toEqual(['C00000'])
+    expect(await formatsOf(html, 'alpha')).toEqual(['b'])
+    expect(await formatsOf(html, 'beta')).toEqual(['i+strike'])
+  })
+
+  it('does so in headings and cells, for short and rgb() colours', async () => {
+    expect(await coloursOf('<h2 style="color: #0a0">head <em>alpha</em></h2>', 'alpha')).toEqual(['00AA00'])
+    expect(await coloursOf('<table><tr><td style="color: rgb(0, 0, 192)">cell <strong>alpha</strong></td></tr></table>', 'alpha')).toEqual(['0000C0'])
+  })
+
+  it('lets a run keep its own colour', async () => {
+    const html = '<p style="color: #C00000">plain <strong style="color: #0000C0">alpha</strong> <em>beta</em></p>'
+    expect(await coloursOf(html, 'alpha')).toEqual(['0000C0'])
+    expect(await coloursOf(html, 'beta')).toEqual(['C00000'])
+    expect(await formatsOf(html, 'alpha')).toEqual(['b'])
+  })
+
+  it('leaves formatted text in an uncoloured paragraph uncoloured', async () => {
+    expect(await coloursOf('<p>plain <strong>alpha</strong></p>', 'alpha')).toEqual([''])
+  })
+})
