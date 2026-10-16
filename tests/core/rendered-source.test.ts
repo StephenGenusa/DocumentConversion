@@ -146,6 +146,17 @@ describe('reStructuredText reads diagrams and formulas as tagged source', () => 
     expect(html).toContain(`<pre><code class="language-math">a &lt; b ${B}${B}\nc</code></pre>`)
   })
 
+  it('keeps blank lines inside a math or diagram body', async () => {
+    const math = await rst(`.. math::\n   :label: eq1\n\n   a = b\n\n\n   c = d\n\nAfter.\n`)
+    expect(math).toContain('<pre><code class="language-math">a = b\n\n\nc = d</code></pre>')
+    expect(math).toContain('<p>After.</p>')
+    const mermaid = await rst('.. mermaid::\n\n   graph TD\n\n     A --> B\n\n.. graphviz::\n\n   digraph {\n\n     a -> b\n   }\n\n')
+    expect(mermaid).toContain('<pre><code class="language-mermaid">graph TD\n\n  A --&gt; B</code></pre>')
+    expect(mermaid).toContain('<pre><code class="language-dot">digraph {\n\n  a -&gt; b\n}</code></pre>')
+    const digraph = await rst('.. digraph:: deps\n\n   a -> b\n\n   b -> c\n')
+    expect(digraph).toContain('<pre><code class="language-dot">digraph deps {\na -&gt; b\n\nb -&gt; c\n}</code></pre>')
+  })
+
   it('reads the math role as inline math', async () => {
     expect(await rst(`Then :math:\`${B}alpha_1 < 2\` holds.\n`)).toContain(`<code class="language-math">${B}alpha_1 &lt; 2</code>`)
   })

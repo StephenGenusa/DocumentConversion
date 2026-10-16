@@ -36,15 +36,61 @@ function rawText(node: RstNode): string {
 const OPTION_LINE = /^:[A-Za-z][\w-]*:(?:\s|$)/
 
 /**
+ * Stands in for a blank line inside a diagram or math body (see markBodyBlanks):
+ * restructured gives one text child per non-blank line, so a blank line there
+ * would otherwise be lost.
+ */
+const BODY_BLANK = '\uE062'
+/** The directives read as tagged source by renderedBlock. */
+const SOURCE_DIRECTIVE = /^([ \t]*)\.\.[ \t]+(?:mermaid|math|graphviz|digraph|graph)::/i
+
+/**
+ * Put BODY_BLANK on each blank line that sits between two content lines of a
+ * diagram or math directive, so the parser keeps it. Blank lines before the
+ * first content line (after the options) and after the last are left blank.
+ */
+function markBodyBlanks(text: string): string {
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const head = SOURCE_DIRECTIVE.exec(lines[i])
+    if (!head) continue
+    const outer = head[1].length
+    const inBody = (line: string): boolean => /^[ \t]*/.exec(line)![0].length > outer
+    // Options sit on the lines straight after the directive, before any blank line.
+    let options = true
+    let content = false
+    let blanks: number[] = []
+    let j = i + 1
+    for (; j < lines.length; j++) {
+      const line = lines[j]
+      if (line.trim() === '') {
+        options = false
+        if (content) blanks.push(j)
+        continue
+      }
+      if (!inBody(line)) break
+      if (options && OPTION_LINE.test(line.trim())) continue
+      options = false
+      content = true
+      const indent = /^[ \t]*/.exec(line)![0]
+      for (const k of blanks) lines[k] = indent + BODY_BLANK
+      blanks = []
+    }
+    i = j - 1
+  }
+  return lines.join('\n')
+}
+
+/**
  * A directive's lines, as written: options left out and the common indent
- * removed. restructured gives one text child per non-blank line, so a blank
- * line inside the body is not kept.
+ * removed. A BODY_BLANK line comes back as the blank line it stood for.
  */
 function directiveLines(node: RstNode): string[] {
   const lines: string[] = []
   let head = true
   ;(node.children ?? []).forEach((child, i) => {
-    const line = rawText(child)
+    const raw = rawText(child)
+    const line = raw.trim() === BODY_BLANK ? '' : raw
     // The argument (on the directive's own line) comes first, then the options.
     if (head && OPTION_LINE.test(line)) return
     if (i > 0) head = false
@@ -818,7 +864,7 @@ function liftTables(text: string): { text: string; tables: string[] } {
 
 export async function readRst(src: SourceInput): Promise<HubDocument> {
   const text = src.bytes.toString('utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n')
-  const lifted = liftTables(text)
+  const lifted = liftTables(markBodyBlanks(text))
   let tree: RstNode
   try {
     const parser = resolveExport<{ parse(s: string): RstNode }>(await import('restructured'), 'parse')
