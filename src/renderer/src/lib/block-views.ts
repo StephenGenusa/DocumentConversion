@@ -3,6 +3,7 @@ import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type
 import { Decoration, DecorationSet, type EditorView, type NodeView, type ViewMutationRecord } from '@tiptap/pm/view'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import { DRAWN_KINDS, type BlockKind } from '../../../core/rendered-blocks'
+import { carryDefinitions } from '../../../core/tex-definitions'
 import { renderClient, type BlockAnswer, type BlockPicture, type BlockRequest, type DrawPriority } from './render-client'
 
 /*
@@ -86,6 +87,56 @@ function observeVisibility(el: HTMLElement, onChange: (visible: boolean) => void
   }
 }
 
+/* ----------------------- definitions carried between formulas ---------------------- */
+
+/*
+ * A conversion hands each formula the definitions it uses from the formulas
+ * before it (core/tex-definitions.ts, drawFormulas), since the host draws
+ * each one alone and forgets. The editor does the same, so a \newcommand in
+ * one formula reaches the later ones here too, and what is shown is what a
+ * conversion draws. Only what is drawn changes: the document, the alt text
+ * and the source shown keep the formula's own TeX.
+ */
+const DEFINES = /\\(?:newcommand|renewcommand|providecommand|def|let|DeclareMathOperator|newenvironment|renewenvironment|DeclarePairedDelimiter)(?![A-Za-z])/
+
+type Formula = { pos: number; tex: string }
+/** Per document (ProseMirror's are immutable): its formulas, and what each is drawn as when that differs. */
+const carriedOf = new WeakMap<PMNode, { formulas: Formula[]; drawn: Map<number, string> }>()
+
+function carriedIn(doc: PMNode): { formulas: Formula[]; drawn: Map<number, string> } {
+  let known = carriedOf.get(doc)
+  if (known) return known
+  const formulas: Formula[] = []
+  doc.descendants((n, pos) => {
+    if (n.type.name === 'mathBlock') formulas.push({ pos, tex: n.textContent })
+    else if (n.type.name === 'mathInline') formulas.push({ pos, tex: String(n.attrs.tex) })
+    return true
+  })
+  const drawn = new Map<number, string>()
+  if (formulas.some((f) => DEFINES.test(f.tex))) {
+    carryDefinitions(formulas.map((f) => f.tex)).forEach((tex, k) => {
+      if (tex !== formulas[k].tex) drawn.set(formulas[k].pos, tex)
+    })
+  }
+  carriedOf.set(doc, (known = { formulas, drawn }))
+  return known
+}
+
+/**
+ * What the formula at `pos` is drawn as when its TeX is `tex`: its own
+ * (from the document), or what is being typed in its popover.
+ */
+function carriedSource(view: EditorView, pos: number | undefined, tex: string): string {
+  if (typeof pos !== 'number') return tex
+  const { formulas, drawn } = carriedIn(view.state.doc)
+  const at = formulas.findIndex((f) => f.pos === pos)
+  if (at < 0) return tex
+  if (formulas[at].tex === tex) return drawn.get(pos) ?? tex
+  const before = formulas.slice(0, at)
+  if (!before.some((f) => DEFINES.test(f.tex))) return tex
+  return carryDefinitions([...before.map((f) => f.tex), tex])[at]
+}
+
 /* ---------------------------------- the views --------------------------------- */
 
 /** Every drawn view of one editor, for prefetching a visible block's neighbours. */
@@ -102,6 +153,8 @@ abstract class DrawnView {
   protected lastPicture: BlockPicture | undefined
   private asked: DrawPriority | null = null
   private unwatch: () => void = () => {}
+  /** The source last drawn for, to notice when an earlier formula's definitions change it. */
+  private drawnFor: string | undefined
 
   constructor(
     protected node: PMNode,
@@ -116,6 +169,7 @@ abstract class DrawnView {
     let set = viewsOf.get(this.view)
     if (!set) viewsOf.set(this.view, (set = new Set()))
     set.add(this)
+    this.drawnFor = this.request().source
     this.answer = this.known()
     if (this.answer && 'uri' in this.answer) this.lastPicture = this.answer
     this.unwatch = watch(el, (visible) => {
@@ -164,6 +218,7 @@ abstract class DrawnView {
 
   /** The source changed: what was asked for no longer applies. */
   protected sourceChanged(): void {
+    this.drawnFor = this.request().source
     this.asked = null
     this.answer = this.known()
   }
@@ -187,6 +242,14 @@ abstract class DrawnView {
   }
 
   abstract show(): void
+
+  /** The document changed elsewhere: draw again if what this is drawn as did (carried definitions). */
+  recheck(): void {
+    if (this.destroyed || this.request().source === this.drawnFor) return
+    this.sourceChanged()
+    if (this.visible) this.draw('visible')
+    this.show()
+  }
 
   protected stop(): void {
     this.destroyed = true
@@ -271,7 +334,7 @@ class BlockView extends DrawnView implements NodeView {
   request(): BlockRequest {
     return {
       kind: this.node.type.name === 'mathBlock' ? 'math' : (this.node.attrs.language as BlockKind),
-      source: this.node.textContent,
+      source: this.node.type.name === 'mathBlock' ? carriedSource(this.view, this.getPos(), this.node.textContent) : this.node.textContent,
       display: true,
     }
   }
@@ -323,7 +386,7 @@ class BlockView extends DrawnView implements NodeView {
             : 'waiting'
     this.dom.dataset.state = state
     this.dom.classList.toggle('rb--nopreview', !can)
-    const alt = req.kind === 'math' ? req.source : 'Diagram'
+    const alt = req.kind === 'math' ? this.node.textContent : 'Diagram'
     const mathAs = req.kind === 'math' ? 'display' : undefined
 
     if (state === 'editing') {
@@ -429,7 +492,7 @@ class InlineView extends DrawnView implements NodeView {
   }
 
   request(): BlockRequest {
-    return { kind: 'math', source: String(this.node.attrs.tex), display: this.display() }
+    return { kind: 'math', source: carriedSource(this.view, this.getPos(), String(this.node.attrs.tex)), display: this.display() }
   }
 
   private display(): boolean {
@@ -456,7 +519,7 @@ class InlineView extends DrawnView implements NodeView {
     const state = !can ? 'source' : answer && 'uri' in answer ? 'picture' : answer && 'error' in answer ? 'error' : 'waiting'
     this.dom.dataset.state = state
     if (state === 'picture' && answer && 'uri' in answer) {
-      pictureInto(this.face, answer, req.source, this.display() ? 'display' : 'inline')
+      pictureInto(this.face, answer, String(this.node.attrs.tex), this.display() ? 'display' : 'inline')
       return
     }
     const size = renderClient().sizeOf(req)
@@ -468,7 +531,7 @@ class InlineView extends DrawnView implements NodeView {
     }
     // Source: no engine yet, not drawn yet, or the engine's message on hover.
     const code = el('code', 'rm__src')
-    code.textContent = req.source || ' '
+    code.textContent = String(this.node.attrs.tex) || ' '
     if (state === 'error' && answer && 'error' in answer) code.title = answer.error
     this.face.replaceChildren(code)
   }
@@ -540,7 +603,7 @@ class InlineView extends DrawnView implements NodeView {
       return
     }
     preview.hidden = false
-    const req: BlockRequest = { kind: 'math', source: tex, display: this.display() }
+    const req: BlockRequest = { kind: 'math', source: carriedSource(this.view, this.getPos(), tex), display: this.display() }
     const put = (a: BlockAnswer): void => {
       if (this.popPreview !== preview || this.previewTex !== tex) return
       if ('uri' in a) pictureInto(preview, a, tex, this.display() ? 'display' : 'inline')
@@ -769,6 +832,15 @@ export const RenderedBlocks = Extension.create({
 
   addProseMirrorPlugins() {
     return [
+      // A definition typed, changed or removed in one formula changes what the later ones are drawn as.
+      new Plugin({
+        view: () => ({
+          update(view, prev) {
+            if (view.state.doc === prev.doc) return
+            for (const v of viewsOf.get(view) ?? []) v.recheck()
+          },
+        }),
+      }),
       new Plugin({
         key: editKey,
         state: {

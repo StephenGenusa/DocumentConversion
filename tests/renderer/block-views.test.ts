@@ -377,6 +377,45 @@ describe('math drawn by its engine (step 18)', () => {
     expect(e.getHTML()).toBe(html.replace('x+y', 'x+z'))
   })
 
+  it("carries a formula's \\newcommand into the later ones, as a conversion does; alt and the document keep each one's own TeX", async () => {
+    setRenderClient(createRenderClient(mathDraw))
+    const html =
+      '<p>Let <code class="language-math">\\newcommand{\\vv}{x}\\vv</code> and <code class="language-math">\\vv^2</code>.</p>' +
+      '<pre><code class="language-math">\\vv + 1</code></pre><p><code class="language-math">y</code></p>'
+    const e = make(html)
+    showAll()
+    await settle()
+    const sources = (): string[] => asked.map((a) => a.source)
+    expect(sources()).toEqual(expect.arrayContaining(['\\newcommand{\\vv}{x}\\vv', '\\newcommand{\\vv}{x}\\vv^2', '\\newcommand{\\vv}{x}\\vv + 1', 'y']))
+    expect(new Set(sources()).size).toBe(4)
+    expect(([...host.querySelectorAll('.rm img')] as HTMLImageElement[]).map((i) => i.alt)).toEqual(['\\newcommand{\\vv}{x}\\vv', '\\vv^2', 'y'])
+    expect(($('.rb--math .rb__picture img') as HTMLImageElement).alt).toBe('\\vv + 1')
+    expect(e.getHTML()).toBe(html)
+    // Changing the definition redraws the formulas that use it, and only those.
+    asked = []
+    const first = posOf(e, 'mathInline')
+    e.view.dispatch(e.state.tr.setNodeMarkup(first, undefined, { ...e.state.doc.nodeAt(first)!.attrs, tex: '\\newcommand{\\vv}{z}\\vv' }))
+    await settle()
+    expect([...new Set(sources())].sort()).toEqual(['\\newcommand{\\vv}{z}\\vv', '\\newcommand{\\vv}{z}\\vv + 1', '\\newcommand{\\vv}{z}\\vv^2'])
+  })
+
+  it('the inline popover previews typed TeX with the definitions before it', async () => {
+    setRenderClient(createRenderClient(mathDraw))
+    make('<p><code class="language-math">\\newcommand{\\vv}{x}\\vv</code> and <code class="language-math">y</code>.</p>')
+    showAll()
+    await settle()
+    vi.useFakeTimers()
+    ;(host.querySelectorAll('.rm__face')[1] as HTMLElement).dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }))
+    await settle()
+    const input = $('.rm-pop input') as HTMLInputElement
+    input.value = '\\vv^3'
+    input.dispatchEvent(new Event('input'))
+    await vi.advanceTimersByTimeAsync(400)
+    await settle()
+    expect(asked).toContainEqual({ kind: 'math', source: '\\newcommand{\\vv}{x}\\vv^3', display: false, priority: 'visible' })
+    expect(($('.rm-pop__preview img') as HTMLImageElement).alt).toBe('\\vv^3')
+  })
+
   it('puts inline math on the baseline: sized in ex and lowered by its depth', async () => {
     setRenderClient(createRenderClient(mathDraw))
     make('<p>Let <code class="language-math">x^2</code>.</p>')
