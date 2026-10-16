@@ -2,6 +2,8 @@ import { getReader } from './readers'
 import { sanitizeToHub } from './allowlist'
 import { ConversionError } from './errors'
 import { isEditableTextFormat } from './types'
+import { guessCodeLanguages, pastedCodeLanguage } from './code-language'
+import { escapeHtml } from './shell'
 
 /**
  * Render pasted text to the sanitized hub HTML the edit pane takes.
@@ -19,6 +21,16 @@ export async function renderEditableText(text: string, format: string): Promise<
   if (!isEditableTextFormat(format)) {
     throw new ConversionError('read-failed', `"${format}" is not editable text`)
   }
+  // Text that is code and nothing else — from a terminal, an editor or a
+  // notebook cell — is one code block in its language. Read as markdown, a
+  // Python `# comment` became a heading and the indentation was lost; read as
+  // text it was paragraphs, and nothing was highlighted either way.
+  const normalized = text.replace(/\r\n?/g, '\n')
+  const language = pastedCodeLanguage(normalized)
+  if (language) {
+    const code = normalized.replace(/^\n+|\s+$/g, '')
+    return sanitizeToHub(`<pre><code class="language-${language}">${escapeHtml(code)}</code></pre>`)
+  }
   const { html } = await getReader(format)({ bytes: Buffer.from(text, 'utf8') })
-  return sanitizeToHub(html)
+  return guessCodeLanguages(sanitizeToHub(html))
 }

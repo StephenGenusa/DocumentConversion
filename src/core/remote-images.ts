@@ -8,6 +8,8 @@ import {
   type ImageFetcher,
 } from './inline-images'
 import { sanitizeToHub } from './allowlist'
+import { guessCodeLanguages } from './code-language'
+import { tagPastedCodeBlocks } from './readers/html'
 import type { ReadContext, SourceFormat } from './types'
 
 /**
@@ -53,7 +55,9 @@ export async function pastedHtmlToHub(
   ctx?: Pick<ReadContext, 'signal' | 'onProgress'>,
   imageTimeoutMs: number = IMAGE_TIMEOUT_MS,
 ): Promise<string> {
-  const clean = sanitizeToHub(html)
+  // A copied code block keeps (or is given) its language here, so the edit
+  // pane holds it and every writer highlights it (code-language.ts).
+  const clean = guessCodeLanguages(sanitizeToHub(tagPastedCodeBlocks(html)))
   if (!/<img\b[^>]*\bsrc="(?!data:)/i.test(clean)) return clean
   // Aborting `signal` is "skip the rest", not "cancel the paste": the images
   // not yet fetched fail at once, become placeholders, and the paste opens.

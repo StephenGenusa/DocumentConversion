@@ -217,9 +217,9 @@ async function dropFile(path, name) {
   await waitFor(`[...document.querySelectorAll('.card__name')].some(e=>e.textContent.includes(${JSON.stringify(name)}))`, `${name} to load`)
   await click('Markdown')
 }
-const paste = (selector, text) =>
+const paste = (selector, text, html) =>
   js(
-    `(() => { const dt=new DataTransfer(); dt.setData('text/plain', ${JSON.stringify(text)}); document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true})) })()`,
+    `(() => { const dt=new DataTransfer(); dt.setData('text/plain', ${JSON.stringify(text)}); ${html ? `dt.setData('text/html', ${JSON.stringify(html)});` : ''} document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true})) })()`,
   )
 
 /** The checkbox labelled `text`, as { checked } or null when it is not shown. */
@@ -482,6 +482,41 @@ try {
   await js(`document.querySelector('.clip-pane__editor').scrollTop = 1e6`)
   await waitFor(`[...document.querySelectorAll('.rb')].at(-1).dataset.state === 'picture'`, 'the last diagram to be drawn on scroll')
   check('scrolling to the end draws the last diagram', true)
+  await startOver()
+
+  // Pasted Python (the owner's report): one code block in the pane, tagged
+  // with its guessed language, and highlighted once converted.
+  await paste('.dropzone', '# Totals for an invented ledger\nimport math\n\ndef total(items):\n    result = 0\n    for item in items:\n        result += item.amount\n    return math.floor(result)\n')
+  await waitFor(`!!${EDITOR}`, 'the edit pane')
+  const pastedCode = await js(`${EDITOR}.editor.getHTML()`)
+  check('pasted Python opens as one Python code block, not a heading', /^<pre><code class="language-python"># Totals/.test(pastedCode) && !pastedCode.includes('<h1'), pastedCode.slice(0, 200))
+  await click('HTML')
+  await click('Convert to clipboard')
+  await waitFor(resultIsUp, 'a result')
+  const highlighted = await mainEval(`process.mainModule.require('electron').clipboard.readHTML()`)
+  check('converted, the pasted Python is highlighted', highlighted.includes('<code class="language-python hljs">') && highlighted.includes('<span class="hljs-keyword">def</span>'), highlighted.slice(0, 300))
+  await dismiss()
+  await waitFor(`!!${EDITOR}`, 'the edit pane to come back')
+  await startOver()
+
+  // The owner's copy: PyCharm's rich-text flavour, one inline-styled <pre>
+  // naming no language, beside the plain text.
+  const pyText = 'import math\n\ndef greet(name):\n    if name:\n        print(f"Hello, {name}")\n    return math.pi\n'
+  // The shape PyCharm put on the X clipboard: a styled <div> round the <pre>, `<br>` line ends, `&#32;` spaces.
+  const pyHtml = '<html><head><meta http-equiv="content-type" content="text/html; charset=UTF-8"></head><body><div style="background-color:#191a1c;color:#bcbec4"><pre style="font-family:\'JetBrains Mono\',monospace;font-size:9.8pt;">' +
+    pyText.split('\n').slice(0, -1).map((l) => l.replace(/ /g, '&#32;').replace(/^((?:&#32;)*)(import|def|if|return)&#32;/, '$1<span style="color:#cf8e6d;">$2&#32;</span>') + '<br>').join('') +
+    '</pre></div></body></html>'
+  await paste('.dropzone', pyText, pyHtml)
+  await waitFor(`!!${EDITOR}`, 'the edit pane')
+  const fromPyCharm = await js(`${EDITOR}.editor.getHTML()`)
+  check('a PyCharm rich-text copy opens as a Python code block', /^<pre><code class="language-python">import math\n\ndef greet/.test(fromPyCharm), fromPyCharm.slice(0, 200))
+  await click('HTML')
+  await click('Convert to clipboard')
+  await waitFor(resultIsUp, 'a result')
+  const pyCharmOut = await mainEval(`process.mainModule.require('electron').clipboard.readHTML()`)
+  check('converted, the PyCharm copy is highlighted', pyCharmOut.includes('<span class="hljs-keyword">def</span>'), pyCharmOut.slice(0, 300))
+  await dismiss()
+  await waitFor(`!!${EDITOR}`, 'the edit pane to come back')
   await startOver()
 
   // Edits in the pane survive a result being shown and dismissed.

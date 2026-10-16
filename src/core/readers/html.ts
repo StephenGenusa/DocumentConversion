@@ -2,6 +2,7 @@ import { parseHTML } from 'linkedom'
 import type { HubDocument, SourceInput } from '../types'
 import { sanitizeToHub } from '../allowlist'
 import { decodeTextBytes } from './txt'
+import { tagForeignCodeBlocks } from '../code-language'
 
 // linkedom's elements type as plain DOM Elements; named once so the helpers
 // below can take one without every call site repeating the cast.
@@ -167,7 +168,11 @@ function dropUnresolvableImages(root: DomElement): void {
  * document — a saved page has a <body>, a clipboard-ish fragment does not.
  */
 function bodyOf(raw: string): DomElement | null {
-  const wrapped = /<body[\s>]/i.test(raw) ? raw : `<html><head></head><body>${raw}</body></html>`
+  // Chromium's clipboard HTML on Linux opens with a bare `<meta charset>` even
+  // before a whole document, and linkedom makes that meta the root, leaving
+  // <body> empty: a PyCharm copy came back as nothing.
+  const doc = raw.replace(/^\s*(?:<meta\b[^>]*>\s*)+(?=<(?:!doctype|html|head|body)\b)/i, '')
+  const wrapped = /<body[\s>]/i.test(doc) ? doc : `<html><head></head><body>${doc}</body></html>`
   return (parseHTML(wrapped).document.body ?? null) as DomElement | null
 }
 
@@ -177,10 +182,28 @@ function prepare(raw: string): string {
     if (!root) return raw
     stripHiddenContent(root)
     dropUnresolvableImages(root)
+    tagForeignCodeBlocks(root)
     return root.innerHTML
   } catch {
     // A page linkedom cannot parse must still convert; the sanitizer below is
     // the safety net either way.
+    return raw
+  }
+}
+
+/**
+ * Pasted HTML with its code blocks given the hub's `language-X` wherever the
+ * page named a language its own way (see code-language.ts). Only that: a paste
+ * is not a saved page, and the rest of `prepare` is about saved pages.
+ */
+export function tagPastedCodeBlocks(raw: string): string {
+  if (!/<pre[\s>]/i.test(raw)) return raw
+  try {
+    const root = bodyOf(raw)
+    if (!root) return raw
+    tagForeignCodeBlocks(root)
+    return root.innerHTML
+  } catch {
     return raw
   }
 }

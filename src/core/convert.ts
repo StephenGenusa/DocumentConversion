@@ -24,6 +24,7 @@ import { writeRows, type RowWriteOptions } from './writers/rows'
 import type { RowSource } from './records'
 import { TABLE_TARGETS } from './types'
 import { normalizeFootnotes } from './footnotes'
+import { guessCodeLanguages } from './code-language'
 import { hubFeatures, type RenderBlocks } from './rendered-blocks'
 import { drawBlocks } from './draw-blocks'
 import { rasterizeSvgImages, sanitizeSvgImages } from './svg-images'
@@ -96,6 +97,9 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       if (hub.title) hub.title = stripXmlIllegal(hub.title)
       // Notes numbered by first reference, once, as the document arrives.
       hub.html = normalizeFootnotes(hub.html, { reorder: true })
+      // A code block no reader could name the language of is given a guessed
+      // one, so every writer highlights it alike (code-language.ts).
+      hub.html = guessCodeLanguages(hub.html)
       // Embedded here, at the one boundary every reader's output passes, so
       // that the edit pane and every writer see data URIs only.
       hub.html = await resolveRemoteImages(hub.html, source, deps.fetchImages, ctx)

@@ -9,6 +9,8 @@ import { renderDocumentShell } from '../shell'
 import { replaceImages } from '../inline-images'
 import { ownRows } from '../table-grid'
 import { footnotesForOutput } from '../footnotes'
+import hljs, { highlightedRuns } from '../hljs'
+import { codeBlockText } from '../code-language'
 import type { HubDocument } from '../types'
 
 /**
@@ -513,6 +515,21 @@ function breakCodeLines(source: string): string {
   return serialize(dom.children)
 }
 
+/**
+ * Each code block whose language highlight.js knows, coloured as the pdf and
+ * html outputs colour it. Word cannot apply a stylesheet, so the colour goes
+ * on each run: a <span> with an inline `color`, which html-to-docx writes as
+ * `w:color`. Run after unwrapSpans, which would strip these, and before
+ * breakCodeLines, which splits their text at each newline (a multi-line
+ * docstring or comment keeps its colour on every line).
+ */
+function colourCode(source: string): string {
+  if (!/<code class="language-/.test(source)) return source
+  return source.replace(/(<pre(?:\s[^>]*)?>\s*<code class="language-([\w+-]+)">)([\s\S]*?)(<\/code>)/g, (match, open: string, lang: string, body: string, close: string) =>
+    hljs.getLanguage(lang) ? `${open}${highlightedRuns(codeBlockText(body), lang)}${close}` : match,
+  )
+}
+
 /** The font html-to-docx itself gives a top-level code block. */
 const CODE_FONT = 'Courier'
 
@@ -549,7 +566,10 @@ function monospaceCode(source: string): string {
       if (node instanceof Text && node.data !== '') {
         const parent = node.parent!
         splice(parent, parent.children.indexOf(node), 1, [new Element('span', { style: `font-family: ${CODE_FONT}` }, [new Text(node.data)])])
-      } else if (isElement(node) && !(node.name === 'span' && node.attribs.style)) wrap(node.children)
+      } else if (isElement(node) && node.name === 'span' && node.attribs.style) {
+        // colourCode's runs: already one span per piece of text, so the font joins the colour.
+        if (!/font-family/.test(node.attribs.style)) node.attribs.style += `; font-family: ${CODE_FONT}`
+      } else if (isElement(node)) wrap(node.children)
     }
   }
   for (const el of targets) wrap(el.children)
@@ -763,7 +783,7 @@ export async function writeDocx(doc: HubDocument): Promise<Buffer> {
     {
       ...doc,
       html: flattenFormatting(
-        monospaceCode(breakCodeLines(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain')))))),
+        monospaceCode(breakCodeLines(colourCode(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain'))))))),
       ),
     },
     { target: 'docx' },
