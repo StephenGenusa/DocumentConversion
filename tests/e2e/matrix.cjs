@@ -306,6 +306,11 @@ async function main() {
           if (!fonts.some((f) => /mono|consolas|courier|menlo/i.test(f) && /bold/i.test(f))) throw new Error('azw4 code keywords are not bold in its pdf')
           rec.note = `${coloured.length} coloured fills`
         }
+        if (target === 'revealjs' && hasColouredCode) {
+          // Slides colour code as static spans with the screen palette.
+          const text = out.toString('utf8')
+          if (!/<span class="hljs-/.test(text) || !text.includes('.hljs-keyword')) throw new Error('revealjs code is not coloured')
+        }
         let azw3Html
         if (target === 'azw3') {
           // Pictures survive: every <img> resolves to a JPEG, PNG or GIF

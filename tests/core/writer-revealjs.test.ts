@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { writeRevealJs } from '../../src/core/writers/revealjs'
+import { HLJS_CSS } from '../../src/core/hljs'
 
 const deck = async (html: string, opts?: Parameters<typeof writeRevealJs>[1]): Promise<string> =>
   (await writeRevealJs({ html, title: 'Deck' }, opts)).toString('utf8')
@@ -51,5 +52,53 @@ describe('the reveal.js writer', () => {
     const out = (await writeRevealJs({ html: '<p>a</p>', title: '<script>x</script>' })).toString('utf8')
     expect(out).not.toContain('<title><script>')
     expect(out).toContain('&lt;script&gt;')
+  })
+  describe('code', () => {
+    const PY = '<pre><code class="language-python">def area(w, h):\n    # width by height\n    return w * h</code></pre>'
+    const JS = '<pre><code class="language-javascript">const n = 42; // answer</code></pre>'
+
+    it('colours python and javascript blocks with static spans', async () => {
+      const html = await deck(`<h1>A</h1>${PY}<hr><h1>B</h1>${JS}`)
+      expect(html).toContain('<code class="language-python hljs"><span class="hljs-keyword">def</span>')
+      expect(html).toContain('<span class="hljs-comment"># width by height</span>')
+      expect(html).toMatch(/<code class="language-javascript hljs"><span class="hljs-keyword">const<\/span>/)
+      expect(html).toContain('<span class="hljs-number">42</span>')
+    })
+
+    it('carries the screen palette, since the simple theme is a white slide', async () => {
+      const html = await deck(PY)
+      expect(html).toContain(HLJS_CSS)
+      expect(html).toMatch(/--r-background-color:#fff/)
+    })
+
+    it('needs no highlight plugin: nothing is coloured in the browser', async () => {
+      const html = await deck(PY)
+      expect(html).toContain('plugins: [ RevealNotes ]')
+      expect(html).not.toMatch(/RevealHighlight/)
+    })
+
+    it('adds no palette to a deck without code', async () => {
+      const html = await deck('<h1>A</h1><p>words</p>')
+      expect(html).not.toContain('.hljs-keyword')
+    })
+
+    it('leaves plaintext, formula and diagram blocks as they came', async () => {
+      const blocks = [
+        '<pre><code class="language-plaintext">def not code</code></pre>',
+        '<pre><code class="language-text">return as words</code></pre>',
+        '<pre><code class="language-math">x^2 + y^2</code></pre>',
+        '<p>inline <code class="language-math">a+b</code> here</p>',
+        '<pre><code class="language-mermaid">graph TD; A --- B</code></pre>',
+        '<pre><code class="language-dot">graph { a -- b }</code></pre>',
+      ]
+      const html = await deck(blocks.join(''))
+      for (const b of blocks) expect(html).toContain(b)
+      expect(html).not.toContain('.hljs-keyword')
+    })
+
+    it('does not colour code in the speaker notes', async () => {
+      const html = await deck('<p>a</p><aside><pre><code class="language-python">def f(): pass</code></pre></aside>')
+      expect(html).toContain('<aside class="notes"><pre><code class="language-python">def f(): pass</code></pre></aside>')
+    })
   })
 })
