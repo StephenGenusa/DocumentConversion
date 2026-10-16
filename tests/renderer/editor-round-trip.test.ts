@@ -54,6 +54,7 @@ describe('the editor round-trips what the hub allows', () => {
     ['a dot diagram', '<pre><code class="language-dot">digraph { a -&gt; b }</code></pre>'],
     ['display math', '<pre><code class="language-math">\\sum_{i=1}^n i &lt; 3 \\\\\nx</code></pre>'],
     ['inline math', '<p>Let <code class="language-math">\\alpha_i &lt; 2</code> hold, and <code>plain</code>.</p>'],
+    ['display math inside a paragraph', '<p>The sum <code class="language-math math-display">\\sum_i i &lt; 3</code> is big, and <code class="language-math">x</code>.</p>'],
     ['inline math in a list, a heading and a quote', '<ul><li><p><code class="language-math">x^2</code></p></li></ul><h2>On <code class="language-math">y</code></h2><blockquote><p><code class="language-math">z</code></p></blockquote>'],
     ['an ordinary code block beside them', '<pre><code class="language-python">x = 1</code></pre><pre><code class="language-math">a</code></pre>'],
     // A pasted snippet is given its language at intake (core/code-language.ts);

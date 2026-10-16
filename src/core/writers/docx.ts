@@ -12,6 +12,7 @@ import { footnotesForOutput } from '../footnotes'
 import hljs, { highlightedRuns } from '../hljs'
 import { codeBlockText } from '../code-language'
 import type { HubDocument } from '../types'
+import { DOCX_OWN_LINE } from '../draw-blocks'
 
 /**
  * html-to-docx tries to load every <img> and gives up on the whole document
@@ -462,6 +463,51 @@ export function flattenForDocx(source: string): string {
 }
 
 /**
+ * Display math that stood inside a paragraph (draw-blocks.ts marks its
+ * picture DOCX_OWN_LINE, between two <br>s): a Word paragraph has one
+ * alignment, so the paragraph is split around it, the formula centred in a
+ * paragraph of its own and the text either side keeping the paragraph's
+ * attributes, as pandoc writes display math to Word. In a list item or a
+ * cell the paragraph is left whole (html-to-docx loses content there, and
+ * an item's pieces would become items of their own), so the formula keeps
+ * its line between the two breaks.
+ */
+function centreOwnLineFormulas(source: string): string {
+  if (!source.includes(DOCX_OWN_LINE)) return source
+  const dom = parseDocument(source)
+  const ownLine = (n: AnyNode | undefined): n is Element => !!n && isElement(n) && n.name === 'img' && n.attribs[DOCX_OWN_LINE] !== undefined
+  const isBr = (n: AnyNode | undefined): boolean => !!n && isElement(n) && n.name === 'br'
+  let changed = false
+  for (const p of elementsOf(dom.children, 'p')) {
+    if (!p.children.some(ownLine) || contained(p)) continue
+    const attrs = serialize(new Element('p', p.attribs)).replace(/<\/p>$/, '')
+    let out = ''
+    let run: AnyNode[] = []
+    const flush = (): void => {
+      if (run.some((n) => !(n instanceof Text) || n.data.trim())) out += `${attrs}${serialize(run).trim()}</p>`
+      run = []
+    }
+    const kids = p.children
+    for (let i = 0; i < kids.length; i++) {
+      const kid = kids[i]
+      if (!ownLine(kid)) {
+        run.push(kid)
+        continue
+      }
+      if (isBr(run.at(-1))) run.pop()
+      flush()
+      delete kid.attribs[DOCX_OWN_LINE]
+      out += `<p style="text-align:center">${serialize(kid)}</p>`
+      if (isBr(kids[i + 1])) i++
+    }
+    flush()
+    replaceWith(p, out)
+    changed = true
+  }
+  return changed ? serialize(dom.children) : source
+}
+
+/**
  * html-to-docx writes the text of a <pre> as it is, newlines and all, and Word
  * shows a newline in a run as a space: a code block came out as one long line.
  * A <br> straight inside <pre> or <code> is dropped too, but one wrapped in a
@@ -783,7 +829,7 @@ export async function writeDocx(doc: HubDocument): Promise<Buffer> {
     {
       ...doc,
       html: flattenFormatting(
-        monospaceCode(breakCodeLines(colourCode(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain'))))))),
+        monospaceCode(breakCodeLines(colourCode(centreOwnLineFormulas(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain')))))))),
       ),
     },
     { target: 'docx' },

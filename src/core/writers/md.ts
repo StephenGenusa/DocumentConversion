@@ -251,9 +251,23 @@ function displayMath(tex: string): string {
   return `${fence}math\n${tex.replace(/\n$/, '')}\n${fence}`
 }
 
+/**
+ * Display math inside a paragraph (`math-display`) back as `$$TEX$$` where it
+ * stands. A line that would end the paragraph is joined to the one before
+ * (a newline in TeX is a space), as is a blank one.
+ */
+function displayInSentence(tex: string): string {
+  const [first, ...rest] = escapeBareDollars(tex).split('\n')
+  const joined = rest.some((l) => BREAKS_PARAGRAPH.test(l)) ? [first, ...rest].map((l) => l.trim()).filter(Boolean).join(' ') : [first, ...rest].join('\n')
+  return `$$${joined}$$`
+}
+
 td.addRule('mathInline', {
   filter: (node) => isMath(node) && node.parentNode?.nodeName !== 'PRE',
-  replacement: (_content, node) => inlineMath(node.textContent ?? ''),
+  replacement: (_content, node) =>
+    /(?:^|\s)math-display(?:\s|$)/.test((node as HTMLElement).getAttribute('class') ?? '')
+      ? displayInSentence(node.textContent ?? '')
+      : inlineMath(node.textContent ?? ''),
 })
 td.addRule('mathBlock', {
   filter: (node) => node.nodeName === 'PRE' && isMath(node.firstChild),

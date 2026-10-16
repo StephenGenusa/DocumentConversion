@@ -171,6 +171,7 @@ const FootnoteNumbering = Extension.create({
  *   <pre><code class="language-mermaid|language-dot">…</code></pre>   diagramBlock
  *   <pre><code class="language-math">…</code></pre>                  mathBlock
  *   <code class="language-math">…</code>                             mathInline
+ *   <code class="language-math math-display">…</code>                mathInline, display
  *
  * Each is drawn by a node view (block-views.ts); the document keeps only the
  * source, so what is saved is exactly the B1 form. They are nodes of their own, parsed at priority 100 ahead of CodeBlock and
@@ -229,7 +230,12 @@ const MathBlock = Node.create({
   addNodeView: () => blockNodeView,
 })
 
-/** An atom holding its TeX, edited in its node view's popover. */
+/**
+ * An atom holding its TeX, edited in its node view's popover. `display` is
+ * display math inside a paragraph (Markdown's `$$…$$` in a sentence): drawn
+ * as display, on a line of its own, and still part of the paragraph.
+ */
+const MATH_CLASS = /^language-math(?: math-display)?$/
 const MathInline = Node.create({
   name: 'mathInline',
   group: 'inline',
@@ -238,9 +244,10 @@ const MathInline = Node.create({
   selectable: true,
   addAttributes: () => ({
     tex: { default: '', parseHTML: (el: HTMLElement) => el.textContent ?? '', renderHTML: () => ({}) },
+    display: { default: false, parseHTML: (el: HTMLElement) => el.getAttribute('class') === 'language-math math-display', renderHTML: () => ({}) },
   }),
-  parseHTML: () => [{ tag: 'code', priority: 100, preserveWhitespace: 'full', getAttrs: (el: HTMLElement) => (el.getAttribute('class') === 'language-math' ? null : false) }],
-  renderHTML: ({ node }) => ['code', { class: 'language-math' }, String(node.attrs.tex)],
+  parseHTML: () => [{ tag: 'code', priority: 100, preserveWhitespace: 'full', getAttrs: (el: HTMLElement) => (MATH_CLASS.test(el.getAttribute('class') ?? '') ? null : false) }],
+  renderHTML: ({ node }) => ['code', { class: node.attrs.display ? 'language-math math-display' : 'language-math' }, String(node.attrs.tex)],
   addNodeView: () => inlineNodeView,
 })
 

@@ -21,7 +21,10 @@ import { renderClient, type BlockAnswer, type BlockPicture, type BlockRequest, t
  *                             engine's message under it.
  *   mathInline                the picture on the text baseline; click or
  *                             Enter opens a small popover with the TeX and a
- *                             preview. Enter commits, Escape cancels.
+ *                             preview. Enter commits, Escape cancels. One
+ *                             marked display (display math inside a
+ *                             paragraph) is drawn as display, centred on a
+ *                             line of its own, and edited the same way.
  *
  * A kind with no engine (none now: every hub kind is drawn)
  * would show its source, as conversions keep it, and edit the same way
@@ -411,7 +414,7 @@ class InlineView extends DrawnView implements NodeView {
 
   constructor(node: PMNode, view: EditorView, getPos: () => number | undefined, decorations: readonly Decoration[]) {
     super(node, view, getPos)
-    this.dom = el('span', 'rm', { contenteditable: 'false' })
+    this.dom = el('span', node.attrs.display ? 'rm rm--display' : 'rm', { contenteditable: 'false' })
     this.face = el('span', 'rm__face')
     this.dom.append(this.face)
     this.face.addEventListener('mousedown', (e) => {
@@ -426,11 +429,15 @@ class InlineView extends DrawnView implements NodeView {
   }
 
   request(): BlockRequest {
-    return { kind: 'math', source: String(this.node.attrs.tex), display: false }
+    return { kind: 'math', source: String(this.node.attrs.tex), display: this.display() }
+  }
+
+  private display(): boolean {
+    return Boolean(this.node.attrs.display)
   }
 
   update(node: PMNode, decorations: readonly Decoration[]): boolean {
-    if (node.type !== this.node.type) return false
+    if (node.type !== this.node.type || node.attrs.display !== this.node.attrs.display) return false
     const changed = node.attrs.tex !== this.node.attrs.tex
     this.node = node
     if (changed) {
@@ -449,7 +456,7 @@ class InlineView extends DrawnView implements NodeView {
     const state = !can ? 'source' : answer && 'uri' in answer ? 'picture' : answer && 'error' in answer ? 'error' : 'waiting'
     this.dom.dataset.state = state
     if (state === 'picture' && answer && 'uri' in answer) {
-      pictureInto(this.face, answer, req.source, 'inline')
+      pictureInto(this.face, answer, req.source, this.display() ? 'display' : 'inline')
       return
     }
     const size = renderClient().sizeOf(req)
@@ -533,10 +540,10 @@ class InlineView extends DrawnView implements NodeView {
       return
     }
     preview.hidden = false
-    const req: BlockRequest = { kind: 'math', source: tex, display: false }
+    const req: BlockRequest = { kind: 'math', source: tex, display: this.display() }
     const put = (a: BlockAnswer): void => {
       if (this.popPreview !== preview || this.previewTex !== tex) return
-      if ('uri' in a) pictureInto(preview, a, tex, 'inline')
+      if ('uri' in a) pictureInto(preview, a, tex, this.display() ? 'display' : 'inline')
       else if ('error' in a) preview.replaceChildren(errorLine(a.error))
     }
     const hit = renderClient().known(req)

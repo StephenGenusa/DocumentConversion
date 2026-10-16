@@ -349,6 +349,34 @@ describe('math drawn by its engine (step 18)', () => {
     expect(block.style.height).toBe('auto')
   })
 
+  it('draws display math inside a paragraph as display, on a line of its own, still in the paragraph', async () => {
+    setRenderClient(createRenderClient(mathDraw))
+    const html = '<p>The sum <code class="language-math math-display">x+y</code> is big.</p>'
+    const e = make(html)
+    show($('.rm'))
+    await settle()
+    expect(asked).toEqual([{ kind: 'math', source: 'x+y', display: true, priority: 'visible' }])
+    expect($('.rm').classList.contains('rm--display')).toBe(true)
+    expect($('p .rm')).not.toBeNull()
+    const img = $('.rm img') as HTMLImageElement
+    expect(img.style.width).toBe('3.75ex')
+    expect(img.style.height).toBe('auto')
+    expect(img.style.verticalAlign).toBe('')
+    // Edited as an inline formula is, previewed as display, and saved as it was.
+    vi.useFakeTimers()
+    $('.rm__face').dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }))
+    await settle()
+    const input = $('.rm-pop input') as HTMLInputElement
+    input.value = 'x+z'
+    input.dispatchEvent(new Event('input'))
+    await vi.advanceTimersByTimeAsync(400)
+    await settle()
+    expect(asked).toContainEqual({ kind: 'math', source: 'x+z', display: true, priority: 'visible' })
+    expect(($('.rm-pop__preview img') as HTMLImageElement).style.height).toBe('auto')
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(e.getHTML()).toBe(html.replace('x+y', 'x+z'))
+  })
+
   it('puts inline math on the baseline: sized in ex and lowered by its depth', async () => {
     setRenderClient(createRenderClient(mathDraw))
     make('<p>Let <code class="language-math">x^2</code>.</p>')

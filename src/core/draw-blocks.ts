@@ -191,10 +191,21 @@ async function drawDiagrams(html: string, target: TargetFormat, ctx: DrawContext
 
 /**
  * A formula in the hub's form (rendered-blocks.ts): display math is a code
- * block, inline math the same code element alone. The display form is
- * matched first, so its code element is never taken for an inline one.
+ * block, inline math the same code element alone, and display math inside a
+ * paragraph that element marked `math-display`. The block form is matched
+ * first, so its code element is never taken for one in a paragraph.
  */
-const FORMULA_SOURCE = /<pre><code class="language-math">([\s\S]*?)<\/code><\/pre>|<code class="language-math">([\s\S]*?)<\/code>/g
+const FORMULA_SOURCE =
+  /<pre><code class="language-math(?: math-display)?">([\s\S]*?)<\/code><\/pre>|<code class="language-math( math-display)?">([\s\S]*?)<\/code>/g
+
+/** How a formula stands: in the line, a block of its own, or display math inside a paragraph. */
+type Placement = 'inline' | 'block' | 'in-paragraph'
+
+/**
+ * Marks, for the docx writer, a picture of display math that stood inside a
+ * paragraph: it is put in a centred paragraph of its own there.
+ */
+export const DOCX_OWN_LINE = 'data-docx-own-line'
 
 /** The host's sizes are CSS px at 8 px to the ex (spec B5). */
 const PX_PER_EX = 8
@@ -229,6 +240,7 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
     start: number
     end: number
     display: boolean
+    placement: Placement
     source: string
     number: number
     /** What is drawn: the source, after the definitions it uses from earlier formulas. */
@@ -236,10 +248,11 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
   }
   const formulas: Formula[] = []
   for (const m of html.matchAll(FORMULA_SOURCE)) {
-    const display = m[1] !== undefined
-    const source = decodeText(display ? m[1] : m[2])
+    const placement: Placement = m[1] !== undefined ? 'block' : m[2] ? 'in-paragraph' : 'inline'
+    const source = decodeText(m[1] ?? m[3])
     if (!source.trim()) continue
-    formulas.push({ start: m.index, end: m.index + m[0].length, display, source, number: formulas.length + 1, drawn: source })
+    const display = placement !== 'inline'
+    formulas.push({ start: m.index, end: m.index + m[0].length, display, placement, source, number: formulas.length + 1, drawn: source })
   }
   if (formulas.length === 0) return html
 
@@ -292,7 +305,7 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
       ctx.onAdvice?.('render-failed', `Formula ${f.number} could not be drawn: ${why}`)
       continue
     }
-    out += html.slice(at, f.start) + formulaHtml(data, format, result, f.display, f.source, target)
+    out += html.slice(at, f.start) + formulaHtml(data, format, result, f.placement, f.source, target)
     at = f.end
   }
   return out + html.slice(at)
@@ -302,10 +315,11 @@ function formulaHtml(
   data: string,
   format: RenderFormat,
   size: { width: number; height: number; baseline?: number },
-  display: boolean,
+  placement: Placement,
   tex: string,
   target: TargetFormat,
 ): string {
+  const display = placement !== 'inline'
   const mime = format === 'svg' ? 'image/svg+xml' : 'image/png'
   const head = `<img src="data:${mime};base64,${data}" alt="${escapeAttr(tex)}"`
   const marker = `${RENDERED_MARKER}="formula"`
@@ -321,14 +335,21 @@ function formulaHtml(
     }
     // Half-points, as Word's w:position takes it (1 px = 0.75 pt).
     const lower = display ? 0 : Math.round(baseline * f * 1.5)
-    img = `${head} width="${w}" height="${h}" style="width:${w}px;height:${h}px" ${marker}${lower > 0 ? ` data-docx-lower="${lower}"` : ''}>`
+    const ownLine = placement === 'in-paragraph' ? ` ${DOCX_OWN_LINE}` : ''
+    img = `${head} width="${w}" height="${h}" style="width:${w}px;height:${h}px" ${marker}${lower > 0 ? ` data-docx-lower="${lower}"` : ''}${ownLine}>`
   } else if (display) {
     img = `${head} width="${size.width}" height="${size.height}" style="width:${exs(size.width)};height:auto;max-width:100%" ${marker}>`
   } else {
     const align = baseline > 0 ? `;vertical-align:-${exs(baseline)}` : ''
     img = `${head} width="${size.width}" height="${size.height}" style="width:${exs(size.width)};height:${exs(size.height)}${align}" ${marker}>`
   }
-  return display ? `<p style="text-align:center">${img}</p>` : img
+  if (placement === 'block') return `<p style="text-align:center">${img}</p>`
+  if (placement === 'inline') return img
+  // Display math inside a paragraph: a line of its own, the paragraph going
+  // on after it, as pandoc writes it. Word ignores display:block, so there
+  // it stands between two breaks, and the docx writer gives it a centred
+  // paragraph of its own where it can (centreOwnLineFormulas).
+  return target === 'docx' ? `<br>${img}<br>` : `<span style="display:block;text-align:center;margin:0.5em 0">${img}</span>`
 }
 
 function escapeAttr(text: string): string {

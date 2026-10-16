@@ -203,8 +203,10 @@ md.core.ruler.after('block', 'github_alerts', (state: StateCore) => {
 
 /**
  * Math, as tagged source (spec B1): `<code class="language-math">TEX</code>`
- * inline, and `<pre><code class="language-math">TEX</code></pre>` for a
- * `$$…$$` that is a paragraph of its own. TEX is the text between the
+ * inline, `<pre><code class="language-math">TEX</code></pre>` for a `$$…$$`
+ * that is a paragraph of its own, and `<code class="language-math
+ * math-display">TEX</code>` for one in the middle of a sentence, which is
+ * display math inside the paragraph, as pandoc reads it. TEX is the text between the
  * delimiters, byte for byte. Writers draw only spans a reader identified, so
  * the tag is what keeps a `$5 … $10` in a Word file from ever being drawn.
  *
@@ -257,10 +259,10 @@ md.inline.ruler.before('escape', 'math', (state, silent) => {
   return true
 })
 
-const mathCode = (tex: string): string => `<code class="language-math">${md.utils.escapeHtml(tex)}</code>`
+const mathCode = (tex: string, cls = 'language-math'): string => `<code class="${cls}">${md.utils.escapeHtml(tex)}</code>`
 md.renderer.rules.math_inline = (tokens, idx) => mathCode(tokens[idx].content)
-// `$$…$$` within a sentence: still math, drawn in the line.
-md.renderer.rules.math_display = (tokens, idx) => mathCode(tokens[idx].content)
+// `$$…$$` within a sentence: display math, in the paragraph (pandoc's DisplayMath).
+md.renderer.rules.math_display = (tokens, idx) => mathCode(tokens[idx].content, 'language-math math-display')
 md.renderer.rules.math_block = (tokens, idx) => `<pre>${mathCode(tokens[idx].content)}</pre>\n`
 
 /** A paragraph that is one `$$…$$` and nothing else is display math, not a paragraph. */

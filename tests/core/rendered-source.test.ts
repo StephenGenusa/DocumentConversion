@@ -50,8 +50,8 @@ describe('Markdown reads diagrams and formulas as tagged source', () => {
     expect(await md(`$$\na = b ${B}${B}\nc = d\n$$`)).toBe(`<pre><code class="language-math">\na = b ${B}${B}\nc = d\n</code></pre>\n`)
   })
 
-  it('reads $$…$$ inside a sentence as inline math', async () => {
-    expect(await md('so $$x+y$$ here')).toBe('<p>so <code class="language-math">x+y</code> here</p>\n')
+  it('reads $$…$$ inside a sentence as display math in the paragraph, as pandoc does', async () => {
+    expect(await md('so $$x+y$$ here')).toBe('<p>so <code class="language-math math-display">x+y</code> here</p>\n')
   })
 
   it('keeps a math fence as display math', async () => {

@@ -47,13 +47,15 @@ const toText = compile({
 
 /**
  * Formulas (spec B1) as their source with the delimiters Markdown uses:
- * `$TEX$` in the line, `$$TEX$$` as a block. Diagrams are code blocks already
+ * `$TEX$` in the line, `$$TEX$$` as a block and where display math stands
+ * in a sentence. Diagrams are code blocks already
  * and print as their source.
  */
 function mathAsText(html: string): string {
   if (!html.includes('language-math')) return html
   return html
     .replace(/<pre><code class="language-math">([\s\S]*?)<\/code><\/pre>/g, '<pre>$$$$$1$$$$</pre>')
+    .replace(/<code class="language-math math-display">([\s\S]*?)<\/code>/g, '$$$$$1$$$$')
     .replace(/<code class="language-math">([\s\S]*?)<\/code>/g, '$$$1$$')
 }
 

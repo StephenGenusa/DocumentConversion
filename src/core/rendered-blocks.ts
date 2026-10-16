@@ -7,6 +7,11 @@ import type { TargetFormat } from './types'
  *   <pre><code class="language-dot">SOURCE</code></pre>
  *   <pre><code class="language-math">TEX</code></pre>     display math
  *   <code class="language-math">TEX</code>                inline math
+ *   <code class="language-math math-display">TEX</code>   display math inside a paragraph
+ *
+ * The last is Markdown's `$$…$$` in the middle of a sentence, which pandoc
+ * reads as display math without ending the paragraph: it is drawn as
+ * display, on a line of its own, where it stands.
  *
  * The source is the text between the author's delimiters, byte for byte.
  * Math is wrapped rather than left as `$…$` text so that writers draw only
@@ -70,7 +75,7 @@ export interface HubFeatures {
 }
 
 const DIAGRAM_BLOCK = /<pre><code class="language-(?:mermaid|dot)">/
-const MATH = /<code class="language-math">/
+const MATH = /<code class="language-math(?: math-display)?">/
 
 export function hubFeatures(html: string): HubFeatures {
   return { diagrams: DIAGRAM_BLOCK.test(html), math: MATH.test(html) }

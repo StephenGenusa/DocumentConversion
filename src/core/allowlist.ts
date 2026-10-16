@@ -58,12 +58,17 @@ function keepValidLabel(tagName: string, attribs: sanitizeHtml.Attributes): sani
  * `code` keeps a class only to name its language (`language-*`) or to say the
  * shell highlighted it (`hljs`). The class is what makes a block a diagram or
  * a formula (spec B1), so anything else an input put there is dropped.
+ * `math-display` marks display math inside a paragraph (rendered-blocks.ts),
+ * and is kept only beside `language-math`, after it, so the hub has one
+ * spelling of it.
  */
 const CODE_CLASS = /^(?:language-[\w+-]+|hljs)$/
 
 function keepCodeClass(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
   const { class: cls, ...rest } = attribs
-  const kept = (cls ?? '').split(/\s+/).filter((c) => CODE_CLASS.test(c))
+  const given = (cls ?? '').split(/\s+/)
+  const kept = given.filter((c) => CODE_CLASS.test(c))
+  if (kept.includes('language-math') && given.includes('math-display')) kept.splice(kept.indexOf('language-math') + 1, 0, 'math-display')
   return { tagName, attribs: kept.length > 0 ? { ...rest, class: kept.join(' ') } : rest }
 }
 
