@@ -151,7 +151,7 @@ export function buildIndex(
   return records
 }
 
-/** FDST: the boundaries of each flow in the text. One flow here - the book. */
+/** FDST: the boundaries of each flow in the text: the book, then its stylesheet. */
 export function buildFdst(boundaries: Array<[number, number]>): Buffer {
   const head = Buffer.alloc(12)
   head.write('FDST', 0, 'latin1')

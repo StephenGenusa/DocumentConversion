@@ -99,7 +99,15 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
    * one - <html><body> ... </body></html> - with the chapter body as a single
    * fragment inserted at the point between them.
    */
-  const SKEL_OPEN = '<html><head></head><body>'
+  /*
+   * The EPUB's stylesheet is the book's second flow (FDST entry 1), linked
+   * from each skeleton's head the way kindlegen does. Before it was, every
+   * rule in style.css - code colouring among them - never reached the book.
+   */
+  const css = (await zip.file('OEBPS/style.css')?.async('string')) ?? ''
+  const SKEL_OPEN = css
+    ? '<html><head><link href="kindle:flow:0001?mime=text/css" rel="stylesheet" type="text/css"/></head><body>'
+    : '<html><head></head><body>'
   const SKEL_CLOSE = '</body></html>'
 
   let flow = ''
@@ -150,7 +158,8 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
   const { offsets: selectorOffsets } = buildCncx(selectors)
   fragments.forEach((f, i) => f.values.set(2, [selectorOffsets[i]]))
 
-  const text = Buffer.from(flow, 'utf8')
+  const bookText = Buffer.from(flow, 'utf8')
+  const text = Buffer.concat([bookText, Buffer.from(css, 'utf8')])
   const textRecords = splitTextRecords(text, TEXT_RECORD_SIZE)
 
   const skelRecords = buildIndex(skeletons, [
@@ -167,7 +176,9 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
     ],
     selectors,
   )
-  const fdst = buildFdst([[0, text.length]])
+  const flows: Array<[number, number]> = [[0, bookText.length]]
+  if (css) flows.push([bookText.length, text.length])
+  const fdst = buildFdst(flows)
 
   /*
    * Record indices are assigned before record 0 is built, because record 0 has
@@ -197,7 +208,7 @@ export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
     firstNonBookIndex: firstNonBook,
     firstImageIndex: hasResources ? firstResource : 0xffffffff,
     fdstIndex,
-    fdstCount: 1,
+    fdstCount: flows.length,
     skeletonIndex,
     fragmentIndex,
     exth: [

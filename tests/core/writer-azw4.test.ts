@@ -36,6 +36,16 @@ describe('the AZW4 writer', () => {
     expect(seen.opts?.headerFooter).toBe(false)
   })
 
+  it('colours code, since its page is the pdf writer\'s', async () => {
+    let page = ''
+    await createAzw4Writer(async (html) => {
+      page = html
+      return FAKE_PDF
+    })({ html: '<pre><code class="language-python">def f():\n    # note\n    pass</code></pre>', title: 'T' })
+    expect(page).toMatch(/<span class="hljs-keyword">def<\/span>/)
+    expect(page).toContain('.hljs-comment')
+  })
+
   it('is 3.6 x 4.8 inches - the 6-inch screen measured out', () => {
     expect(KINDLE_PAGE_INCHES).toEqual({ width: 3.6, height: 4.8 })
     const diagonal = Math.hypot(KINDLE_PAGE_INCHES.width, KINDLE_PAGE_INCHES.height)

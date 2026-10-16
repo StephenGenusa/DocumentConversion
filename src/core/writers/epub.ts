@@ -4,7 +4,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode } from 'domhandler'
 import render from 'dom-serializer'
-import { escapeHtml } from '../shell'
+import { escapeHtml, highlightCodeBlocks } from '../shell'
+import { EREADER_HLJS_CSS } from '../hljs'
 import type { HubDocument } from '../types'
 import { RENDERED_MARKER } from '../draw-blocks'
 
@@ -312,7 +313,10 @@ export interface EpubOptions {
 }
 
 export async function writeEpub(doc: HubDocument, opts: EpubOptions = {}): Promise<Buffer> {
-  const dom = parseDocument(footnotesForOutput(doc.html, opts.notes ?? 'epub'))
+  // Code coloured as in the pdf and html, spans styled by class from
+  // style.css; plaintext has nothing to colour and is left as it came.
+  const highlighted = highlightCodeBlocks(footnotesForOutput(doc.html, opts.notes ?? 'epub'), { skip: ['plaintext'] })
+  const dom = parseDocument(highlighted.html)
   const nodes = unwrapContainers(dom.children as AnyNode[])
   const images = extractImages(nodes)
   const chapters = splitChapters(nodes)
@@ -339,7 +343,7 @@ export async function writeEpub(doc: HubDocument, opts: EpubOptions = {}): Promi
 <rootfiles><rootfile full-path="${OEBPS}/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
 </container>`,
   )
-  zip.file(`${OEBPS}/style.css`, STYLESHEET)
+  zip.file(`${OEBPS}/style.css`, highlighted.any ? STYLESHEET + EREADER_HLJS_CSS : STYLESHEET)
   for (const part of parts) zip.file(`${OEBPS}/${part.file}`, chapterDocument(part.title, part.body))
   zip.file(`${OEBPS}/nav.xhtml`, navDocument(parts))
   zip.file(`${OEBPS}/toc.ncx`, ncxDocument(uid, title, parts))

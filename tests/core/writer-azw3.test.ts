@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initKf8File } from '../kf8-reader.mjs'
@@ -99,5 +99,29 @@ describe('the AZW3 writer', () => {
     const tags: number[] = []
     for (let at = tagx + 12; frag[at + 3] !== 1; at += 4) tags.push(frag[at])
     expect(tags).toEqual([2, 3, 4, 6])
+  })
+  it('carries the stylesheet into the book as a CSS flow', async () => {
+    // KF8 keeps CSS in its own flow (FDST), linked from each skeleton's head
+    // as kindle:flow:0001; without it every style.css rule was lost.
+    const { kf8 } = await roundTrip({ html: TWO_CHAPTERS, title: 'T' })
+    const ch = kf8.loadChapter(kf8.getSpine()[0].id)!
+    expect(ch.css).toHaveLength(1)
+    const css = readFileSync(ch.css[0].href, 'utf8')
+    expect(css).toContain('font-family: serif')
+    expect(ch.html).not.toContain('font-family')
+  })
+
+  it('keeps code colouring: hljs spans in the text, the palette in the CSS', async () => {
+    const html =
+      '<h1>Code</h1><pre><code class="language-python">def total(items):\n    # add them up\n    return sum(items)</code></pre>' +
+      '<pre><code class="language-javascript">const x = 1 // one</code></pre>'
+    const { kf8 } = await roundTrip({ html, title: 'T' })
+    const ch = kf8.loadChapter(kf8.getSpine()[0].id)!
+    expect(ch.html).toMatch(/<span class="hljs-keyword">def<\/span>/)
+    expect(ch.html).toMatch(/<span class="hljs-comment"># add them up<\/span>/)
+    expect(ch.html).toMatch(/<span class="hljs-keyword">const<\/span>/)
+    const css = readFileSync(ch.css[0].href, 'utf8')
+    expect(css).toMatch(/\.hljs-keyword[^{]*\{[^}]*font-weight:\s*bold/)
+    expect(css).toMatch(/\.hljs-comment[^{]*\{[^}]*font-style:\s*italic/)
   })
 })

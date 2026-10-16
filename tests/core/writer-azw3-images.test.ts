@@ -263,19 +263,18 @@ describe('AZW3 pictures (KF8 image records)', () => {
   it('a book with no pictures is byte for byte what it was before pictures were stored', async () => {
     // Golden hash of the writer's output before pictures were stored (as of
     // "Make Kindle (AZW3) books open in calibre"), with its two varying
-    // inputs (the clock and the random unique id) held still.
+    // inputs (the clock and the random unique id) held still. Updated once
+    // since, when the stylesheet became the book's second flow ("Colour code
+    // in EPUB and Kindle books"); before that, style.css never reached it.
     vi.useFakeTimers({ now: new Date('2026-01-02T03:04:05Z'), toFake: ['Date'] })
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     const bytes = await writeAzw3({
       html: '<h1>Chapter One</h1><p>The first chapter body.</p><h1>Chapter Two</h1><p>Second &amp; last.</p><table><tr><td>a</td></tr></table>',
       title: 'Golden',
     })
-    // The end-of-file record has since become kindlegen's four bytes (it was
-    // one NUL); with the old one put back, everything else is as it was.
-    expect(bytes.length).toBe(1664)
+    expect(bytes.length).toBe(2145)
     expect(bytes.subarray(-4).toString('hex')).toBe('e98e0d0a')
-    const before = Buffer.concat([bytes.subarray(0, -4), Buffer.from([0])])
-    expect(createHash('sha256').update(before).digest('hex')).toBe('c3b6314af65ecba34c8734b3e05d46138712405ced60f96ffb6ed1374c290a77')
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe('8d94a5fc1d4939ecadf2198a503c303bcd5ad0a6f3e83ff8875614509a36308f')
   })
 })
 

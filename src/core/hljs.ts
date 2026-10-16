@@ -74,6 +74,35 @@ ${TOKEN_COLOURS.map(([scopes, colour]) => `  ${scopes.map((s) => `.hljs-${s}`).j
   .language-diff .hljs-addition, .language-diff .hljs-deletion { display: inline-block; width: 100%; }
 `
 
+/**
+ * The same scopes for an e-reader (epub, and the Kindle book made from it).
+ * Darker than the screen palette, so every colour still reads at better than
+ * 5:1 on a sepia page as well as white; and not by colour alone, since a
+ * black-and-white Kindle turns these into much the same grey: keywords are
+ * bold and comments italic. No backgrounds (a diff's lines included): the
+ * reader's night and sepia themes own the page, and a forced light block
+ * would clash with them.
+ */
+const EREADER_TOKEN_COLOURS: ReadonlyArray<readonly [scopes: readonly string[], colour: string]> = [
+  [['keyword', 'selector-tag', 'meta'], '#a40e26'],
+  [['title'], '#6639ba'],
+  [['string', 'regexp', 'attr'], '#0a3069'],
+  [['number', 'literal'], '#0550ae'],
+  [['comment', 'quote'], '#57606a'],
+  [['built_in', 'type'], '#953800'],
+  [['variable', 'template-variable', 'property'], '#24292f'],
+  [['section', 'name'], '#0550ae'],
+  [['addition'], '#0f5c26'],
+  [['deletion'], '#82071e'],
+]
+
+export const EREADER_HLJS_CSS = `${EREADER_TOKEN_COLOURS.map(
+  ([scopes, colour]) => `${scopes.map((s) => `.hljs-${s}`).join(', ')} { color: ${colour}; }`,
+).join('\n')}
+.hljs-keyword, .hljs-selector-tag, .hljs-section, .hljs-name { font-weight: bold; }
+.hljs-comment, .hljs-quote { font-style: italic; }
+`
+
 const COLOUR_OF = new Map(TOKEN_COLOURS.flatMap(([scopes, colour]) => scopes.map((s) => [s, colour] as const)))
 
 /**

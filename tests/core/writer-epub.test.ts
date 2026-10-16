@@ -317,3 +317,76 @@ describe('writeEpub block content inside a span', () => {
     expect(chapter).toContain('<span>inline</span>')
   })
 })
+
+describe('writeEpub code colouring', () => {
+  const PY = '<pre><code class="language-python">def total(items):\n    # add them up\n    return sum(i * 2 for i in items) &lt; 10 and "a&amp;b"</code></pre>'
+  const JS = '<pre><code class="language-javascript">const greet = (name) =&gt; `hi ${name}` // say hi</code></pre>'
+
+  /**
+   * Strict XML well-formedness, by hand: every tag closes in order and every
+   * & starts an entity XML knows. A reader that hits a parse error shows the
+   * chapter as nothing at all.
+   */
+  function expectWellFormed(xml: string): void {
+    const body = xml.replace(/^<\?xml[^>]*\?>/, '')
+    expect(body).not.toMatch(/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-f]+;)/i)
+    const stack: string[] = []
+    for (const m of body.matchAll(/<(\/?)([a-zA-Z][\w:-]*)((?:\s+[\w:-]+="[^"<]*")*)\s*(\/?)>/g)) {
+      const [, close, name, , self] = m
+      if (self) continue
+      if (close) expect(stack.pop(), `</${name}>`).toBe(name)
+      else stack.push(name)
+    }
+    expect(stack).toEqual([])
+    // Nothing that looks like a tag was left unmatched by the pattern above.
+    expect(body.replace(/<(\/?)([a-zA-Z][\w:-]*)((?:\s+[\w:-]+="[^"<]*")*)\s*(\/?)>/g, '')).not.toContain('<')
+  }
+
+  it('colours python and javascript blocks with hljs spans', async () => {
+    const zip = await open(await writeEpub(book(`<h1>Code</h1>${PY}${JS}`)))
+    const chapter = await text(zip, 'OEBPS/ch001.xhtml')
+    expect(chapter).toContain('<code class="language-python hljs">')
+    expect(chapter).toContain('<code class="language-javascript hljs">')
+    expect(chapter).toMatch(/<span class="hljs-keyword">def<\/span>/)
+    expect(chapter).toMatch(/<span class="hljs-comment"># add them up<\/span>/)
+    expect(chapter).toMatch(/<span class="hljs-keyword">const<\/span>/)
+    expect(chapter).toMatch(/<span class="hljs-comment">\/\/ say hi<\/span>/)
+    expectWellFormed(chapter)
+  })
+
+  it('keeps the code text exactly, entities included', async () => {
+    const zip = await open(await writeEpub(book(`<h1>Code</h1>${PY}`)))
+    const back = await readEpub({ bytes: await zip.generateAsync({ type: 'nodebuffer' }), filename: 'x.epub' })
+    const code = /<code[^>]*>([\s\S]*?)<\/code>/.exec(back.html)?.[1] ?? ''
+    expect(code.replace(/<[^>]+>/g, '')).toContain('sum(i * 2 for i in items) &lt; 10 and "a&amp;b"')
+  })
+
+  it('styles the spans for e-readers: colour, bold keywords, italic comments, no backgrounds', async () => {
+    const zip = await open(await writeEpub(book(`<h1>Code</h1>${PY}`)))
+    const css = await text(zip, 'OEBPS/style.css')
+    const rule = (sel: string): string => new RegExp(`[^}]*\\.hljs-${sel}\\b[^{]*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+    expect(rule('keyword')).toMatch(/color:\s*#[0-9a-f]{6}/i)
+    expect(css).toMatch(/\.hljs-keyword[^{]*\{[^}]*font-weight:\s*bold/)
+    expect(css).toMatch(/\.hljs-comment[^{]*\{[^}]*font-style:\s*italic/)
+    expect(rule('string')).toMatch(/color:/)
+    // A reader's night or sepia theme owns the page; a forced light block would clash.
+    expect(css).not.toMatch(/background/)
+    // Class selectors only: nothing inline in the chapter.
+    expect(await text(zip, 'OEBPS/ch001.xhtml')).not.toContain('style=')
+  })
+
+  it('leaves plaintext, unknown and drawn-diagram blocks as they were, and adds no palette without code', async () => {
+    const blocks =
+      '<pre><code class="language-plaintext">def f(): return 1</code></pre>' +
+      '<pre><code class="language-math">x^2 + y^2</code></pre>' +
+      '<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>' +
+      '<pre><code class="language-dot">digraph { a -&gt; b }</code></pre>'
+    const zip = await open(await writeEpub(book(`<h1>Code</h1>${blocks}`)))
+    const chapter = await text(zip, 'OEBPS/ch001.xhtml')
+    expect(chapter).not.toContain('hljs')
+    expect(chapter).toContain('<code class="language-plaintext">def f(): return 1</code>')
+    expect(chapter).toContain('<code class="language-math">x^2 + y^2</code>')
+    expect(chapter).toContain('<code class="language-mermaid">graph TD; A--&gt;B</code>')
+    expect(await text(zip, 'OEBPS/style.css')).not.toContain('hljs')
+  })
+})
