@@ -7,7 +7,8 @@
  *
  * The files are read with the app's own readers (detect + getReader), so the
  * spans are exactly the ones a conversion draws. Prints the count drawn and
- * every message. Skipped when MATH_FILES is unset, or with no display.
+ * every message, with no extra flags. Skipped when MATH_FILES is unset, or
+ * with no display.
  */
 import { describe, it, expect } from 'vitest'
 import { execFile } from 'node:child_process'
@@ -60,10 +61,11 @@ describe('math real-corpus check', () => {
       if (result.fatal) throw new Error(result.fatal)
       const drawn = result.results.filter((r) => r.ok).length
       const reported = result.results.map((r, i) => ({ ...formulas[i], error: r.error })).filter((r) => r.error)
-      // eslint-disable-next-line no-console
-      console.log(
+      // Straight to stdout: vitest 4 shows a passing test's console.log only
+      // with --silent=false --reporter=verbose.
+      process.stdout.write(
         `math corpus: ${formulas.length} spans in ${FILES.length} files; ${drawn} drawn, ${reported.length} reported, ${result.ms} ms\n` +
-          reported.map((r) => `  ${r.file}: ${JSON.stringify(r.source)} -> ${r.error}`).join('\n'),
+          reported.map((r) => `  ${r.file}: ${JSON.stringify(r.source)} -> ${r.error}`).join('\n') + '\n',
       )
       expect(result.results).toHaveLength(formulas.length)
       for (const r of result.results) expect(r.ok === true || (typeof r.error === 'string' && r.error.length > 0)).toBe(true)
