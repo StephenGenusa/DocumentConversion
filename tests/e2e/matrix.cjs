@@ -351,6 +351,9 @@ async function main() {
           if (!media.some((n) => n.endsWith('.png'))) throw new Error('docx has no PNG media for its SVG images')
           if ((await svgMedia(zip, media)).length) throw new Error('docx has SVG media')
           if (/image\/svg\+xml|Extension="svgz?"/i.test(await zip.file('[Content_Types].xml').async('string'))) throw new Error('docx declares SVG content')
+          // Every distinct SVG image gets its own PNG (Word once stopped at 100).
+          const distinct = new Set([...hubText.matchAll(/src="(data:image\/svg\+xml[^"]*)"/g)].map((m) => m[1])).size
+          if (distinct > 100 && media.filter((n) => n.endsWith('.png')).length < distinct) throw new Error(`docx has fewer PNG media than its ${distinct} SVG images`)
           rec.note = `${media.length} PNG media for SVG images`
         }
         if (hasNestedSvgImages && (target === 'html' || target === 'epub')) {

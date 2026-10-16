@@ -19,6 +19,10 @@
  *                              base64 data URI) and a small marker as a
  *                              percent-encoded one: the shape that gave Word
  *                              output an unusable `image/svg+xml` part.
+ *   reading-room-seating.html  a seating chart: 150 quiet seating markers,
+ *                              each its own colour (so 150 distinct SVG
+ *                              images), more than Word conversion once took
+ *                              (it stopped at 100).
  *
  * Every address the hostile file names is 127.0.0.1 port 9 (discard), so
  * nothing could be reached even if a request were made. Every word comes from
@@ -125,11 +129,32 @@ const page = [
   '',
 ].join('\n')
 
+/** The marker in the n-th of a run of blues and greens, so every one is a different picture. */
+const markerNo = (n) => marker.replace('#2f5d8a', `#${(0x204060 + n * 0x000101).toString(16).padStart(6, '0')}`)
+
+const SEATS = 150
+const seating = [
+  '<!doctype html>',
+  '<html lang="en">',
+  '<head><meta charset="utf-8"><title>' + R.pageTitle + '</title></head>',
+  '<body>',
+  `<h1>${R.pageTitle}</h1>`,
+  `<p>${R.iconIntro}</p>`,
+  ...Array.from({ length: SEATS / 10 }, (_, row) =>
+    `<p>${Array.from({ length: 10 }, (_, k) => `<img src="data:image/svg+xml;base64,${Buffer.from(markerNo(row * 10 + k), 'utf8').toString('base64')}" alt="${R.iconAlt}" width="24" height="24">`).join(' ')}</p>`,
+  ),
+  `<p>${R.pageAfter}</p>`,
+  '</body>',
+  '</html>',
+  '',
+].join('\n')
+
 for (const [name, text] of [
   ['reading-room-plan.svg', clean],
   ['reading-room-hostile.svg', hostile],
   ['reading-room-page.html', page],
   ['reading-room-marked-plan.svg', markedPlan],
+  ['reading-room-seating.html', seating],
 ]) {
   writeFileSync(corpus(name), text)
   console.log(`wrote ${corpus(name)}`)
