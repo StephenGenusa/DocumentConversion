@@ -152,11 +152,16 @@ describe('.ods inline formatting', () => {
     expect(html).toContain('<tr><td>Left</td><td><strong>Right</strong></td></tr>')
   })
 
-  it('keeps the line between paragraphs in a cell as it is read today', async () => {
+  it('breaks the line between paragraphs in a cell, so html and pdf show it', async () => {
     const plain = await read(table('Codes', row(cell(p('first') + p('second')))))
     const bold = await read(table('Codes', row(cell(p('first') + p('<text:span text:style-name="T1">second</text:span>')))))
-    expect(plain).toContain('<td>first\nsecond</td>')
-    expect(bold).toContain('<td>first\n<strong>second</strong></td>')
+    expect(plain).toContain('<td>first<br>second</td>')
+    expect(bold).toContain('<td>first<br><strong>second</strong></td>')
+    // A sheet with no formatting styles at all takes the same break.
+    const unstyled = (await readXlsx({ bytes: await ods(table('Codes', row(cell(p('first') + p('a &lt; b')))), ''), filename: 'sheet.ods' })).html
+    expect(unstyled).toContain('<td>first<br>a &lt; b</td>')
+    // The cell's text for csv, xlsx and md reads as it did: the two lines, a space between.
+    expect(extractTables(plain)).toEqual([[['first second']]])
   })
 
   it("formats a number cell's shown text", async () => {

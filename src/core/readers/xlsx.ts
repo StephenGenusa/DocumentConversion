@@ -120,6 +120,21 @@ function richCells(format: Map<string, string>, rows: string[][], origin: { r: n
   }
 }
 
+/**
+ * An .ods cell's paragraphs, each on its own line. SheetJS joins them with
+ * "\n", which html and pdf show as a space; a `<br>` shows the break. The
+ * table writers (csv, xlsx, md) read either as the same space between the
+ * lines, so their cell text is as it was.
+ */
+function breakParagraphs(rows: string[][], formatted: RichCell | undefined): RichCell {
+  return (r, c, header) => {
+    const html = formatted?.(r, c, header)
+    if (html !== undefined) return html.includes('\n') ? html.replace(/\n/g, '<br>') : html
+    const value = rows[r]?.[c] ?? ''
+    return value.includes('\n') ? escapeHtml(value).replace(/\n/g, '<br>') : undefined
+  }
+}
+
 function buildDocument(src: SourceInput): HubDocument {
   // raw:false yields formatted strings — formulas export their computed values.
   const wb = XLSX.read(src.bytes, { type: 'buffer' })
@@ -147,7 +162,8 @@ function buildDocument(src: SourceInput): HubDocument {
     const origin = usedRangeOrigin(ws)
     const merges = alignMerges((ws['!merges'] ?? []) as CellMerge[], origin, rows.length, width)
     const format = formatting?.[index]
-    const rich = format && format.size > 0 ? richCells(format, rows, origin) : undefined
+    const formatted = format && format.size > 0 ? richCells(format, rows, origin) : undefined
+    const rich = wb.bookType === 'ods' ? breakParagraphs(rows, formatted) : formatted
     sections.push(
       `<h2>${escapeHtml(name)}</h2>${rowsToHtmlTable(rows, looksLikeHeader(rows), merges, rich)}`,
     )
