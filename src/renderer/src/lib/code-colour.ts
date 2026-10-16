@@ -18,7 +18,9 @@ import hljs, { HLJS_CSS } from '../../../core/hljs'
  * Cost: one keystroke re-highlights only the block it touched, and every other
  * block's colours are mapped through the change. A block too big to
  * highlight inside a keystroke keeps its mapped colours while typing and is
- * re-highlighted once typing pauses.
+ * re-highlighted once typing pauses. A re-highlight replaces only the colours
+ * that changed: the rest stay the same decorations, so the view redraws the
+ * edited line, not every span of the block.
  */
 
 /** A code block of this many lines or more is not coloured (plain monospace, as before). */
@@ -81,10 +83,6 @@ function lineCountReaches(text: string, limit: number): boolean {
   return n >= limit
 }
 
-function decorationsFor(node: PMNode, pos: number, language: string): Decoration[] {
-  return tokens(node.textContent, language).map(([from, to, cls]) => Decoration.inline(pos + 1 + from, pos + 1 + to, { class: cls }))
-}
-
 /** What colouring a block gets now: none, on the keystroke, or after the pause. */
 function plan(node: PMNode): { language: string; now: boolean } | null {
   const language = grammarOf(node.attrs.language)
@@ -106,23 +104,67 @@ function isCodeBlock(node: PMNode): boolean {
   return node.type.name === 'codeBlock'
 }
 
+/**
+ * Above this many stale colours a block's decorations are rebuilt with the
+ * rest of the set rather than removed one by one: DecorationSet.remove looks
+ * each one up in the block's list, which is quadratic in a big block.
+ */
+const REMOVE_ONE_BY_ONE = 64
+
+/*
+ * A colour takes in what is typed at its end (and, first in its block, at its
+ * start). Typed text then always lands inside a coloured or a plain stretch
+ * that is already drawn, never in a new stretch of its own between two
+ * colours: ProseMirror matches a block's stretches in order, so one new
+ * stretch had it rewrite every span after it, the whole rest of the block.
+ */
+function colour(from: number, to: number, cls: string, first: boolean): Decoration {
+  return Decoration.inline(from, to, { class: cls }, { colour: cls, inclusiveStart: first, inclusiveEnd: true })
+}
+
 /** Re-colour the code block at `pos`, or queue it, replacing what it had. */
 function recolour(state: ColourState, doc: PMNode, pos: number, node: PMNode, force: boolean): ColourState {
   const p = plan(node)
   let { decorations, waiting } = state
   waiting = waiting.filter((w) => w !== pos)
   const end = pos + node.nodeSize
-  // The picker always shows the language as it is now.
+  // The picker always shows the language as it is now; kept while it does.
+  const pickerKey = `lang:${pickerValue(node.attrs.language)}`
   const picker = decorations.find(pos, end, (spec) => spec.picker === true)
-  if (picker.length) decorations = decorations.remove(picker)
-  decorations = decorations.add(doc, [pickerWidget(pos, node.attrs.language)])
+  if (picker.length !== 1 || picker[0].from !== pos + 1 || picker[0].spec.key !== pickerKey) {
+    if (picker.length) decorations = decorations.remove(picker)
+    decorations = decorations.add(doc, [pickerWidget(pos, node.attrs.language)])
+  }
   if (p && !p.now && !force) {
     // Keep the mapped colours up until the pause.
     return { decorations, waiting: [...waiting, pos] }
   }
-  const old = decorations.find(pos, end, (spec) => spec.picker !== true)
-  if (old.length) decorations = decorations.remove(old)
-  if (p) decorations = decorations.add(doc, decorationsFor(node, pos, p.language))
+  // Only the colours that changed are replaced. The rest, mapped through the
+  // edit, are kept as they are: the same objects, so the view leaves their
+  // spans alone and a re-colour after the pause redraws a line, not the block.
+  const old = decorations.find(pos, end, (spec) => spec.picker !== true).sort((x, y) => x.from - y.from || x.to - y.to)
+  const fresh = p ? tokens(node.textContent, p.language) : []
+  const stale: Decoration[] = []
+  const added: Decoration[] = []
+  let i = 0
+  for (const [from, to, cls] of fresh) {
+    const a = pos + 1 + from
+    const b = pos + 1 + to
+    while (i < old.length && (old[i].from < a || (old[i].from === a && old[i].to < b))) stale.push(old[i++])
+    const d = old[i]
+    if (d && d.from === a && d.to === b && d.spec.colour === cls && (d.spec.inclusiveStart === true) === (from === 0)) i++
+    else added.push(colour(a, b, cls, from === 0))
+  }
+  while (i < old.length) stale.push(old[i++])
+  if (stale.length > REMOVE_ONE_BY_ONE) {
+    // The block's colours afresh, beside everything else as it was.
+    const others = decorations.find().filter((d) => d.spec.picker === true || d.to <= pos || d.from >= end)
+    const all = fresh.map(([from, to, cls]) => colour(pos + 1 + from, pos + 1 + to, cls, from === 0))
+    decorations = DecorationSet.create(doc, [...others, ...all])
+  } else {
+    if (stale.length) decorations = decorations.remove(stale)
+    if (added.length) decorations = decorations.add(doc, added)
+  }
   return { decorations, waiting }
 }
 

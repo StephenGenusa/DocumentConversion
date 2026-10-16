@@ -2,6 +2,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
+import { DecorationSet, type Decoration } from '@tiptap/pm/view'
 import { EDITOR_EXTENSIONS } from '../../src/renderer/src/lib/editor-extensions'
 import { configureBlockViews } from '../../src/renderer/src/lib/block-views'
 import { COLOUR_LINE_LIMIT, SYNC_COLOUR_CHARS, COLOUR_PAUSE_MS, codeLanguages, pickerValue } from '../../src/renderer/src/lib/code-colour'
@@ -151,22 +152,98 @@ describe('colouring cost', () => {
     expect(spans(blocks()[0])).toContain('hljs-keyword:def')
 
     const spy = vi.spyOn(hljs, 'highlight')
-    const times: number[] = []
+    // The colouring's own share of a keystroke (the plugin's transaction work)
+    // and the whole dispatch. The dispatch is mostly happy-dom, which walks
+    // every node of the block each time ProseMirror pauses and resumes its
+    // DOM observer, and under a loaded suite it varies with whatever else runs.
+    const apply: number[] = []
+    const dispatch: number[] = []
     for (let k = 0; k < 20; k++) {
-      const t = performance.now()
-      typeInto(e, 0, k % 2 ? 'x' : ' ')
-      times.push(performance.now() - t)
+      const pos = codeBlockPositions(e)[0]
+      const end = pos + 1 + e.state.doc.nodeAt(pos)!.content.size
+      const tr = e.state.tr.setSelection(TextSelection.create(e.state.doc, end)).insertText(k % 2 ? 'x' : ' ')
+      const t0 = performance.now()
+      e.state.apply(tr)
+      const t1 = performance.now()
+      e.view.dispatch(tr)
+      const t2 = performance.now()
+      apply.push(t1 - t0)
+      dispatch.push(t2 - t1)
     }
-    times.sort((a, b) => a - b)
-    const median = times[times.length >> 1]
-    process.stdout.write(`5,000-line python block: keystroke dispatch median ${median.toFixed(2)} ms, max ${times.at(-1)!.toFixed(2)} ms\n`)
+    const median = (a: number[]): number => [...a].sort((x, y) => x - y)[a.length >> 1]
+    process.stdout.write(`5,000-line python block: keystroke colouring median ${median(apply).toFixed(2)} ms, dispatch median ${median(dispatch).toFixed(2)} ms, max ${Math.max(...dispatch).toFixed(2)} ms\n`)
     expect(spy).not.toHaveBeenCalled()
+    // Re-highlighting or rebuilding the block's 9,000 colours costs tens of ms.
+    expect(median(apply)).toBeLessThan(10)
     // Generous: under load the suite runs every worker at once.
-    expect(median).toBeLessThan(30)
+    expect(median(dispatch)).toBeLessThan(60)
     // Colours stay up (mapped) while typing, and the block is re-coloured once, after the pause.
     expect(spans(blocks()[0])).toContain('hljs-keyword:def')
     vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
     expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('redraws only what changed when typing between two colours in a big block, before and after its re-colour', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const unit = ['def total(items, rate=0.2):', '    """Sum the invented prices."""', '    out = 0', '    for i in items:', '        out += i.price * (1 + rate)  # tax', '    return round(out, 2)', '']
+    const code = Array.from({ length: 1000 }, (_, i) => unit[i % unit.length]).join('\n')
+    expect(code.length).toBeGreaterThan(SYNC_COLOUR_CHARS)
+    const e = make(`<pre><code class="language-python">${code}</code></pre>`)
+    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    const pre = blocks()[0]
+    const mutations = (act: () => void): number => {
+      const seen = new MutationObserver(() => {})
+      seen.observe(pre, { subtree: true, childList: true, characterData: true, attributes: true })
+      act()
+      const n = seen.takeRecords().length
+      seen.disconnect()
+      return n
+    }
+    // Two colours side by side, well inside the block: "rate=" then "0.2".
+    const coloured = [...pre.querySelectorAll('span[class*="hljs-"]')]
+    const number = coloured.find((s, i) => i > 200 && s.className.includes('hljs-number') && s.previousSibling === coloured[i - 1])!
+    expect(number).toBeTruthy()
+    const at = e.view.posAtDOM(number.firstChild!, 0)
+    const spansBefore = spans(pre).length
+    for (let k = 0; k < 4; k++) {
+      // Each key, then the re-colour after the pause: a handful of DOM changes,
+      // not a rewrite of the thousands of spans after the caret.
+      const key = mutations(() => e.view.dispatch(e.state.tr.setSelection(TextSelection.create(e.state.doc, at + k)).insertText('x')))
+      const pause = mutations(() => vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1))
+      expect(key).toBeLessThan(10)
+      expect(pause).toBeLessThan(10)
+    }
+    expect(spans(pre).length).toBeGreaterThan(spansBefore - 5)
+    expect(spans(pre)).toContain('hljs-keyword:def')
+  })
+
+  it('re-colours a big block after the pause by replacing only the colours that changed', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const code = Array.from({ length: 1000 }, (_, i) => `value_${i} = ${i}  # invented`).join('\n')
+    expect(code.length).toBeGreaterThan(SYNC_COLOUR_CHARS)
+    const e = make(`<pre><code class="language-python">${code}</code></pre>`)
+    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    // ProseMirror empties the arrays it is given, so each is copied as it is passed.
+    const added: Decoration[] = []
+    const removed: Decoration[] = []
+    const { add, remove } = DecorationSet.prototype
+    vi.spyOn(DecorationSet.prototype, 'add').mockImplementation(function (this: DecorationSet, doc, d) {
+      added.push(...d.filter((x) => x.spec.colour))
+      return add.call(this, doc, d)
+    })
+    vi.spyOn(DecorationSet.prototype, 'remove').mockImplementation(function (this: DecorationSet, d) {
+      removed.push(...d.filter((x) => x.spec.colour))
+      return remove.call(this, d)
+    })
+    const create = vi.spyOn(DecorationSet, 'create')
+    typeInto(e, 0, '\nmore = 1')
+    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    // The new line's colours, not the block's thousands.
+    expect(added.length).toBeGreaterThan(0)
+    expect(added.length).toBeLessThan(5)
+    expect(removed.length).toBeLessThan(5)
+    expect(create).not.toHaveBeenCalled()
+    expect(spans(blocks()[0])).toContain('hljs-number:1')
   })
 })
 
