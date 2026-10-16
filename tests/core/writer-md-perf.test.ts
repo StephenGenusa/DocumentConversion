@@ -17,12 +17,26 @@ function sheetHtml(rows: number): string {
   return parts.join('')
 }
 
-async function bestOf3(fn: () => Promise<unknown>): Promise<number> {
-  let best = Infinity
-  for (let i = 0; i < 3; i++) {
-    const t0 = performance.now()
-    await fn()
-    best = Math.min(best, performance.now() - t0)
+/**
+ * The best time of each job over `rounds`, the jobs taken in turn within a
+ * round, after one untimed warm-up of each.
+ *
+ * These tests compare two timings, never one against a fixed budget: other
+ * suites running at once slow everything, and an absolute "under 3 s" (or
+ * a small and a large run timed one after the other, a burst of load landing
+ * on only one of them) is what made this file flaky. Interleaved, a slow
+ * spell lands on both sides of the ratio; the best of several drops the
+ * rounds a burst landed in.
+ */
+async function bestInTurn(jobs: Array<() => Promise<unknown>>, rounds = 5): Promise<number[]> {
+  for (const job of jobs) await job()
+  const best = jobs.map(() => Infinity)
+  for (let r = 0; r < rounds; r++) {
+    for (let j = 0; j < jobs.length; j++) {
+      const t0 = performance.now()
+      await jobs[j]()
+      best[j] = Math.min(best[j], performance.now() - t0)
+    }
   }
   return best
 }
@@ -35,43 +49,41 @@ describe('writeMarkdown performance', () => {
    * ~8s and 60k rows took ~20s, against ~5ms for the same content to html.
    * The writer renders pipe tables itself now and only hands turndown the
    * prose around them, which is linear.
-   */
-  it('converts a 20k-row sheet in well under the old quadratic time', async () => {
-    const html = sheetHtml(20_000)
-    const best = await bestOf3(() => writeMarkdown({ html }))
-    // Pre-fix: ~8000 ms. Post-fix: a few hundred ms. The budget is deliberately
-    // loose so a machine running other test suites in parallel does not flake.
-    expect(best).toBeLessThan(3000)
-  }, 300_000)
-
-  /**
-   * Quadratic cost shows up as the per-row cost rising with the row count.
-   * 4x the rows must not cost more than 8x the time.
+   *
+   * Quadratic cost shows up as the time rising with the square of the row
+   * count. Four 4k-row sheets are timed against one 16k-row sheet: the same
+   * rows, so the same time when the cost is linear and four times it when
+   * quadratic. The bound, 2x, sits between the two. Both sides doing the same
+   * work for the same time is what keeps load from favouring either: a short
+   * run is likelier to fit in a quiet moment than a long one.
    */
   it('scales close to linearly with row count', async () => {
-    const small = await bestOf3(() => writeMarkdown({ html: sheetHtml(4_000) }))
-    const large = await bestOf3(() => writeMarkdown({ html: sheetHtml(16_000) }))
-    expect(large).toBeLessThan(small * 8)
+    const small = sheetHtml(4_000)
+    const large = sheetHtml(16_000)
+    const [smallMs, largeMs] = await bestInTurn([
+      async () => {
+        for (let i = 0; i < 4; i++) await writeMarkdown({ html: small })
+      },
+      () => writeMarkdown({ html: large }),
+    ])
+    expect(largeMs / smallMs, `16k rows ${largeMs.toFixed(0)} ms, 4 x 4k rows ${smallMs.toFixed(0)} ms`).toBeLessThan(2)
   }, 300_000)
 
   /**
-   * The html writer is the "same content, no turndown" control.
-   *
-   * The denominator is the fragile half: writeHtml finishes in single-digit
-   * milliseconds, so it is measured against the timer's own resolution, and
-   * the `Math.max(..., 1)` floor means a fast machine can report 1ms and swing
-   * the ratio several-fold on its own. Averaging the control over enough
-   * iterations to take real time removes that, and the bound stays far below
-   * the ~1600x this measured before the fix (8s against 5ms) while leaving
-   * room for a machine running other suites in parallel — an earlier 400
-   * flaked at 459 for exactly that reason, with nothing wrong with the code.
+   * The html writer is the "same content, no turndown" control: a constant
+   * slowdown the scaling test cannot see. It finishes in single-digit
+   * milliseconds, so each of its timings is the average of 20 runs, well
+   * clear of the timer's resolution. The bound stays far below the ~1600x
+   * this measured before the fix (8s against 5ms).
    */
   it('stays within a small multiple of the html writer', async () => {
     const html = sheetHtml(20_000)
-    const t0 = performance.now()
-    for (let i = 0; i < 20; i++) await writeHtml({ html })
-    const htmlMs = (performance.now() - t0) / 20
-    const mdMs = await bestOf3(() => writeMarkdown({ html }))
-    expect(mdMs / htmlMs).toBeLessThan(800)
+    const [htmlMs, mdMs] = await bestInTurn([
+      async () => {
+        for (let i = 0; i < 20; i++) await writeHtml({ html })
+      },
+      () => writeMarkdown({ html }),
+    ])
+    expect(mdMs / (htmlMs / 20), `md ${mdMs.toFixed(0)} ms, html ${(htmlMs / 20).toFixed(1)} ms`).toBeLessThan(800)
   }, 300_000)
 })
