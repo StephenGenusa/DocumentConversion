@@ -61,6 +61,19 @@ export const TOKEN_COLOURS: ReadonlyArray<readonly [scopes: readonly string[], c
   [['section', 'name'], '#0550ae'],
 ]
 
+// Compact GitHub-light palette for hljs spans. The pdf and html shell prints it
+// inline (the shell must stay self-contained) and the editor colours code with it
+// (renderer/src/lib/code-colour.ts), so the pane looks like the printed page.
+export const HLJS_CSS = `
+${TOKEN_COLOURS.map(([scopes, colour]) => `  ${scopes.map((s) => `.hljs-${s}`).join(', ')} { color: ${colour}; }`).join('\n')}
+  .hljs-comment, .hljs-quote { font-style: italic; }
+  .hljs-section, .hljs-name { font-weight: 600; }
+  .hljs-addition { background: #dafbe1; }
+  .hljs-deletion { background: #ffebe9; }
+  /* A printed review reads by whole lines: colour the line, not just its text. */
+  .language-diff .hljs-addition, .language-diff .hljs-deletion { display: inline-block; width: 100%; }
+`
+
 const COLOUR_OF = new Map(TOKEN_COLOURS.flatMap(([scopes, colour]) => scopes.map((s) => [s, colour] as const)))
 
 /**

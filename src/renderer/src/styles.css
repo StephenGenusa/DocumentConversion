@@ -131,7 +131,11 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .clip-pane__editor .tiptap { outline: none; min-height: 8rem; }
 .clip-pane__editor table { border-collapse: collapse; margin: .5rem 0; }
 .clip-pane__editor td, .clip-pane__editor th { border: 1px solid #d4d4d8; padding: .3rem .55rem; }
-.clip-pane__editor pre { background: #f4f4f5; padding: .75rem; border-radius: 6px; overflow-x: auto; }
+.clip-pane__editor pre { background: #f4f4f5; padding: .75rem; border-radius: 6px; overflow-x: auto; position: relative; }
+/* A code block's language picker (lib/code-colour.ts): quiet in the corner, plain when wanted. */
+.clip-pane__editor .code-lang { position: absolute; top: .3rem; right: .35rem; user-select: none; }
+.clip-pane__editor .code-lang__select { font: inherit; font-family: system-ui, sans-serif; font-size: .75rem; color: #71717a; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: .05rem .2rem; max-width: 9rem; cursor: pointer; opacity: .75; }
+.clip-pane__editor pre:hover .code-lang__select, .clip-pane__editor .code-lang__select:focus-visible { opacity: 1; background: #fff; border-color: #d4d4d8; color: #3f3f46; }
 .clip-pane__editor blockquote { border-left: 4px solid #d4d4d8; margin: .5rem 0; padding: .1rem .9rem; color: #52525b; }
 .clip-pane__editor img { max-width: 100%; }
 .input-list { list-style: none; margin: .75rem 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }

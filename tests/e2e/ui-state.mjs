@@ -166,6 +166,18 @@ const windowTitles = () =>
 
 /* --------------------------------- UI helpers --------------------------------- */
 
+/** With UI_SHOTS=<dir>, a PNG of the window at this point, for a person to look at. */
+async function shot(name) {
+  if (!process.env.UI_SHOTS) return
+  const id = ++seq
+  const res = await new Promise((r) => {
+    pending.set(id, r)
+    ws.send(JSON.stringify({ id, method: 'Page.captureScreenshot', params: { format: 'png' } }))
+  })
+  mkdirSync(process.env.UI_SHOTS, { recursive: true })
+  writeFileSync(join(process.env.UI_SHOTS, `${name}.png`), Buffer.from(res.result.data, 'base64'))
+}
+
 const EDITOR = `document.querySelector('.clip-pane__editor .ProseMirror')`
 const click = async (label) => {
   const ok = await js(
@@ -490,6 +502,80 @@ try {
   await waitFor(`!!${EDITOR}`, 'the edit pane')
   const pastedCode = await js(`${EDITOR}.editor.getHTML()`)
   check('pasted Python opens as one Python code block, not a heading', /^<pre><code class="language-python"># Totals/.test(pastedCode) && !pastedCode.includes('<h1'), pastedCode.slice(0, 200))
+  // Coloured in the pane too, in the outputs' palette (lib/code-colour.ts).
+  await waitFor(`!!document.querySelector('.clip-pane__editor pre .hljs-keyword')`, 'the pasted Python to be coloured')
+  const tokenColours = () => js(`(() => {
+    const pre = document.querySelector('.clip-pane__editor pre')
+    const kw = [...pre.querySelectorAll('.hljs-keyword')].find((s) => s.textContent === 'def')
+    return { keyword: kw ? getComputedStyle(kw).color : null, plain: getComputedStyle(pre.querySelector('code') ?? pre).color, spans: pre.querySelectorAll('[class*="hljs-"]').length }
+  })()`)
+  const colours = await tokenColours()
+  check('the pane colours the pasted Python: a keyword is not the colour of plain text', colours.keyword === 'rgb(207, 34, 46)' && colours.plain !== colours.keyword, JSON.stringify(colours))
+  // The language picker: Plain text takes the colours off and the class out; back to Python puts both back.
+  const pastedHtml = await js(`${EDITOR}.editor.getHTML()`)
+  if (process.env.UI_SHOTS) {
+    // A JavaScript block beside it, for the picture only; the pane is put back after.
+    await typeIntoEditor('<p>And in JavaScript:</p><pre><code class="language-javascript">// Invented totals\nconst rate = 0.2\nfunction total(items) {\n  return items.reduce((sum, item) => sum + item.amount * (1 + rate), 0)\n}\nconsole.log(`total: ${total([])}`)</code></pre>')
+  }
+  await js(`${EDITOR}.editor.commands.setTextSelection(5)`)
+  await waitFor(`!!document.querySelector('select[aria-label="Code language"]')`, 'the language picker')
+  await shot('python-and-js')
+  // Ctrl+Alt+L from the code reaches the block's picker, as a keyboard user would.
+  await js(`(() => { ${EDITOR}.editor.commands.focus(); ${EDITOR}.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', ctrlKey: true, altKey: true, bubbles: true, cancelable: true })) })()`)
+  const focused = await js(`(() => { const s = document.activeElement; return s?.getAttribute('aria-label') === 'Code language' ? { value: s.value, options: s.options.length } : null })()`)
+  await shot('picker-focused')
+  check('Ctrl+Alt+L in a code block focuses its language picker, which lists the languages', focused?.value === 'python' && focused.options > 40, JSON.stringify(focused))
+  const pick = (value) => js(`(() => { const s = document.activeElement?.getAttribute('aria-label') === 'Code language' ? document.activeElement : document.querySelector('select[aria-label="Code language"]'); s.focus(); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  await pick('')
+  const asPlain = { html: await js(`${EDITOR}.editor.getHTML()`), ...(await tokenColours()) }
+  check('choosing Plain text in the picker uncolours the block and drops its class', asPlain.spans === 0 && /^<pre><code># Totals/.test(asPlain.html), JSON.stringify(asPlain).slice(0, 200))
+  await pick('python')
+  const back = { html: await js(`${EDITOR}.editor.getHTML()`), ...(await tokenColours()) }
+  check('choosing Python again colours it and saves class="language-python"', back.spans > 0 && /^<pre><code class="language-python"># Totals/.test(back.html), JSON.stringify(back).slice(0, 200))
+  // Real typing (through the DOM, not a command) right beside the picker, at the block's start.
+  await js(`${EDITOR}.editor.commands.focus(1)`)
+  {
+    const id = ++seq
+    await new Promise((r) => {
+      pending.set(id, r)
+      ws.send(JSON.stringify({ id, method: 'Input.insertText', params: { text: 'z' } }))
+    })
+  }
+  await sleep(100)
+  const typed = await js(`${EDITOR}.editor.getHTML()`)
+  check('typing at the start of a coloured block puts the text in the code, not in the picker', typed.startsWith('<pre><code class="language-python">z# Totals'), typed.slice(0, 120))
+  await js(`${EDITOR}.editor.commands.setContent(${JSON.stringify(pastedHtml)})`)
+  // Keystroke to paint in a 5,000-line Python block, coloured and plain.
+  const typingCost = (language) => js(`(async () => {
+    const ed = ${EDITOR}.editor
+    const unit = ['def total(items, rate=0.2):', '    """Sum the invented prices."""', '    out = 0', '    for i in items:', '        out += i.price * (1 + rate)  # tax', '    return round(out, 2)', '']
+    const code = Array.from({ length: 5000 }, (_, i) => unit[i % unit.length]).join('\\n')
+    ed.commands.setContent({ type: 'doc', content: [{ type: 'codeBlock', attrs: { language: ${JSON.stringify(language)} }, content: [{ type: 'text', text: code }] }] })
+    await new Promise((r) => setTimeout(r, 600))
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await frame()
+    // work: the keystroke's transaction, DOM update and layout, done at once;
+    // paint: until the frame after it is drawn, which includes waiting for that frame.
+    const work = []
+    const paint = []
+    for (let k = 0; k < 25; k++) {
+      ed.commands.setTextSelection(1500 + k)
+      await frame()
+      const t0 = performance.now()
+      ed.commands.insertContent('x')
+      void document.querySelector('.clip-pane__editor pre').getBoundingClientRect()
+      work.push(performance.now() - t0)
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+      paint.push(performance.now() - t0)
+    }
+    const median = (a) => Math.round(a.sort((x, y) => x - y)[a.length >> 1] * 10) / 10
+    return { work: median(work), paint: median(paint), spans: document.querySelectorAll('.clip-pane__editor pre [class*="hljs-"]').length }
+  })()`)
+  const colouredCost = await typingCost('python')
+  const plainCost = await typingCost(null)
+  console.log(`note  5,000-line Python block, keystroke in ms: coloured ${JSON.stringify(colouredCost)}, plain ${JSON.stringify(plainCost)}`)
+  check('typing in a 5,000-line Python block stays responsive while it is coloured', colouredCost.spans > 0 && colouredCost.work < 30, JSON.stringify(colouredCost))
+  await js(`${EDITOR}.editor.commands.setContent(${JSON.stringify(pastedHtml)})`)
   await click('HTML')
   await click('Convert to clipboard')
   await waitFor(resultIsUp, 'a result')

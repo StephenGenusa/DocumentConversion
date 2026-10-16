@@ -1,4 +1,4 @@
-import hljs, { TOKEN_COLOURS } from './hljs'
+import hljs, { HLJS_CSS } from './hljs'
 import { codeBlockText } from './code-language'
 import { footnotesForOutput } from './footnotes'
 import type { HubDocument, TargetFormat } from './types'
@@ -7,18 +7,6 @@ export interface ShellOptions {
   /** Target the shell is being rendered for — enables target-specific fidelity (e.g. code highlighting for pdf/html). */
   target?: TargetFormat
 }
-
-// Compact GitHub-light palette for hljs spans (kept inline: the shell must stay self-contained).
-// The colours are TOKEN_COLOURS, which the docx writer applies as run colours.
-const HLJS_CSS = `
-${TOKEN_COLOURS.map(([scopes, colour]) => `  ${scopes.map((s) => `.hljs-${s}`).join(', ')} { color: ${colour}; }`).join('\n')}
-  .hljs-comment, .hljs-quote { font-style: italic; }
-  .hljs-section, .hljs-name { font-weight: 600; }
-  .hljs-addition { background: #dafbe1; }
-  .hljs-deletion { background: #ffebe9; }
-  /* A printed review reads by whole lines: colour the line, not just its text. */
-  .language-diff .hljs-addition, .language-diff .hljs-deletion { display: inline-block; width: 100%; }
-`
 
 /**
  * Notebook cells. A converted notebook used to be an undifferentiated dump:

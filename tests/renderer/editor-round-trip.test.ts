@@ -70,6 +70,20 @@ describe('the editor round-trips what the hub allows', () => {
     expect(roundTrip(html)).toBe(html)
   })
 
+  // Code is coloured in the editor by decorations, which never enter the
+  // document (lib/code-colour.ts); with a DOM, code-colour.test.ts checks getHTML too.
+  it.each([
+    ['python', '<pre><code class="language-python">def f(x):\n    return x &lt; 2  # invented</code></pre>'],
+    ['javascript', '<pre><code class="language-javascript">const s = "a &amp; b"</code></pre>'],
+    ['sql', '<pre><code class="language-sql">SELECT id FROM t WHERE n &gt; 1;</code></pre>'],
+    ['an alias', '<pre><code class="language-js">let n = 0</code></pre>'],
+    ['no language', '<pre><code>x = 1</code></pre>'],
+    ['plaintext', '<pre><code class="language-plaintext">x = 1</code></pre>'],
+    ['a block over the colouring limit', `<pre><code class="language-python">${Array.from({ length: 6100 }, (_, i) => `n${i} = ${i}`).join('\n')}</code></pre>`],
+  ])('keeps a code block (%s) byte for byte', (_name, html) => {
+    expect(roundTrip(html)).toBe(html)
+  })
+
   // Opening a diagram or formula for editing and closing it with no change
   // keeps these bytes too: that needs the node views and a DOM, so it is in
   // block-views.test.ts ("opening and closing with no change ...").
