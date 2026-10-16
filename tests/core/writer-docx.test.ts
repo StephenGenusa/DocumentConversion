@@ -129,3 +129,216 @@ describe('writeDocx sets code in a monospace font wherever it is', () => {
     expect(await fontsOf(html, 'Then')).toEqual([''])
   })
 })
+
+/** CT_RPr's child order, as far as html-to-docx and this writer use it. */
+const RPR_ORDER = ['rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps', 'strike', 'dstrike', 'color', 'position', 'sz', 'szCs', 'highlight', 'u', 'shd', 'vertAlign']
+
+/**
+ * The formatting of every run whose text holds `marker`, as sorted names:
+ * b, i, u, strike, sup, sub, mark, plus `link` for a run in a hyperlink and
+ * `mono` for one in Courier. Also checks each run's properties are in the
+ * schema's order and no stand-in colour is left behind.
+ */
+async function formatsOf(html: string, marker: string, xml?: string): Promise<string[]> {
+  xml ??= await documentXml(html)
+  expect(xml).not.toMatch(/w:color w:val="0D0C/i)
+  const hits: string[] = []
+  for (const m of xml.matchAll(/<w:hyperlink\b[^>]*>[\s\S]*?<\/w:hyperlink>|<w:r>[\s\S]*?<\/w:r>/g)) {
+    const inLink = m[0].startsWith('<w:hyperlink')
+    for (const r of inLink ? [...m[0].matchAll(/<w:r>[\s\S]*?<\/w:r>/g)].map((x) => x[0]) : [m[0]]) {
+      if (![...r.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].some((t) => t[1].includes(marker))) continue
+      const props = /<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(r)?.[1] ?? ''
+      const names = [...props.matchAll(/<w:(\w+)\b/g)].map((n) => n[1])
+      const order = names.map((n) => RPR_ORDER.indexOf(n))
+      expect(order.every((o) => o >= 0), `known run properties: ${names}`).toBe(true)
+      expect(order, `run properties in schema order: ${names}`).toEqual([...order].sort((a, b) => a - b))
+      const f: string[] = []
+      if (names.includes('b')) f.push('b')
+      if (names.includes('i')) f.push('i')
+      if (names.includes('u')) f.push('u')
+      if (names.includes('strike')) f.push('strike')
+      if (/w:vertAlign w:val="superscript"/.test(props)) f.push('sup')
+      if (/w:vertAlign w:val="subscript"/.test(props)) f.push('sub')
+      if (names.includes('highlight')) f.push('mark')
+      if (/w:rFonts\b[^>]*w:ascii="Courier"/.test(props)) f.push('mono')
+      if (inLink) f.push('link')
+      hits.push(f.sort().join('+'))
+    }
+  }
+  expect(hits.length, `a run holding ${marker}`).toBeGreaterThan(0)
+  return hits
+}
+
+async function documentXml(html: string): Promise<string> {
+  return (await JSZip.loadAsync(await writeDocx({ html }))).file('word/document.xml')!.async('string')
+}
+
+/** The text of the paragraph holding `marker`, all runs joined. */
+async function textOf(html: string, marker: string): Promise<string> {
+  return (await linesOf(html, marker)).join('\n')
+}
+
+/**
+ * html-to-docx 1.8.0 honours <i> but not <em>, ignores <s>/<del>/<strike>,
+ * and keeps only the innermost of nested tags, so ***both*** came out bold
+ * only and ~~struck~~ plain, whatever reader the document came from.
+ */
+describe('writeDocx keeps inline formatting', () => {
+  const STYLES: Record<string, [string, string]> = {
+    strong: ['<strong>', '</strong>'],
+    em: ['<em>', '</em>'],
+    u: ['<u>', '</u>'],
+    s: ['<s>', '</s>'],
+    sup: ['<sup>', '</sup>'],
+    sub: ['<sub>', '</sub>'],
+  }
+  const NAME: Record<string, string> = { strong: 'b', em: 'i', u: 'u', s: 'strike', sup: 'sup', sub: 'sub' }
+
+  it('writes the Markdown sample the way it reads', async () => {
+    const html = '<p>Plain <em>italic</em> and <strong>bold</strong> and <s>struck</s> and <em><strong>both</strong></em> end.</p>'
+    const xml = await documentXml(html)
+    expect(await formatsOf(html, 'Plain', xml)).toEqual([''])
+    expect(await formatsOf(html, 'italic', xml)).toEqual(['i'])
+    expect(await formatsOf(html, 'bold', xml)).toEqual(['b'])
+    expect(await formatsOf(html, 'struck', xml)).toEqual(['strike'])
+    expect(await formatsOf(html, 'both', xml)).toEqual(['b+i'])
+    expect(await textOf(html, 'Plain')).toBe('Plain italic and bold and struck and both end.')
+  })
+
+  it.each([
+    ['strong', 'b'], ['b', 'b'], ['em', 'i'], ['i', 'i'], ['u', 'u'], ['ins', 'u'],
+    ['s', 'strike'], ['del', 'strike'], ['strike', 'strike'], ['sup', 'sup'], ['sub', 'sub'], ['mark', 'mark'],
+    ['cite', 'i'], ['var', 'i'], ['dfn', 'i'], ['kbd', 'mono'], ['samp', 'mono'],
+  ])('writes <%s> as %s', async (tag, name) => {
+    const html = `<p>before <${tag}>alpha</${tag}> after</p>`
+    expect(await formatsOf(html, 'alpha')).toEqual([name])
+    expect(await formatsOf(html, 'after')).toEqual([''])
+    expect(await textOf(html, 'alpha')).toBe('before alpha after')
+  })
+
+  const pairs = Object.keys(STYLES).flatMap((a) => Object.keys(STYLES).filter((b) => a !== b).map((b) => [a, b]))
+  it.each(pairs.filter(([a, b]) => !(['sup', 'sub'].includes(a) && ['sup', 'sub'].includes(b))))(
+    'keeps both of <%s><%s>',
+    async (outer, inner) => {
+      const html = `<p>x ${STYLES[outer][0]}${STYLES[inner][0]}alpha${STYLES[inner][1]}${STYLES[outer][1]} y</p>`
+      expect(await formatsOf(html, 'alpha')).toEqual([[NAME[outer], NAME[inner]].sort().join('+')])
+    },
+  )
+
+  it('takes the inner of a superscript and a subscript', async () => {
+    expect(await formatsOf('<p><sup>a <sub>alpha</sub></sup></p>', 'alpha')).toEqual(['sub'])
+    expect(await formatsOf('<p><sub>a <sup>alpha</sup></sub></p>', 'alpha')).toEqual(['sup'])
+  })
+
+  it('keeps every style of a deep nest, and each level its own', async () => {
+    const html = '<p><strong>one <em>two <u>three <s>four <sup>alpha</sup></s></u></em></strong> plain</p>'
+    const xml = await documentXml(html)
+    expect(await formatsOf(html, 'one', xml)).toEqual(['b'])
+    expect(await formatsOf(html, 'two', xml)).toEqual(['b+i'])
+    expect(await formatsOf(html, 'three', xml)).toEqual(['b+i+u'])
+    expect(await formatsOf(html, 'four', xml)).toEqual(['b+i+strike+u'])
+    expect(await formatsOf(html, 'alpha', xml)).toEqual(['b+i+strike+sup+u'])
+    expect(await formatsOf(html, 'plain', xml)).toEqual([''])
+    expect(await textOf(html, 'one')).toBe('one two three four alpha plain')
+  })
+
+  it('keeps the space between two formatted words', async () => {
+    // html-to-docx drops a text node that is only whitespace: "alpha beta" became "alphabeta".
+    expect(await textOf('<p><strong>alpha</strong> <em>beta</em></p>', 'alpha')).toBe('alpha beta')
+    expect(await textOf('<p><a href="https://example.com/"><strong>alpha</strong> <em>beta</em></a></p>', 'alpha')).toBe('alpha beta')
+  })
+
+  it('does not strike or underline the space after struck or underlined text', async () => {
+    const runText = async (html: string, marker: string): Promise<string> => {
+      const xml = await documentXml(html)
+      const run = [...xml.matchAll(/<w:r>[\s\S]*?<\/w:r>/g)].map((m) => m[0]).find((r) => r.includes(marker))!
+      return /<w:t[^>]*>([^<]*)<\/w:t>/.exec(run)![1]
+    }
+    expect(await runText('<p><s>alpha</s> <code>beta</code></p>', 'alpha')).toBe('alpha')
+    expect(await runText('<p><strong>beta</strong> <u>alpha</u></p>', 'alpha')).toBe('alpha')
+    expect(await textOf('<p><s>alpha</s> <u>beta</u></p>', 'alpha')).toBe('alpha beta')
+  })
+
+  it('keeps formatting inside a link, and the whole link', async () => {
+    const html = '<p>see <a href="https://example.com/">the <strong>alpha</strong> and <em><s>beta</s></em> page</a> now</p>'
+    const xml = await documentXml(html)
+    expect(await formatsOf(html, 'alpha', xml)).toEqual(['b+link'])
+    expect(await formatsOf(html, 'beta', xml)).toEqual(['i+link+strike'])
+    expect(await formatsOf(html, 'page', xml)).toEqual(['link'])
+    expect(await formatsOf(html, 'now', xml)).toEqual([''])
+    expect(xml.match(/<w:hyperlink\b/g)).toHaveLength(1)
+    expect(await textOf(html, 'see')).toBe('see the alpha and beta page now')
+  })
+
+  it('keeps a link that is itself formatted', async () => {
+    const html = '<p>go <strong><a href="https://example.com/">alpha</a></strong> <em>now</em></p>'
+    expect(await formatsOf(html, 'alpha')).toEqual(['b+link'])
+    expect(await formatsOf(html, 'now')).toEqual(['i'])
+  })
+
+  it('keeps formatting in a list item', async () => {
+    const html = '<ul><li>item <em><strong>alpha</strong></em> and <s>beta</s></li></ul>'
+    const xml = await documentXml(html)
+    expect(await formatsOf(html, 'alpha', xml)).toEqual(['b+i'])
+    expect(await formatsOf(html, 'beta', xml)).toEqual(['strike'])
+    expect(await textOf(html, 'item')).toBe('item alpha and beta')
+  })
+
+  it('keeps formatting in a table cell', async () => {
+    const html = '<table><tr><th>Head <em>alpha</em></th></tr><tr><td>cell <del><strong>beta</strong></del> end</td></tr></table>'
+    const xml = await documentXml(html)
+    expect((await formatsOf(html, 'alpha', xml)).map((f) => f.replace(/^b\+?/, ''))).toEqual(['i'])
+    expect(await formatsOf(html, 'beta', xml)).toEqual(['b+strike'])
+    expect(await textOf(html, 'cell')).toBe('cell beta end')
+  })
+
+  it('keeps formatting in a footnote and the reference raised', async () => {
+    const html =
+      '<p>A claim<sup data-fn="n1">1</sup> made.</p>' +
+      '<ol><li data-fn="n1"><p>See <em>alpha</em> and <strong><s>beta</s></strong>.</p></li></ol>'
+    const xml = await documentXml(html)
+    expect(await formatsOf(html, 'alpha', xml)).toEqual(['i'])
+    expect(await formatsOf(html, 'beta', xml)).toEqual(['b+strike'])
+    const ref = [...xml.matchAll(/<w:r>[\s\S]*?<\/w:r>/g)].map((m) => m[0]).find((r) => /<w:t[^>]*>1<\/w:t>/.test(r))
+    expect(ref).toMatch(/w:vertAlign w:val="superscript"/)
+  })
+
+  it('keeps bold on a superscript and a subscript', async () => {
+    const html = '<p>x<strong><sup>alpha</sup></strong> y<sub><b>beta</b></sub></p>'
+    expect(await formatsOf(html, 'alpha')).toEqual(['b+sup'])
+    expect(await formatsOf(html, 'beta')).toEqual(['b+sub'])
+  })
+
+  it('keeps inline code in Courier inside other formatting', async () => {
+    const html = '<p>run <strong>the <code>alpha</code> tool</strong></p>'
+    expect(await formatsOf(html, 'alpha')).toEqual(['b+mono'])
+    expect(await formatsOf(html, 'tool')).toEqual(['b'])
+  })
+
+  it('formats a heading run without doubling its style', async () => {
+    const html = '<h2>Title <em>alpha</em> <strong>beta</strong></h2>'
+    const xml = await documentXml(html)
+    expect(await formatsOf(html, 'alpha', xml)).toEqual(['i'])
+    expect(await formatsOf(html, 'beta', xml)).toEqual(['b'])
+    expect(await formatsOf(html, 'Title', xml)).toEqual([''])
+    expect(xml).toMatch(/w:pStyle w:val="Heading2"/)
+  })
+
+  it('keeps line breaks inside formatting', async () => {
+    expect(await linesOf('<p><strong>alpha<br><em>beta</em></strong></p>', 'alpha')).toEqual(['alpha', 'beta'])
+  })
+
+  it('keeps a picture inside formatting', async () => {
+    // html-to-docx wrote nothing for an <img> inside <strong>.
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+    const html = `<p>a <strong>alpha <img src="${png}" alt="dot"> beta</strong></p>`
+    const xml = await documentXml(html)
+    expect(xml.match(/<w:drawing>/g)).toHaveLength(1)
+    expect(await formatsOf(html, 'beta', xml)).toEqual(['b'])
+  })
+
+  it('keeps the text of other inline elements', async () => {
+    // html-to-docx wrote an empty run for a tag it does not know.
+    expect(await textOf('<p>a <small>alpha</small> <abbr title="x">beta</abbr> c</p>', 'alpha')).toBe('a alpha beta c')
+  })
+})

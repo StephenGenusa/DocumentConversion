@@ -200,6 +200,8 @@ async function lowerFormulas(zip: JSZip, lowerings: Map<string, number>): Promis
 async function recompress(docx: Buffer, lowerings: Map<string, number> = new Map()): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
+    const body = zip.file('word/document.xml')
+    if (body) zip.file('word/document.xml', styleRuns(await body.async('string')))
     if (lowerings.size > 0) {
       try {
         await lowerFormulas(zip, lowerings)
@@ -525,11 +527,215 @@ function monospaceCode(source: string): string {
   return serialize(dom.children)
 }
 
+/** Run formatting, one bit each, carried to Word in a stand-in colour (see flattenFormatting). */
+const BOLD = 1
+const ITALIC = 2
+const UNDERLINE = 4
+const STRIKE = 8
+const SUPER = 16
+const SUB = 32
+const MARK = 64
+
+const FORMAT_BITS: Record<string, number> = {
+  strong: BOLD, b: BOLD,
+  em: ITALIC, i: ITALIC, cite: ITALIC, var: ITALIC, dfn: ITALIC,
+  u: UNDERLINE, ins: UNDERLINE,
+  s: STRIKE, del: STRIKE, strike: STRIKE,
+  sup: SUPER, sub: SUB,
+  mark: MARK,
+}
+/** Set in the code font, as a browser sets them in its monospace one. */
+const MONOSPACE = new Set(['code', 'kbd', 'samp', 'tt'])
+/** Inline elements html-to-docx writes an empty run for: their text is kept, unformatted. */
+const TRANSPARENT = new Set(['span', 'small', 'big', 'abbr', 'acronym', 'time', 'data', 'bdi', 'bdo', 'font', 'q'])
+/** Left exactly as they are: a code block keeps its own line-break spans. */
+const UNTOUCHED = new Set(['pre', 'svg', 'math', 'script', 'style'])
+
+/**
+ * The stand-in colour: `0D0C` and the formatting bits as two hex digits.
+ * Near black, so a run the post-pass somehow misses still reads as text.
+ */
+const STAND_IN = /<w:color w:val="0D0C([0-9A-Fa-f]{2})"\/>/
+
+interface Look {
+  bits: number
+  font?: string
+}
+
+/**
+ * html-to-docx 1.8.0 maps <i> to italic but not <em>; it has a case for
+ * <s>/<del>/<strike> that never sets anything; and in nested tags each one
+ * replaces the formatting of the tag around it, so `<em><strong>` is bold
+ * only. On a <span> it reads font-weight:bold, font-family, font-size, color
+ * and background-color, and nothing for italic, underline, strike or
+ * vertical-align. Every reader's output reaches Word through it, so ***both***
+ * and ~~struck~~ lost their formatting from any source.
+ *
+ * So each piece of formatted text becomes a <span> holding only that text —
+ * the one shape html-to-docx writes faithfully (see unwrapSpans) — whose
+ * `color` is a stand-in naming every style the text has, inherited through
+ * any depth of nesting; the formatting tags themselves are taken away. Once
+ * the document is written, styleRuns turns each stand-in colour back into
+ * Word's own w:b, w:i, w:u, w:strike, w:vertAlign and w:highlight. The code
+ * font travels as the span's font-family, which html-to-docx does honour.
+ *
+ * Taking the tags away also mends three other losses, measured:
+ *  - a link inside formatting (`<strong><a>`) was written as plain text, as
+ *    html-to-docx only makes a hyperlink of an <a> in a paragraph's own
+ *    children; and of an <a> it writes only the FIRST child, so a link
+ *    holding formatting is wrapped in one plain <span> holding all of it;
+ *  - a text node of only whitespace is dropped, so `**a** *b*` read "ab":
+ *    such a space is joined to the text beside it;
+ *  - a <br> inside formatting, and the text of a tag it does not know
+ *    (<kbd>, <small>, <abbr>), were not written at all.
+ *
+ * A code block is left alone: breakCodeLines and monospaceCode have shaped it.
+ */
+function flattenFormatting(source: string): string {
+  if (!/<(strong|b|em|i|cite|var|dfn|u|ins|s|del|strike|sup|sub|mark|code|kbd|samp|tt|span|small|big|abbr|acronym|time|data|bdi|bdo|font|q|a)\b/i.test(source)) {
+    return source
+  }
+  const dom = parseDocument(source)
+
+  const lookOf = (el: Element, look: Look): Look | null => {
+    const bit = FORMAT_BITS[el.name]
+    if (bit) {
+      // A superscript inside a subscript (or the other way) takes the inner one.
+      const bits = bit === SUPER || bit === SUB ? (look.bits & ~(SUPER | SUB)) | bit : look.bits | bit
+      return { ...look, bits }
+    }
+    if (MONOSPACE.has(el.name)) return { ...look, font: CODE_FONT }
+    if (el.name === 'span') {
+      // monospaceCode's spans: the only ones left by now.
+      const font = /font-family:\s*([^;]+)/i.exec(el.attribs.style ?? '')?.[1]?.trim()
+      return font ? { ...look, font } : look
+    }
+    if (TRANSPARENT.has(el.name)) return look
+    return null
+  }
+
+  const styleOf = (look: Look): string =>
+    [look.bits ? `color: #0D0C${look.bits.toString(16).toUpperCase().padStart(2, '0')}` : '', look.font ? `font-family: ${look.font}` : '']
+      .filter(Boolean)
+      .join('; ')
+
+  const restyle = (node: AnyNode, look: Look): AnyNode[] => {
+    if (node instanceof Text) {
+      if (node.data === '' || (!look.bits && !look.font)) return [node]
+      return [new Element('span', { style: styleOf(look) }, [new Text(node.data)])]
+    }
+    if (!isElement(node) || UNTOUCHED.has(node.name)) return [node]
+    const own = lookOf(node, look)
+    let kids = node.children.flatMap((child) => restyle(child, own ?? look))
+    if (node.name === 'q') kids = [new Text('\u201C'), ...kids, new Text('\u201D')]
+    if (own) return kids
+    splice(node, 0, node.children.length, kids)
+    joinSpaces(node)
+    if (node.name === 'a' && node.children.length > 1 && !elementsOf(node.children, 'img').length) {
+      splice(node, 0, node.children.length, [new Element('span', {}, [...node.children])])
+    }
+    return [node]
+  }
+
+  for (const node of [...dom.children]) {
+    const fresh = restyle(node, { bits: 0 })
+    splice(dom, dom.children.indexOf(node), 1, fresh)
+  }
+  return serialize(dom.children)
+}
+
+/** A text node, or one of flattenFormatting's spans holding just text: its Text. */
+function leafText(node: AnyNode | null | undefined): Text | null {
+  if (!node) return null
+  if (node instanceof Text) return node
+  if (isElement(node) && node.name === 'span' && node.children.length === 1 && node.children[0] instanceof Text) {
+    return node.children[0]
+  }
+  return null
+}
+
+/** A leaf whose formatting draws across its spaces too: strike, underline, highlight. */
+function drawsLine(node: AnyNode): boolean {
+  if (!isElement(node)) return false
+  const bits = /0D0C([0-9A-F]{2})/i.exec(node.attribs.style ?? '')?.[1]
+  return bits !== undefined && (parseInt(bits, 16) & (STRIKE | UNDERLINE | MARK)) !== 0
+}
+
+/**
+ * Join each whitespace-only piece of inline text to the text beside it, as
+ * html-to-docx drops it otherwise: to plain text after it if there is some,
+ * else to a neighbour that draws no line through a space (`~~a~~ b` must not
+ * strike the space), the one before first. Whitespace between blocks has no
+ * text beside it and is left alone.
+ */
+function joinSpaces(parent: Element): void {
+  for (let i = 0; i < parent.children.length; i++) {
+    const node = parent.children[i]
+    const own = leafText(node)
+    if (!own || own.data === '' || own.data.trim() !== '') continue
+    const prev = parent.children[i - 1]
+    const next = parent.children[i + 1]
+    const before = leafText(prev)
+    const after = leafText(next)
+    if (after && (next instanceof Text || (!drawsLine(next) && (!before || drawsLine(prev))))) after.data = own.data + after.data
+    else if (before) before.data += own.data
+    else if (after) after.data = own.data + after.data
+    else continue
+    splice(parent, i, 1, [])
+    i--
+  }
+}
+
+/** CT_RPr's child order (ECMA-376 §17.3.2.28): Word may refuse a run out of it. */
+const RPR_ORDER = [
+  'rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps', 'strike', 'dstrike', 'outline', 'shadow',
+  'emboss', 'imprint', 'noProof', 'snapToGrid', 'vanish', 'webHidden', 'color', 'spacing', 'w', 'kern',
+  'position', 'sz', 'szCs', 'highlight', 'u', 'effect', 'bdr', 'shd', 'fitText', 'vertAlign', 'rtl', 'cs',
+  'em', 'lang', 'eastAsianLayout', 'specVanish', 'oMath',
+]
+const rank = (element: string): number => {
+  const at = RPR_ORDER.indexOf(/^<w:(\w+)/.exec(element)?.[1] ?? '')
+  return at < 0 ? RPR_ORDER.length : at
+}
+
+/** The run properties a stand-in colour stands for. */
+function propertiesFor(bits: number): string[] {
+  const out: string[] = []
+  if (bits & BOLD) out.push('<w:b/>')
+  if (bits & ITALIC) out.push('<w:i/>')
+  if (bits & STRIKE) out.push('<w:strike/>')
+  if (bits & MARK) out.push('<w:highlight w:val="yellow"/>')
+  if (bits & UNDERLINE) out.push('<w:u w:val="single"/>')
+  if (bits & SUPER) out.push('<w:vertAlign w:val="superscript"/>')
+  else if (bits & SUB) out.push('<w:vertAlign w:val="subscript"/>')
+  return out
+}
+
+/**
+ * Each stand-in colour flattenFormatting left becomes the formatting it
+ * stands for, the run's properties put in the schema's order (html-to-docx
+ * writes them in the order it met them: a hyperlink's w:rStyle after w:b).
+ */
+function styleRuns(xml: string): string {
+  if (!STAND_IN.test(xml)) return xml
+  return xml.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/g, (whole, inner: string) => {
+    const standIn = STAND_IN.exec(inner)
+    if (!standIn) return whole
+    const kept = (inner.match(/<w:\w+\b[^>]*?\/>|<w:(\w+)\b[^>]*>[\s\S]*?<\/w:\1>/g) ?? []).filter((e) => !STAND_IN.test(e))
+    const names = new Set(kept.map((e) => /^<w:(\w+)/.exec(e)?.[1]))
+    const added = propertiesFor(parseInt(standIn[1], 16)).filter((e) => !names.has(/^<w:(\w+)/.exec(e)?.[1]))
+    const all = [...kept, ...added].sort((a, b) => rank(a) - rank(b))
+    return `<w:rPr>${all.join('')}</w:rPr>`
+  })
+}
+
 export async function writeDocx(doc: HubDocument): Promise<Buffer> {
   const html = renderDocumentShell(
     {
       ...doc,
-      html: monospaceCode(breakCodeLines(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain')))))),
+      html: flattenFormatting(
+        monospaceCode(breakCodeLines(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain')))))),
+      ),
     },
     { target: 'docx' },
   )
