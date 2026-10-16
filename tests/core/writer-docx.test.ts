@@ -342,3 +342,40 @@ describe('writeDocx keeps inline formatting', () => {
     expect(await textOf('<p>a <small>alpha</small> <abbr title="x">beta</abbr> c</p>', 'alpha')).toBe('a alpha beta c')
   })
 })
+
+/**
+ * html-to-docx writes w:gridSpan and w:vMerge after w:tcBorders; CT_TcPr puts
+ * them before it; a strict reader may ignore the span, and Word may repair.
+ */
+describe('writeDocx writes merged cells in schema order', () => {
+  const TCPR_ORDER = ['cnfStyle', 'tcW', 'gridSpan', 'hMerge', 'vMerge', 'tcBorders', 'shd', 'noWrap', 'tcMar', 'textDirection', 'tcFitText', 'vAlign', 'hideMark']
+  const html =
+    '<table><tr><th colspan="2">alpha</th><th>c</th></tr>' +
+    '<tr><td rowspan="2">beta</td><td style="vertical-align: middle">x</td><td>y</td></tr>' +
+    '<tr><td colspan="2">gamma</td></tr>' +
+    '<tr><td rowspan="2" colspan="2">delta</td><td>z</td></tr><tr><td>w</td></tr></table>'
+
+  it('puts every cell property in CT_TcPr order', async () => {
+    const xml = await documentXml(html)
+    const cells = [...xml.matchAll(/<w:tcPr>([\s\S]*?)<\/w:tcPr>/g)].map((m) => m[1])
+    expect(cells.length).toBeGreaterThan(0)
+    for (const inner of cells) {
+      const names = [...inner.matchAll(/<w:(\w+)\b[^>]*?(?:\/>|>[\s\S]*?<\/w:\1>)/g)].map((m) => m[1])
+      const order = names.map((n) => TCPR_ORDER.indexOf(n))
+      expect(order.every((o) => o >= 0), `known cell properties: ${names}`).toBe(true)
+      expect(order, `cell properties in order: ${names}`).toEqual([...order].sort((a, b) => a - b))
+    }
+    expect(xml).toMatch(/<w:gridSpan w:val="2"\/>/)
+    expect(xml).toMatch(/<w:vMerge w:val="restart"\/>/)
+    expect(xml).toMatch(/<w:vMerge w:val="continue"\/>/)
+    expect(xml).toMatch(/<w:vAlign w:val="center"\/>/)
+  })
+
+  it('writes no zero span, and a continued cell under a wide one keeps its width', async () => {
+    const xml = await documentXml(html)
+    expect(xml).not.toMatch(/<w:gridSpan w:val="0"\/>/)
+    const rows = [...xml.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((m) => m[0])
+    const last = rows[rows.length - 1]
+    expect(last).toMatch(/<w:tcPr><w:gridSpan w:val="2"\/><w:vMerge w:val="continue"\/>/)
+  })
+})

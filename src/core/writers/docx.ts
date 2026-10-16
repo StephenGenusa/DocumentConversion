@@ -192,6 +192,35 @@ async function lowerFormulas(zip: JSZip, lowerings: Map<string, number>): Promis
   }
 }
 
+/** CT_TcPr's child order (ECMA-376 §17.4.70). */
+const TCPR_ORDER = [
+  'cnfStyle', 'tcW', 'gridSpan', 'hMerge', 'vMerge', 'tcBorders', 'shd', 'noWrap', 'tcMar', 'textDirection',
+  'tcFitText', 'vAlign', 'hideMark', 'headers', 'cellIns', 'cellDel', 'cellMerge', 'tcPrChange',
+]
+
+/**
+ * html-to-docx writes a cell's w:tcBorders first and then w:gridSpan, w:vMerge
+ * and w:vAlign in the order it meets them; the schema wants the span and the
+ * merge before the borders. A strict reader may ignore an element out of
+ * order, and Word may offer to repair the file (LibreOffice 7.3 happens to
+ * honour the span either way). Each cell's properties are put back in order. A cell continuing a row span is also
+ * given `<w:gridSpan w:val="0"/>` when the span is one column wide: zero is
+ * not a span, so it is dropped.
+ */
+function orderCellProperties(xml: string): string {
+  if (!xml.includes('<w:tcPr>')) return xml
+  return xml.replace(/<w:tcPr>([\s\S]*?)<\/w:tcPr>/g, (_whole, inner: string) => {
+    const children = inner.match(/<w:(\w+)\b[^>]*?\/>|<w:(\w+)\b[^>]*>[\s\S]*?<\/w:\2>/g) ?? []
+    const rankOf = (element: string): number => {
+      const at = TCPR_ORDER.indexOf(/^<w:(\w+)/.exec(element)?.[1] ?? '')
+      return at < 0 ? TCPR_ORDER.length : at
+    }
+    const kept = children.filter((c) => !/^<w:gridSpan w:val="0"\s*\/>$/.test(c))
+    // Sort is stable: anything unknown keeps its place after the known ones.
+    return `<w:tcPr>${[...kept].sort((a, b) => rankOf(a) - rankOf(b)).join('')}</w:tcPr>`
+  })
+}
+
 /**
  * html-to-docx writes every zip entry STORED, so a large document balloons —
  * one workbook produced a 182 MB .docx that Word struggles to open. Repacking
@@ -201,7 +230,7 @@ async function recompress(docx: Buffer, lowerings: Map<string, number> = new Map
   try {
     const zip = await JSZip.loadAsync(docx)
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', styleRuns(await body.async('string')))
+    if (body) zip.file('word/document.xml', orderCellProperties(styleRuns(await body.async('string'))))
     if (lowerings.size > 0) {
       try {
         await lowerFormulas(zip, lowerings)
