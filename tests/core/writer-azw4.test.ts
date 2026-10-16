@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createAzw4Writer, extractAzw4Pdf } from '../../src/core/writers/azw4'
+import { createPdfWriter } from '../../src/core/writers/pdf'
+import { EREADER_HLJS_CSS, HLJS_CSS } from '../../src/core/hljs'
 import { KINDLE_PAGE_INCHES, type PdfRenderOptions } from '../../src/core/types'
 
 /**
@@ -36,14 +38,36 @@ describe('the AZW4 writer', () => {
     expect(seen.opts?.headerFooter).toBe(false)
   })
 
-  it('colours code, since its page is the pdf writer\'s', async () => {
+  /*
+   * Colour alone is not enough here. A reader that cannot show the fixed page
+   * rebuilds text from it, and Calibre's viewer does exactly that: its AZW4
+   * input reflows the embedded PDF (pdftohtml -xml), reads each run's colour
+   * and never writes it out, so every AZW4 is black and white there. Bold and
+   * italic survive (they come from the font names), so the page carries the
+   * e-reader palette, whose keywords are bold and comments italic, as the
+   * epub and AZW3 do. That the embedded PDF really is coloured is checked on
+   * the real render, in tests/e2e/matrix.cjs.
+   */
+  it('colours code with the e-reader palette, so keywords stay bold when a reader reflows it', async () => {
     let page = ''
     await createAzw4Writer(async (html) => {
       page = html
       return FAKE_PDF
     })({ html: '<pre><code class="language-python">def f():\n    # note\n    pass</code></pre>', title: 'T' })
     expect(page).toMatch(/<span class="hljs-keyword">def<\/span>/)
-    expect(page).toContain('.hljs-comment')
+    expect(page).toContain(EREADER_HLJS_CSS)
+    expect(page).toMatch(/\.hljs-keyword[^{]*\{ font-weight: bold; \}/)
+    expect(page).toMatch(/\.hljs-comment[^{]*\{ font-style: italic; \}/)
+  })
+
+  it('leaves the plain pdf writer on the screen palette', async () => {
+    let page = ''
+    await createPdfWriter(async (html) => {
+      page = html
+      return FAKE_PDF
+    })({ html: '<pre><code class="language-python">def f():\n    pass</code></pre>', title: 'T' })
+    expect(page).toContain(HLJS_CSS)
+    expect(page).not.toContain(EREADER_HLJS_CSS)
   })
 
   it('is 3.6 x 4.8 inches - the 6-inch screen measured out', () => {

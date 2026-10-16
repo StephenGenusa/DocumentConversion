@@ -1,4 +1,4 @@
-import { renderDocumentShell, escapeHtml } from '../shell'
+import { renderDocumentShell, escapeHtml, type ShellOptions } from '../shell'
 import { colorizeStatusEmoji } from '../emoji'
 import {
   chunkHtmlForPrinting,
@@ -32,14 +32,14 @@ function isPrintingRefusal(err: unknown): boolean {
   return /printing failed|generate pdf/i.test((err as Error)?.message ?? '')
 }
 
-export function createPdfWriter(render: RenderHtmlToPdf) {
+export function createPdfWriter(render: RenderHtmlToPdf, shellOpts?: Pick<ShellOptions, 'codePalette'>) {
   return async (doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> => {
     let pdfOpts: PdfRenderOptions | undefined = opts?.pdf
     if (pdfOpts?.headerFooter) {
       pdfOpts = { ...pdfOpts, headerText: escapeHtml(doc.title ?? doc.sourceName ?? '') }
     }
     const html = colorizeStatusEmoji(doc.html)
-    const shell = (body: string): string => renderDocumentShell({ ...doc, html: body }, { target: 'pdf' })
+    const shell = (body: string): string => renderDocumentShell({ ...doc, html: body }, { ...shellOpts, target: 'pdf' })
 
     /** Render one piece, splitting it further if the renderer refuses it. */
     const renderPiece = async (body: string, maxRows: number, maxCells: number, depth: number): Promise<Buffer[]> => {

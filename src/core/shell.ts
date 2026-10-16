@@ -1,4 +1,4 @@
-import hljs, { HLJS_CSS } from './hljs'
+import hljs, { EREADER_HLJS_CSS, HLJS_CSS } from './hljs'
 import { codeBlockText } from './code-language'
 import { footnotesForOutput } from './footnotes'
 import type { HubDocument, TargetFormat } from './types'
@@ -6,6 +6,12 @@ import type { HubDocument, TargetFormat } from './types'
 export interface ShellOptions {
   /** Target the shell is being rendered for — enables target-specific fidelity (e.g. code highlighting for pdf/html). */
   target?: TargetFormat
+  /**
+   * Which palette highlighted code takes: the screen one (default), or the
+   * e-reader one, whose keywords are bold and comments italic, for a page that
+   * is a Kindle book (AZW4) and may be read where colour does not reach.
+   */
+  codePalette?: 'screen' | 'ereader'
 }
 
 /**
@@ -210,7 +216,7 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
     const highlighted = highlightCodeBlocks(body)
     if (highlighted.any) {
       body = highlighted.html
-      css += HLJS_CSS
+      css += opts.codePalette === 'ereader' ? EREADER_HLJS_CSS : HLJS_CSS
     }
   }
   return `<!doctype html>

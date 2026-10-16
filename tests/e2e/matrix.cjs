@@ -17,7 +17,8 @@ const { tmpdir } = require('os')
 const { mkdtemp, writeFile, readFile, rm, mkdir } = require('fs/promises')
 
 const core = require('../../out/e2e/core.cjs')
-const { createConverter, detect, getReader, TARGET_FORMATS, TABLE_TARGETS, allowedTargets } = core
+const { createConverter, detect, getReader, TARGET_FORMATS, TABLE_TARGETS, allowedTargets, highlightCodeBlocks } = core
+const zlib = require('zlib')
 // The app's SQLite host (sql.js in a worker), built beside core by build:e2e-core.
 // Without it the converter refuses databases, as core alone does.
 const { createSqliteHost } = require('../../out/e2e/sqlite-host.js')
@@ -80,6 +81,31 @@ async function readAzw3(out) {
 }
 
 /** Targets the app can also read back; others are verified by shape only. */
+/** The PDF inside an AZW4: after the `%MOP` marker, up to its last `%%EOF`. */
+function azw4Pdf(bytes) {
+  const pdf = bytes.subarray(bytes.indexOf(Buffer.from('%MOP', 'latin1')) + 4)
+  return pdf.subarray(0, pdf.lastIndexOf(Buffer.from('%%EOF', 'latin1')) + 5)
+}
+
+/** Every DeviceRGB fill (`r g b rg`) drawn by a PDF's Flate content streams. */
+function pdfFillColours(pdf) {
+  const text = pdf.toString('latin1')
+  const fills = []
+  for (const m of text.matchAll(/stream\r?\n/g)) {
+    const start = m.index + m[0].length
+    const end = text.indexOf('endstream', start)
+    if (end === -1) continue
+    let body
+    try {
+      body = zlib.inflateSync(pdf.subarray(start, end)).toString('latin1')
+    } catch {
+      continue // not a Flate stream (an image, say)
+    }
+    for (const c of body.matchAll(/([\d.]+) ([\d.]+) ([\d.]+) rg\b/g)) fills.push([Number(c[1]), Number(c[2]), Number(c[3])])
+  }
+  return fills
+}
+
 function readerFor(format) {
   try {
     return getReader(format)
@@ -178,6 +204,8 @@ async function main() {
     const hasSvgImages = /src="data:image\/svg\+xml/i.test(hubText)
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
     const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp)[;,]/i.test(hubText)
+    // Code highlight.js finds tokens in (a shell prompt line may hold none).
+    const hasColouredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
 
     /**
@@ -265,6 +293,18 @@ async function main() {
             const inline = formulas.filter((f) => /vertical-align:-[0-9.]+ex/.test(f))
             rec.note = `${rec.note ? rec.note + ', ' : ''}${formulas.length} SVG formulas (${inline.length} lowered)`
           }
+        }
+        if (target === 'azw4' && hasColouredCode) {
+          // The embedded PDF, as printed: highlighted code is drawn in colour
+          // (a fill that is not grey), and its keywords in a bold monospace
+          // face, which is what a reader that reflows the page keeps.
+          const pdf = azw4Pdf(out)
+          const fills = pdfFillColours(pdf)
+          const coloured = fills.filter(([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b) > 0.15)
+          if (coloured.length === 0) throw new Error('azw4 code is not coloured in its pdf')
+          const fonts = [...pdf.toString('latin1').matchAll(/\/BaseFont\s*\/(?:[A-Z]{6}\+)?([^\s/<>\[\]]+)/g)].map((m) => m[1])
+          if (!fonts.some((f) => /mono|consolas|courier|menlo/i.test(f) && /bold/i.test(f))) throw new Error('azw4 code keywords are not bold in its pdf')
+          rec.note = `${coloured.length} coloured fills`
         }
         let azw3Html
         if (target === 'azw3') {

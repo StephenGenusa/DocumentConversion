@@ -75,8 +75,9 @@ ${TOKEN_COLOURS.map(([scopes, colour]) => `  ${scopes.map((s) => `.hljs-${s}`).j
 `
 
 /**
- * The same scopes for an e-reader (epub, and the Kindle book made from it).
- * Darker than the screen palette, so every colour still reads at better than
+ * The same scopes for an e-reader (epub, the AZW3 made from it, and the
+ * printed page of an AZW4, which a reader such as Calibre's may reflow into
+ * text that keeps bold and italic but not colour). Darker than the screen palette, so every colour still reads at better than
  * 5:1 on a sepia page as well as white; and not by colour alone, since a
  * black-and-white Kindle turns these into much the same grey: keywords are
  * bold and comments italic. No backgrounds (a diff's lines included): the
