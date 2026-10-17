@@ -14,6 +14,7 @@ import { escapeHtml } from '../core/shell'
 import { runOcr } from './ocr-host'
 import { createSqliteHost } from './sqlite-host'
 import { createRenderHost } from './render-host'
+import { localFontFiles } from './local-fonts'
 import { throwIfCanceled, untilCanceled } from './jobs'
 import { looksLikeHeader, rowsToHtmlTable } from '../core/readers/csv'
 import { extractPdfPageLines, pdfPagesToHub, type PdfPageSource } from '../core/readers/pdf'
@@ -152,6 +153,7 @@ export const converter = createConverter(renderHtmlToPdf, {
   fetchImages: urlFetchDeps,
   sqlite: sqliteHost,
   renderBlocks: renderHost.renderBlocks,
+  fontFiles: localFontFiles(),
 })
 
 /**

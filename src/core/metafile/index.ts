@@ -3,6 +3,7 @@ import { View } from './bytes'
 import { Budget, type Picture } from './dib'
 import { EMR, EmfPlayer, emfRecords, readEmfHeader } from './emf'
 import { EmfPlusPlayer } from './emfplus'
+import type { GlyphFonts } from './fonts'
 import { Gdi } from './gdi'
 import { area, axisAligned, intersect, SvgOut, TooLarge, type ImageData, type Rect } from './svg'
 import { embeddedEmf, META, readWmfHeader, WmfPlayer, wmfRecords } from './wmf'
@@ -38,6 +39,8 @@ import { embeddedEmf, META, readWmfHeader, WmfPlayer, wmfRecords } from './wmf'
  * sanitizes the SVG (svg-sanitize.ts) like any other.
  */
 
+export { GlyphFonts, type FontFiles } from './fonts'
+
 export interface MetafileDrawing {
   /** The picture as SVG (not yet sanitized). */
   svg: string
@@ -64,6 +67,8 @@ export const METAFILE_LIMITS = {
 interface Options {
   depth?: number
   maxChars?: number
+  /** The fonts text given as glyph numbers is read with (fonts.ts); without them that text is not drawn. */
+  fonts?: GlyphFonts
 }
 
 /** An EMF or WMF drawn (see above), or why not. */
@@ -136,7 +141,7 @@ function nestedFor(opts: Options): (bytes: Buffer) => ImageData | null {
   const depth = (opts.depth ?? 0) + 1
   return (bytes) => {
     if (depth > METAFILE_LIMITS.maxDepth) return null
-    const r = drawMetafile(bytes, { depth, maxChars: Math.floor((opts.maxChars ?? METAFILE_LIMITS.maxChars) / 4) })
+    const r = drawMetafile(bytes, { depth, maxChars: Math.floor((opts.maxChars ?? METAFILE_LIMITS.maxChars) / 4), fonts: opts.fonts })
     if ('error' in r) return null
     if (r.bitmap) return r.bitmap
     return { mime: 'image/svg+xml', bytes: Buffer.from(r.svg, 'utf8'), width: r.width, height: r.height }
@@ -173,8 +178,8 @@ function drawEmf(file: View, bytes: Buffer, opts: Options): MetafileResult {
     const out = new SvgOut(maxChars, `m${opts.depth ?? 0}${mode[0]}`)
     out.hairline = box && width > 0 ? (box.r - box.l) / width : 1
     const budget = new Budget()
-    const gdi = new Gdi({ out, budget, pxPerMm: h.pxPerMm, universe: universe(box) })
-    const player = mode === 'plus' ? new EmfPlusPlayer(out, h.pxPerMm, budget, universe(box), gdi.lost, nestedFor(opts)) : null
+    const gdi = new Gdi({ out, budget, pxPerMm: h.pxPerMm, universe: universe(box), fonts: opts.fonts })
+    const player = mode === 'plus' ? new EmfPlusPlayer(out, h.pxPerMm, budget, universe(box), gdi.lost, nestedFor(opts), opts.fonts) : null
     const emf = new EmfPlayer(gdi, player)
     emf.play(file)
     return { out, failed: emf.failed + (player?.failed ?? 0), played: emf.played + (player?.records ?? 0), lost: gdi.lost }
@@ -248,7 +253,7 @@ function drawWmf(file: View, bytes: Buffer, header: NonNullable<ReturnType<typeo
   }
   const view: Rect = { l: 0, t: 0, r: width || 1, b: height || 1 }
   const out = new SvgOut(maxChars, `w${opts.depth ?? 0}`)
-  const gdi = new Gdi({ out, budget: new Budget(), pxPerMm: [96 / 25.4, 96 / 25.4], universe: universe(window ? view : null), wmfView: view })
+  const gdi = new Gdi({ out, budget: new Budget(), pxPerMm: [96 / 25.4, 96 / 25.4], universe: universe(window ? view : null), wmfView: view, fonts: opts.fonts })
   if (window && p && placeableSize) {
     gdi.set('winOrg', window.org)
     gdi.set('winExt', window.ext)

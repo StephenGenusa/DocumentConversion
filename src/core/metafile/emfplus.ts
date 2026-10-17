@@ -2,7 +2,8 @@ import { imageMime } from '../readers/image'
 import { ShortRecord, View } from './bytes'
 import { readPackedDib, toPicture, type Budget, type Picture, type Raster } from './dib'
 import { MAX_RECORDS, type PlusHook } from './emf'
-import { fontFamily, type Font } from './gdi'
+import type { GlyphFonts } from './fonts'
+import { fontFamily, readGlyphs, type Font } from './gdi'
 import {
   apply,
   axisAligned,
@@ -134,6 +135,8 @@ export class EmfPlusPlayer implements PlusHook {
     private readonly universe: Rect,
     readonly lost: Set<string>,
     private readonly nested: NestedMetafile,
+    /** The fonts text given as glyph numbers is read with (fonts.ts). */
+    private readonly fonts?: GlyphFonts,
   ) {}
 
   /* ---- transforms ----------------------------------------------------- */
@@ -1042,7 +1045,7 @@ export class EmfPlusPlayer implements PlusHook {
   }
 
   private textAttrs(f: PlusFont, em: number, paint: Paint): string {
-    const font: Font = { height: -em, width: 0, escapement: 0, orientation: 0, weight: f.style & 1 ? 700 : 400, italic: !!(f.style & 2), underline: !!(f.style & 4), strike: !!(f.style & 8), charset: 1, pitchFamily: 0, face: f.family.replace(/\0[\s\S]*$/, '') }
+    const font = plusGdiFont(f, em)
     const decoration = [font.underline ? 'underline' : '', font.strike ? 'line-through' : ''].filter(Boolean).join(' ')
     return (
       ` font-family="${esc(fontFamily(font))}" font-size="${num(em) === '0' ? '0.01' : num(em)}"` +
@@ -1093,13 +1096,27 @@ export class EmfPlusPlayer implements PlusHook {
     const options = v.u32(4)
     const hasMatrix = v.u32(8) !== 0
     const n = v.u32(12)
-    if (!(options & 1)) {
-      this.lost.add('text given as glyph numbers')
-      return
-    }
     if (n === 0 || !v.has(16, n * 2 + n * 8)) throw new ShortRecord()
-    const text = v.utf16(16, n)
     const posAt = 16 + n * 2
+    // Each glyph's characters: its own UTF-16 unit (a surrogate pair takes two glyphs' places, the second
+    // empty), or, given as a glyph number (no DriverStringOptionsCmapLookup), what its font says it is.
+    const parts: string[] = []
+    if (options & 1) {
+      const text = v.utf16(16, n)
+      for (let i = 0; i < n; i++) {
+        const c = text.codePointAt(i)!
+        parts.push(String.fromCodePoint(c))
+        if (c > 0xffff) {
+          parts.push('')
+          i++
+        }
+      }
+    } else {
+      const glyphs = Array.from({ length: n }, (_, i) => v.u16(16 + i * 2))
+      const read = readGlyphs(this.fonts, plusGdiFont(f.font, f.em), glyphs, null, this.lost)
+      if (!read) return
+      parts.push(...read.parts)
+    }
     let m = this.matrix()
     if (hasMatrix && v.has(posAt + n * 8, 24)) {
       const at = posAt + n * 8
@@ -1109,19 +1126,22 @@ export class EmfPlusPlayer implements PlusHook {
     const xs: string[] = []
     const ys: string[] = []
     let content = ''
-    const chars = [...text]
-    let unit = 0
-    for (const c of chars) {
-      const code = c.codePointAt(0)!
-      if (code >= 0x20) {
+    parts.forEach((part, i) => {
+      const points = [...part]
+      if (!points.length) return
+      // A glyph of several characters spreads them toward the next glyph.
+      const [x, y] = realized ? [0, 0] : [v.f32(posAt + i * 8), v.f32(posAt + i * 8 + 4)]
+      const next = !realized && points.length > 1 ? parts.findIndex((p, k) => k > i && p) : -1
+      const step = next > 0 ? (v.f32(posAt + next * 8) - x) / points.length : f.em * 0.5
+      points.forEach((c, k) => {
+        if (c.codePointAt(0)! < 0x20 || c === '\uffff') return
         content += c
         if (!realized) {
-          xs.push(num(v.f32(posAt + unit * 8)))
-          ys.push(num(v.f32(posAt + unit * 8 + 4)))
+          xs.push(num(x + k * step))
+          ys.push(num(y))
         }
-      }
-      unit += c.length
-    }
+      })
+    })
     if (!content.trim()) return
     const x0 = v.f32(posAt)
     const y0 = v.f32(posAt + 4)
@@ -1134,6 +1154,11 @@ export class EmfPlusPlayer implements PlusHook {
     }
     this.out.add(markup, this.state.clip, { kind: 'text', bounds: corners.reduce<Rect | null>((u, [px, py]) => union(u, { l: px, t: py, r: px, b: py }), null) })
   }
+}
+
+/** An EMF+ font as the GDI font it draws like. */
+function plusGdiFont(f: PlusFont, em: number): Font {
+  return { height: -em, width: 0, escapement: 0, orientation: 0, weight: f.style & 1 ? 700 : 400, italic: !!(f.style & 2), underline: !!(f.style & 4), strike: !!(f.style & 8), charset: 1, pitchFamily: 0, face: f.family.replace(/\0[\s\S]*$/, '') }
 }
 
 /** Two ARGB colors mixed, `t` of the way from the first to the second. */

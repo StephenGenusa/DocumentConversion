@@ -1,4 +1,5 @@
 import { View } from './bytes'
+import type { GlyphFonts } from './fonts'
 import { Budget, crop, isPicture, keyOut, readDib, toPicture, unpremultiply, type Picture, type Raster } from './dib'
 import {
   apply,
@@ -338,6 +339,8 @@ export interface GdiSetup {
   universe: Rect
   /** WMF: the window maps onto this rectangle of the picture (its viewBox), once a window is known. */
   wmfView?: Rect
+  /** The fonts text given as glyph numbers is read with (fonts.ts). */
+  fonts?: GlyphFonts
 }
 
 export class Gdi {
@@ -1157,6 +1160,12 @@ export class Gdi {
 
   /* ---- text ----------------------------------------------------------- */
 
+  /** ExtTextOut's glyph numbers (ETO_GLYPH_INDEX, one per UTF-16 unit of `raw`) as characters: readGlyphs. */
+  private glyphText(raw: string, dx: number[] | null): { raw: string; dx: number[] | null; parts: string[] } | null {
+    const glyphs = Array.from({ length: raw.length }, (_, i) => raw.charCodeAt(i))
+    return readGlyphs(this.setup.fonts, this.dc.font, glyphs, dx, this.lost)
+  }
+
   /**
    * ExtTextOut and TextOut: `text` at the reference point (logical units),
    * aligned by the text alignment, each character placed by its advance in
@@ -1178,8 +1187,10 @@ export class Gdi {
     }
     if (!raw) return
     if (options & ETO_GLYPH_INDEX) {
-      this.lost.add('text given as glyph numbers')
-      return
+      const read = this.glyphText(raw, dx)
+      if (!read) return
+      raw = read.raw
+      dx = read.dx
     }
     if (this.pathOpen) {
       this.lost.add('text inside a path')
@@ -1270,6 +1281,49 @@ export class Gdi {
       this.set('cur', [x + u[0] * total, y + u[1] * total])
     }
   }
+}
+
+/**
+ * The characters glyph numbers stand for (fonts.ts), read with the font
+ * the metafile names, or null (and noted) when that font is not here. A
+ * glyph that is two characters (a ligature, a character outside the BMP)
+ * shares its advance among them; one the font does not name is U+FFFF,
+ * which is never written, so what follows it keeps its place. `parts`
+ * is each glyph's own characters.
+ */
+export function readGlyphs(
+  fonts: GlyphFonts | undefined,
+  font: Font,
+  glyphs: number[],
+  dx: number[] | null,
+  lost: Set<string>,
+): { raw: string; dx: number[] | null; parts: string[] } | null {
+  const face = cleanFace(font.face) || 'its font'
+  const chars = fonts?.characters(font.face, font.weight >= 650, font.italic)
+  if (!chars) {
+    lost.add(`text given as glyph numbers, in a font not found here (${face})`)
+    return null
+  }
+  let raw = ''
+  const parts: string[] = []
+  const advances: number[] | null = dx && dx.length >= glyphs.length ? [] : null
+  glyphs.forEach((g, i) => {
+    let text = chars.get(g)
+    if (!text) {
+      lost.add(`glyph numbers the font does not name (${face})`)
+      text = '\uffff'
+    }
+    parts.push(text)
+    const points = [...text]
+    for (const p of points) {
+      raw += p
+      if (advances) {
+        advances.push(dx![i] / points.length)
+        if (p.length > 1) advances.push(0)
+      }
+    }
+  })
+  return { raw, dx: advances, parts }
 }
 
 /**

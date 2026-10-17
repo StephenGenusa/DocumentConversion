@@ -3,6 +3,7 @@ import { readDib, type Raster, type Picture } from './dib'
 import {
   decodeAnsi,
   ETO_CLIPPED,
+  ETO_GLYPH_INDEX,
   ETO_OPAQUE,
   ETO_PDY,
   Gdi,
@@ -274,10 +275,16 @@ export class EmfPlayer {
     const offDx = r.u32(at + 36)
     if (n === 0 && !(options & ETO_OPAQUE)) return
     const charset = g.dc.font.charset
-    const str = n === 0 ? '' : wide ? r.utf16(offString, n) : decodeAnsi(r.bytes(offString, n), charset)
+    // Glyph numbers are 16-bit (GDI reads them so from the A call too, when the record holds that many).
+    const glyphs = (options & ETO_GLYPH_INDEX) !== 0
+    const str =
+      n === 0 ? ''
+      : wide || (glyphs && r.has(offString, n * 2)) ? r.utf16(offString, n)
+      : glyphs ? Array.from(r.bytes(offString, n), (c) => String.fromCharCode(c)).join('')
+      : decodeAnsi(r.bytes(offString, n), charset)
     const step = options & ETO_PDY ? 8 : 4
     let dx: number[] | null = null
-    if (offDx > 0 && n > 0 && r.has(offDx, n * step) && (wide || singleByte(charset))) {
+    if (offDx > 0 && n > 0 && r.has(offDx, n * step) && (wide || glyphs || singleByte(charset))) {
       dx = []
       for (let i = 0; i < n; i++) dx.push(r.i32(offDx + i * step))
     }

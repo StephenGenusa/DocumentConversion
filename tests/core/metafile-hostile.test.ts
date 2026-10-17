@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { drawMetafile, METAFILE_LIMITS } from '../../src/core/metafile'
+import { drawMetafile, GlyphFonts, METAFILE_LIMITS } from '../../src/core/metafile'
+import { glyphCharacters, sfntFaces, sfntName, sfntTables } from '../../src/core/metafile/sfnt'
 import { MAX_RECORDS } from '../../src/core/metafile/emf'
 import { MAX_CLIP_DEPTH } from '../../src/core/metafile/svg'
 import { sanitizeSvg } from '../../src/core/svg-sanitize'
@@ -7,6 +8,8 @@ import { sanitizeSvg } from '../../src/core/svg-sanitize'
 import { EmfWriter, PlusWriter, WmfWriter, dib24 } from '../../scripts/fixtures/lib-metafile.mjs'
 // @ts-expect-error: plain .mjs fixture libraries, no types.
 import { metafileCorpus } from '../../scripts/fixtures/metafile-corpus.mjs'
+// @ts-expect-error: plain .mjs fixture libraries, no types.
+import { collection, sfnt } from '../../scripts/fixtures/lib-sfnt.mjs'
 
 /*
  * A metafile is untrusted bytes: whatever it holds, drawing it answers a
@@ -197,5 +200,76 @@ describe('hostile metafiles', () => {
     const clean = sanitizeSvg(r.svg)!
     expect(clean).toContain('&lt;script&gt;')
     expect(clean).not.toMatch(/<script/i)
+  })
+})
+
+/*
+ * The fonts glyph numbers are read with (sfnt.ts) are read as untrusted
+ * too: a broken font answers no characters or some, never throws, never
+ * hangs.
+ */
+describe('hostile fonts', () => {
+  const be32 = (...v: number[]): Buffer => {
+    const b = Buffer.alloc(v.length * 4)
+    v.forEach((x, i) => b.writeUInt32BE(x >>> 0, i * 4))
+    return b
+  }
+  /** Every reading of a font file, as the metafile code does it. */
+  const read = (font: Buffer): void => {
+    for (const face of sfntFaces(font)) {
+      const tables = sfntTables(font, face)
+      sfntName(font, tables)
+      glyphCharacters(font, tables)
+    }
+    new GlyphFonts(() => font).characters('Reading Sans', false, false)
+  }
+  const good = sfnt({ family: 'Reading Sans', cmap: [[0x41, 3], [0x1f4d6, 7], [0x42, 4]], names: { 9: 'f_i', 10: 'uni00E9' } })
+
+  it('a font cut short anywhere, or with bytes changed at random: never a throw', () => {
+    const t0 = Date.now()
+    for (const font of [good, collection([{ family: 'Reading Sans', cmap: [[0x41, 3]] }, { family: 'Reading Serif', cmap: [[0x42, 3]] }])]) {
+      for (let n = 0; n < font.length; n++) read(font.subarray(0, n))
+      const random = prng(0xf0a7)
+      for (let k = 0; k < 2000; k++) {
+        const b = Buffer.from(font)
+        for (let i = 0, changes = 1 + Math.floor(random() * 6); i < changes; i++) {
+          const at = Math.floor(random() * b.length)
+          if (random() < 0.5 && at + 4 <= b.length) b.writeUInt32BE(Math.floor(random() * 0x100000000), at & ~3)
+          else b[at] = Math.floor(random() * 256)
+        }
+        read(b)
+      }
+    }
+    expect(Date.now() - t0).toBeLessThan(20_000)
+  })
+
+  it('a character map claiming all of Unicode, many times over, is read within its cap', () => {
+    const groups = 5000
+    const sub = Buffer.concat([Buffer.from([0, 12, 0, 0]), be32(16 + groups * 12, 0, groups), ...Array.from({ length: groups }, () => be32(0, 0x10ffff, 1))])
+    const cmap = Buffer.concat([Buffer.from([0, 0, 0, 1, 0, 3, 0, 10]), be32(12), sub])
+    const font = Buffer.concat([be32(0x00010000), Buffer.from([0, 1, 0, 0, 0, 0, 0, 0]), Buffer.from('cmap'), be32(0, 28, cmap.length), cmap])
+    const t0 = Date.now()
+    const chars = glyphCharacters(font, sfntTables(font, 0))!
+    expect(Date.now() - t0).toBeLessThan(3_000)
+    expect(chars.size).toBeLessThanOrEqual(0x10000)
+  })
+
+  it('counts that lie (faces, tables, names) read what is there', () => {
+    const ttc = Buffer.concat([Buffer.from('ttcf'), be32(0x00010000, 0xffffffff, 16), be32(0x00010000), Buffer.from([0xff, 0xff, 0, 0, 0, 0, 0, 0])])
+    const t0 = Date.now()
+    read(ttc)
+    expect(sfntFaces(ttc).length).toBeLessThanOrEqual(64)
+    expect(Date.now() - t0).toBeLessThan(1_000)
+  })
+
+  it('a font that is not one, or a font lookup that fails, leaves the text undrawn and the picture whole', () => {
+    const emf = new EmfWriter({ width: 100, height: 40 }).stock(4).rectangle(0, 0, 10, 10).font(1, {}).select(1).text(0, 20, 'AB', { options: 0x10, advance: 8 }).bytes()
+    const random = prng(7)
+    const noise = Buffer.from(Array.from({ length: 4096 }, () => Math.floor(random() * 256)))
+    for (const fonts of [new GlyphFonts(() => noise), new GlyphFonts(() => { throw new Error('no fonts here') })]) {
+      const r = drawMetafile(emf, { fonts })
+      if ('error' in r) throw new Error(r.error)
+      expect(r.svg).not.toContain('<text')
+    }
   })
 })

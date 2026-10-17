@@ -14,6 +14,7 @@ import {
   type RenderResult,
 } from './rendered-blocks'
 import { carryDefinitions } from './tex-definitions'
+import type { FontFiles } from './metafile'
 
 /*
  * Drawing a document's diagrams for output (spec B3, B5, B7), at write time.
@@ -94,6 +95,8 @@ export const FOR_PASTING = { renderedFormat: 'png', svgImagesAsPng: true } as co
 
 export interface DrawContext {
   renderBlocks?: RenderBlocks
+  /** The fonts metafile text given as glyph numbers is read with (ConverterDeps.fontFiles). */
+  fontFiles?: FontFiles
   /** The choice made; renderedFormatFor decides what each target gets. */
   format?: RenderFormat
   /** SVG images as PNG even where the target shows SVG (ConvertOptions.svgImagesAsPng). */

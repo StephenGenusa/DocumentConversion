@@ -30,6 +30,7 @@ import { drawBlocks } from './draw-blocks'
 import { rasterizeSvgImages, sanitizeSvgImages } from './svg-images'
 import { targetPictures } from './pictures'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
+import type { FontFiles } from './metafile'
 
 export interface Converter {
   convert(
@@ -73,6 +74,12 @@ export interface ConverterDeps {
    * stays as source, silently.
    */
   renderBlocks?: RenderBlocks
+  /**
+   * The fonts on this computer, by family (src/main/local-fonts.ts): what
+   * an EMF's text given as glyph numbers is read with. Without it that
+   * text is not drawn.
+   */
+  fontFiles?: FontFiles
 }
 
 /** The read context for a conversion: the caller's, with the options' reading choices and web policy in it. */
@@ -150,6 +157,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // merged document is drawn once and nothing drawn reaches the hub.
       const drawCtx = {
         renderBlocks: deps.renderBlocks,
+        fontFiles: deps.fontFiles,
         format: opts?.renderedFormat,
         svgImagesAsPng: opts?.svgImagesAsPng,
         pictureFormat: opts?.pictureFormat,

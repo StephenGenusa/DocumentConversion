@@ -8,7 +8,7 @@ import type { PictureFormat, RenderRequest, RenderResult } from './rendered-bloc
 import { DOCX_MAX_WIDTH, type DrawContext } from './draw-blocks'
 import type { TargetFormat } from './types'
 import { originalSize, tiffPage, tiffPages, tiffShownSize } from './picture-headers'
-import { drawMetafile, type MetafileResult } from './metafile'
+import { drawMetafile, GlyphFonts, type FontFiles, type MetafileResult } from './metafile'
 import { sanitizeSvg, svgDataUri } from './svg-sanitize'
 import { DOCX_MAX_HEIGHT, prepareSvgForRaster, rasterizesSvgImages } from './svg-images'
 import { createHash } from 'node:crypto'
@@ -258,13 +258,14 @@ function vectorRequest(mime: string, drawn: MetafileResult, opts: { raster: bool
 }
 
 /** Each metafile drawn once per conversion, however many times a document shows it. */
-function metafileDrawer(): (bytes: Buffer) => MetafileResult {
+function metafileDrawer(fontFiles?: FontFiles): (bytes: Buffer) => MetafileResult {
   const seen = new Map<string, MetafileResult>()
+  const fonts = fontFiles ? new GlyphFonts(fontFiles) : undefined
   return (bytes) => {
     const key = createHash('sha1').update(bytes).digest('hex')
     let r = seen.get(key)
     if (!r) {
-      r = drawMetafile(bytes)
+      r = drawMetafile(bytes, { fonts })
       seen.set(key, r)
     }
     return r
@@ -460,7 +461,7 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
   const pageOf = new Map<Element, number>()
   // Metafiles become SVG where the document's SVG images stay SVG, PNG where they become PNG.
   const raster = rasterizesSvgImages(target) || ctx.svgImagesAsPng === true
-  const draw = metafileDrawer()
+  const draw = metafileDrawer(ctx.fontFiles)
   const drawable = (bytes: Buffer): boolean => {
     const r = draw(bytes)
     return !('error' in r) && (!!r.bitmap || !raster || !!render)

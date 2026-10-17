@@ -320,6 +320,12 @@ export class PlusWriter {
   drawLines(penId, pts, closed = false) { return this.rec(0x400d, penId | (closed ? 0x2000 : 0), u32s(pts.length / 2), f32s(...pts)) }
   drawImage(imageId, src, dest) { return this.rec(0x401a, imageId, u32s(0, 2), f32s(...src), f32s(...dest)) }
   drawString(fontId, argb, rect, s) { return this.rec(0x401c, 0x8000 | fontId, u32s(argb >>> 0, 0xffffffff, s.length), f32s(...rect), pad4(utf16(s))) }
+  /** DRAWDRIVERSTRING: `glyphs` (code units, or glyph numbers when `cmap` is false) each at its [x, y]. */
+  drawDriverString(fontId, argb, glyphs, positions, { cmap = true } = {}) {
+    const units = Buffer.alloc(glyphs.length * 2)
+    glyphs.forEach((g, i) => units.writeUInt16LE(g, i * 2))
+    return this.rec(0x4036, 0x8000 | fontId, u32s(argb >>> 0, cmap ? 1 : 0, 0, glyphs.length), units, f32s(...positions.flat()))
+  }
   setWorldTransform(m) { return this.rec(0x402a, 0, f32s(...m)) }
   bytes() {
     return Buffer.concat(this.parts)
