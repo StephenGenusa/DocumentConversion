@@ -12,7 +12,8 @@ import type { HubDocument, SourceInput } from '../types'
  *   note[1]   <sup class="footnote" id="fnr1"><a href="#fn1">1</a></sup>
  *             -> <sup data-fn="1">1</sup>
  *   fn1. …    <p class="footnote" id="fn1"><a href="#fnr1"><sup>1</sup></a> …</p>
- *             -> one item of the F1 notes list, which goes last
+ *             -> one item of the F1 notes list, which goes last; `fn1^.`
+ *             (the same note, its number a backlink) likewise
  *
  * `[^sup^]` and `[~sub~]` already come out as <sup> and <sub>. Raw HTML in the
  * source is passed through, and sanitized with the rest.
@@ -42,8 +43,18 @@ function plainText(el: JsonML): string {
   return typeof el === 'string' ? el : childrenOf(el).map(plainText).join('')
 }
 
+/**
+ * `fn1^.` is Textile's footnote whose number links back to the reference.
+ * textile-js knows only `fn1.`, which it writes with that link anyway, and
+ * read `fn1^.` as a paragraph of text, leaving its reference dangling; the
+ * hub's notes get their links from the writers either way. So the caret is
+ * dropped where a block starts (the file's start or after a blank line),
+ * modifiers and all (`fn1(class)^.`), the only place it is a signature.
+ */
+const BACKLINKED_NOTE = /(^|\n[ \t]*\n)(fn\d+(?:\([^)\n]*\)|\{[^}\n]*\}|\[[^\]\n]*\]|[<>=])*)\^\.(?=\s)/g
+
 export async function readTextile(src: SourceInput): Promise<HubDocument> {
-  const text = decodeTextBytes(src.bytes)
+  const text = decodeTextBytes(src.bytes).replace(BACKLINKED_NOTE, '$1$2.')
   let blocks: JsonML[]
   try {
     blocks = (textile.jsonml(text) as JsonML[]).slice(1)

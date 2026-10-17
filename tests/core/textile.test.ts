@@ -44,6 +44,15 @@ describe('Textile', () => {
     expect(hub.html).not.toContain('class=')
   })
 
+  it('reads a footnote with a backlink (`fn1^.`) as it reads `fn1.`', async () => {
+    const plain = await read('A claim[1] and another[2].\n\nfn1. First _note_.\n\nfn2. Second.\n')
+    const linked = await read('A claim[1] and another[2].\n\nfn1^. First _note_.\n\nfn2(note)^. Second.\n')
+    expect(linked.html).toBe(plain.html)
+    expect(linked.html).toMatch(/<ol><li data-fn="1"><p>First <em>note<\/em>.<\/p><\/li><li data-fn="2"><p>Second.<\/p><\/li><\/ol>$/)
+    // Only at the start of a block: in a sentence it is text.
+    expect((await read('See fn1^. in the manual.\n')).html).toBe('<p>See fn1^. in the manual.</p>')
+  })
+
   it('keeps superscript and subscript', async () => {
     const hub = await read('H[~2~]O and x[^2^]\n')
     expect(hub.html).toContain('<p>H<sub>2</sub>O and x<sup>2</sup></p>')
