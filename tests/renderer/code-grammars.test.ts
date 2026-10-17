@@ -6,6 +6,7 @@ import { Editor } from '@tiptap/core'
 import { EDITOR_EXTENSIONS } from '../../src/renderer/src/lib/editor-extensions'
 import { GRAMMARS, grammarName, grammarReady, hljs as editorHljs, loadGrammar } from '../../src/renderer/src/lib/code-grammars'
 import outputsHljs from '../../src/core/hljs'
+import { installHighlights, painted } from './highlights'
 
 /*
  * The editor's grammars are loaded when a block needs one, not carried in the
@@ -50,12 +51,13 @@ describe('the editor grammars', () => {
 
   it('color a block once its grammar is in, without any edit', async () => {
     expect(grammarReady('go')).toBe(false)
+    installHighlights()
     const host = document.createElement('div')
     document.body.append(host)
     editor = new Editor({ element: host, extensions: EDITOR_EXTENSIONS, content: '<pre><code class="language-golang">func main() { return }</code></pre>' })
     expect(await loadGrammar('go')).toBe(true)
     await new Promise((r) => setTimeout(r, 0))
-    expect(host.querySelector('.hljs-keyword')?.textContent).toBe('func')
+    expect(painted(host)).toContain('hljs-keyword:func')
     expect(editor.getHTML()).toMatch(/^<pre><code class="language-golang">func main\(\) { return }<\/code><\/pre>/)
     host.remove()
   })

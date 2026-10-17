@@ -25,6 +25,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const PORT = 9455
+/** Lines colored past the screen, above and below (COLOR_MARGIN_LINES in lib/code-color.ts). */
+const COLOR_MARGIN_LINES = 150
 const { default: electron } = await import('electron')
 const work = mkdtempSync(join(tmpdir(), 'docconv-ui-'))
 const profile = mkdtempSync(join(tmpdir(), 'docconv-ui-profile-'))
@@ -207,6 +209,33 @@ async function shot(name) {
 }
 
 const EDITOR = `document.querySelector('.clip-pane__editor .ProseMirror')`
+/** How many colors are painted (CSS highlight ranges) in the pane's first code block. */
+const PAINTED_IN_PRE = `(() => { const pre = document.querySelector('.clip-pane__editor pre'); return pre ? [...CSS.highlights.values()].reduce((n, h) => n + [...h].filter((r) => pre.contains(r.startContainer)).length, 0) : 0 })()`
+/**
+ * The share of a text range's ink drawn in `rgb` on screen, from a capture of
+ * the window (the colors are painted, not styled, so only pixels tell).
+ * `range` is an expression for a range (or its four parts) in the page.
+ */
+async function inkOf(range, [r, g, b]) {
+  const rect = await js(`(() => { const s = ${range}; if (!s) return null; const r = document.createRange(); r.setStart(s.startContainer, s.startOffset); r.setEnd(s.endContainer, s.endOffset); const b = r.getBoundingClientRect(); return { x: Math.floor(b.left), y: Math.floor(b.top), width: Math.ceil(b.width), height: Math.ceil(b.height) } })()`)
+  if (!rect || rect.width < 1) return { match: 0, ink: 0, rect }
+  return mainEval(`(async () => {
+    const { BrowserWindow } = process.mainModule.require('electron')
+    const w = BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith('Document Converter'))
+    const img = await w.webContents.capturePage(${JSON.stringify(rect)})
+    const px = img.toBitmap()
+    let ink = 0
+    let match = 0
+    for (let i = 0; i < px.length; i += 4) {
+      // BGRA; a pixel well away from the light code background is ink.
+      const [b, g, r] = [px[i], px[i + 1], px[i + 2]]
+      if (r + g + b > 600) continue
+      ink++
+      if (Math.abs(r - ${r}) < 45 && Math.abs(g - ${g}) < 45 && Math.abs(b - ${b}) < 45) match++
+    }
+    return { ink, match: ink ? Math.round((match / ink) * 100) / 100 : 0 }
+  })()`)
+}
 const click = async (label) => {
   const ok = await js(
     `(() => { const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()===${JSON.stringify(label)}); if(!b) return false; b.click(); return true })()`,
@@ -572,14 +601,22 @@ try {
   const pastedCode = await js(`${EDITOR}.editor.getHTML()`)
   check('pasted Python opens as one Python code block, not a heading', /^<pre><code class="language-python"># Totals/.test(pastedCode) && !pastedCode.includes('<h1'), pastedCode.slice(0, 200))
   // Colored in the pane too, in the outputs' palette (lib/code-color.ts).
-  await waitFor(`!!document.querySelector('.clip-pane__editor pre .hljs-keyword')`, 'the pasted Python to be colored')
+  // The colors are painted as CSS highlights (ranges beside the DOM), so they
+  // are read from the page's highlight registry, and checked on screen by pixels.
+  await waitFor(`${PAINTED_IN_PRE} > 0`, 'the pasted Python to be colored')
   const tokenColors = () => js(`(() => {
     const pre = document.querySelector('.clip-pane__editor pre')
-    const kw = [...pre.querySelectorAll('.hljs-keyword')].find((s) => s.textContent === 'def')
-    return { keyword: kw ? getComputedStyle(kw).color : null, plain: getComputedStyle(pre.querySelector('code') ?? pre).color, spans: pre.querySelectorAll('[class*="hljs-"]').length }
+    const words = (name) => [...(CSS.highlights.get(name) ?? [])].filter((r) => pre.contains(r.startContainer)).map((r) => r.startContainer.data.slice(r.startOffset, r.endOffset))
+    return { keywords: words('hljs-keyword'), spans: ${PAINTED_IN_PRE} }
   })()`)
   const colors = await tokenColors()
-  check('the pane colors the pasted Python: a keyword is not the color of plain text', colors.keyword === 'rgb(207, 34, 46)' && colors.plain !== colors.keyword, JSON.stringify(colors))
+  const keywordInk = await inkOf(`[...CSS.highlights.get('hljs-keyword')].find((r) => r.startContainer.data.slice(r.startOffset, r.endOffset) === 'def')`, [207, 34, 46])
+  const plainInk = await inkOf(`(() => { const w = document.createTreeWalker(document.querySelector('.clip-pane__editor pre code'), NodeFilter.SHOW_TEXT); for (let t = w.nextNode(); t; t = w.nextNode()) { const i = t.data.indexOf('result'); if (i >= 0) return { startContainer: t, startOffset: i, endContainer: t, endOffset: i + 6 } } return null })()`, [207, 34, 46])
+  check(
+    'the pane colors the pasted Python: "def" is painted keyword red on screen, plain text is not',
+    colors.keywords.includes('def') && keywordInk.match > 0.15 && plainInk.match === 0,
+    JSON.stringify({ colors, keywordInk, plainInk }),
+  )
   // The language picker: Plain text takes the colors off and the class out; back to Python puts both back.
   const pastedHtml = await js(`${EDITOR}.editor.getHTML()`)
   if (process.env.UI_SHOTS) {
@@ -641,7 +678,7 @@ try {
       paint.push(performance.now() - t0)
     }
     const median = (a) => Math.round(a.sort((x, y) => x - y)[a.length >> 1] * 10) / 10
-    return { work: median(work), paint: median(paint), spans: document.querySelectorAll('.clip-pane__editor pre [class*="hljs-"]').length }
+    return { work: median(work), paint: median(paint), spans: ${PAINTED_IN_PRE} }
   })()`)
   // Coloring is judged against the same block uncolored, measured in
   // turns and keeping each one's best, not against a fixed budget: a busy
@@ -659,6 +696,53 @@ try {
     coloredCost.spans > 0 && coloredCost.work < plainCost.work * 1.5 + 5,
     JSON.stringify({ colored: coloredCost, plain: plainCost }),
   )
+  // Only what is on screen is colored: scrolled to the middle of the block,
+  // the lines there are painted, and the top of the block is not.
+  const scrolled = await js(`(async () => {
+    const ed = ${EDITOR}.editor
+    const unit = ['def total(items, rate=0.2):', '    """Sum the invented prices."""', '    out = 0', '    for i in items:', '        out += i.price * (1 + rate)  # tax', '    return round(out, 2)', '']
+    const code = Array.from({ length: 5000 }, (_, i) => unit[i % unit.length]).join('\\n')
+    ed.commands.setContent({ type: 'doc', content: [{ type: 'codeBlock', attrs: { language: 'python' }, content: [{ type: 'text', text: code }] }] })
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    await frame()
+    const pane = document.querySelector('.clip-pane__editor')
+    const pre = pane.querySelector('pre')
+    const lineHeight = parseFloat(getComputedStyle(pre).lineHeight) || 20
+    const rects = () => [...CSS.highlights.values()].flatMap((h) => [...h]).filter((r) => pre.contains(r.startContainer)).map((r) => { const x = document.createRange(); x.setStart(r.startContainer, r.startOffset); x.setEnd(r.endContainer, r.endOffset); return x.getBoundingClientRect() })
+    const t0 = performance.now()
+    pane.scrollTop = pane.scrollHeight * 0.6
+    const box = pane.getBoundingClientRect()
+    let onScreen = 0
+    for (let i = 0; i < 60 && onScreen < 20; i++) {
+      await new Promise((r) => requestAnimationFrame(r))
+      onScreen = rects().filter((b) => b.bottom > box.top && b.top < box.bottom).length
+    }
+    const ms = performance.now() - t0
+    const all = rects()
+    const reach = (${COLOR_MARGIN_LINES} + 60) * lineHeight
+    return { onScreen, total: all.length, farAbove: all.filter((b) => b.bottom < box.top - reach).length, farBelow: all.filter((b) => b.top > box.bottom + reach).length, ms: Math.round(ms) }
+  })()`)
+  console.log(`note  scrolled to the middle of a 5,000-line block: ${JSON.stringify(scrolled)}`)
+  check(
+    'scrolled to the middle of a 5,000-line block, the lines on screen are colored, and lines far from the screen are not',
+    scrolled.onScreen >= 20 && scrolled.farAbove === 0 && scrolled.farBelow === 0 && scrolled.total < 3000,
+    JSON.stringify(scrolled),
+  )
+  // First color: a block in a language whose grammar is not loaded yet waits
+  // for it (code-grammars.ts); one already loaded colors on the same frame.
+  const firstColor = (language) => js(`(async () => {
+    const ed = ${EDITOR}.editor
+    const t0 = performance.now()
+    ed.commands.setContent({ type: 'doc', content: [{ type: 'codeBlock', attrs: { language: ${JSON.stringify(language)} }, content: [{ type: 'text', text: 'fn main() {\\n    let n = 42; // invented\\n}' }] }] })
+    const painted = () => ${PAINTED_IN_PRE} > 0
+    const sync = painted()
+    while (!painted() && performance.now() - t0 < 5000) await new Promise((r) => setTimeout(r, 1))
+    return { language: ${JSON.stringify(language)}, sync, ms: Math.round((performance.now() - t0) * 10) / 10 }
+  })()`)
+  const cold = await firstColor('kotlin')
+  const warm = await firstColor('kotlin')
+  console.log(`note  first color: grammar not loaded ${JSON.stringify(cold)}, loaded ${JSON.stringify(warm)}`)
+  check('a block in a language not loaded yet is colored once its grammar is in, and at once after that', !cold.sync && cold.ms < 1000 && warm.sync, JSON.stringify({ cold, warm }))
   await js(`${EDITOR}.editor.commands.setContent(${JSON.stringify(pastedHtml)})`)
   await click('HTML')
   await click('Convert to clipboard')

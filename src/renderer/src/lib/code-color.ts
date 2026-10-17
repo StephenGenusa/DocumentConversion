@@ -4,34 +4,38 @@ import { AttrStep } from '@tiptap/pm/transform'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import { closeHistory } from '@tiptap/pm/history'
 import type { Node as PMNode } from '@tiptap/pm/model'
-import { HLJS_CSS } from '../../../core/hljs-palette'
-import { GRAMMARS, grammarName, grammarReady, hljs, loadGrammar } from './code-grammars'
+import { HLJS_CSS, TOKEN_COLORS } from '../../../core/hljs-palette'
+import { GRAMMARS, grammarName, grammarReady, loadGrammar } from './code-grammars'
+import { colorTo, recolorText, tokensIn, uncolored, type Colors, type Token } from './code-tokens'
 
 /**
  * Code blocks colored while they are edited, by the same highlight.js and the
  * same palette as the pdf and html outputs (core/hljs.ts), so the pane looks
- * like the printed page. The colors are decorations: they are drawn, never
- * part of the document, so what the editor saves is unchanged.
+ * like the printed page. The colors are never part of the document, so what
+ * the editor saves is unchanged.
  *
  * Only a block with a language highlight.js knows is colored; no language or
  * `plaintext` stays plain, as in the outputs (the guess is made at intake).
  * A grammar is loaded the first time a block needs it (code-grammars.ts), and
  * the blocks in that language are colored once it is in.
  *
- * Cost: one keystroke re-highlights only the block it touched, and every other
- * block's colors are mapped through the change. A block too big to
- * highlight inside a keystroke keeps its mapped colors while typing and is
- * re-highlighted once typing pauses. A re-highlight replaces only the colors
- * that changed: the rest stay the same decorations, so the view redraws the
- * edited line, not every span of the block.
+ * Only what is on screen is colored, with a margin of lines above and below
+ * (COLOR_MARGIN_LINES), so a big block costs what its visible part does. The
+ * colors are painted with the CSS Custom Highlight API: ranges over the
+ * block's text, kept beside the page rather than in it, so ProseMirror's DOM
+ * is the plain block's. A new color never makes it redraw anything. Only
+ * what a color cannot do (italic comments, bold headings, a diff line's
+ * background) is a decoration, and only in the colored lines.
+ *
+ * Cost of a key: the block is colored again from the last restart point
+ * before it until the old colors hold (code-tokens.ts), usually the next
+ * line, and its visible lines are painted again.
  */
 
 /** A code block of this many lines or more is not colored (plain monospace, as before). */
 export const COLOR_LINE_LIMIT = 6000
-/** Blocks up to this many characters are re-colored on the keystroke; bigger ones after a pause. */
-export const SYNC_COLOR_CHARS = 20_000
-/** How long typing must pause before a big block is re-colored. */
-export const COLOR_PAUSE_MS = 250
+/** Lines colored past what is on screen, above and below. */
+export const COLOR_MARGIN_LINES = 150
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -50,53 +54,40 @@ function grammarOf(language: unknown): string | null {
   return name && name !== 'plaintext' ? name : null
 }
 
-const ENTITY = /&(?:amp|lt|gt|quot|#x27);/g
-
-/** Each colored stretch of `code`, as [from, to, classes] offsets into it. */
-function tokens(code: string, language: string): [number, number, string][] {
-  const { value } = hljs.highlight(code, { language, ignoreIllegals: true })
-  const out: [number, number, string][] = []
-  const stack: string[] = []
-  let at = 0
-  for (const m of value.matchAll(/<span class="([^"]*)">|<\/span>|[^<]+/g)) {
-    if (m[1] !== undefined) stack.push(m[1])
-    else if (m[0] === '</span>') stack.pop()
-    else {
-      const len = m[0].replace(ENTITY, '.').length
-      if (stack.length) {
-        const cls = stack.join(' ')
-        const last = out[out.length - 1]
-        if (last && last[1] === at && last[2] === cls) last[1] = at + len
-        else out.push([at, at + len, cls])
-      }
-      at += len
-    }
-  }
-  return out
-}
-
 function lineCountReaches(text: string, limit: number): boolean {
   let n = 1
   for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) if (++n >= limit) return true
   return n >= limit
 }
 
-/** What coloring a block gets now: none, on the keystroke, or after the pause. */
-function plan(node: PMNode): { language: string; now: boolean } | null {
+/** The language a block is colored in now, or null (none, unknown, not loaded, or too long). */
+function colorLanguage(node: PMNode, text: string): string | null {
   const language = grammarOf(node.attrs.language)
   if (!language || !grammarReady(language)) return null
-  const text = node.textContent
-  if (lineCountReaches(text, COLOR_LINE_LIMIT)) return null
-  return { language, now: text.length <= SYNC_COLOR_CHARS }
+  return lineCountReaches(text, COLOR_LINE_LIMIT) ? null : language
+}
+
+/* ------------------------------ what is colored ------------------------------- */
+
+interface Block {
+  /** Its colors so far, or null when it is not colored. */
+  colors: Colors | null
+  /** The doc positions colored now (on screen and the margin), or null. */
+  window: readonly [number, number] | null
 }
 
 interface ColorState {
+  /** Every code block, by position. */
+  blocks: ReadonlyMap<number, Block>
+  /** The doc positions on screen, as last measured (the top until then). */
+  visible: readonly [number, number]
+  /** The pickers, and the shapes (italic, bold, line backgrounds) in the colored lines. */
   decorations: DecorationSet
-  /** Start positions of big blocks waiting for the pause. */
-  waiting: number[]
   /** Languages the blocks name whose grammars are not loaded yet. */
-  wanted: string[]
+  wanted: readonly string[]
 }
+
+type Meta = { visible: readonly [number, number] } | { loaded: string }
 
 const key = new PluginKey<ColorState>('codeColor')
 
@@ -104,32 +95,107 @@ function isCodeBlock(node: PMNode): boolean {
   return node.type.name === 'codeBlock'
 }
 
+/** Where `n` lines before the line holding `at` start. */
+function linesBack(text: string, at: number, n: number): number {
+  let i = text.lastIndexOf('\n', at - 1)
+  for (let k = 0; k < n && i > 0; k++) i = text.lastIndexOf('\n', i - 1)
+  return i < 0 ? 0 : i + 1
+}
+
+/** Where the line `n` lines after the line holding `at` ends. */
+function linesOn(text: string, at: number, n: number): number {
+  let i = text.indexOf('\n', at)
+  for (let k = 0; k < n && i !== -1; k++) i = text.indexOf('\n', i + 1)
+  return i < 0 ? text.length : i
+}
+
+/** Line breaks between two doc positions outside a block, or more than `limit` if there are many. */
+function linesBetween(doc: PMNode, from: number, to: number, limit: number): number {
+  // Far apart in characters is far apart in lines too; not worth counting.
+  if (to - from > limit * 200) return limit + 1
+  return doc.textBetween(from, to, '\n', '\n').split('\n').length - 1
+}
+
 /**
- * Above this many stale colors a block's decorations are rebuilt with the
+ * The positions of the block at `pos` within `margin` lines of what is on
+ * screen, or null when it is further away than that.
+ */
+function reach(doc: PMNode, pos: number, text: string, visible: readonly [number, number], margin: number): [number, number] | null {
+  const start = pos + 1
+  const end = start + text.length
+  const [v0, v1] = visible
+  if (v1 < start) {
+    const gap = linesBetween(doc, v1, start, margin)
+    return gap > margin ? null : [start, start + linesOn(text, 0, margin - gap)]
+  }
+  if (v0 > end) {
+    const gap = linesBetween(doc, end, v0, margin)
+    return gap > margin ? null : [start + linesBack(text, text.length, margin - gap), end]
+  }
+  return [start + linesBack(text, Math.max(0, v0 - start), margin), start + linesOn(text, Math.min(text.length, v1 - start), margin)]
+}
+
+/**
+ * The positions to color in a block: the screen and the margin around it.
+ * The window stays put while the screen is still well inside it (half the
+ * margin), so scrolling a line or two, or typing, does not move it.
+ */
+function windowOf(doc: PMNode, pos: number, text: string, visible: readonly [number, number], current: Block['window']): Block['window'] {
+  const outer = reach(doc, pos, text, visible, COLOR_MARGIN_LINES)
+  if (!outer) return null
+  if (current && current[0] >= pos + 1 && current[1] <= pos + 1 + text.length) {
+    const inner = reach(doc, pos, text, visible, COLOR_MARGIN_LINES / 2)
+    if (!inner || (current[0] <= inner[0] && current[1] >= inner[1])) return current
+  }
+  return outer
+}
+
+/*
+ * What a color cannot do, a decoration does: the classes whose rules change
+ * the look beyond the color (HLJS_CSS). Each takes in what is typed at its
+ * end, so typing at the end of a comment lands in it rather than in a new
+ * stretch: ProseMirror matches a block's stretches in order, and one new
+ * stretch has it redraw every stretch after it in the block.
+ */
+const SHAPES = ['hljs-comment', 'hljs-quote', 'hljs-section', 'hljs-name', 'hljs-addition', 'hljs-deletion']
+
+function shapeOf(cls: string): string | null {
+  const classes = cls.split(' ')
+  for (let i = classes.length - 1; i >= 0; i--) if (SHAPES.includes(classes[i])) return classes[i]
+  return null
+}
+
+/** The shapes of the colored lines, adjoining ones of one kind as one. */
+function shapes(tokens: readonly Token[]): [number, number, string][] {
+  const out: [number, number, string][] = []
+  for (const [from, to, cls] of tokens) {
+    const shape = shapeOf(cls)
+    if (!shape) continue
+    const last = out[out.length - 1]
+    if (last && last[1] === from && last[2] === shape) last[1] = to
+    else out.push([from, to, shape])
+  }
+  return out
+}
+
+function shapeDeco(from: number, to: number, cls: string): Decoration {
+  return Decoration.inline(from, to, { class: cls }, { shape: cls, inclusiveEnd: true })
+}
+
+/**
+ * Above this many stale shapes a block's decorations are rebuilt with the
  * rest of the set rather than removed one by one: DecorationSet.remove looks
  * each one up in the block's list, which is quadratic in a big block.
  */
 const REMOVE_ONE_BY_ONE = 64
 
-/*
- * A color takes in what is typed at its end (and, first in its block, at its
- * start). Typed text then always lands inside a colored or a plain stretch
- * that is already drawn, never in a new stretch of its own between two
- * colors: ProseMirror matches a block's stretches in order, so one new
- * stretch had it rewrite every span after it, the whole rest of the block.
- */
-function color(from: number, to: number, cls: string, first: boolean): Decoration {
-  return Decoration.inline(from, to, { class: cls }, { color: cls, inclusiveStart: first, inclusiveEnd: true })
-}
-
-/** Re-color the code block at `pos`, or queue it, replacing what it had. */
-function recolor(state: ColorState, doc: PMNode, pos: number, node: PMNode, force: boolean): ColorState {
-  const p = plan(node)
-  let { decorations, waiting, wanted } = state
-  waiting = waiting.filter((w) => w !== pos)
-  const language = grammarOf(node.attrs.language)
-  if (language && !p && !grammarReady(language) && !wanted.includes(language)) wanted = [...wanted, language]
+/** Bring the code block at `pos` up to date: its colors, its window, its shapes and its picker. */
+function update(state: ColorState, doc: PMNode, pos: number, node: PMNode, prev: Block | undefined, blocks: Map<number, Block>): ColorState {
+  let { decorations, wanted } = state
+  const text = node.textContent
   const end = pos + node.nodeSize
+  const named = grammarOf(node.attrs.language)
+  if (named && !grammarReady(named) && !wanted.includes(named)) wanted = [...wanted, named]
   // The picker always shows the language as it is now; kept while it does.
   const pickerKey = `lang:${pickerValue(node.attrs.language)}`
   const picker = decorations.find(pos, end, (spec) => spec.picker === true)
@@ -137,15 +203,22 @@ function recolor(state: ColorState, doc: PMNode, pos: number, node: PMNode, forc
     if (picker.length) decorations = decorations.remove(picker)
     decorations = decorations.add(doc, [pickerWidget(pos, node.attrs.language)])
   }
-  if (p && !p.now && !force) {
-    // Keep the mapped colors up until the pause.
-    return { decorations, waiting: [...waiting, pos], wanted }
+  const language = colorLanguage(node, text)
+  const window = language ? windowOf(doc, pos, text, state.visible, prev?.window ?? null) : null
+  let colors: Colors | null = null
+  if (language && window) {
+    const was = prev?.colors?.language === language ? prev.colors : null
+    const need = window[1] - pos - 1
+    colors = was ? recolorText(was, text, need) : colorTo(uncolored(language, text), need)
+  } else if (language && prev?.colors?.language === language) {
+    // Off screen: kept for when it comes back, and brought up to date then.
+    colors = prev.colors
   }
-  // Only the colors that changed are replaced. The rest, mapped through the
-  // edit, are kept as they are: the same objects, so the view leaves their
-  // spans alone and a re-color after the pause redraws a line, not the block.
-  const old = decorations.find(pos, end, (spec) => spec.picker !== true).sort((x, y) => x.from - y.from || x.to - y.to)
-  const fresh = p ? tokens(node.textContent, p.language) : []
+  blocks.set(pos, { colors, window })
+  // Only the shapes that changed are replaced; the rest stay the same
+  // decorations, so the view leaves their spans alone.
+  const old = decorations.find(pos, end, (spec) => spec.shape !== undefined).sort((x, y) => x.from - y.from || x.to - y.to)
+  const fresh = colors && window ? shapes(tokensIn(colors, window[0] - pos - 1, window[1] - pos - 1)) : []
   const stale: Decoration[] = []
   const added: Decoration[] = []
   let i = 0
@@ -154,20 +227,19 @@ function recolor(state: ColorState, doc: PMNode, pos: number, node: PMNode, forc
     const b = pos + 1 + to
     while (i < old.length && (old[i].from < a || (old[i].from === a && old[i].to < b))) stale.push(old[i++])
     const d = old[i]
-    if (d && d.from === a && d.to === b && d.spec.color === cls && (d.spec.inclusiveStart === true) === (from === 0)) i++
-    else added.push(color(a, b, cls, from === 0))
+    if (d && d.from === a && d.to === b && d.spec.shape === cls) i++
+    else added.push(shapeDeco(a, b, cls))
   }
   while (i < old.length) stale.push(old[i++])
   if (stale.length > REMOVE_ONE_BY_ONE) {
-    // The block's colors afresh, beside everything else as it was.
-    const others = decorations.find().filter((d) => d.spec.picker === true || d.to <= pos || d.from >= end)
-    const all = fresh.map(([from, to, cls]) => color(pos + 1 + from, pos + 1 + to, cls, from === 0))
+    const others = decorations.find().filter((d) => d.spec.shape === undefined || d.to <= pos || d.from >= end)
+    const all = fresh.map(([from, to, cls]) => shapeDeco(pos + 1 + from, pos + 1 + to, cls))
     decorations = DecorationSet.create(doc, [...others, ...all])
   } else {
     if (stale.length) decorations = decorations.remove(stale)
     if (added.length) decorations = decorations.add(doc, added)
   }
-  return { decorations, waiting, wanted }
+  return { ...state, decorations, wanted }
 }
 
 /** Set the language of the code block at `pos` ('' for plain text), as one undo step. */
@@ -270,56 +342,289 @@ function touched(tr: Transaction): number[] {
   return [...found]
 }
 
-function initial(doc: PMNode): ColorState {
-  let state: ColorState = { decorations: DecorationSet.empty, waiting: [], wanted: [] }
-  doc.descendants((node, pos) => {
-    if (isCodeBlock(node)) state = recolor(state, doc, pos, node, false)
+/** Blocks a screen at `visible` may color: the ones near it, and the ones colored now. */
+function nearBlocks(doc: PMNode, blocks: ReadonlyMap<number, Block>, visible: readonly [number, number]): Set<number> {
+  const out = new Set<number>()
+  for (const [pos, b] of blocks) if (b.window) out.add(pos)
+  const span = COLOR_MARGIN_LINES * 200
+  doc.nodesBetween(Math.max(0, visible[0] - span), Math.min(doc.content.size, visible[1] + span), (node, pos) => {
+    if (isCodeBlock(node)) out.add(pos)
     return !node.isTextblock
   })
-  return state
+  return out
+}
+
+/** Whether a screen at `visible` colors other lines than now. */
+function movesWindows(state: EditorState, visible: readonly [number, number]): boolean {
+  const s = key.getState(state)
+  if (!s) return false
+  for (const pos of nearBlocks(state.doc, s.blocks, visible)) {
+    const node = state.doc.nodeAt(pos)
+    const b = s.blocks.get(pos)
+    if (!node || !b) continue
+    const text = node.textContent
+    const was = b.window
+    const now = colorLanguage(node, text) ? windowOf(state.doc, pos, text, visible, was) : null
+    if (now !== was && (!now || !was || now[0] !== was[0] || now[1] !== was[1])) return true
+  }
+  return false
+}
+
+function initial(doc: PMNode): ColorState {
+  let state: ColorState = { blocks: new Map(), visible: [0, 0], decorations: DecorationSet.empty, wanted: [] }
+  const blocks = new Map<number, Block>()
+  doc.descendants((node, pos) => {
+    if (isCodeBlock(node)) state = update(state, doc, pos, node, undefined, blocks)
+    return !node.isTextblock
+  })
+  return { ...state, blocks }
 }
 
 function apply(tr: Transaction, value: ColorState): ColorState {
-  const meta = tr.getMeta(key) as 'flush' | { loaded: string } | undefined
-  const flush = meta === 'flush'
-  const loaded = typeof meta === 'object' ? meta.loaded : null
-  if (!tr.docChanged && !flush && !loaded) return value
+  const meta = tr.getMeta(key) as Meta | undefined
+  if (!tr.docChanged && !meta) return value
+  const doc = tr.doc
   let state: ColorState = value
+  const redo = new Set<number>()
+  let prev = value.blocks
   if (tr.docChanged) {
-    const waiting: number[] = []
-    for (const w of value.waiting) {
-      const r = tr.mapping.mapResult(w, 1)
-      if (!r.deleted) waiting.push(r.pos)
+    const mapped = new Map<number, Block>()
+    let decorations = value.decorations.map(tr.mapping, doc)
+    for (const [pos, b] of value.blocks) {
+      const r = tr.mapping.mapResult(pos, 1)
+      const node = r.deleted ? null : doc.nodeAt(r.pos)
+      if (!node || !isCodeBlock(node)) {
+        // No longer a code block (made a paragraph, say): its picker and shapes go.
+        if (node) decorations = decorations.remove(decorations.find(r.pos, r.pos + node.nodeSize, (spec) => spec.picker === true || spec.shape !== undefined))
+        continue
+      }
+      const window = b.window && ([tr.mapping.map(b.window[0], -1), tr.mapping.map(b.window[1], 1)] as const)
+      mapped.set(r.pos, window === b.window ? b : { colors: b.colors, window })
     }
-    state = { ...value, decorations: value.decorations.map(tr.mapping, tr.doc), waiting }
-    for (const pos of touched(tr)) state = recolor(state, tr.doc, pos, tr.doc.nodeAt(pos)!, false)
+    prev = mapped
+    const v = value.visible
+    state = { ...value, decorations, visible: [tr.mapping.map(v[0], -1), tr.mapping.map(v[1], 1)] }
+    for (const pos of touched(tr)) redo.add(pos)
   }
-  if (loaded) {
+  if (meta && 'visible' in meta) {
+    state = { ...state, visible: meta.visible }
+    for (const pos of nearBlocks(doc, prev, meta.visible)) redo.add(pos)
+  }
+  if (meta && 'loaded' in meta) {
     // A grammar came in: color the blocks that were waiting for it.
-    state = { ...state, wanted: state.wanted.filter((l) => l !== loaded) }
-    tr.doc.descendants((node, pos) => {
-      if (isCodeBlock(node) && grammarOf(node.attrs.language) === loaded) state = recolor(state, tr.doc, pos, node, false)
-      return !node.isTextblock
-    })
+    state = { ...state, wanted: state.wanted.filter((l) => l !== meta.loaded) }
+    for (const pos of prev.keys()) if (grammarOf(doc.nodeAt(pos)?.attrs.language) === meta.loaded) redo.add(pos)
   }
-  if (flush) {
-    for (const pos of state.waiting) {
-      const node = tr.doc.nodeAt(pos)
-      if (node && isCodeBlock(node)) state = recolor(state, tr.doc, pos, node, true)
-    }
-    state = { ...state, waiting: [] }
+  const blocks = new Map<number, Block>()
+  for (const [pos, b] of prev) if (!redo.has(pos)) blocks.set(pos, b)
+  for (const pos of redo) {
+    const node = doc.nodeAt(pos)
+    if (node && isCodeBlock(node)) state = update(state, doc, pos, node, prev.get(pos), blocks)
   }
-  return state
+  return { ...state, blocks }
 }
 
-/** The palette, once per page: the same rules the pdf and html shell print. */
+/* -------------------------------- painting ------------------------------------ */
+
+/*
+ * One highlight for each color of the palette, named after its first scope
+ * (`::highlight(hljs-keyword)`), shared by every editor on the page. A
+ * stretch is painted in the color of its innermost class that has one, as
+ * the outputs' nested spans are.
+ */
+const PAINT_OF = new Map<string, string>(TOKEN_COLORS.flatMap(([scopes]) => scopes.map((s): [string, string] => [`hljs-${s}`, `hljs-${scopes[0]}`])))
+const paintMemo = new Map<string, string | null>()
+
+function paintOf(cls: string): string | null {
+  let paint = paintMemo.get(cls)
+  if (paint === undefined) {
+    paint = null
+    const classes = cls.split(' ')
+    for (let i = classes.length - 1; i >= 0 && !paint; i--) paint = PAINT_OF.get(classes[i]) ?? null
+    paintMemo.set(cls, paint)
+  }
+  return paint
+}
+
+const HIGHLIGHT_CSS = TOKEN_COLORS.map(([scopes, color]) => `::highlight(hljs-${scopes[0]}) { color: ${color}; }`).join('\n')
+
+type Paints = Map<string, Highlight>
+
+/** The page's highlights, made once; null where the browser has no Highlight API. */
+function paintsOf(doc: Document): Paints | null {
+  const win = doc.defaultView as (Window & typeof globalThis) | null
+  const registry = win?.CSS?.highlights
+  if (!win || !registry || typeof win.Highlight !== 'function') return null
+  const out: Paints = new Map()
+  for (const [scopes] of TOKEN_COLORS) {
+    const name = `hljs-${scopes[0]}`
+    let h = registry.get(name)
+    if (!h) {
+      h = new win.Highlight()
+      registry.set(name, h)
+    }
+    out.set(name, h)
+  }
+  return out
+}
+
+/** The text nodes of the code block at `pos`, in order, leaving out its picker. */
+function textNodes(view: EditorView, pos: number): Text[] {
+  const dom = view.nodeDOM(pos) as HTMLElement | null
+  const out: Text[] = []
+  const walk = (el: Node): void => {
+    for (let n = el.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === 3) out.push(n as Text)
+      else if (n.nodeType === 1 && (n as HTMLElement).contentEditable !== 'false') walk(n)
+    }
+  }
+  if (dom) walk(dom)
+  return out
+}
+
+interface PaintedBlock {
+  from: number
+  to: number
+  nodes: Text[]
+  ranges: [Highlight, AbstractRange][]
+}
+
+/** Paints each colored block's colored lines, and paints them again when they or its DOM change. */
+class Painter {
+  private painted = new Map<Colors, PaintedBlock>()
+  private readonly paints: Paints | null
+
+  constructor(private readonly view: EditorView) {
+    this.paints = paintsOf(view.dom.ownerDocument)
+  }
+
+  sync(state: ColorState): void {
+    if (!this.paints) return
+    const next = new Map<Colors, PaintedBlock>()
+    for (const [pos, b] of state.blocks) {
+      if (!b.colors || !b.window) continue
+      const from = b.window[0] - pos - 1
+      const to = b.window[1] - pos - 1
+      const nodes = textNodes(this.view, pos)
+      const was = this.painted.get(b.colors)
+      if (was && was.from === from && was.to === to && was.nodes.length === nodes.length && was.nodes.every((n, i) => n === nodes[i])) {
+        next.set(b.colors, was)
+        this.painted.delete(b.colors)
+        continue
+      }
+      const p = this.paint(b.colors, from, to, nodes)
+      if (p) next.set(b.colors, p)
+    }
+    for (const p of this.painted.values()) this.erase(p)
+    this.painted = next
+  }
+
+  private paint(colors: Colors, from: number, to: number, nodes: Text[]): PaintedBlock | null {
+    // The DOM must hold the text the colors are for (it may not, mid-composition).
+    let length = 0
+    for (const n of nodes) length += n.data.length
+    if (length !== colors.text.length) return null
+    const doc = this.view.dom.ownerDocument
+    const win = doc.defaultView as (Window & typeof globalThis) | null
+    const Static = win && typeof win.StaticRange === 'function' ? win.StaticRange : null
+    const ranges: [Highlight, AbstractRange][] = []
+    let ni = 0
+    let base = 0
+    const at = (offset: number): [Text, number] => {
+      while (ni < nodes.length - 1 && base + nodes[ni].data.length < offset) base += nodes[ni++].data.length
+      return [nodes[ni], offset - base]
+    }
+    for (const [f, t, cls] of tokensIn(colors, from, to)) {
+      const paint = paintOf(cls)
+      const h = paint && this.paints!.get(paint)
+      if (!h) continue
+      const [startContainer, startOffset] = at(f)
+      const [endContainer, endOffset] = at(t)
+      let range: AbstractRange
+      if (Static) range = new Static({ startContainer, startOffset, endContainer, endOffset })
+      else {
+        const r = doc.createRange()
+        r.setStart(startContainer, startOffset)
+        r.setEnd(endContainer, endOffset)
+        range = r
+      }
+      h.add(range)
+      ranges.push([h, range])
+    }
+    return { from, to, nodes, ranges }
+  }
+
+  private erase(p: PaintedBlock): void {
+    for (const [h, range] of p.ranges) h.delete(range)
+  }
+
+  destroy(): void {
+    for (const p of this.painted.values()) this.erase(p)
+    this.painted.clear()
+  }
+}
+
+/** The element the editor scrolls in: the nearest one that scrolls, else the page. */
+function scrollerOf(view: EditorView): HTMLElement | null {
+  for (let el = view.dom.parentElement; el; el = el.parentElement) {
+    const { overflowY } = getComputedStyle(el)
+    if (overflowY === 'auto' || overflowY === 'scroll') return el
+  }
+  return null
+}
+
+/**
+ * The doc position of the text at a point, or null. The browser's caret at
+ * the point, not ProseMirror's posAtCoords: when that finds no caret it
+ * measures the text a character at a time, seconds in a 5,000-line block.
+ */
+function posAtPoint(view: EditorView, x: number, y: number): number | null {
+  const doc = view.dom.ownerDocument as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null }
+  let node: Node | null = null
+  let offset = 0
+  if (typeof doc.caretPositionFromPoint === 'function') {
+    const p = doc.caretPositionFromPoint(x, y)
+    if (p) ({ offsetNode: node, offset } = p)
+  } else if (typeof doc.caretRangeFromPoint === 'function') {
+    const r = doc.caretRangeFromPoint(x, y)
+    if (r) ({ startContainer: node, startOffset: offset } = r)
+  }
+  if (!node || !view.dom.contains(node)) return null
+  try {
+    return view.posAtDOM(node, offset)
+  } catch {
+    return null
+  }
+}
+
+/** The doc positions at the top and bottom of what is on screen, or null when that cannot be told. */
+function visibleRange(view: EditorView, scroller: HTMLElement | null): [number, number] | null {
+  const win = view.dom.ownerDocument.defaultView
+  if (!win) return null
+  const box = scroller?.getBoundingClientRect() ?? { top: 0, bottom: win.innerHeight }
+  const r = view.dom.getBoundingClientRect()
+  const top = Math.max(box.top, r.top, 0) + 2
+  const bottom = Math.min(box.bottom, r.bottom, win.innerHeight) - 2
+  if (bottom <= top || r.width < 2) return null
+  // Across the middle, where the text is (a line shorter than that puts the caret at its end).
+  const x = r.left + r.width / 2
+  const a = posAtPoint(view, x, top)
+  const b = posAtPoint(view, x, bottom)
+  if (a === null || b === null) return null
+  return [Math.min(a, b), Math.max(a, b)]
+}
+
+/** The palette, once per page: the same rules the pdf and html shell print, and the same colors as highlights. */
 function addStyles(doc: Document): void {
   if (doc.getElementById('code-color-css')) return
   const style = doc.createElement('style')
   style.id = 'code-color-css'
-  style.textContent = HLJS_CSS
+  style.textContent = `${HLJS_CSS}\n${HIGHLIGHT_CSS}\n`
   doc.head.append(style)
 }
+
+/** The plugin's key, for tests that tell it what is on screen (`{ visible: [from, to] }`). */
+export const codeColorKey = key
 
 export const CodeColor = Extension.create({
   name: 'codeColor',
@@ -369,20 +674,7 @@ export const CodeColor = Extension.create({
       },
       view(view) {
         addStyles(view.dom.ownerDocument)
-        let timer: ReturnType<typeof setTimeout> | undefined
-        let seen: number[] | undefined
-        const schedule = (state: EditorState): void => {
-          const waiting = key.getState(state)?.waiting ?? []
-          if (waiting === seen) return
-          seen = waiting
-          clearTimeout(timer)
-          timer = undefined
-          if (waiting.length === 0) return
-          timer = setTimeout(() => {
-            timer = undefined
-            if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(key, 'flush').setMeta('addToHistory', false))
-          }, COLOR_PAUSE_MS)
-        }
+        const painter = new Painter(view)
         // Each wanted grammar is asked for once; when it is in, its blocks are colored.
         const asked = new Set<string>()
         const load = (state: EditorState): void => {
@@ -394,14 +686,46 @@ export const CodeColor = Extension.create({
             })
           }
         }
-        schedule(view.state)
-        load(view.state)
+        // What is on screen, measured once the page is laid out: told to the
+        // state only when it colors other lines than now.
+        // The editor may be made before it is put in the page (Tiptap's React
+        // view moves it there), so the scroller is looked for when measuring,
+        // and scrolling is heard from anywhere in the page.
+        const doc = view.dom.ownerDocument
+        const win = doc.defaultView
+        let frame = 0
+        const measure = (): void => {
+          frame = 0
+          if (view.isDestroyed || !view.dom.isConnected) return
+          const visible = visibleRange(view, scrollerOf(view))
+          if (visible && movesWindows(view.state, visible)) view.dispatch(view.state.tr.setMeta(key, { visible }).setMeta('addToHistory', false))
+        }
+        const later = (): void => {
+          if (!frame && win) frame = win.requestAnimationFrame(measure)
+        }
+        const onScroll = (e: Event): void => {
+          const t = e.target
+          if (t === doc || (t instanceof Node && t.contains(view.dom))) later()
+        }
+        doc.addEventListener('scroll', onScroll, { capture: true, passive: true })
+        win?.addEventListener('resize', later)
+        const sync = (state: EditorState): void => {
+          const s = key.getState(state)
+          if (s) painter.sync(s)
+          load(state)
+          later()
+        }
+        sync(view.state)
         return {
-          update: (v) => {
-            schedule(v.state)
-            load(v.state)
+          update: (v, prevState) => {
+            if (key.getState(v.state) !== key.getState(prevState)) sync(v.state)
           },
-          destroy: () => clearTimeout(timer),
+          destroy: () => {
+            if (frame) win?.cancelAnimationFrame(frame)
+            doc.removeEventListener('scroll', onScroll, { capture: true })
+            win?.removeEventListener('resize', later)
+            painter.destroy()
+          },
         }
       },
     }),
