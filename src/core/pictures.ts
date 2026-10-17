@@ -231,6 +231,32 @@ function oneLine(text: string): string {
 const BASE64 = /^[A-Za-z0-9+/]+=*$/
 
 /**
+ * A picture that came with an alternate (`data-alt-src`: an RTF picture's
+ * `\\nonshppict` fallback, readers/rtf.ts) becomes whichever of the two the
+ * target can use best: one it holds as it is, else one that can be
+ * converted (a raster picture), else the picture itself. So Word keeps an
+ * EMF and a web page shows the DIB written beside it. The attribute goes,
+ * whichever is kept. Answers whether anything changed.
+ */
+function chooseAlternates(dom: ReturnType<typeof parseDocument>, profile: PictureTarget): boolean {
+  let changed = false
+  const rank = (src: string): number => {
+    const data = dataBytes(src)
+    const mime = data && pictureType(data.bytes)
+    if (!data || !mime) return 0
+    return holds(profile, mime, data.bytes) ? 3 : pictureMime(data.bytes) ? 2 : 1
+  }
+  for (const el of images(dom.children)) {
+    const alternate = el.attribs['data-alt-src']
+    if (alternate === undefined) continue
+    delete el.attribs['data-alt-src']
+    changed = true
+    if (rank(alternate) > rank(el.attribs.src ?? '')) el.attribs.src = alternate
+  }
+  return changed
+}
+
+/**
  * A TIFF of several pages (a fax, a scanned letter) becomes one picture per
  * page, in order, where the TIFF stood, each alt text the TIFF's with its
  * page number: no target shows more than a TIFF's first page (Word and
@@ -303,7 +329,8 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
   const format = ctx.pictureFormat ?? DEFAULT_PICTURE_FORMAT
   const dom = parseDocument(html)
   const pageOf = new Map<Element, number>()
-  let changed = splitTiffPages(dom, pageOf)
+  let changed = chooseAlternates(dom, profile)
+  changed = splitTiffPages(dom, pageOf) || changed
   interface Job {
     el: Element
     number: number

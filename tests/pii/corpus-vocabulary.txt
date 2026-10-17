@@ -106,6 +106,7 @@ beta
 between
 bigcup
 bit
+bitmap
 bits
 bmatrix
 board
@@ -443,6 +444,7 @@ groups
 grow
 guess
 guidance
+guide
 guidelines
 habit
 halloway
@@ -492,6 +494,7 @@ indices
 inference
 infty
 inline
+inside
 inspection
 installed
 instead
@@ -762,6 +765,7 @@ photograph
 photographs
 photography
 picture
+pictures
 piece
 pieces
 pin
@@ -834,9 +838,11 @@ rates
 rather
 rating
 ratings
+raw
 reach
 read
 reader
+readers
 reading
 reasonable
 receiving
@@ -893,6 +899,7 @@ returns
 reuse
 review
 reviews
+rich
 right
 rightarrow
 riverside

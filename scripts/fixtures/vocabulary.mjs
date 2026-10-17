@@ -593,6 +593,15 @@ export const READING_ROOM = {
   emfAlt: 'Floor plan of the reading room, drawn as an enhanced metafile',
   wmfAlt: 'Shelf label, drawn as an older metafile',
   drawingsAfter: 'Word shows both drawings as they were made.',
+  rtfTitle: 'Reading room pictures, saved as rich text',
+  rtfIntro: 'An old word processor saved this guide as rich text, with its pictures inside.',
+  rtfSignAlt: 'Quiet seating sign',
+  rtfPhotoLead: 'A photograph of the periodicals, kept as raw bytes:',
+  rtfPlanLead: 'The shelf diagram, drawn as an enhanced metafile with a bitmap beside it for older readers:',
+  rtfLabelLead: 'A shelf label, drawn as an older metafile:',
+  rtfBitmapLead: 'A small bitmap marker:',
+  rtfTableHead: ['Collection', 'Marker'],
+  rtfAfter: 'Every picture should come through in every format that shows pictures.',
 }
 
 /**

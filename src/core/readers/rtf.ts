@@ -12,6 +12,9 @@ import renderRtfDocument from '@iarna/rtf-to-html/rtf-to-html.js'
 import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import type { HubDocument, SourceInput } from '../types'
+import { imageMime } from './image'
+import { vectorMime } from '../pictures'
+import { archiveInlineBudget, createImageLedger, imagePlaceholder, OVER_BUDGET } from '../inline-images'
 
 /**
  * Keep the formatting a span was given inside its own group.
@@ -1386,11 +1389,272 @@ function liftRtfFootnotes(rtf: string): { rtf: string; notes: string[] } {
   return notes.length ? { rtf: out + rtf.slice(i), notes } : { rtf, notes }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Pictures                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** A picture read from a `\\pict` group: its bytes as a file of its type, and the size the document shows it at (CSS px). */
+interface RtfPicture {
+  mime: string
+  bytes: Buffer
+  width?: number
+  height?: number
+  alt?: string
+}
+
+/** Where a lifted picture stood. Plain ASCII, like tableToken and NOTE_MARK, so it comes through both RTF paths as text. */
+const PICTURE_MARK = (i: number): string => `zZrTfPiC${i}Zz`
+const PICTURE_MARK_RE = /zZrTfPiC(\d+)Zz/g
+
+/** The picture types a `\\pict` names, by control word. QuickDraw, OS/2 metafiles and device-dependent bitmaps are not read. */
+const PICT_TYPES: Record<string, string> = lookup({
+  pngblip: 'image/png',
+  jpegblip: 'image/jpeg',
+  emfblip: 'image/x-emf',
+  wmetafile: 'image/x-wmf',
+  dibitmap: 'image/bmp',
+})
+
+/** Hex digits and the line breaks between them. */
+const HEX_RUN = /[0-9a-fA-F][0-9a-fA-F\s]*/y
+
+/** The largest side believed, in CSS px (about 5 m), as picture-headers.ts. */
+const MAX_PICTURE_SIDE = 20000
+
+/** Text of an RTF fragment with its control words gone and its escapes decoded (a \\picprop value). */
+function rtfPlainText(fragment: string): string {
+  return fragment
+    .replace(/\\'([0-9a-f]{2})/gi, (_m, h: string) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\\u(-?\d+)\??/g, (_m, n: string) => String.fromCharCode((Number(n) + 65536) % 65536))
+    .replace(/\\[a-z]+-?\d* ?/gi, '')
+    .replace(/\\([\\{}])/g, '$1')
+    .replace(/[{}]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * A BMP file of a DIB: a `\\dibitmap` holds the BITMAPINFO and the bits, and
+ * a file wants the 14-byte header in front, which says where the bits start
+ * (after the info header, its colour table and any bit-field masks).
+ */
+function dibToBmp(dib: Buffer): Buffer | null {
+  if (dib.length < 12) return null
+  const size = dib.readUInt32LE(0)
+  let table = 0
+  if (size === 12) {
+    const bits = dib.readUInt16LE(10)
+    table = bits <= 8 ? (1 << bits) * 3 : 0
+  } else if (size >= 40 && size <= 124 && dib.length >= 40) {
+    const bits = dib.readUInt16LE(14)
+    const compression = dib.readUInt32LE(16)
+    const used = dib.readUInt32LE(32)
+    table = (used > 0 && used <= 256 ? used : bits <= 8 ? 1 << bits : 0) * 4
+    if (size === 40 && compression === 3) table += 12
+    if (size === 40 && compression === 6) table += 16
+  } else return null
+  if (size + table > dib.length) return null
+  const header = Buffer.alloc(14)
+  header.write('BM', 0, 'latin1')
+  header.writeUInt32LE(14 + dib.length, 2)
+  header.writeUInt32LE(14 + size + table, 10)
+  return Buffer.concat([header, dib])
+}
+
+/**
+ * A WMF file of the metafile a `\\wmetafile` holds: that is the bare
+ * metafile, and the document gives its size (in twips), so it is given the
+ * Aldus placeable header Word writes in front of a .wmf file, which says
+ * the same. Null when it is not a metafile at all.
+ */
+function placeableWmf(meta: Buffer, twipsWide: number, twipsHigh: number): Buffer | null {
+  if (meta.length >= 22 && meta.readUInt32LE(0) === 0x9ac6cdd7) return vectorMime(meta) ? meta : null
+  if (!(meta.length >= 18 && [1, 2].includes(meta.readUInt16LE(0)) && meta.readUInt16LE(2) === 9)) return null
+  if (!(twipsWide > 0 && twipsHigh > 0)) return null
+  // The box is 16-bit: a very large picture is given fewer units to the inch.
+  const k = Math.max(1, Math.ceil(Math.max(twipsWide, twipsHigh) / 0x7fff))
+  const head = Buffer.alloc(22)
+  head.writeUInt32LE(0x9ac6cdd7, 0)
+  head.writeInt16LE(Math.round(twipsWide / k), 10)
+  head.writeInt16LE(Math.round(twipsHigh / k), 12)
+  head.writeUInt16LE(Math.round(1440 / k), 14)
+  let sum = 0
+  for (let i = 0; i < 20; i += 2) sum ^= head.readUInt16LE(i)
+  head.writeUInt16LE(sum, 20)
+  return Buffer.concat([head, meta])
+}
+
+/**
+ * One `{\\pict …}` group, from `open` to `end` (just past its `}`): its type
+ * (the blip control word), its data (hex digits, or `\\binN` raw bytes), its
+ * sizes (`\\picwgoal`/`\\pichgoal` in twips, scaled by `\\picscalex`/`y`
+ * percent; `\\picw`/`\\pich`, a metafile's in hundredths of a millimetre)
+ * and the description Word keeps in `\\picprop`. Null when it is of a type
+ * not read here or its data is not that type (the bytes say, not the word).
+ */
+function readPict(rtf: string, open: number, end: number): RtfPicture | null {
+  const words: Record<string, number> = lookup({})
+  let type: string | undefined
+  let alt: string | undefined
+  const digits: string[] = []
+  let raw: Buffer | undefined
+  const CONTROL = /\\([a-z]+)(-?\d+)? ?/y
+  let i = rtf.indexOf('\\pict', open) + 5
+  while (i < end - 1) {
+    const ch = rtf[i]
+    if (ch === '{') {
+      const close = Math.min(groupEnd(rtf, i), end - 1)
+      const group = rtf.slice(i, close)
+      const desc = /\{\\sn\s+wzDescription\}\s*\{\\sv\s+((?:[^{}\\]|\\.)*)\}/.exec(group)
+      if (desc && /^\{\\\*\\picprop\b/.test(group)) alt = rtfPlainText(desc[1]) || undefined
+      i = close
+      continue
+    }
+    if (ch === '\\') {
+      CONTROL.lastIndex = i
+      const m = CONTROL.exec(rtf)
+      if (!m) {
+        i += 2
+        continue
+      }
+      const [, word, param] = m
+      i = CONTROL.lastIndex
+      if (word === 'bin') {
+        const count = Math.max(0, Math.min(Number(param ?? 0), end - 1 - i))
+        raw = Buffer.from(rtf.slice(i, i + count), 'latin1')
+        i += count
+      } else if (PICT_TYPES[word]) type = PICT_TYPES[word]
+      else if (param !== undefined) words[word] = Number(param)
+      continue
+    }
+    // A run of hex (lines of it, in practice), taken whole.
+    HEX_RUN.lastIndex = i
+    const run = HEX_RUN.exec(rtf)
+    if (run && run[0].length > 0) {
+      digits.push(run[0].replace(/\s+/g, ''))
+      i += run[0].length
+      continue
+    }
+    i++
+  }
+  if (!type) return null
+  const hexDigits = digits.join('')
+  let bytes = raw ?? Buffer.from(hexDigits.slice(0, hexDigits.length - (hexDigits.length % 2)), 'hex')
+  const scale = (n?: number): number => (n && n > 0 ? n / 100 : 1)
+  const sx = scale(words.picscalex)
+  const sy = scale(words.picscaley)
+  const metafile = type === 'image/x-emf' || type === 'image/x-wmf'
+  // twips: the size asked for, else a metafile's own extent (0.01 mm).
+  let tw = words.picwgoal > 0 ? words.picwgoal : metafile && words.picw > 0 ? (words.picw * 1440) / 2540 : 0
+  let th = words.pichgoal > 0 ? words.pichgoal : metafile && words.pich > 0 ? (words.pich * 1440) / 2540 : 0
+  tw *= sx
+  th *= sy
+  if (type === 'image/bmp') {
+    const bmp = dibToBmp(bytes)
+    if (!bmp) return null
+    bytes = bmp
+  } else if (type === 'image/x-wmf') {
+    const wmf = placeableWmf(bytes, tw, th)
+    if (!wmf) return null
+    bytes = wmf
+  } else if (type === 'image/x-emf') {
+    if (vectorMime(bytes) !== 'image/x-emf') return null
+  } else if (imageMime(bytes) !== type) return null
+  const picture: RtfPicture = { mime: type, bytes, alt }
+  const width = Math.round(tw / 15)
+  const height = Math.round(th / 15)
+  if (width >= 1 && height >= 1 && width <= MAX_PICTURE_SIDE && height <= MAX_PICTURE_SIDE) {
+    picture.width = width
+    picture.height = height
+  }
+  return picture
+}
+
+/** The first `{\\pict` group inside [from, to), read. */
+function pictIn(rtf: string, from: number, to: number): RtfPicture | null {
+  const at = rtf.slice(from, to).search(/\{\\(?:\*\\)?pict\b/)
+  return at < 0 ? null : readPict(rtf, from + at, Math.min(groupEnd(rtf, from + at), to))
+}
+
+/** Picture groups, and Word's pair of them (`\\shppict`, the picture; `\\nonshppict`, its fallback for older readers). */
+const PICTURE_GROUP = /\{\\(?:\*\\)?(shppict|nonshppict|pict)\b/g
+
+/**
+ * Take every picture out of the stream, leaving a marker where it stood.
+ *
+ * They used to be stripped, and an RTF document arrived with no pictures at
+ * all. Word writes each as a pair: `{\\*\\shppict{\\pict…}}` (the picture,
+ * PNG, JPEG or EMF) and `{\\nonshppict{\\pict…}}` right after (a WMF or a
+ * DIB for readers that know no better). The first is the picture, the
+ * second its alternate: both reach the hub (`data-alt-src`), and the picture
+ * step takes whichever the target can use (pictures.ts) - Word the EMF, a
+ * web page the DIB beside it. A `\\pict` on its own, or a `\\nonshppict`
+ * with no `\\shppict` before it, is the picture. One nothing here reads is
+ * left out, as before.
+ */
+function liftRtfPictures(rtf: string): { rtf: string; pictures: { picture: RtfPicture; alternate?: RtfPicture }[] } {
+  if (!rtf.includes('\\pict')) return { rtf, pictures: [] }
+  const pictures: { picture: RtfPicture; alternate?: RtfPicture }[] = []
+  let out = ''
+  let i = 0
+  PICTURE_GROUP.lastIndex = 0
+  for (let m = PICTURE_GROUP.exec(rtf); m; m = PICTURE_GROUP.exec(rtf)) {
+    // An escaped brace is text, not a group.
+    let slashes = 0
+    for (let k = m.index - 1; k >= 0 && rtf[k] === '\\'; k--) slashes++
+    if (slashes % 2 === 1) continue
+    const end = groupEnd(rtf, m.index)
+    let next = end
+    let picture = m[1] === 'pict' ? readPict(rtf, m.index, end) : pictIn(rtf, m.index, end)
+    let alternate: RtfPicture | null = null
+    if (m[1] === 'shppict') {
+      const after = /^\s*\{\\nonshppict\b/.exec(rtf.slice(end, end + 64))
+      if (after) {
+        const open = end + after[0].indexOf('{')
+        next = groupEnd(rtf, open)
+        alternate = pictIn(rtf, open, next)
+      }
+    }
+    if (!picture) [picture, alternate] = [alternate, null]
+    out += rtf.slice(i, m.index)
+    if (picture) {
+      out += PICTURE_MARK(pictures.length)
+      pictures.push(alternate ? { picture, alternate } : { picture })
+    }
+    i = next
+    PICTURE_GROUP.lastIndex = next
+  }
+  return { rtf: out + rtf.slice(i), pictures }
+}
+
+/** Each marker that came through becomes its picture, within the document's image budget (as docx and pptx). */
+function placePictures(html: string, pictures: { picture: RtfPicture; alternate?: RtfPicture }[], sourceLength: number): string {
+  if (pictures.length === 0) return html
+  const ledger = createImageLedger(archiveInlineBudget(sourceLength))
+  return html.replace(PICTURE_MARK_RE, (_m, n: string) => {
+    const entry = pictures[Number(n)]
+    if (!entry) return ''
+    const { picture, alternate } = entry
+    if (!ledger.admit(picture.bytes.length + (alternate?.bytes.length ?? 0))) {
+      return imagePlaceholder(picture.alt ? `${escapeHtml(picture.alt)} — ${OVER_BUDGET}` : OVER_BUDGET, 'inline')
+    }
+    const uri = (p: RtfPicture): string => `data:${p.mime};base64,${p.bytes.toString('base64')}`
+    const size = picture.width && picture.height ? ` width="${picture.width}" height="${picture.height}"` : ''
+    const alt = picture.alt ? ` alt="${escapeHtml(picture.alt)}"` : ' alt=""'
+    return `<img src="${uri(picture)}"${alt}${size}${alternate ? ` data-alt-src="${uri(alternate)}"` : ''}>`
+  })
+}
+
 /** Convert a raw RTF string to hub HTML (also used for .msg plain-RTF bodies). */
 export async function rtfStringToHubHtml(rtf: string): Promise<string> {
   if (!rtf.trimStart().startsWith('{\\rtf')) {
     throw new ConversionError('rtf-parse-failed', 'Not an RTF document')
   }
+  const lifted = liftRtfPictures(rtf)
+  return placePictures(await rtfWithoutPicturesToHubHtml(lifted.rtf), lifted.pictures, rtf.length)
+}
+
+async function rtfWithoutPicturesToHubHtml(rtf: string): Promise<string> {
   const lifted = liftRtfFootnotes(stripPictures(rtf))
   const main = await rtfBodyToHubHtml(lifted.rtf)
   if (lifted.notes.length === 0) return main

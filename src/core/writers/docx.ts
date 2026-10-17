@@ -58,8 +58,9 @@ function wordSizes(src: string): boolean {
  * Word shows TIFF, EMF and WMF itself, so each is embedded as the document
  * has it (a TIFF of several pages was made one TIFF a page before here:
  * pictures.ts). html-to-docx cannot size them, so it is handed a stand-in
- * it can: a GIF whose header claims the picture's size, as its own header
- * gives it (picture-headers.ts), the GIF itself one pixel. After
+ * it can: a GIF whose header claims the picture's size - the size the
+ * document gives it, else its own header's (picture-headers.ts) - the GIF
+ * itself one pixel. After
  * html-to-docx has laid the stand-in out (extent, alt, relationship), the
  * part is given back the original's bytes, named and typed for it
  * (restoreOriginals). Each stand-in carries the original's hash in a GIF
@@ -107,8 +108,15 @@ function standInOriginals(html: string, originals: Map<string, Original>): strin
     const type = mime ? ORIGINAL_TYPES[mime] : undefined
     const size = type && mime ? originalSize(mime, bytes) : null
     if (!type || !size) continue
+    // The size the document gives it (an RTF picture's \picwgoal), where it gives one.
+    const given = (name: 'width' | 'height'): number | undefined => {
+      const n = Number(img.attribs[name])
+      return Number.isInteger(n) && n >= 1 && n <= 20000 ? n : undefined
+    }
+    const width = given('width') ?? size.width
+    const height = given('height') ?? size.height
     const hash = createHash('sha1').update(bytes).digest('hex')
-    const gif = standInGif(size.width, size.height, hash)
+    const gif = standInGif(width, height, hash)
     originals.set(createHash('sha1').update(gif).digest('hex'), { bytes, ...type })
     img.attribs.src = `data:image/gif;base64,${gif.toString('base64')}`
     changed = true

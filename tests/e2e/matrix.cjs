@@ -272,7 +272,8 @@ async function main() {
       0,
     )
     // EMF and WMF pictures (Word's vector pictures): kept by Word only, their alt text elsewhere.
-    const vectorImages = (hubText.match(/src="data:image\/x-[ew]mf[;,]/gi) ?? []).length
+    // (Not an alternate, data-alt-src: the picture step chooses between the two.)
+    const vectorImages = (hubText.match(/(?<![\w-])src="data:image\/x-[ew]mf[;,]/gi) ?? []).length
     // Code highlight.js finds tokens in (a shell prompt line may hold none).
     const hasColouredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
@@ -410,7 +411,7 @@ async function main() {
           if (/image\/(?:tiff|x-emf|x-wmf)/i.test(text)) throw new Error(`${target} still holds a TIFF, EMF or WMF picture`)
           const shown = (text.match(/data:image\/(?:png|jpeg);base64,/g) ?? []).length + items
           if (shown < tiffImages) throw new Error(`${target} has ${shown} PNG or JPEG pictures for ${tiffImages} TIFFs`)
-          rec.note = `${rec.note ? rec.note + ', ' : ''}${tiffImages} TIFF as PNG/JPEG, ${vectorImages} EMF/WMF described`
+          rec.note = `${rec.note ? rec.note + ', ' : ''}no TIFF, EMF or WMF left (${tiffImages} TIFF pages, ${vectorImages} EMF/WMF in)`
         }
         if (tiffImages > 0 && (target === 'pdf' || target === 'azw4')) {
           // Printed by Chromium, which shows no TIFF: each is an image in the PDF.
