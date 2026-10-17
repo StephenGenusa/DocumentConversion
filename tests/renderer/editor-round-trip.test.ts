@@ -3,6 +3,7 @@ import { generateJSON, generateHTML } from '@tiptap/html'
 import { EDITOR_EXTENSIONS } from '../../src/renderer/src/lib/editor-extensions'
 import { HUB_TAGS, sanitizeToHub } from '../../src/core/allowlist'
 import { SPEAKER_NOTES_TAG } from '../../src/core/speaker-notes'
+import { readHtml } from '../../src/core/readers/html'
 
 /**
  * allowlist.ts states the invariant that governs this editor: anything
@@ -83,6 +84,30 @@ describe('the editor round-trips what the hub allows', () => {
     ['a block over the coloring limit', `<pre><code class="language-python">${Array.from({ length: 6100 }, (_, i) => `n${i} = ${i}`).join('\n')}</code></pre>`],
   ])('keeps a code block (%s) byte for byte', (_name, html) => {
     expect(roundTrip(html)).toBe(html)
+  })
+
+  // The author's markup in code (rustdoc and javadoc link every type name),
+  // kept by the html reader (core/code-language.ts KEPT_IN_CODE): the pane must
+  // hand it back, or every conversion after opening the file has lost it.
+  it('keeps bold, italic and links inside a code block, and the hub keeps them from the pane', async () => {
+    const html =
+      '<pre><code class="language-rust">pub fn <strong>parse</strong>(s: &amp;str) -&gt; ' +
+      '<a href="https://example.com/std/vec/struct.Vec.html">Vec</a>&lt;<em>Token</em>&gt; {\n    todo!()\n}</code></pre>'
+    const out = roundTrip(html)
+    expect(out).toContain('<pre><code class="language-rust">pub fn <strong>parse</strong>(s: &amp;str) -&gt; ')
+    expect(out).toMatch(/<a [^>]*href="https:\/\/example\.com\/std\/vec\/struct\.Vec\.html"[^>]*>Vec<\/a>&lt;<em>Token<\/em>&gt; \{\n    todo!\(\)\n\}<\/code><\/pre>$/)
+    // What converts from the pane is read as html (lib/items.ts toRequest).
+    const hub = (await readHtml({ bytes: Buffer.from(out), filename: 'pane.html' })).html
+    expect(hub).toContain('<strong>parse</strong>')
+    expect(hub).toContain('<em>Token</em>')
+    expect(hub).toMatch(/<a [^>]*href="https:\/\/example\.com\/std\/vec\/struct\.Vec\.html"[^>]*>Vec<\/a>/)
+    expect(hub).toContain('class="language-rust"')
+  })
+
+  it('keeps every mark the reader keeps in code (underline, strike, sup, sub), and no inline code mark', () => {
+    const html = '<pre><code class="language-c"><u>a</u> <s>b</s> x<sup>2</sup> y<sub>i</sub></code></pre>'
+    expect(roundTrip(html)).toBe(html)
+    expect(roundTrip('<pre><code class="language-c">int <code>n</code>;</code></pre>')).toBe('<pre><code class="language-c">int n;</code></pre>')
   })
 
   // Opening a diagram or formula for editing and closing it with no change

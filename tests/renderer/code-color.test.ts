@@ -3,6 +3,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { DecorationSet, type Decoration } from '@tiptap/pm/view'
+import type { Node as PMNode } from '@tiptap/pm/model'
 import { EDITOR_EXTENSIONS } from '../../src/renderer/src/lib/editor-extensions'
 import { configureBlockViews } from '../../src/renderer/src/lib/block-views'
 import { COLOR_LINE_LIMIT, SYNC_COLOR_CHARS, COLOR_PAUSE_MS, codeLanguages, pickerValue } from '../../src/renderer/src/lib/code-color'
@@ -91,6 +92,68 @@ describe('code colored in the editor', () => {
     expect(host.querySelectorAll('.rb').length).toBe(2)
     for (const rb of host.querySelectorAll('.rb')) expect(spans(rb)).toEqual([])
     expect(spans(blocks().at(-1)!)).toContain('hljs-keyword:def')
+  })
+})
+
+describe("the author's markup in code", () => {
+  const RUST =
+    '<pre><code class="language-rust">pub fn <strong>parse</strong>(s: &amp;str) -&gt; ' +
+    '<a href="https://example.com/std/vec/struct.Vec.html">Vec</a>&lt;<em>Token</em>&gt; { 42 }</code></pre>'
+
+  it('colors a block holding bold, italic and links by its text, and keeps the markup', () => {
+    const e = make(RUST)
+    const [b] = blocks()
+    expect(spans(b)).toContain('hljs-keyword:pub')
+    expect(spans(b)).toContain('hljs-keyword:fn')
+    expect(spans(b)).toContain('hljs-number:42')
+    expect(b.querySelector('strong')!.textContent).toBe('parse')
+    expect(b.querySelector('em')!.textContent).toBe('Token')
+    expect(b.querySelector('a')!.getAttribute('href')).toBe('https://example.com/std/vec/struct.Vec.html')
+    expect(e.getHTML()).toContain('<strong>parse</strong>')
+    expect(e.getHTML()).not.toContain('hljs')
+  })
+
+  it('flattens code pasted into the pane, as the app flattens pasted code (core tagPastedCodeBlocks)', () => {
+    const e = make('<p>start</p>')
+    e.commands.setTextSelection(e.state.doc.content.size - 1)
+    e.view.pasteHTML('<p>From the docs:</p><pre><code class="language-rust">fn <b>main</b>() { <a href="https://example.com/x">x</a>(<i>1</i>) }</code></pre><p>That is all.</p>')
+    let code: PMNode | undefined
+    e.state.doc.descendants((n) => {
+      if (n.type.name === 'codeBlock') code = n
+    })
+    expect(code).toBeDefined()
+    expect(code!.textContent).toBe('fn main() { x(1) }')
+    code!.descendants((n) => {
+      expect(n.marks).toEqual([])
+    })
+    expect(e.getHTML()).not.toMatch(/<pre>[\s\S]*<(?:strong|em|a)\b/)
+  })
+
+  it('does not link a web address typed in code, nor turn a pasted address over a selection into a link', () => {
+    const e = make('<pre><code class="language-bash">curl https://old.example.com</code></pre>')
+    typeInto(e, 0, ' ')
+    typeInto(e, 0, 'https://example.com/a ')
+    expect(e.getHTML()).not.toContain('<a ')
+    // Select the old address and paste a new one over it: the text is replaced.
+    const start = 1 + 'curl '.length
+    e.commands.setTextSelection({ from: start, to: start + 'https://old.example.com'.length })
+    e.view.pasteText('https://new.example.com')
+    expect(e.state.doc.textContent).toBe('curl https://new.example.com https://example.com/a ')
+    expect(e.getHTML()).not.toContain('<a ')
+  })
+
+  it('still links a web address typed in a paragraph', () => {
+    const e = make('<p>see</p>')
+    e.commands.setTextSelection(e.state.doc.content.size - 1)
+    e.view.dispatch(e.state.tr.insertText(' https://example.com/a '))
+    expect(e.getHTML()).toContain('href="https://example.com/a"')
+  })
+
+  it('makes code bold with Mod-B, now that code may hold it', () => {
+    const e = make('<pre><code class="language-python">x = 1</code></pre>')
+    e.commands.setTextSelection({ from: 1, to: 2 })
+    e.commands.toggleBold()
+    expect(e.getHTML()).toContain('<pre><code class="language-python"><strong>x</strong> = 1</code></pre>')
   })
 })
 

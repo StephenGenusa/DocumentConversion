@@ -3,9 +3,12 @@ import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table
 import Image from '@tiptap/extension-image'
 import Superscript from '@tiptap/extension-superscript'
 import Subscript from '@tiptap/extension-subscript'
+import CodeBlock from '@tiptap/extension-code-block'
+import Link from '@tiptap/extension-link'
 import { Node, Extension } from '@tiptap/core'
-import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
-import type { Node as PMNode } from '@tiptap/pm/model'
+import { Plugin, PluginKey, TextSelection, type EditorState } from '@tiptap/pm/state'
+import { Fragment, type Node as PMNode, Slice } from '@tiptap/pm/model'
+import { AddMarkStep } from '@tiptap/pm/transform'
 import type { Extensions } from '@tiptap/core'
 import { RenderedBlocks, blockNodeView, inlineNodeView } from './block-views'
 import { CodeColor } from './code-color'
@@ -251,10 +254,92 @@ const MathInline = Node.create({
   addNodeView: () => inlineNodeView,
 })
 
+/*
+ * The author's markup in code: rustdoc and javadoc link every type name, and
+ * the html reader keeps that (core/code-language.ts KEPT_IN_CODE), so the code
+ * block holds those marks too. Otherwise opening such a file in the pane drops
+ * them, and every conversion after that is made from the pane. Inline code and
+ * anything else stay out: code-markup.ts lays the colors around these only.
+ * The colors are drawn by text (code-color.ts), so marks do not change them.
+ */
+const CODE_MARKS = 'bold italic underline strike link superscript subscript'
+
+/** The slice with every code block in it as plain text. */
+function flattenCode(content: Fragment): Fragment {
+  const nodes: PMNode[] = []
+  content.forEach((node) => {
+    if (node.type.name === 'codeBlock') {
+      const text = node.textContent
+      nodes.push(node.type.create(node.attrs, text ? node.type.schema.text(text) : null))
+    } else nodes.push(node.isLeaf ? node : node.copy(flattenCode(node.content)))
+  })
+  return Fragment.fromArray(nodes)
+}
+
+const MarkedCodeBlock = CodeBlock.extend({
+  marks: CODE_MARKS,
+  addProseMirrorPlugins() {
+    return [
+      ...(this.parent?.() ?? []),
+      // Code pasted or dropped into the pane is flattened, as the app flattens
+      // pasted code (core tagPastedCodeBlocks): a paste is not the author's
+      // file. A block dragged within the pane is moved as it is.
+      new Plugin({
+        key: new PluginKey('flattenPastedCode'),
+        props: {
+          transformPasted: (slice, view) =>
+            view.dragging ? slice : new Slice(flattenCode(slice.content), slice.openStart, slice.openEnd),
+        },
+      }),
+    ]
+  },
+})
+
+const inCode = (state: EditorState, pos: number): boolean => state.doc.resolve(pos).parent.type.spec.code === true
+
+/*
+ * A link in code only when it is asked for (the toolbar, or the file's own): a web
+ * address typed in code stays text, and one pasted over a selection replaces
+ * it, as in an editor for code, rather than linking the selected text.
+ */
+const CodeAwareLink = Link.extend({
+  addProseMirrorPlugins() {
+    return (this.parent?.() ?? []).map((plugin) => {
+      const key = (plugin as unknown as { key: string }).key
+      const { appendTransaction, props } = plugin.spec
+      if (key.startsWith('autolink$') && appendTransaction) {
+        return new Plugin({
+          ...plugin.spec,
+          appendTransaction: (trs, before, after) => {
+            const tr = appendTransaction(trs, before, after)
+            if (!tr) return tr
+            const kept = after.tr
+            for (const step of tr.steps) if (!(step instanceof AddMarkStep && inCode(after, step.from))) kept.maybeStep(step)
+            return kept.steps.length ? kept : null
+          },
+        })
+      }
+      const handlePaste = props?.handlePaste
+      if (key.startsWith('handlePasteLink$') && handlePaste) {
+        return new Plugin({
+          ...plugin.spec,
+          props: {
+            ...props,
+            handlePaste: (view, event, slice) => !inCode(view.state, view.state.selection.from) && handlePaste.call(plugin, view, event, slice),
+          },
+        })
+      }
+      return plugin
+    })
+  },
+})
+
 export const EDITOR_EXTENSIONS: Extensions = [
   // No empty trailing paragraph after the notes: they are always last, and
   // that paragraph would be written into every document that has footnotes.
-  StarterKit.configure({ trailingNode: { notAfter: ['paragraph', 'footnotes'] } }),
+  StarterKit.configure({ trailingNode: { notAfter: ['paragraph', 'footnotes'] }, codeBlock: false, link: false }),
+  MarkedCodeBlock,
+  CodeAwareLink,
   Table.configure({ resizable: false }),
   TableRow,
   TableHeader,
