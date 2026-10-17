@@ -345,10 +345,19 @@ describe('targetPictures: what each target holds', () => {
     const big = sized(png(), 40)
     const { render, calls } = host()
     const onAdvice = vi.fn()
-    const out = await targetPictures(`<p>${img('image/png', big)}</p>`, 'azw3', { renderBlocks: render, onAdvice })
+    const out = await targetPictures(`<p>${img('image/png', big)}</p>`, 'azw3', { renderBlocks: render, onAdvice, pictureFormat: 'jpeg' })
     expect(calls.map((c) => c.fit)).toEqual([{ maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'jpeg' }])
     expect(types(out)).toEqual(['image/jpeg'])
     expect(onAdvice).not.toHaveBeenCalled()
+  })
+
+  it('a picture a Kindle holds but not at its size is fitted by its pixels under Automatic, as JPEG under JPG or PNG', async () => {
+    const big = sized(png(), 6)
+    for (const [pictureFormat, as] of [[undefined, 'auto'], ['auto', 'auto'], ['png', 'jpeg'], ['jpeg', 'jpeg']] as const) {
+      const { render, calls } = host()
+      await targetPictures(`<p>${img('image/png', big)}</p>`, 'azw3', { renderBlocks: render, pictureFormat })
+      expect(calls.map((c) => c.fit), String(pictureFormat)).toEqual([{ maxBytes: KINDLE_IMAGE_MAX_BYTES, as }])
+    }
   })
 
   describe('a drawing over Kindle\'s 5 MB', () => {

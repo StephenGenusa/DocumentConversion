@@ -232,6 +232,8 @@ async function main() {
     out.pictureAutoPhoto = await picture(uri('image/webp', opaque.toBuffer('image/webp')), 5 * 1024 * 1024, 'auto')
     out.pictureAutoDrawing = await picture(uri('image/webp', drawing.toBuffer('image/webp', 100)), 5 * 1024 * 1024, 'auto')
     out.pictureAutoAlpha = await picture(uri('image/png', canvas(200, 200, true).toBuffer('image/png')), 5 * 1024 * 1024, 'auto')
+    // A PNG too large for its limit is fitted as JPEG, kept at its size, unless it has transparency.
+    out.pictureRefit = await picture(uri('image/png', opaque.toBuffer('image/png')), 160 * 1000, 'png')
     // A page of a multi-page TIFF, by its place in the file's chain (core asks so when it cannot take the page out alone).
     {
       const fax = tiff({ pages: [{ width: 30, height: 20, pixel: shade, compression: 'lzw' }, { width: 17, height: 11, pixel: shade, kind: 'bilevel', compression: 'packbits' }] })

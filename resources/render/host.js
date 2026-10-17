@@ -291,8 +291,10 @@
   /**
    * A raster picture (the document's bytes, sent as `id`) decoded here, in
    * the sandbox, and re-encoded to fit `maxBytes`: PNG when it has
-   * transparency or when asked for (`as` 'png', or 'auto' and its pixels
-   * say so: picture-kind.js), scaled down until it fits; JPEG otherwise
+   * transparency (scaled down until it fits); PNG when asked for (`as`
+   * 'png', or 'auto' and its pixels say so: picture-kind.js), unless that
+   * PNG is over `maxBytes`, when it is fitted as JPEG instead (owner,
+   * 2026-10-17: a smaller picture beats a scaled-down one); JPEG otherwise
    * (quality lowered, then scaled down). `page` is a TIFF's page. Answers
    * the length of the base64 (kept for `take`), its type and its size in
    * pixels.
@@ -323,7 +325,8 @@
     var fctx = full.getContext('2d', { willReadFrequently: true })
     fctx.drawImage(img, 0, 0, full.width, full.height)
     var kind = window.pictureKind(fctx.getImageData(0, 0, full.width, full.height).data, full.width, full.height, src.type)
-    var asPng = kind.reason === 'transparent' || as === 'png' || (as === 'auto' && kind.format === 'png')
+    var transparent = kind.reason === 'transparent'
+    var asPng = transparent || as === 'png' || (as === 'auto' && kind.format === 'png')
     function encode(scale, quality) {
       var c = full
       if (scale < 1 || !asPng) {
@@ -344,12 +347,17 @@
     var scale = 1
     var out
     if (asPng) {
-      for (;;) {
-        out = encode(scale, 0)
-        if (out.bytes <= maxBytes) return out
+      out = encode(1, 0)
+      if (out.bytes <= maxBytes) return out
+      // Only transparency keeps a picture PNG at any size: it is scaled down.
+      // Anything else too large as PNG (a Kindle's 5 MB) is fitted as JPEG.
+      while (transparent) {
         if (scale < 0.05) throw new Error('it cannot be made small enough')
         scale *= 0.8
+        out = encode(scale, 0)
+        if (out.bytes <= maxBytes) return out
       }
+      asPng = false
     }
     var qualities = [0.92, 0.85, 0.75, 0.65]
     for (var q = 0; q < qualities.length; q++) {

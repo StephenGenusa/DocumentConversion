@@ -93,6 +93,7 @@ interface HarnessResult {
   pictureAutoPhoto: Picture
   pictureAutoDrawing: Picture
   pictureAutoAlpha: Picture
+  pictureRefit: Picture
   pictureTiffLoop: Picture
   pictureTiffPage2: Picture
   pictureTiffPage3: Picture
@@ -368,6 +369,11 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     expect(result.pictureAutoPhoto).toEqual({ type: 'jpeg', bytes: expect.any(Number), width: 300, height: 200, magicOk: true })
     expect(result.pictureAutoDrawing).toEqual({ type: 'png', bytes: expect.any(Number), width: 400, height: 300, magicOk: true })
     expect(result.pictureAutoAlpha).toMatchObject({ type: 'png', width: 200, height: 200, magicOk: true })
+  })
+
+  it('fits a PNG too large for its limit as JPEG at its full size, where it has no transparency', () => {
+    expect(result.pictureRefit).toMatchObject({ type: 'jpeg', width: 300, height: 200, magicOk: true })
+    expect(result.pictureRefit.bytes).toBeLessThanOrEqual(160 * 1000)
   })
 
   it('decodes TIFF in the page (Chromium has no decoder for it): JPEG, or PNG where it has transparency', () => {

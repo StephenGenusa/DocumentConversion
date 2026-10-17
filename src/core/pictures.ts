@@ -61,8 +61,13 @@ import { createHash } from 'node:crypto'
  * calibre's KF8 writer allows 10 MB. We take Amazon's 5 MB: under it a
  * picture is stored as given; over it, it is re-encoded - JPEG at falling
  * quality, then scaled down; PNG (transparency) scaled down - until it fits.
- * A drawing (an EMF or WMF) rasterized to PNG over the limit is made smaller
- * the same way, after it is drawn.
+ * A picture converted to PNG (asked for, or by Automatic) that comes out
+ * over the limit is fitted as JPEG instead, at its full size, unless it has
+ * transparency (owner, 2026-10-17): only see-through parts are worth
+ * scaling a picture down for. Under Automatic, a picture held but too large
+ * is fitted by its pixels too (a screenshot stays PNG where PNG fits); under
+ * JPG or PNG, as JPEG. A drawing (an EMF or WMF) rasterized to PNG over the
+ * limit is made smaller as JPEG, after it is drawn.
  */
 
 export const KINDLE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
@@ -461,6 +466,9 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
   const profile = PICTURE_TARGETS[target]
   if (!profile || !/<img/i.test(html)) return html
   const format = ctx.pictureFormat ?? DEFAULT_PICTURE_FORMAT
+  // A picture the target holds, but not at its size: by its pixels under
+  // Automatic (the host fits a PNG too large as JPEG), else JPEG.
+  const shrinkAs: PictureFormat = format === 'auto' ? 'auto' : 'jpeg'
   const dom = parseDocument(html)
   const pageOf = new Map<Element, number>()
   // Metafiles become SVG where the document's SVG images stay SVG, PNG where they become PNG.
@@ -516,7 +524,7 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
         // The bitmap a metafile is, where the target holds it only smaller (a Kindle's 5 MB).
         const b = plan.bitmap
         if (b && !holds(profile, b.mime, b.bytes)) {
-          if (render) jobs.push({ el, number, request: picture(plan.src, 'jpeg') })
+          if (render) jobs.push({ el, number, request: picture(plan.src, shrinkAs) })
           else describe(el, number, `it is over ${Math.round(profile.maxBytes / (1024 * 1024))} MB`)
         }
       }
@@ -527,7 +535,7 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
       continue
     }
     // Held, but too large: made smaller in the kind that shrinks best.
-    const as: PictureFormat = profile.holds.has(mime) && data.bytes.length > profile.maxBytes ? 'jpeg' : format
+    const as: PictureFormat = profile.holds.has(mime) && data.bytes.length > profile.maxBytes ? shrinkAs : format
     const request = picture(`data:${mime};base64,${data.bytes.toString('base64')}`, as)
     const page = pageOf.get(el)
     // A TIFF is shown at its resolution, as Word shows it (originalSize): the

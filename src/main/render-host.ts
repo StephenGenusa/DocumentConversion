@@ -56,7 +56,7 @@ export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
   svg: 'raster-1',
   // 2: TIFF is decoded (UTIF.js 4.1.0, pako 1.0.11), where it was refused.
   // 3: the answer's type is asked for (fit.as), and a TIFF's page (page).
-  // 4: 'auto' (picture-kind.js).
+  // 4: 'auto' (picture-kind.js), and a PNG too large is fitted as JPEG unless transparent.
   picture: 'reencode-4',
 }
 
