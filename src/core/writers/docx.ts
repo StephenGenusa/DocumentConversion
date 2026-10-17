@@ -13,7 +13,8 @@ import hljs, { highlightedRuns } from '../hljs'
 import { codeBlockText } from '../code-language'
 import type { HubDocument } from '../types'
 import { DOCX_OWN_LINE } from '../draw-blocks'
-import { wordTakes } from '../pictures'
+import { pictureType, wordTakes } from '../pictures'
+import { originalSize } from '../picture-headers'
 
 /**
  * html-to-docx tries to load every <img> and gives up on the whole document
@@ -45,12 +46,136 @@ const SVG_IMAGE = /^\s*data:image\/svg\+xml/i
  * html-to-docx sizes every picture with image-size, which reads no TIFF from
  * memory and no EMF or WMF at all, and the whole document then failed. So
  * only the types it sizes are passed, told by their bytes (a page may label
- * a TIFF as a PNG). Converter.write() gives Word a PNG or JPEG of a TIFF
- * first (targetPictures); what is still here becomes its alt text.
+ * a TIFF as a PNG). TIFF, EMF and WMF reach it as stand-ins
+ * (standInOriginals); what is still here becomes its alt text.
  */
 function wordSizes(src: string): boolean {
   const b64 = src.slice(src.indexOf(',') + 1, src.indexOf(',') + 1 + 64).replace(/\s+/g, '')
   return wordTakes(Buffer.from(b64.slice(0, b64.length - (b64.length % 4)), 'base64'))
+}
+
+/**
+ * Word shows TIFF, EMF and WMF itself, so each is embedded as the document
+ * has it (a TIFF of several pages was made one TIFF a page before here:
+ * pictures.ts). html-to-docx cannot size them, so it is handed a stand-in
+ * it can: a GIF whose header claims the picture's size, as its own header
+ * gives it (picture-headers.ts), the GIF itself one pixel. After
+ * html-to-docx has laid the stand-in out (extent, alt, relationship), the
+ * part is given back the original's bytes, named and typed for it
+ * (restoreOriginals). Each stand-in carries the original's hash in a GIF
+ * comment, so two pictures never share one; a picture whose header gives no
+ * size is left for dropUnresolvableImages (its alt text).
+ */
+interface Original {
+  bytes: Buffer
+  ext: string
+  contentType: string
+}
+const ORIGINAL_TYPES: Record<string, { ext: string; contentType: string }> = {
+  'image/tiff': { ext: 'tif', contentType: 'image/tiff' },
+  'image/x-emf': { ext: 'emf', contentType: 'image/x-emf' },
+  'image/x-wmf': { ext: 'wmf', contentType: 'image/x-wmf' },
+}
+
+function standInGif(width: number, height: number, tag: string): Buffer {
+  const screen = Buffer.alloc(13)
+  screen.write('GIF89a', 0, 'latin1')
+  screen.writeUInt16LE(width, 6)
+  screen.writeUInt16LE(height, 8)
+  screen[10] = 0x80 // a global colour table of two colours
+  const comment = Buffer.from(tag, 'latin1')
+  return Buffer.concat([
+    screen,
+    Buffer.from([0xff, 0xff, 0xff, 0xff, 0xff, 0xff]),
+    Buffer.from([0x21, 0xfe, comment.length]),
+    comment,
+    Buffer.from([0x00]),
+    // One 1x1 image at the corner: LZW minimum code size 2, codes clear, 0, end.
+    Buffer.from([0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]),
+  ])
+}
+
+function standInOriginals(html: string, originals: Map<string, Original>): string {
+  if (!/<img/i.test(html)) return html
+  const dom = parseDocument(html)
+  let changed = false
+  for (const img of findAll((n) => n.name === 'img', dom.children)) {
+    const data = /^data:image\/[\w.+-]+;base64,([A-Za-z0-9+/=\s]+)$/i.exec(img.attribs.src ?? '')
+    if (!data) continue
+    const bytes = Buffer.from(data[1].replace(/\s+/g, ''), 'base64')
+    const mime = pictureType(bytes)
+    const type = mime ? ORIGINAL_TYPES[mime] : undefined
+    const size = type && mime ? originalSize(mime, bytes) : null
+    if (!type || !size) continue
+    const hash = createHash('sha1').update(bytes).digest('hex')
+    const gif = standInGif(size.width, size.height, hash)
+    originals.set(createHash('sha1').update(gif).digest('hex'), { bytes, ...type })
+    img.attribs.src = `data:image/gif;base64,${gif.toString('base64')}`
+    changed = true
+  }
+  return changed ? render(dom, { encodeEntities: 'utf8' }) : html
+}
+
+/** Each stand-in's part given back its original: its bytes, its extension, and every relationship to it retargeted. */
+async function restoreOriginals(zip: JSZip, originals: Map<string, Original>): Promise<void> {
+  const renamed = new Map<string, string>()
+  for (const name of Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !zip.files[n].dir)) {
+    const original = originals.get(createHash('sha1').update(await zip.files[name].async('nodebuffer')).digest('hex'))
+    if (!original) continue
+    const to = name.replace(/\.[^./]*$/, '') + '.' + original.ext
+    zip.remove(name)
+    zip.file(to, original.bytes)
+    renamed.set(name, to)
+  }
+  if (renamed.size === 0) return
+  for (const relsName of Object.keys(zip.files).filter((name) => /^word\/_rels\/.+\.rels$/.test(name))) {
+    const ownerName = relsName.replace('/_rels/', '/').replace(/\.rels$/, '')
+    const baseDir = ownerName.slice(0, ownerName.lastIndexOf('/') + 1)
+    const xml = await zip.files[relsName].async('string')
+    const rewritten = xml.replace(/<Relationship\b[^>]*>/g, (rel) => {
+      const target = /\bTarget="([^"]+)"/.exec(rel)?.[1]
+      const to = target ? renamed.get(resolvePart(baseDir, target)) : undefined
+      if (!to) return rel
+      return rel.replace(/\bTarget="[^"]*"/, `Target="${to.startsWith(baseDir) ? to.slice(baseDir.length) : `/${to}`}"`)
+    })
+    if (rewritten !== xml) zip.file(relsName, rewritten)
+  }
+}
+
+/** Picture parts by extension, as Word names their content types. */
+const MEDIA_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  webp: 'image/webp',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  emf: 'image/x-emf',
+  wmf: 'image/x-wmf',
+}
+
+/**
+ * html-to-docx declares content types for png and jpeg only, so a GIF, BMP
+ * or WebP part (and now a TIFF, EMF or WMF) had none, which Word treats as
+ * a damaged file. Every picture part's extension is declared.
+ */
+async function declareMediaTypes(zip: JSZip): Promise<void> {
+  const part = zip.file('[Content_Types].xml')
+  if (!part) return
+  const xml = await part.async('string')
+  const declared = new Set([...xml.matchAll(/<Default\b[^>]*\bExtension="([^"]+)"/g)].map((m) => m[1].toLowerCase()))
+  const missing = new Set<string>()
+  for (const name of Object.keys(zip.files)) {
+    if (!name.startsWith('word/media/') || zip.files[name].dir) continue
+    const ext = /\.([^./]+)$/.exec(name)?.[1].toLowerCase()
+    if (ext && MEDIA_TYPES[ext] && !declared.has(ext)) missing.add(ext)
+  }
+  if (missing.size === 0) return
+  const defaults = [...missing].map((ext) => `<Default Extension="${ext}" ContentType="${MEDIA_TYPES[ext]}"/>`).join('')
+  // Defaults before the overrides, as Word writes them.
+  zip.file('[Content_Types].xml', /<Override\b/.test(xml) ? xml.replace(/<Override\b/, `${defaults}<Override`) : xml.replace('</Types>', `${defaults}</Types>`))
 }
 
 function dropUnresolvableImages(html: string): string {
@@ -242,9 +367,21 @@ function orderCellProperties(xml: string): string {
  * one workbook produced a 182 MB .docx that Word struggles to open. Repacking
  * with deflate is lossless and typically 20-30x smaller.
  */
-async function recompress(docx: Buffer, lowerings: Map<string, number> = new Map(), coloured: ColouredLook[] = []): Promise<Buffer> {
+async function recompress(
+  docx: Buffer,
+  lowerings: Map<string, number> = new Map(),
+  coloured: ColouredLook[] = [],
+  originals: Map<string, Original> = new Map(),
+): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
+    // Before anything else hashes the media: the stand-ins become the pictures they stand for.
+    try {
+      if (originals.size > 0) await restoreOriginals(zip, originals)
+      await declareMediaTypes(zip)
+    } catch {
+      /* the stand-ins stay: one-pixel GIFs at each picture's size */
+    }
     const body = zip.file('word/document.xml')
     if (body) zip.file('word/document.xml', orderCellProperties(styleRuns(await body.async('string'), coloured)))
     if (lowerings.size > 0) {
@@ -947,16 +1084,18 @@ function styleRuns(xml: string, coloured: ColouredLook[] = []): string {
 
 export async function writeDocx(doc: HubDocument): Promise<Buffer> {
   const coloured: ColouredLook[] = []
+  const originals = new Map<string, Original>()
+  const pictures = dropUnresolvableImages(standInOriginals(footnotesForOutput(doc.html, 'plain'), originals))
   const html = renderDocumentShell(
     {
       ...doc,
       html: flattenFormatting(
-        monospaceCode(breakCodeLines(colourCode(centreOwnLineFormulas(unwrapSpans(flattenForDocx(dropUnresolvableImages(footnotesForOutput(doc.html, 'plain')))))))),
+        monospaceCode(breakCodeLines(colourCode(centreOwnLineFormulas(unwrapSpans(flattenForDocx(pictures)))))),
         coloured,
       ),
     },
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)
-  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), coloured)
+  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), coloured, originals)
 }

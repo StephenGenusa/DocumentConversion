@@ -211,3 +211,67 @@ export function tiffPage(bytes: Buffer, index: number): Buffer | null {
   blocks.forEach((b, i) => bytes.copy(out, blockAt[i], b.from, b.from + b.length))
   return out
 }
+
+/** A picture's size as it is meant to be shown, in CSS px (96 to the inch). */
+export interface PictureSize {
+  width: number
+  height: number
+}
+
+/** The largest side a header may claim and still be believed, in CSS px (about 5 m). */
+const MAX_SIDE_PX = 20000
+
+function sane(width: number, height: number): PictureSize | null {
+  const w = Math.round(width)
+  const h = Math.round(height)
+  return w >= 1 && h >= 1 && w <= MAX_SIDE_PX && h <= MAX_SIDE_PX ? { width: w, height: h } : null
+}
+
+/**
+ * A one-page TIFF's size: its pixels at its resolution (a 300 dpi scan is
+ * shown at its paper size), or at 96 to the inch when it gives none. Null
+ * for a TIFF of several pages, whose first page alone is what Word shows.
+ */
+export function tiffSize(bytes: Buffer): PictureSize | null {
+  const pages = tiffPages(bytes)
+  if (!pages || pages.length !== 1 || pages[0].index !== 0) return null
+  const { width, height, dpi } = pages[0]
+  return dpi ? sane((width * 96) / dpi.x, (height * 96) / dpi.y) : sane(width, height)
+}
+
+/**
+ * An EMF's size, from its header record (EMR_HEADER): rclFrame, the
+ * picture's frame in hundredths of a millimetre, which is the size Word
+ * shows it at; rclBounds (device pixels) when the frame is empty.
+ */
+export function emfSize(bytes: Buffer): PictureSize | null {
+  if (bytes.length < 88 || bytes.readUInt32LE(0) !== 1 || bytes.readUInt32LE(40) !== 0x464d4520) return null
+  const box = (at: number): [number, number] => [bytes.readInt32LE(at + 8) - bytes.readInt32LE(at), bytes.readInt32LE(at + 12) - bytes.readInt32LE(at + 4)]
+  const [fw, fh] = box(24)
+  if (fw > 0 && fh > 0) return sane((fw / 2540) * 96, (fh / 2540) * 96)
+  const [bw, bh] = box(8)
+  return sane(bw + 1, bh + 1)
+}
+
+/**
+ * A WMF's size, from its Aldus placeable header (the bounding box, and how
+ * many of its units make an inch). A WMF without one says nothing of its
+ * size (null): the RTF reader gives such a picture the header its document
+ * sizes it with.
+ */
+export function wmfSize(bytes: Buffer): PictureSize | null {
+  if (bytes.length < 22 + 18 || bytes.readUInt32LE(0) !== 0x9ac6cdd7) return null
+  const inch = bytes.readUInt16LE(14)
+  if (inch < 1) return null
+  const w = Math.abs(bytes.readInt16LE(10) - bytes.readInt16LE(6))
+  const h = Math.abs(bytes.readInt16LE(12) - bytes.readInt16LE(8))
+  return sane((w / inch) * 96, (h / inch) * 96)
+}
+
+/** The size of a picture Word keeps as it is but html-to-docx cannot size (TIFF, EMF, WMF), by its type; null when its header does not say. */
+export function originalSize(mime: string, bytes: Buffer): PictureSize | null {
+  if (mime === 'image/tiff') return tiffSize(bytes)
+  if (mime === 'image/x-emf') return emfSize(bytes)
+  if (mime === 'image/x-wmf') return wmfSize(bytes)
+  return null
+}

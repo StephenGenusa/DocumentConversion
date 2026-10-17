@@ -4,7 +4,8 @@ import { writeDocx } from '../../src/core/writers/docx'
 import { createConverter } from '../../src/core/convert'
 import type { RenderBlocks, RenderRequest, RenderResult } from '../../src/core/rendered-blocks'
 // @ts-expect-error: a plain .mjs fixture library, no types.
-import { emf, tiff as makeTiff } from '../../scripts/fixtures/lib-tiff.mjs'
+import { emf, tiff as makeTiff, wmf } from '../../scripts/fixtures/lib-tiff.mjs'
+import { tiffPages } from '../../src/core/picture-headers'
 
 // Two distinct 1x1 PNGs: enough for html-to-docx's image-size probe, and
 // different byte-for-byte so a de-duplicating pass must keep both.
@@ -95,26 +96,73 @@ describe('writeDocx image parts', () => {
   })
 })
 
-describe('Word output of pictures html-to-docx cannot size (TIFF, EMF, WMF)', () => {
+describe('Word keeps TIFF, EMF and WMF pictures as they are (html-to-docx cannot size them)', () => {
   // html-to-docx sizes every picture with image-size, which reads no TIFF
   // from memory and no EMF or WMF at all, and then gave up on the whole
-  // document: a Word file holding one of these could not be converted to Word.
+  // document. Word shows all three itself, so each is embedded as it came,
+  // sized from its own header (picture-headers.ts).
   const scan = (bigEndian = false): Buffer =>
     makeTiff({ width: 12, height: 8, pixel: (x: number) => [x * 20, 90, 160], compression: 'lzw', bigEndian })
   const tag = (mime: string, bytes: Buffer, alt: string): string => `<img src="data:${mime};base64,${bytes.toString('base64')}" alt="${alt}">`
-  const WMF = Buffer.from('d7cdc69a000000000000000000000000000000000000', 'hex')
+  const EMU = 9525
 
-  it('writes the document, each such picture its alt text, every other picture kept', async () => {
+  async function parts(out: Buffer) {
+    const zip = await JSZip.loadAsync(out)
+    const media = await inspect(out)
+    const types = await zip.file('[Content_Types].xml')!.async('string')
+    const doc = await zip.file('word/document.xml')!.async('string')
+    const bytes = async (name: string) => zip.file(name)!.async('nodebuffer')
+    return { zip, media, types, doc, bytes }
+  }
+
+  it('embeds each as it is, with its own content type, at the size its header gives', async () => {
+    const tiff = scan()
+    const mislabelled = scan(true)
+    const drawing: Buffer = emf({ width: 160, height: 120 })
+    const old: Buffer = wmf({ width: 200, height: 80 })
     const html =
-      `<p>Before</p><p>${tag('image/tiff', scan(), 'Scan')}</p><p>${tag('image/png', scan(true), 'Mislabelled')}</p>` +
-      `<p>${tag('image/x-emf', emf(), 'Drawing')}</p><p>${tag('image/x-wmf', WMF, 'Old drawing')}</p><p><img src="${red}" alt="Red"></p><p>After</p>`
-    const out = await writeDocx({ html })
-    const doc = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
-    for (const text of ['Before', 'After', '[Scan]', '[Mislabelled]', '[Drawing]', '[Old drawing]']) expect(doc).toContain(text)
-    expect((await inspect(out)).parts).toHaveLength(1)
+      `<p>Before</p><p>${tag('image/tiff', tiff, 'Scan')}</p><p>${tag('image/png', mislabelled, 'Mislabelled')}</p>` +
+      `<p>${tag('image/x-emf', drawing, 'Drawing')}</p><p>${tag('image/x-wmf', old, 'Old drawing')}</p><p><img src="${red}" alt="Red"></p><p>After</p>`
+    const { media, types, doc, bytes } = await parts(await writeDocx({ html }))
+    for (const text of ['Before', 'After']) expect(doc).toContain(text)
+    expect(doc).not.toMatch(/\[(Scan|Mislabelled|Drawing|Old drawing)\]/)
+    expect(media.dangling).toEqual([])
+    expect(media.used.map((t) => t.replace(/^.*\./, ''))).toEqual(['tif', 'tif', 'emf', 'wmf', 'png'])
+    const used = media.used.map((t) => `word/${t}`)
+    expect((await bytes(used[0])).equals(tiff)).toBe(true)
+    expect((await bytes(used[1])).equals(mislabelled)).toBe(true)
+    expect((await bytes(used[2])).equals(drawing)).toBe(true)
+    expect((await bytes(used[3])).equals(old)).toBe(true)
+    expect(types).toContain('<Default Extension="tif" ContentType="image/tiff"/>')
+    expect(types).toContain('<Default Extension="emf" ContentType="image/x-emf"/>')
+    expect(types).toContain('<Default Extension="wmf" ContentType="image/x-wmf"/>')
+    // Extents from the headers: the TIFF at 72 dpi (12 x 8 px is 16 x 10.67 CSS px), the EMF's frame, the WMF's box.
+    const extents = [...doc.matchAll(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/g)].map((m) => [Number(m[1]), Number(m[2])])
+    expect(extents.slice(0, 4)).toEqual([
+      [16 * EMU, 11 * EMU],
+      [16 * EMU, 11 * EMU],
+      [160 * EMU, 120 * EMU],
+      [200 * EMU, 80 * EMU],
+    ])
   })
 
-  it('gives Word a PNG or JPEG of a TIFF (render host), and says so for an EMF it cannot convert', async () => {
+  it('declares a content type for every picture part (GIF and BMP were left undeclared)', async () => {
+    const gif = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+    const { media, types } = await parts(await writeDocx({ html: `<p><img src="data:image/gif;base64,${gif}" alt="g"></p>` }))
+    expect(media.used[0]).toMatch(/\.gif$/)
+    expect(types).toContain('<Default Extension="gif" ContentType="image/gif"/>')
+  })
+
+  it('a picture whose header gives no size becomes its alt text', async () => {
+    const bare: Buffer = wmf({ placeable: false })
+    const WMF_EMPTY = Buffer.from('d7cdc69a000000000000000000000000000000000000', 'hex')
+    const html = `<p>${tag('image/x-wmf', bare, 'Bare')}</p><p>${tag('image/x-wmf', WMF_EMPTY, 'Empty')}</p><p>${tag('image/tiff', makeTiff({ pages: [{ width: 4, height: 4, pixel: () => [0, 0, 0] }, { width: 4, height: 4, pixel: () => [0, 0, 0] }] }), 'Fax')}</p>`
+    const { media, doc } = await parts(await writeDocx({ html }))
+    for (const text of ['[Bare]', '[Empty]', '[Fax]']) expect(doc).toContain(text)
+    expect(media.parts).toHaveLength(0)
+  })
+
+  it('through the converter: TIFF, EMF and WMF kept, a multi-page TIFF one TIFF a page, nothing asked of the render host', async () => {
     const calls: RenderRequest[] = []
     const render: RenderBlocks = async (reqs) =>
       reqs.map((r): RenderResult => {
@@ -123,14 +171,35 @@ describe('Word output of pictures html-to-docx cannot size (TIFF, EMF, WMF)', ()
       })
     const notices: string[] = []
     const conv = createConverter(async () => Buffer.from('%PDF-'), { renderBlocks: render })
-    const page = Buffer.from(`<p>${tag('image/tiff', scan(), 'Scan')}</p><p>${tag('image/x-emf', emf(), 'Drawing')}</p><p><img src="${red}" alt="Red"></p>`)
+    const fax: Buffer = makeTiff({
+      pages: [
+        { width: 10, height: 6, pixel: () => [0, 0, 0], kind: 'bilevel', compression: 'packbits' },
+        { width: 7, height: 5, pixel: () => [200, 200, 200], kind: 'gray' },
+      ],
+    })
+    const page = Buffer.from(
+      `<p>${tag('image/tiff', scan(), 'Scan')}</p><p>${tag('image/tiff', fax, 'Fax')}</p><p>${tag('image/x-emf', emf(), 'Drawing')}</p>` +
+        `<p>${tag('image/x-wmf', wmf(), 'Old drawing')}</p><p><img src="${red}" alt="Red"></p>`,
+    )
     const out = (await conv.convert({ bytes: page, filename: 'p.html' }, 'html', 'docx', undefined, { onAdvice: (_k, m) => notices.push(m) })).parts[0].bytes
-    expect(calls.map((c) => [c.kind, c.source.slice(0, 16)])).toEqual([['picture', 'data:image/tiff;']])
-    const media = await inspect(out)
-    expect(media.parts).toHaveLength(2)
-    expect(media.parts.every((p) => p.endsWith('.png'))).toBe(true)
-    const doc = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
-    expect(doc).toContain('[image: Drawing]')
-    expect(notices).toEqual(['Picture 2 could not be stored for Word: EMF pictures are not converted'])
+    expect(calls).toEqual([])
+    expect(notices).toEqual([])
+    const { media, doc, bytes } = await parts(out)
+    expect(media.used.map((t) => t.replace(/^.*\./, ''))).toEqual(['tif', 'tif', 'tif', 'emf', 'wmf', 'png'])
+    const pages = await Promise.all(media.used.slice(1, 3).map((t) => bytes(`word/${t}`)))
+    expect(pages.map((p) => tiffPages(p)?.map((x) => [x.width, x.height]))).toEqual([[[10, 6]], [[7, 5]]])
+    expect(doc).toContain('descr="Fax (page 2 of 2)"')
+  })
+
+  it('a TIFF whose header cannot be read gets a PNG copy (render host) instead', async () => {
+    const calls: RenderRequest[] = []
+    const render: RenderBlocks = async (reqs) => reqs.map((r): RenderResult => (calls.push(r), { png: BLUE, width: 12, height: 8 }))
+    const conv = createConverter(async () => Buffer.from('%PDF-'), { renderBlocks: render })
+    const looped = scan()
+    const ifd = looped.readUInt32LE(4)
+    looped.writeUInt32LE(ifd, ifd + 2 + looped.readUInt16LE(ifd) * 12)
+    const out = (await conv.convert({ bytes: Buffer.from(`<p>${tag('image/tiff', looped, 'Scan')}</p>`), filename: 'p.html' }, 'html', 'docx')).parts[0].bytes
+    expect(calls.map((c) => [c.kind, c.fit?.as])).toEqual([['picture', 'png']])
+    expect((await inspect(out)).parts.every((p) => p.endsWith('.png'))).toBe(true)
   })
 })

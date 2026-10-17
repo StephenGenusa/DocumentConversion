@@ -418,12 +418,19 @@ async function main() {
           if (images < tiffImages) throw new Error(`${target} has ${images} images for ${tiffImages} TIFFs`)
           rec.note = `${rec.note ? rec.note + ', ' : ''}${images} images for ${tiffImages} TIFFs`
         }
-        if (tiffImages > 0 && target === 'docx') {
-          // Word gets a PNG or JPEG of each TIFF (its writer cannot embed one).
+        if ((tiffImages > 0 || vectorImages > 0) && target === 'docx') {
+          // Word keeps TIFF (one a page), EMF and WMF as they are, each part's type declared.
           const zip = await JSZip.loadAsync(out)
           const media = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))
-          if (media.length < tiffImages) throw new Error(`docx kept ${media.length} pictures of ${tiffImages} TIFFs`)
-          rec.note = `${media.length} media for ${tiffImages} TIFFs`
+          const tifs = media.filter((n) => /\.tif$/.test(n)).length
+          const vectors = media.filter((n) => /\.(emf|wmf)$/.test(n)).length
+          if (tifs < tiffImages) throw new Error(`docx kept ${tifs} TIFF pictures of ${tiffImages} TIFF pages`)
+          if (vectors < vectorImages) throw new Error(`docx kept ${vectors} EMF/WMF pictures of ${vectorImages}`)
+          const types = await zip.file('[Content_Types].xml').async('string')
+          for (const ext of new Set(media.map((n) => n.replace(/^.*\./, '')))) {
+            if (!types.includes(`Extension="${ext}"`)) throw new Error(`docx declares no content type for .${ext}`)
+          }
+          rec.note = `${rec.note ? rec.note + ', ' : ''}${tifs} TIFF, ${vectors} EMF/WMF kept`
         }
         if (hasSvgImages && target === 'docx') {
           const zip = await JSZip.loadAsync(out)

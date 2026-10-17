@@ -302,6 +302,7 @@ doesn't
 dot
 down
 drawing
+drawings
 drawn
 draws
 dress
@@ -330,6 +331,7 @@ en
 end
 endnote
 ends
+enhanced
 enough
 enrollment
 entrance
@@ -397,6 +399,7 @@ fontname
 for
 forall
 form
+format
 formula
 formulas
 forward
@@ -616,6 +619,7 @@ memory
 mended
 menu
 messages
+metafile
 mezzanine
 middle
 military
@@ -688,6 +692,7 @@ often
 oint
 olarkspur
 old
+older
 omega
 on
 onboarding
@@ -1048,6 +1053,7 @@ supervisor
 supervisors
 supply
 surname
+survive
 survives
 systems
 tab
@@ -1183,6 +1189,7 @@ weight
 weights
 welcoming
 wellness
+were
 west
 what
 whatever

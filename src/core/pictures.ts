@@ -1,5 +1,5 @@
 import { parseDocument } from 'htmlparser2'
-import { Element, type ChildNode } from 'domhandler'
+import { Element, Text, type ChildNode } from 'domhandler'
 import { append, replaceElement } from 'domutils'
 import serialize from 'dom-serializer'
 import { imageMime } from './readers/image'
@@ -7,7 +7,7 @@ import { imagePlaceholder } from './inline-images'
 import { MAX_PICTURE_BYTES, type PictureFormat, type RenderRequest, type RenderResult } from './rendered-blocks'
 import type { DrawContext } from './draw-blocks'
 import type { TargetFormat } from './types'
-import { tiffPage, tiffPages } from './picture-headers'
+import { originalSize, tiffPage, tiffPages } from './picture-headers'
 
 /*
  * The pictures each target can hold (spec D10's raster half), made right
@@ -66,7 +66,17 @@ interface PictureTarget {
   /** The largest copy the render host may make. */
   fitBytes: number
   unknown: 'keep' | 'describe'
+  /** Of the types it holds, those it holds only when their header gives their size (Word: TIFF, EMF, WMF). */
+  sized?: ReadonlySet<string>
 }
+
+/**
+ * What Word shows that html-to-docx cannot size: kept as they are, sized
+ * from their own headers by the docx writer (originalSize). A TIFF of
+ * several pages reaches Word as one TIFF a page (splitTiffPages): Word shows
+ * only a TIFF's first page.
+ */
+const WORD_ORIGINALS: ReadonlySet<string> = new Set(['image/tiff', 'image/x-emf', 'image/x-wmf'])
 
 const browser = (name: string, unknown: PictureTarget['unknown']): PictureTarget => ({
   name,
@@ -84,7 +94,8 @@ const browser = (name: string, unknown: PictureTarget['unknown']): PictureTarget
  *   epub              EPUB 3.3's core media types: PNG, JPEG, GIF, WebP (and SVG)
  *   azw3              a KF8 image record: JPEG, PNG, GIF, up to 5 MB
  *   md                what Markdown viewers show: PNG, JPEG, GIF, WebP (and SVG)
- *   docx              what html-to-docx can size: PNG, JPEG, GIF, BMP, WebP
+ *   docx              PNG, JPEG, GIF, BMP, WebP, and TIFF, EMF and WMF as they are
+ *                     (one-page TIFF; each sized from its header)
  *
  * Every other target (txt, csv, json, xlsx) holds no pictures at all.
  */
@@ -110,17 +121,23 @@ const PICTURE_TARGETS: Partial<Record<TargetFormat, PictureTarget>> = {
   },
   docx: {
     name: 'Word',
-    holds: new Set(['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp']),
+    holds: new Set(['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', ...WORD_ORIGINALS]),
     maxBytes: Infinity,
     fitBytes: MAX_PICTURE_BYTES,
     unknown: 'describe',
+    sized: WORD_ORIGINALS,
   },
+}
+
+function holds(profile: PictureTarget, mime: string, bytes: Buffer): boolean {
+  if (!profile.holds.has(mime) || bytes.length > profile.maxBytes) return false
+  return !profile.sized?.has(mime) || originalSize(mime, bytes) !== null
 }
 
 /** The picture types the docx writer passes to html-to-docx, by their bytes: the ones it can size. */
 export function wordTakes(bytes: Buffer): boolean {
   const mime = pictureMime(bytes)
-  return mime !== null && PICTURE_TARGETS.docx!.holds.has(mime)
+  return mime !== null && PICTURE_TARGETS.docx!.holds.has(mime) && !WORD_ORIGINALS.has(mime)
 }
 
 /** The picture's type, by its signature (a declared type can lie), for the types a browser decodes. */
@@ -233,7 +250,13 @@ function splitTiffPages(dom: ReturnType<typeof parseDocument>, pageOf: Map<Eleme
     const pages = tiffPages(data.bytes)
     if (!pages || pages.length === 0 || (pages.length === 1 && pages[0].index === 0)) continue
     const alt = el.attribs.alt?.trim()
-    let last: Element = el
+    // A TIFF that is its paragraph's one content gets a paragraph a page (a
+    // page can then start a new page of its own); one in a line of text, a
+    // line a page.
+    const parent = el.parent instanceof Element ? el.parent : null
+    const alone =
+      parent?.name === 'p' && parent.children.every((c) => c === el || (c instanceof Text && !c.data.trim()))
+    let last: Element = alone ? parent! : el
     pages.forEach((page, i) => {
       const own = tiffPage(data.bytes, page.index)
       const label = pages.length > 1 ? `page ${i + 1} of ${pages.length}` : ''
@@ -244,13 +267,18 @@ function splitTiffPages(dom: ReturnType<typeof parseDocument>, pageOf: Map<Eleme
       const img = new Element('img', attribs)
       if (!own) pageOf.set(img, page.index)
       if (i === 0) replaceElement(el, img)
-      else {
-        // Each page on a line of its own.
+      else if (alone) {
+        const p = new Element('p', { ...parent!.attribs }, [img])
+        img.parent = p
+        append(last, p)
+        last = p
+        return
+      } else {
         const br = new Element('br', {})
         append(last, br)
         append(br, img)
       }
-      last = img
+      if (!alone) last = img
     })
     changed = true
   }
@@ -302,7 +330,7 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
     if (!data || data.declared === 'image/svg+xml') continue
     number++
     const mime = pictureType(data.bytes)
-    if (mime && profile.holds.has(mime) && data.bytes.length <= profile.maxBytes) continue
+    if (mime && holds(profile, mime, data.bytes)) continue
     if (!mime) {
       if (profile.unknown === 'describe') describe(el, number, `${typeName(data.declared)} pictures are not converted`)
       continue
@@ -322,7 +350,7 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
       continue
     }
     // Held, but too large: made smaller in the kind that shrinks best.
-    const as: PictureFormat = profile.holds.has(mime) ? 'jpeg' : format
+    const as: PictureFormat = profile.holds.has(mime) && data.bytes.length > profile.maxBytes ? 'jpeg' : format
     const request = picture(`data:${mime};base64,${data.bytes.toString('base64')}`, as)
     const page = pageOf.get(el)
     jobs.push({ el, number, request: page === undefined ? request : { ...request, page } })

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { tiffPages, tiffPage } from '../../src/core/picture-headers'
+import { tiffPages, tiffPage, tiffSize, emfSize, wmfSize } from '../../src/core/picture-headers'
 // @ts-expect-error: a plain .mjs fixture library, no types.
-import { tiff as makeTiff } from '../../scripts/fixtures/lib-tiff.mjs'
+import { emf, tiff as makeTiff, wmf } from '../../scripts/fixtures/lib-tiff.mjs'
 
 /*
  * TIFF headers read in core (picture-headers.ts): the pages a file holds,
@@ -98,3 +98,22 @@ function stripData(t: Buffer): string {
   const counts = tags.get(279)!
   return offsets.map((o, i) => t.subarray(o, o + counts[i]).toString('hex')).join('|')
 }
+
+describe('picture sizes Word is told (html-to-docx cannot read them)', () => {
+  it('a TIFF at its resolution, or at 96 to the inch; none for several pages', () => {
+    expect(tiffSize(makeTiff({ ...page(300, 150), dpi: 300 }))).toEqual({ width: 96, height: 48 })
+    expect(tiffSize(makeTiff({ ...page(40, 30), dpi: 96 }))).toEqual({ width: 40, height: 30 })
+    expect(tiffSize(makeTiff({ pages: [page(4, 4), page(4, 4)] }))).toBeNull()
+    expect(tiffSize(makeTiff({ ...page(2, 2), claim: { width: 900000, height: 2 } }))).toBeNull()
+  })
+
+  it('an EMF by its frame (hundredths of a millimetre)', () => {
+    expect(emfSize(emf({ width: 160, height: 120 }))).toEqual({ width: 160, height: 120 })
+    expect(emfSize(Buffer.alloc(100))).toBeNull()
+  })
+
+  it('a WMF by its placeable header; a bare one says nothing', () => {
+    expect(wmfSize(wmf({ width: 200, height: 80 }))).toEqual({ width: 200, height: 80 })
+    expect(wmfSize(wmf({ width: 200, height: 80, placeable: false }))).toBeNull()
+  })
+})

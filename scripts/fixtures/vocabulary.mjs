@@ -588,6 +588,11 @@ export const READING_ROOM = {
   faxIntro: 'The lease arrived by fax as one picture of three pages. Every page should come through, in order.',
   faxAlt: 'Faxed lease for the reading room',
   faxAfter: 'The signed copy is kept at the desk.',
+  drawingsTitle: 'Drawings from the old word processor',
+  drawingsIntro: 'Two drawings survive from the old handbook, each in the picture format its word processor saved.',
+  emfAlt: 'Floor plan of the reading room, drawn as an enhanced metafile',
+  wmfAlt: 'Shelf label, drawn as an older metafile',
+  drawingsAfter: 'Word shows both drawings as they were made.',
 }
 
 /**

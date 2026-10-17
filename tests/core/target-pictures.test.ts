@@ -83,11 +83,13 @@ describe('targetPictures: what each target holds', () => {
     ['epub', ['image/png', 'image/jpeg', 'image/webp'], ['image/bmp', 'image/tiff']],
     ['md', ['image/png', 'image/jpeg', 'image/webp'], ['image/bmp', 'image/tiff']],
     ['azw3', ['image/png', 'image/jpeg'], ['image/webp', 'image/bmp', 'image/tiff']],
-    ['docx', ['image/png', 'image/jpeg', 'image/webp', 'image/bmp'], ['image/tiff']],
+    // Word shows TIFF itself: kept as it is (writer-docx-images.test.ts).
+    ['docx', ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff'], []],
   ])('%s keeps %j and converts %j to PNG', async (target, kept, converted) => {
     const { render, calls } = host()
     const out = await targetPictures(every, target, { renderBlocks: render })
     expect(calls.map((c) => /^data:(image\/[\w.+-]+);/.exec(c.source)?.[1])).toEqual(converted)
+    if (converted.length === 0) expect(out).toBe(every)
     expect(calls.every((c) => c.kind === 'picture' && c.fit?.as === 'png')).toBe(true)
     // Converted pictures stand where they stood, as PNG.
     const order = ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff']
@@ -169,7 +171,8 @@ describe('targetPictures: what each target holds', () => {
       { width: 8, height: 8, pixel: () => [50, 50, 50], kind: 'gray' },
     ]
     const fax: Buffer = makeTiff({ pages })
-    for (const target of ['pdf', 'epub', 'azw3', 'md', 'docx'] as TargetFormat[]) {
+    // Word keeps each page as a TIFF (writer-docx-images.test.ts); these convert each.
+    for (const target of ['pdf', 'epub', 'azw3', 'md'] as TargetFormat[]) {
       const { render, calls } = host()
       const out = await targetPictures(`<p>Before ${img('image/tiff', fax, 'Signed lease')} after</p>`, target, { renderBlocks: render })
       // Three pages (the preview is not one), each a one-page TIFF of its own.
@@ -183,6 +186,13 @@ describe('targetPictures: what each target holds', () => {
       ])
       expect(out).toMatch(/^<p>Before <img [^>]+><br><img [^>]+><br><img [^>]+> after<\/p>$/)
     }
+  })
+
+  it('a multi-page TIFF alone in its paragraph gets a paragraph a page', async () => {
+    const fax: Buffer = makeTiff({ pages: [{ width: 4, height: 4, pixel: () => [0, 0, 0] }, { width: 4, height: 4, pixel: () => [9, 9, 9] }] })
+    const { render } = host()
+    const out = await targetPictures(`<p>Lease:</p><p class="figure"> ${img('image/tiff', fax, 'Lease')} </p><p>End</p>`, 'epub', { renderBlocks: render })
+    expect(out).toMatch(/^<p>Lease:<\/p><p class="figure"> <img [^>]+alt="Lease \(page 1 of 2\)"> <\/p><p class="figure"><img [^>]+alt="Lease \(page 2 of 2\)"><\/p><p>End<\/p>$/)
   })
 
   it('a page with no alt text is named by its number; without a renderer each page is its description', async () => {
