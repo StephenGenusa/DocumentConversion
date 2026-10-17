@@ -57,7 +57,9 @@ describe('the AZW4 writer', () => {
     expect(page).toMatch(/<span class="hljs-keyword">def<\/span>/)
     expect(page).toContain(EREADER_HLJS_CSS)
     expect(page).toMatch(/\.hljs-keyword[^{]*\{ font-weight: bold; \}/)
-    expect(page).toMatch(/\.hljs-comment[^{]*\{ font-style: italic; \}/)
+    expect(page).toMatch(/\.hljs-comment[^{]*\{ font-style: italic; \}/)    // A printed page is paper: no night palette, or printing on a dark desktop
+    // would put pale code on white.
+    expect(page).not.toContain('prefers-color-scheme')
   })
 
   it('leaves the plain pdf writer on the screen palette', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseCssColor, wordHex, NAMED_COLORS } from '../../src/core/css-color'
+import { parseCssColor, wordHex, NAMED_COLORS, relativeLuminance, contrastRatio } from '../../src/core/css-color'
 
 const hex = (css: string): string | undefined => wordHex(css)
 
@@ -60,5 +60,25 @@ describe('parseCssColor reads every CSS color form', () => {
     for (const css of ['', 'inherit', 'initial', 'unset', 'reddish', '#12', '#ggg', 'rgb(1, 2)', 'rgb(1 2 3 4)', 'hsl(red, 1%, 2%)', 'rgb(1, 2 3)', 'url(x)', 'constructor', 'toString']) {
       expect(hex(css), css).toBeUndefined()
     }
+  })
+})
+
+describe('contrast as WCAG 2.x measures it', () => {
+  it('gives the relative luminance of the extremes and a mid gray', () => {
+    expect(relativeLuminance('#fff')).toBeCloseTo(1, 6)
+    expect(relativeLuminance('#000000')).toBe(0)
+    // sRGB 0x77 is 0.1845 in linear light.
+    expect(relativeLuminance('#777')).toBeCloseTo(0.1845, 3)
+    expect(relativeLuminance('not a color')).toBeUndefined()
+  })
+
+  it('gives the ratio either way round, from 1:1 to 21:1', () => {
+    expect(contrastRatio('#000', '#fff')).toBeCloseTo(21, 6)
+    expect(contrastRatio('#fff', '#000')).toBeCloseTo(21, 6)
+    expect(contrastRatio('#0a3069', '#0a3069')).toBe(1)
+    // The well-known edge: #777 on white just misses AA, #767676 just makes it.
+    expect(contrastRatio('#777', '#fff')).toBeLessThan(4.5)
+    expect(contrastRatio('#767676', '#fff')).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio('red', 'nope')).toBeUndefined()
   })
 })

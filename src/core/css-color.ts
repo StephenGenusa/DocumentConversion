@@ -175,3 +175,25 @@ export function wordHex(css: string): string | undefined {
     .join('')
     .toUpperCase()
 }
+
+/**
+ * WCAG 2.x relative luminance of a CSS color, 0 (black) to 1 (white), or
+ * undefined when it is no opaque color. Alpha is ignored: the callers measure
+ * palettes, which are opaque.
+ */
+export function relativeLuminance(css: string): number | undefined {
+  const color = parseCssColor(css)
+  if (color === undefined || typeof color === 'string') return undefined
+  const linear = (c: number): number => {
+    const s = c / 255
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b)
+}
+
+/** WCAG 2.x contrast ratio of two CSS colors, 1 to 21, either way round. */
+export function contrastRatio(a: string, b: string): number | undefined {
+  const [la, lb] = [relativeLuminance(a), relativeLuminance(b)]
+  if (la === undefined || lb === undefined) return undefined
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}

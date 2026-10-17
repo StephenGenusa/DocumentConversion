@@ -388,5 +388,19 @@ describe('writeEpub code coloring', () => {
     expect(chapter).toContain('<code class="language-math">x^2 + y^2</code>')
     expect(chapter).toContain('<code class="language-mermaid">graph TD; A--&gt;B</code>')
     expect(await text(zip, 'OEBPS/style.css')).not.toContain('hljs')
+    // Nor the night palette: a book without code keeps the stylesheet it had.
+    expect(await text(zip, 'OEBPS/style.css')).not.toContain('prefers-color-scheme')
+  })
+
+  it('gives code a night palette for a reader whose page goes dark, still with no backgrounds', async () => {
+    const zip = await open(await writeEpub(book(`<h1>Code</h1>${PY}`)))
+    const css = await text(zip, 'OEBPS/style.css')
+    const night = css.slice(css.indexOf('@media (prefers-color-scheme: dark)'))
+    expect(night).toMatch(/^@media \(prefers-color-scheme: dark\) \{/)
+    for (const scope of ['keyword', 'title', 'string', 'number', 'comment', 'built_in', 'section', 'addition', 'deletion'])
+      expect(night, scope).toMatch(new RegExp(`\\.hljs-${scope}\\b[^{]*\\{ color: #[0-9a-f]{6}; \\}`))
+    // The reader's own page and text color show through.
+    expect(night).toMatch(/\.hljs-variable[^{]*\{ color: inherit; \}/)
+    expect(css).not.toMatch(/background/)
   })
 })

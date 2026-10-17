@@ -1,7 +1,8 @@
 import { splitSlides, type SplitOn } from '../slides'
 import { footnotesForOutput } from '../footnotes'
 import { escapeHtml, highlightCodeBlocks } from '../shell'
-import { HLJS_CSS } from '../hljs'
+import { DARK_CODE_GROUND, DARK_CODE_TEXT, HLJS_CSS, HLJS_DARK_CSS } from '../hljs'
+import { relativeLuminance } from '../css-color'
 import { REVEAL_CSS, REVEAL_JS, REVEAL_NOTES_PLUGIN, REVEAL_VERSION } from '../assets/reveal.generated'
 import type { ConvertOptions, HubDocument } from '../types'
 
@@ -24,17 +25,36 @@ import type { ConvertOptions, HubDocument } from '../types'
 /**
  * Code is colored here, as static hljs spans styled by class, not by reveal's
  * highlight plugin: that colors in the browser and brings its own theme, and
- * this deck must open as it is. The palette is the screen one the html and
- * pdf share (GitHub light), because the `simple` theme is a white slide with
- * black text; the block gets that palette's faint ground so it reads as code
- * beside the slide's prose. Plain text and the blocks that are
+ * this deck must open as it is. The palette follows the slide: on a light one
+ * (the `simple` theme that ships is white with black text) the screen palette
+ * the html and pdf share (GitHub light), on that palette's faint ground so the
+ * block reads as code beside the slide's prose; on a dark one, GitHub dark on
+ * its dark ground: the light palette's dark colors sink into a black slide,
+ * and its pale block glares on one. Plain text and the blocks that are
  * drawn (formulas, diagrams) are left as they came; the notes are words for
  * the speaker and are not colored.
  */
 const LEFT_AS_IS = ['plaintext', 'text', 'math', 'mermaid', 'dot']
-const CODE_CSS = `
+
+/**
+ * The code palette for a deck in this theme's CSS: dark when the slide's
+ * `--r-background-color` is (black text reads worse on it than white, below
+ * a luminance of about 0.18), light otherwise, and light when it names no
+ * color that can be read (a var(), a gradient).
+ */
+export function codeCss(themeCss: string): string {
+  const declared = [...themeCss.matchAll(/--r-background-color:\s*([^;}]+)/g)].pop()?.[1]
+  const luminance = declared === undefined ? undefined : relativeLuminance(declared)
+  // Where white text and black text contrast equally: (1 + 0.05) / (L + 0.05) = (L + 0.05) / 0.05.
+  const dark = luminance !== undefined && luminance < Math.sqrt(1.05 * 0.05) - 0.05
+  return dark
+    ? `
+  .reveal pre code.hljs { background: ${DARK_CODE_GROUND}; color: ${DARK_CODE_TEXT}; }
+${HLJS_DARK_CSS}`
+    : `
   .reveal pre code.hljs { background: #f6f8fa; color: #24292f; }
 ${HLJS_CSS}`
+}
 
 /** reveal expects `<aside class="notes">`; the hub carries a bare `<aside>`. */
 function notesMarkup(notes: string[]): string {
@@ -73,7 +93,7 @@ export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Pr
 <title>${escapeHtml(title)}</title>
 <!-- reveal.js ${REVEAL_VERSION}, MIT, (C) Hakim El Hattab and contributors -->
 <style>${REVEAL_CSS}</style>
-${colored ? `<style>${CODE_CSS}</style>\n` : ''}</head>
+${colored ? `<style>${codeCss(REVEAL_CSS)}</style>\n` : ''}</head>
 <body>
 <div class="reveal"><div class="slides">
 ${sections}

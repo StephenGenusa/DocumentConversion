@@ -5,7 +5,7 @@ import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode } from 'domhandler'
 import render from 'dom-serializer'
 import { escapeHtml, highlightCodeBlocks } from '../shell'
-import { EREADER_HLJS_CSS } from '../hljs'
+import { EPUB_HLJS_CSS } from '../hljs'
 import type { HubDocument } from '../types'
 import { RENDERED_MARKER } from '../draw-blocks'
 
@@ -350,7 +350,7 @@ export async function writeEpub(doc: HubDocument, opts: EpubOptions = {}): Promi
 <rootfiles><rootfile full-path="${OEBPS}/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
 </container>`,
   )
-  const css = STYLESHEET + (/<dl\b/.test(doc.html) ? DEFINITION_CSS : '') + (highlighted.any ? EREADER_HLJS_CSS : '')
+  const css = STYLESHEET + (/<dl\b/.test(doc.html) ? DEFINITION_CSS : '') + (highlighted.any ? EPUB_HLJS_CSS : '')
   zip.file(`${OEBPS}/style.css`, css)
   for (const part of parts) zip.file(`${OEBPS}/${part.file}`, chapterDocument(part.title, part.body))
   zip.file(`${OEBPS}/nav.xhtml`, navDocument(parts))

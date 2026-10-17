@@ -46,7 +46,7 @@ hljs.registerLanguage('nginx', nginx)
 
 // The screen palette lives on its own, so the editor can color code without
 // carrying every grammar (renderer/src/lib/code-grammars.ts loads them lazily).
-export { TOKEN_COLORS, HLJS_CSS } from './hljs-palette'
+export { TOKEN_COLORS, HLJS_CSS, HLJS_DARK_CSS, DARK_CODE_GROUND, DARK_CODE_TEXT } from './hljs-palette'
 
 /**
  * The same scopes for an e-reader (epub, the AZW3 made from it, and the
@@ -76,6 +76,38 @@ export const EREADER_HLJS_CSS = `${EREADER_TOKEN_COLORS.map(
 ).join('\n')}
 .hljs-keyword, .hljs-selector-tag, .hljs-section, .hljs-name { font-weight: bold; }
 .hljs-comment, .hljs-quote { font-style: italic; }
+`
+
+/**
+ * The e-reader palette at night: a reader that turns its page dark and keeps
+ * the book's colors (Calibre's viewer does, and answers prefers-color-scheme
+ * from its own page, not the desktop's: dark for its dark and sepia-dark
+ * pages, light for white and sepia) printed the day colors, #0a3069 strings
+ * on near black. Light colors, AA or better on black, #111 and Calibre's
+ * sepia dark (#39322B), the lightest of them. Still no backgrounds, so the
+ * reader's page shows through; plain names take the reader's own text color.
+ * A reader that sets its own colors at night overrides these as it did the
+ * day ones. For the epub and the AZW3 made from it only: an AZW4's page is
+ * paper, and printing it on a dark desktop must not turn its code pale.
+ */
+const EREADER_NIGHT_TOKEN_COLORS: ReadonlyArray<readonly [scopes: readonly string[], color: string]> = [
+  [['keyword', 'selector-tag', 'meta'], '#ff7b72'],
+  [['title'], '#d2a8ff'],
+  [['string', 'regexp', 'attr'], '#a5d6ff'],
+  [['number', 'literal'], '#79c0ff'],
+  [['comment', 'quote'], '#9ea7b3'],
+  [['built_in', 'type'], '#ffa657'],
+  [['variable', 'template-variable', 'property'], 'inherit'],
+  [['section', 'name'], '#79c0ff'],
+  [['addition'], '#7ee787'],
+  [['deletion'], '#ffa198'],
+]
+
+export const EPUB_HLJS_CSS = `${EREADER_HLJS_CSS}@media (prefers-color-scheme: dark) {
+${EREADER_NIGHT_TOKEN_COLORS.map(
+  ([scopes, color]) => `  ${scopes.map((s) => `.hljs-${s}`).join(', ')} { color: ${color}; }`,
+).join('\n')}
+}
 `
 
 const COLOR_OF = new Map(TOKEN_COLORS.flatMap(([scopes, color]) => scopes.map((s) => [s, color] as const)))
