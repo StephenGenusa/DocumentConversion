@@ -13,9 +13,10 @@ import { KINDLE_IMAGE_MAX_BYTES } from '../../src/core/pictures'
 import { tiff as makeTiff } from '../../scripts/fixtures/lib-tiff.mjs'
 
 /**
- * Large pictures, converted whole by the real render host in a real
- * Electron main process (owner, 2026-10-16: the render host's 5 MB SVG and
- * 30 MB picture caps are gone). Every input is made here, none committed. Prints each
+ * Large pictures and long formula runs, converted whole by the real render
+ * host in a real Electron main process (owner, 2026-10-16: the render
+ * host's 5 MB SVG and 30 MB picture caps and the 2,000 formulas / 60 s
+ * limits are gone). Every input is made here, none committed. Prints each
  * case's time and memory to a file with LARGE_PICTURE_TIMINGS=<path>.
  *
  * Needs a display (Electron opens a hidden window); skipped without one.
@@ -66,9 +67,19 @@ function bigSvg(bytes: number): string {
 const uri = (mime: string, bytes: Buffer): string => `data:${mime};base64,${bytes.toString('base64')}`
 const page = (alt: string, src: string): string => `<p>Before.</p><p><img src="${src}" alt="${alt}"></p><p>After.</p>`
 
+/** `n` distinct formulas, inline, ten to a paragraph. */
+function formulas(n: number): string {
+  const out: string[] = []
+  for (let i = 0; i < n; i += 10) {
+    const line = Array.from({ length: Math.min(10, n - i) }, (_, k) => `<code class="language-math">x_{${i + k}}^2 + \\frac{${i + k}}{2}</code>`)
+    out.push(`<p>Terms ${line.join(' and ')}.</p>`)
+  }
+  return out.join('')
+}
+
 type CaseResult = { ms?: number; baseMainMb?: number; peakMainMb?: number; peakAllMb?: number; advice: string[]; error?: string }
 
-describe.skipIf(!hasDisplay)('large pictures, through the render host', () => {
+describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the render host', () => {
   let dir: string
   let bundles: string
   let result: Record<string, CaseResult> & { fatal?: string }
@@ -97,6 +108,7 @@ describe.skipIf(!hasDisplay)('large pictures, through the render host', () => {
       png: page('Noise', uri('image/png', png)),
       tiff: page('Panorama', uri('image/tiff', tiff)),
       svg: page('Plan', uri('image/svg+xml', svg)),
+      formulas: formulas(2500),
     }
     for (const [name, html] of Object.entries(files)) await writeFile(join(dir, `${name}.html`), html)
     const cases = [
@@ -106,6 +118,8 @@ describe.skipIf(!hasDisplay)('large pictures, through the render host', () => {
       ['tiff.azw3', 'azw3', 'tiff'],
       ['png.azw3', 'azw3', 'png'],
       ['svg.azw3', 'azw3', 'svg'],
+      ['formulas.html', 'html', 'formulas'],
+      ['formulas.docx', 'docx', 'formulas'],
     ].map(([name, target, input]) => ({ name, target, htmlFile: join(dir, `${input}.html`) }))
     await writeFile(join(dir, 'cases.json'), JSON.stringify(cases))
 
@@ -201,5 +215,16 @@ describe.skipIf(!hasDisplay)('large pictures, through the render host', () => {
     expect(pictures).toHaveLength(1)
     expect(isPng(pictures[0]) || isJpeg(pictures[0])).toBe(true)
     expect(pictures[0].length).toBeLessThanOrEqual(KINDLE_IMAGE_MAX_BYTES)
+  })
+
+  it('draws all 2,500 formulas, for HTML and for Word', async () => {
+    ok('formulas.html')
+    ok('formulas.docx')
+    const html = (await out('formulas.html')).toString('utf8')
+    expect(html.match(/data-rendered="formula"/g)).toHaveLength(2500)
+    expect(html).not.toContain('language-math')
+    const zip = await JSZip.loadAsync(await out('formulas.docx'))
+    const doc = await zip.file('word/document.xml')!.async('string')
+    expect(doc.match(/<w:drawing>/g)).toHaveLength(2500)
   })
 })

@@ -163,22 +163,22 @@ describe('drawing formulas (step 18)', () => {
     expect(onAdvice).not.toHaveBeenCalled()
   })
 
-  it('draws the first 2,000 formulas, keeps the rest as source, and says so once', async () => {
+  /** `count` distinct inline formulas in one paragraph. */
+  const many = (count: number, name = 'a'): string => '<p>' + Array.from({ length: count }, (_, i) => inline(`${name}_{${i}}`)).join(' ') + '</p>'
+
+  it('draws every one of 2,500 formulas, a batch at a time, with no notice (owner, 2026-10-16: the 2,000 limit is gone)', async () => {
     const { render, calls } = fakeRenderer()
     const onAdvice = vi.fn()
-    const total = RENDER_LIMITS.formulas.max + 3
-    expect(RENDER_LIMITS.formulas.max).toBe(2000)
-    const html = '<p>' + Array.from({ length: total }, (_, i) => inline(`a_{${i}}`)).join(' ') + '</p>'
-    const out = await drawBlocks(html, 'pdf', { renderBlocks: render, onAdvice })
-    expect(calls.flat()).toHaveLength(2000)
-    expect(out.match(/<img /g)).toHaveLength(2000)
-    expect(out).toContain(inline('a_{2000}'))
-    expect(out).toContain(inline('a_{2002}'))
-    expect(onAdvice).toHaveBeenCalledTimes(1)
-    expect(onAdvice.mock.calls[0][1]).toBe('This document has 2,003 formulas; the first 2,000 were drawn and the other 3 are shown as source')
+    const out = await drawBlocks(many(2500), 'pdf', { renderBlocks: render, onAdvice })
+    expect(calls.flat()).toHaveLength(2500)
+    expect(Math.max(...calls.map((c) => c.length))).toBe(RENDER_LIMITS.formulas.batch)
+    expect(out.match(/<img /g)).toHaveLength(2500)
+    expect(out).not.toContain('language-math')
+    expect(onAdvice).not.toHaveBeenCalled()
+    expect(RENDER_LIMITS.formulas).toEqual({ eachMs: 2000, batch: 100 })
   })
 
-  it('stops at 60 s in all: the formulas not reached stay source, with one notice', async () => {
+  it('has no deadline for them all: batches that take 25 s each are all drawn', async () => {
     let now = 0
     const spy = vi.spyOn(Date, 'now').mockImplementation(() => now)
     try {
@@ -190,18 +190,59 @@ describe('drawing formulas (step 18)', () => {
       }
       const onAdvice = vi.fn()
       const count = RENDER_LIMITS.formulas.batch * 5
-      const html = '<p>' + Array.from({ length: count }, (_, i) => inline(`b_{${i}}`)).join(' ') + '</p>'
-      const out = await drawBlocks(html, 'pdf', { renderBlocks: render, onAdvice })
-      // Three batches take 75 s: the third ends past the limit, so no fourth is started.
-      expect(calls).toHaveLength(3)
-      expect(out.match(/<img /g)).toHaveLength(RENDER_LIMITS.formulas.batch * 3)
-      expect(onAdvice).toHaveBeenCalledWith(
-        'render-failed',
-        `Drawing formulas took over 60 s; the other ${RENDER_LIMITS.formulas.batch * 2} are shown as source`,
-      )
+      const out = await drawBlocks(many(count, 'b'), 'pdf', { renderBlocks: render, onAdvice })
+      expect(calls).toHaveLength(5)
+      expect(out.match(/<img /g)).toHaveLength(count)
+      expect(onAdvice).not.toHaveBeenCalled()
     } finally {
       spy.mockRestore()
     }
+  })
+
+  it('a formula that takes too long keeps its source, alone; the rest are drawn', async () => {
+    const { render: inner } = fakeRenderer()
+    const timeouts = new Set<number>()
+    // The host answers a formula over its time with an error, and goes on with the next (render-host.ts).
+    const render: RenderBlocks = async (reqs, opts) => {
+      timeouts.add(opts.timeoutMs)
+      const results = await inner(reqs, opts)
+      return results.map((r, k) => (reqs[k].source === 'a_{150}' ? { error: 'drawing took longer than 2 s' } : r))
+    }
+    const onAdvice = vi.fn()
+    const out = await drawBlocks(many(300), 'pdf', { renderBlocks: render, onAdvice })
+    expect(timeouts).toEqual(new Set([RENDER_LIMITS.formulas.eachMs]))
+    expect(out.match(/<img /g)).toHaveLength(299)
+    expect(out).toContain(inline('a_{150}'))
+    expect(onAdvice).toHaveBeenCalledTimes(1)
+    expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Formula 151 could not be drawn: drawing took longer than 2 s')
+  })
+
+  it('a cancel stops a long run: no batch is asked for after it, and the conversion ends cancelled', async () => {
+    const controller = new AbortController()
+    const calls: RenderRequest[][] = []
+    // As the render host does: a request made, or waiting, when the signal fires is rejected.
+    const render: RenderBlocks = async (reqs, opts) => {
+      if (opts.signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' })
+      calls.push(reqs)
+      if (calls.length === 3) controller.abort()
+      return reqs.map(() => ({ svg: SVG, width: 24, height: 16, baseline: 4 }))
+    }
+    const onAdvice = vi.fn()
+    await expect(drawBlocks(many(2500), 'pdf', { renderBlocks: render, onAdvice, signal: controller.signal })).rejects.toThrow('Cancelled')
+    expect(calls).toHaveLength(3)
+    expect(onAdvice).not.toHaveBeenCalled()
+  })
+
+  it('tells its progress a batch at a time, through the conversion', async () => {
+    const { render } = fakeRenderer()
+    const progress: Array<[string, number | undefined]> = []
+    const conv = createConverter(async () => Buffer.from('%PDF-'), { renderBlocks: render })
+    await conv.write({ html: many(250) }, 'html', {}, { onProgress: (stage, percent) => progress.push([stage, percent]) })
+    expect(progress).toEqual([
+      ['Drawing formulas (0 of 250)', 0],
+      ['Drawing formulas (100 of 250)', 40],
+      ['Drawing formulas (200 of 250)', 80],
+    ])
   })
 
   it('keeps every formula as source, with one notice, when the renderer itself fails', async () => {

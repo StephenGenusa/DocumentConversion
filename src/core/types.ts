@@ -231,6 +231,8 @@ export type AdviceHandler = (
 export interface WriteContext {
   signal?: AbortSignal
   onAdvice?: AdviceHandler
+  /** How far writing has got: drawing a long run of formulas says so a batch at a time. */
+  onProgress?: (stage: string, percent?: number) => void
 }
 
 export type PdfPageSize = 'Letter' | 'A4' | 'Legal' | 'A3' | 'Tabloid'

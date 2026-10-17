@@ -41,12 +41,15 @@ export function renderCacheKey(req: RenderRequest, engineVersion: string): strin
 
 /**
  * Per conversion (spec B7): diagrams (Mermaid and Graphviz together), and
- * formulas. Formulas are asked for `batch` at a time, so the 60 s for all of
- * them can be kept to: once it has passed, no further batch is started.
+ * formulas. Every formula is drawn, however many there are and however long
+ * they take together (owner, 2026-10-16: the earlier 2,000 formulas and 60 s
+ * are gone). Each has `eachMs` of its own, so one that hangs MathJax is that
+ * formula's source and not the end of the rest; they are asked for `batch`
+ * at a time, so progress is told and a cancel is heard between batches.
  */
 export const RENDER_LIMITS = {
   diagrams: { max: 50, eachMs: 10_000 },
-  formulas: { max: 2000, eachMs: 2_000, totalMs: 60_000, batch: 100 },
+  formulas: { eachMs: 2_000, batch: 100 },
 } as const
 
 /**
@@ -99,6 +102,8 @@ export interface DrawContext {
   pictureFormat?: PictureFormat
   signal?: AbortSignal
   onAdvice?: (kind: 'render-failed', message: string) => void
+  /** How far drawing has got (formulas, a batch at a time). */
+  onProgress?: (stage: string, percent?: number) => void
 }
 
 /**
@@ -233,10 +238,10 @@ const exs = (px: number): string => `${Math.round((px / PX_PER_EX) * 1000) / 100
  * for Word, with the lowering handed to the docx writer (`data-docx-lower`,
  * half-points), since html-to-docx ignores vertical-align on a picture.
  *
- * Limits: 2,000 formulas, 2 s each, 60 s in all. Beyond either, the rest
- * stay source with one notice; each formula that fails keeps its source
- * with a notice naming it ("Formula 3 could not be drawn: Undefined control
- * sequence \foo"). Numbered apart from diagrams.
+ * Every formula is drawn, 2 s each (RENDER_LIMITS); each that fails, or
+ * takes longer, keeps its source with a notice naming it ("Formula 3 could
+ * not be drawn: Undefined control sequence \foo"). Numbered apart from
+ * diagrams.
  */
 async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext, render: RenderBlocks): Promise<string> {
   interface Formula {
@@ -259,29 +264,17 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
   }
   if (formulas.length === 0) return html
 
-  const { max, eachMs, totalMs, batch } = RENDER_LIMITS.formulas
-  const drawn = formulas.slice(0, max)
+  const { eachMs, batch } = RENDER_LIMITS.formulas
   // Each formula is drawn alone; a \newcommand in one reaches the later ones here.
-  carryDefinitions(drawn.map((f) => f.source)).forEach((tex, k) => (drawn[k].drawn = tex))
-  if (formulas.length > max) {
-    const n = (v: number): string => v.toLocaleString('en-US')
-    ctx.onAdvice?.(
-      'render-failed',
-      `This document has ${n(formulas.length)} formulas; the first ${n(max)} were drawn and the other ${n(formulas.length - max)} are shown as source`,
-    )
-  }
+  carryDefinitions(formulas.map((f) => f.source)).forEach((tex, k) => (formulas[k].drawn = tex))
 
   const format = renderedFormatFor(target, ctx.format)
   const keyOf = (f: Formula): string => JSON.stringify([f.display, f.drawn])
-  const unique = [...new Map(drawn.map((f) => [keyOf(f), f])).values()]
+  const unique = [...new Map(formulas.map((f) => [keyOf(f), f])).values()]
   const byKey = new Map<string, RenderResult>()
-  const started = Date.now()
+  const n = (v: number): string => v.toLocaleString('en-US')
   for (let i = 0; i < unique.length; i += batch) {
-    if (i > 0 && Date.now() - started > totalMs) {
-      const left = drawn.filter((f) => !byKey.has(keyOf(f))).length
-      ctx.onAdvice?.('render-failed', `Drawing formulas took over ${totalMs / 1000} s; the other ${left} are shown as source`)
-      break
-    }
+    if (unique.length > batch) ctx.onProgress?.(`Drawing formulas (${n(i)} of ${n(unique.length)})`, (i / unique.length) * 100)
     const part = unique.slice(i, i + batch)
     let results: RenderResult[]
     try {
@@ -299,8 +292,7 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
 
   let out = ''
   let at = 0
-  for (const f of drawn) {
-    if (!byKey.has(keyOf(f))) continue
+  for (const f of formulas) {
     const result = byKey.get(keyOf(f))
     const data = result && !('error' in result) && result.width > 0 && result.height > 0 ? pictureData(result, format) : undefined
     if (data === undefined || !result || 'error' in result) {

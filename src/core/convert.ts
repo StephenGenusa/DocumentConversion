@@ -149,6 +149,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
         pictureFormat: opts?.pictureFormat,
         signal: ctx?.signal,
         onAdvice: ctx?.onAdvice,
+        onProgress: ctx?.onProgress,
       }
       const drawn = await drawBlocks(notesFree, target, drawCtx)
       // PNG copies of the document's SVG images for Word and Kindle (spec
