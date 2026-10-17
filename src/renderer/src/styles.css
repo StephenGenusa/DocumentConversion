@@ -122,9 +122,12 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
   /* Not 0: in a window too short for the pane (resized, or a small screen),
      the card shrank below its own toolbar and editor, which then ran on
      under the conversion card below it. At its floor (the label, the toolbar
-     and the editor's 10rem) the page scrolls instead. A length, not auto: auto would be the whole
-     document's height, and the editor would stop scrolling inside itself. */
-  min-height: 18rem;
+     and the editor's 10rem) the page scrolls instead. Auto, the card's own
+     content, is that floor however many rows the toolbar wraps to (a fixed
+     18rem was one row's worth: at 560 px the toolbar takes three and the
+     editor ran out of the card). It is not the whole document's height
+     because the editor's flex basis is 0, not a percentage. */
+  min-height: auto;
   display: flex;
   flex-direction: column;
 }
@@ -135,7 +138,10 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
   border: 1px solid #e4e4e7;
   border-radius: 8px;
   padding: .75rem 1rem;
-  flex: 1;
+  /* A basis of 0, not flex: 1's 0%: a percentage of the card's indefinite
+     height counts as the content's, and the card's floor (above) would be
+     the whole document. */
+  flex: 1 1 0;
   min-height: 10rem;
   overflow-y: auto;
 }

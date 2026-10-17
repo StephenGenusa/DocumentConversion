@@ -1443,6 +1443,16 @@ try {
   await waitFor(`document.querySelector('.clip-pane .card__name')?.textContent === 'Lab Report (sample, untitled)'`, 'the Lab Report to open from the start screen')
   await waitFor(`!!${EDITOR}?.querySelector('h1')?.textContent.includes('Crystal Violet Fading')`, "the Lab Report's heading")
   check('the start screen\'s Sample documents link opens a sample as the Help menu does', true)
+
+  // At the window's smallest the toolbar wraps to three rows; the editor
+  // stays inside its card (it ran out under the conversion card when the
+  // card's floor was one toolbar row's worth).
+  const card = () => js(`(() => { const c = document.querySelector('.clip-pane').getBoundingClientRect(); const e = document.querySelector('.clip-pane__editor').getBoundingClientRect(); const t = document.querySelector('.clip-pane__toolbar').getBoundingClientRect(); return { card: [Math.round(c.top), Math.round(c.bottom)], editor: [Math.round(e.top), Math.round(e.bottom)], toolbarRows: Math.round(t.height), inside: e.top >= c.top && e.bottom <= c.bottom + 0.5 && e.height >= 159 } })()`)
+  await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).setContentSize(560, 480)`)
+  await waitFor(`innerWidth === 560`, 'the window to be 560 wide')
+  await sleep(400)
+  const narrowCard = await card()
+  check('at 560×480 the editor, its toolbar wrapped, stays inside its card at its 10rem floor', narrowCard.inside, JSON.stringify(narrowCard))
 } catch (err) {
   failures++
   console.log(`FAIL  ${err.message}`)
