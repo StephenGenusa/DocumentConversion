@@ -10,7 +10,7 @@
  *  - Fewer than 109 FAT sectors are needed for a fixture this small, so no
  *    DIFAT (XBAT) sectors are needed either. `xbatCount` stays 0.
  *  - The directory "red-black tree" siblings only need to be A tree the
- *    reader's in-order walk can visit — not a balanced or colour-correct one.
+ *    reader's in-order walk can visit — not a balanced or color-correct one.
  *    A right-only chain (each entry's `left` = NOSTREAM, `right` = next
  *    sibling) is a valid degenerate tree and the walk visits it in order.
  *
@@ -159,7 +159,7 @@ export function buildMsg(rootChildren) {
     nameBuf.copy(buf, off, 0, Math.min(nameBuf.length, 62))
     buf.writeUInt16LE(Math.min(nameBuf.length, 62) + 2, off + 0x40) // name length incl. null terminator
     buf.writeUInt8(entry.type, off + 0x42)
-    buf.writeUInt8(1, off + 0x43) // colour flag (unread by this reader)
+    buf.writeUInt8(1, off + 0x43) // color flag (unread by this reader)
     buf.writeInt32LE(entry._left ?? NOSTREAM, off + 0x44)
     buf.writeInt32LE(entry._right ?? NOSTREAM, off + 0x48)
     buf.writeInt32LE(entry._child ?? NOSTREAM, off + 0x4c)

@@ -9,11 +9,11 @@ export interface ShellOptions {
   /**
    * Which palette highlighted code takes: the screen one (default), or the
    * e-reader one, whose keywords are bold and comments italic, for a page that
-   * is a Kindle book (AZW4) and may be read where colour does not reach.
+   * is a Kindle book (AZW4) and may be read where color does not reach.
    */
   codePalette?: 'screen' | 'ereader'
-  /** Code coloured by language (pdf and html): on unless false (ConvertOptions.codeColour). */
-  codeColour?: boolean
+  /** Code colored by language (pdf and html): on unless false (ConvertOptions.codeColor). */
+  codeColor?: boolean
 }
 
 /**
@@ -65,7 +65,7 @@ const NB_CSS = `
      it inlines. Keep the two in step.
 
      Without this a plot rendered full-bleed against the page margin while the
-     text output beside it sat indented behind a coloured rule, so it read as a
+     text output beside it sat indented behind a colored rule, so it read as a
      stray picture rather than as the cell's result. border-box is load-bearing:
      with the default content-box the gutter padding is ADDED to the 100% width
      and printToPDF clips whatever leaves the page.
@@ -100,9 +100,9 @@ function notebookPromptCss(html: string): string {
 }
 
 /**
- * Each code block whose language highlight.js knows, coloured. The class may
+ * Each code block whose language highlight.js knows, colored. The class may
  * carry `hljs` beside the language (a page that was highlighted already), and
- * the body may hold markup a source left in it; the text is what is coloured,
+ * the body may hold markup a source left in it; the text is what is colored,
  * so neither is printed literally. `skip` names languages left exactly as
  * they came (the epub writer's plaintext).
  */
@@ -215,7 +215,7 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
   if (opts?.target === 'pdf' || opts?.target === 'html') {
     // Linked notes: the anchors are made here, from labels the hub owns.
     body = footnotesForOutput(body, 'links')
-    const highlighted = opts.codeColour === false ? { html: body, any: false } : highlightCodeBlocks(body)
+    const highlighted = opts.codeColor === false ? { html: body, any: false } : highlightCodeBlocks(body)
     if (highlighted.any) {
       body = highlighted.html
       css += opts.codePalette === 'ereader' ? EREADER_HLJS_CSS : HLJS_CSS

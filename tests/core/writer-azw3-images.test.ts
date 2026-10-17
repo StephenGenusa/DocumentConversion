@@ -275,7 +275,7 @@ describe('AZW3 pictures (KF8 image records)', () => {
     // Golden hash of the writer's output before pictures were stored (as of
     // "Make Kindle (AZW3) books open in calibre"), with its two varying
     // inputs (the clock and the random unique id) held still. Updated once
-    // since, when the stylesheet became the book's second flow ("Colour code
+    // since, when the stylesheet became the book's second flow ("Color code
     // in EPUB and Kindle books"); before that, style.css never reached it.
     vi.useFakeTimers({ now: new Date('2026-01-02T03:04:05Z'), toFake: ['Date'] })
     vi.spyOn(Math, 'random').mockReturnValue(0.5)

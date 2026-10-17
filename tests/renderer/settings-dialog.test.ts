@@ -201,7 +201,7 @@ describe('the Settings dialog', () => {
   })
 
   it('resets the section on screen, and everything only after a confirm', async () => {
-    saved = { ...saved, pictures: { format: 'png' }, code: { colour: false } }
+    saved = { ...saved, pictures: { format: 'png' }, code: { color: false } }
     await mount()
     act(() => button('Reset this section').click())
     await flush()
@@ -365,6 +365,6 @@ describe('the Affects lines', () => {
     const affects = Object.fromEntries(SETTINGS_PAGES.flatMap((p) => p.settings.map((s) => [s.key, s.affects])))
     expect(affects['pictures.format']).toBe(targetList(PICTURE_TARGET_FORMATS))
     expect(affects['rendered.format']).toBe(targetList([...SVG_TARGETS]))
-    expect(affects['code.colour']).toBe(targetList(CODE_COLOR_TARGETS))
+    expect(affects['code.color']).toBe(targetList(CODE_COLOR_TARGETS))
   })
 })

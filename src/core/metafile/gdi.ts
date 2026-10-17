@@ -71,7 +71,7 @@ export interface Pen {
   user?: number[]
 }
 
-/** A bitmap brush's DIB, decoded when it is used (a monochrome one takes the colours of the moment). */
+/** A bitmap brush's DIB, decoded when it is used (a monochrome one takes the colors of the moment). */
 export interface DibSource {
   info: View
   bits: View
@@ -490,7 +490,7 @@ export class Gdi {
 
   /* ---- paint ---------------------------------------------------------- */
 
-  /** The colour a pen or brush colour is drawn as under the ROP2, and the blend; null: nothing is drawn. */
+  /** The color a pen or brush color is drawn as under the ROP2, and the blend; null: nothing is drawn. */
   private rop(rgb: number): { rgb: number; blend?: Blend } | null {
     switch (this.dc.rop2) {
       case R2_NOP:
@@ -537,7 +537,7 @@ export class Gdi {
     }
   }
 
-  /** A hatch brush as an SVG pattern, eight CSS px a tile, its background the background colour where the mode is opaque. */
+  /** A hatch brush as an SVG pattern, eight CSS px a tile, its background the background color where the mode is opaque. */
   private hatch(style: number, rgb: number): Paint {
     const bk = this.dc.bkMode === 2 ? this.color(this.dc.bkColor) : null
     const t = 8 * this.out.hairline
@@ -993,8 +993,8 @@ export class Gdi {
 
   /**
    * GradientFill: rectangles shaded left to right (mode 0) or top to bottom
-   * (1) between two vertices' colours, as linear gradients; triangles (2)
-   * filled with their vertices' mean colour.
+   * (1) between two vertices' colors, as linear gradients; triangles (2)
+   * filled with their vertices' mean color.
    */
   gradient(vertices: { x: number; y: number; rgb: number }[], mode: number, shapes: number[][]): void {
     for (const s of shapes) {
@@ -1162,7 +1162,7 @@ export class Gdi {
    * aligned by the text alignment, each character placed by its advance in
    * `dx` when there is one (so text keeps its layout whatever font draws
    * it), rotated by the font's escapement. ETO_OPAQUE fills `box` with the
-   * background colour first; ETO_CLIPPED clips the text to it.
+   * background color first; ETO_CLIPPED clips the text to it.
    */
   text(x: number, y: number, raw: string, dx: number[] | null, options: number, box: [number, number, number, number] | null): void {
     const dc = this.dc
@@ -1275,7 +1275,7 @@ export class Gdi {
 /**
  * The one bitmap a masked transfer draws: each pixel worked out from what
  * the raster operations make of a black page and of a white one - the
- * same on both, an opaque pixel of that colour; the page itself on both,
+ * same on both, an opaque pixel of that color; the page itself on both,
  * a transparent one; anything else, what it makes of white paper.
  */
 function masked(f: (d: number, m: number, i: number) => number, mask: Raster, image: Raster): Raster {
@@ -1299,7 +1299,7 @@ function masked(f: (d: number, m: number, i: number) => number, mask: Raster, im
   return { width: image.width, height: image.height, rgba: out, alpha }
 }
 
-/** Whether a bitmap is small and drawn many times its size (a pattern, a mask, a block of colour): drawn sharp, as GDI stretches. */
+/** Whether a bitmap is small and drawn many times its size (a pattern, a mask, a block of color): drawn sharp, as GDI stretches. */
 function tiny(width: number, height: number, m: Matrix): boolean {
   return Math.min(width, height) <= 32 && Math.min(Math.hypot(m[0], m[1]), Math.hypot(m[2], m[3])) >= 4
 }

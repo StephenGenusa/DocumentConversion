@@ -314,11 +314,11 @@ export interface ConvertOptions {
    */
   pictureFormat?: PictureFormat
   /**
-   * Code blocks coloured by language (Settings → Code, spec 4.4): html, pdf,
+   * Code blocks colored by language (Settings → Code, spec 4.4): html, pdf,
    * Word, EPUB, the Kindle books and slides. On when not given; off writes
-   * code plain, with no highlight.js spans and no token colours.
+   * code plain, with no highlight.js spans and no token colors.
    */
-  codeColour?: boolean
+  codeColor?: boolean
   /** Settings → Web, copied into the read context (ReadContext.web). */
   web?: WebPolicy
 }

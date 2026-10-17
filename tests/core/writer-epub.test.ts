@@ -318,7 +318,7 @@ describe('writeEpub block content inside a span', () => {
   })
 })
 
-describe('writeEpub code colouring', () => {
+describe('writeEpub code coloring', () => {
   const PY = '<pre><code class="language-python">def total(items):\n    # add them up\n    return sum(i * 2 for i in items) &lt; 10 and "a&amp;b"</code></pre>'
   const JS = '<pre><code class="language-javascript">const greet = (name) =&gt; `hi ${name}` // say hi</code></pre>'
 
@@ -342,7 +342,7 @@ describe('writeEpub code colouring', () => {
     expect(body.replace(/<(\/?)([a-zA-Z][\w:-]*)((?:\s+[\w:-]+="[^"<]*")*)\s*(\/?)>/g, '')).not.toContain('<')
   }
 
-  it('colours python and javascript blocks with hljs spans', async () => {
+  it('colors python and javascript blocks with hljs spans', async () => {
     const zip = await open(await writeEpub(book(`<h1>Code</h1>${PY}${JS}`)))
     const chapter = await text(zip, 'OEBPS/ch001.xhtml')
     expect(chapter).toContain('<code class="language-python hljs">')
@@ -361,7 +361,7 @@ describe('writeEpub code colouring', () => {
     expect(code.replace(/<[^>]+>/g, '')).toContain('sum(i * 2 for i in items) &lt; 10 and "a&amp;b"')
   })
 
-  it('styles the spans for e-readers: colour, bold keywords, italic comments, no backgrounds', async () => {
+  it('styles the spans for e-readers: color, bold keywords, italic comments, no backgrounds', async () => {
     const zip = await open(await writeEpub(book(`<h1>Code</h1>${PY}`)))
     const css = await text(zip, 'OEBPS/style.css')
     const rule = (sel: string): string => new RegExp(`[^}]*\\.hljs-${sel}\\b[^{]*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''

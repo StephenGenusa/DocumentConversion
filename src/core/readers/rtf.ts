@@ -27,7 +27,7 @@ import { archiveInlineBudget, createImageLedger, imagePlaceholder, OVER_BUDGET }
  * formatting that way; only toggles (`\\b bold\\b0`) survived.
  *
  * A node is styled once, where it was read, and moved as it is after that.
- * The second pass also converted an already-resolved font and colour as if
+ * The second pass also converted an already-resolved font and color as if
  * they were table indices, so skipping it is right for those too.
  */
 const STYLED = Symbol('rtf-styled')
@@ -1436,7 +1436,7 @@ function rtfPlainText(fragment: string): string {
 /**
  * A BMP file of a DIB: a `\\dibitmap` holds the BITMAPINFO and the bits, and
  * a file wants the 14-byte header in front, which says where the bits start
- * (after the info header, its colour table and any bit-field masks).
+ * (after the info header, its color table and any bit-field masks).
  */
 function dibToBmp(dib: Buffer): Buffer | null {
   if (dib.length < 12) return null

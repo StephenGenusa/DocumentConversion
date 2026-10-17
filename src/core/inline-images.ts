@@ -62,7 +62,7 @@ const ARCHIVE_IMAGE_OVERHEAD = 64
  * corpus carries between 0.93 and 0.99 bytes of decoded image per byte of file
  * (photographs and screenshots are already compressed, so the zip barely shrinks
  * them), while the intake this exists for (a 39 KB deck of twelve 3 MB
- * single-colour PNGs) carries 1200. Twice the file's own size therefore leaves
+ * single-color PNGs) carries 1200. Twice the file's own size therefore leaves
  * every honest document untouched and still refuses the bomb. There is no
  * count and no per-picture cap: the total already bounds any single picture,
  * and a smaller one would only drop the one big photograph a legitimate

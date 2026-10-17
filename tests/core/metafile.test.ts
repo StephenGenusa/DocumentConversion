@@ -264,7 +264,7 @@ describe('metafile records', () => {
     expect(fills(root)).toEqual(['#12a4b6', '#000000', '#ffffff'])
   })
 
-  it('a rectangle gradient: a linear gradient between its two vertex colours', () => {
+  it('a rectangle gradient: a linear gradient between its two vertex colors', () => {
     const { root } = emf((e) => e.gradientRect(0, 0, 0xff0000, 100, 100, 0x0000ff))
     const g = root.querySelector('linearGradient')!
     expect([g.getAttribute('x1'), g.getAttribute('x2'), g.getAttribute('y1'), g.getAttribute('y2')]).toEqual(['0', '100', '0', '0'])
@@ -291,9 +291,9 @@ describe('metafile records', () => {
     expect(fills(emf((e) => e.stock(8).stock(4).rectangle(1, 1, 9, 9)).root)).toEqual(['#000000'])
   })
 
-  it('a 1-bit DIB takes its own two colours; drawn by STRETCHDIBITS as a PNG', () => {
+  it('a 1-bit DIB takes its own two colors; drawn by STRETCHDIBITS as a PNG', () => {
     const r = drawn(drawMetafile(new EmfWriter({ width: 8, height: 8 }).stretchDIBits(0, 0, 8, 8, dib1(8, 8, (x: number) => x < 4)).bytes()))
-    // Set bits take the table's second colour (white), clear ones its first (black).
+    // Set bits take the table's second color (white), clear ones its first (black).
     expect(pngPixel(r.bitmap!.bytes, 0, 0)).toEqual([255, 255, 255])
     expect(pngPixel(r.bitmap!.bytes, 7, 7)).toEqual([0, 0, 0])
   })

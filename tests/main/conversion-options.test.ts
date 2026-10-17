@@ -13,7 +13,7 @@ describe('conversionOptions (settings + request)', () => {
     pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true },
     read: { transcriptTimestamps: false, sqliteViews: true },
     ocr: { language: 'deu' },
-    code: { colour: false },
+    code: { color: false },
     web: { fetchPictures: false, allowLocalNetwork: false },
   }).settings
 
@@ -26,7 +26,7 @@ describe('conversionOptions (settings + request)', () => {
       ocr: false,
       ocrLanguage: 'deu',
       read: { transcriptTimestamps: false, sqliteViews: true },
-      codeColour: false,
+      codeColor: false,
       web: { fetchPictures: false, allowLocalNetwork: false },
     })
   })
@@ -52,15 +52,15 @@ describe('conversionOptions (settings + request)', () => {
     expect(opts.read).toEqual({ transcriptTimestamps: true, sqliteViews: true, jsonAs: 'text' })
   })
 
-  it('picture format and code colour in a request are ignored: there are no such controls', () => {
-    const opts = conversionOptions(saved, { pictureFormat: 'jpeg', codeColour: true })
+  it('picture format and code color in a request are ignored: there are no such controls', () => {
+    const opts = conversionOptions(saved, { pictureFormat: 'jpeg', codeColor: true })
     expect(opts.pictureFormat).toBe('png')
-    expect(opts.codeColour).toBe(false)
+    expect(opts.codeColor).toBe(false)
   })
 
-  it('code is coloured and web pictures fetched, the intranet included, by default', () => {
+  it('code is colored and web pictures fetched, the intranet included, by default', () => {
     expect(conversionOptions(DEFAULT_SETTINGS, {})).toMatchObject({
-      codeColour: true,
+      codeColor: true,
       web: { fetchPictures: true, allowLocalNetwork: true },
     })
   })

@@ -899,7 +899,7 @@ function blockToHtml(block: Block): string {
  * its size on the page and its position, and so where it belongs in the text.
  *
  * Decoded pixels, not the embedded stream: pdfjs hands back raw RGB/RGBA (or
- * packed 1bpp) with the colour space already applied, which is why a CMYK JPEG
+ * packed 1bpp) with the color space already applied, which is why a CMYK JPEG
  * or an indexed PNG comes out right. Anything else — a stencil mask, an inline
  * image, an object that never resolved — is skipped rather than guessed at.
  */

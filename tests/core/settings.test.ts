@@ -30,7 +30,7 @@ describe('defaults', () => {
       pictures: { format: 'jpeg' },
       web: { fetchPictures: true, allowLocalNetwork: true },
       rendered: { format: 'svg' },
-      code: { colour: true },
+      code: { color: true },
       pdf: { pageSize: 'Letter', scale: 0.9, headerFooter: false },
       read: { transcriptTimestamps: true, sqliteViews: false },
       ocr: { language: 'eng' },
@@ -63,7 +63,7 @@ describe('parseSettings', () => {
       pictures: { format: 'png' },
       web: { fetchPictures: false, allowLocalNetwork: false },
       rendered: { format: 'png' },
-      code: { colour: false },
+      code: { color: false },
       pdf: { pageSize: 'A4', scale: 1.25, headerFooter: true },
       read: { transcriptTimestamps: false, sqliteViews: true },
       ocr: { language: 'deu' },
@@ -83,7 +83,7 @@ describe('parseSettings', () => {
     ['web.fetchPictures', 'yes'],
     ['web.allowLocalNetwork', 0],
     ['rendered.format', 'jpeg'],
-    ['code.colour', null],
+    ['code.color', null],
     ['pdf.pageSize', 'a4'],
     ['pdf.scale', 0],
     ['pdf.scale', 7],
@@ -100,7 +100,7 @@ describe('parseSettings', () => {
       pictures: { format: 'png' },
       web: { fetchPictures: false, allowLocalNetwork: false },
       rendered: { format: 'png' },
-      code: { colour: false },
+      code: { color: false },
       pdf: { pageSize: 'A3', scale: 1.5, headerFooter: true },
       read: { transcriptTimestamps: false, sqliteViews: true },
       ocr: { language: 'fra' },
@@ -120,10 +120,20 @@ describe('parseSettings', () => {
   })
 
   it('a section that is not an object falls back whole, the others are kept', () => {
-    const { settings, problems } = parseSettings({ pdf: 'A4', code: { colour: false } })
+    const { settings, problems } = parseSettings({ pdf: 'A4', code: { color: false } })
     expect(settings.pdf).toEqual(DEFAULT_SETTINGS.pdf)
-    expect(settings.code.colour).toBe(false)
+    expect(settings.code.color).toBe(false)
     expect(problems.map((p) => p.key)).toEqual(['pdf'])
+  })
+
+  it('reads the unreleased key code.colour as code.color, and drops it from the file', () => {
+    const legacy = parseSettings({ version: 1, code: { colour: false } })
+    expect(legacy.settings.code.color).toBe(false)
+    expect(legacy.problems).toEqual([])
+    expect(legacy.raw).toEqual({ version: 1, code: { color: false } })
+    const both = parseSettings({ code: { colour: false, color: true } })
+    expect(both.settings.code.color).toBe(true)
+    expect(both.raw).toEqual({ code: { color: true } })
   })
 
   it('a file that is not an object gives the defaults and says so', () => {
@@ -252,8 +262,8 @@ describe('checkSetting (what settings:set accepts)', () => {
     ['an inherited name', { key: 'pdf.constructor', value: 1 }],
     ['a prototype path', { key: '__proto__.polluted', value: true }],
     ['a bad value', { key: 'pdf.pageSize', value: 'B5' }],
-    ['a missing value', { key: 'code.colour' }],
-    ['a value of the wrong type', { key: 'code.colour', value: 'false' }],
+    ['a missing value', { key: 'code.color' }],
+    ['a value of the wrong type', { key: 'code.color', value: 'false' }],
   ])('refuses %s', (_name, req) => {
     expect(checkSetting(req)).toHaveProperty('refused')
   })
@@ -283,17 +293,17 @@ describe('withSetting and withoutSettings (what is written)', () => {
   })
 
   it('writes the current version into a file that had none, and keeps a newer one', () => {
-    expect(withSetting({}, 'code.colour', false)).toEqual({ version: 1, code: { colour: false } })
-    expect(withSetting({ version: 4 }, 'code.colour', false)).toEqual({ version: 4, code: { colour: false } })
+    expect(withSetting({}, 'code.color', false)).toEqual({ version: 1, code: { color: false } })
+    expect(withSetting({ version: 4 }, 'code.color', false)).toEqual({ version: 4, code: { color: false } })
   })
 
   it('resets one section, keeping its unknown keys', () => {
-    const raw = { version: 1, pdf: { pageSize: 'A4', margins: 'narrow' }, code: { colour: false } }
-    expect(withoutSettings(raw, 'pdf')).toEqual({ version: 1, pdf: { margins: 'narrow' }, code: { colour: false } })
+    const raw = { version: 1, pdf: { pageSize: 'A4', margins: 'narrow' }, code: { color: false } }
+    expect(withoutSettings(raw, 'pdf')).toEqual({ version: 1, pdf: { margins: 'narrow' }, code: { color: false } })
   })
 
   it('resets everything it knows, keeping what a newer app wrote', () => {
-    const raw = { version: 3, pdf: { pageSize: 'A4', margins: 'narrow' }, code: { colour: false }, theme: 'dark' }
+    const raw = { version: 3, pdf: { pageSize: 'A4', margins: 'narrow' }, code: { color: false }, theme: 'dark' }
     expect(withoutSettings(raw)).toEqual({ version: 3, pdf: { margins: 'narrow' }, theme: 'dark' })
   })
 
@@ -314,7 +324,7 @@ describe('mergeSettings (settings + request)', () => {
     pictures: { format: 'png' },
     web: { fetchPictures: false, allowLocalNetwork: false },
     rendered: { format: 'png' },
-    code: { colour: false },
+    code: { color: false },
     pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true },
     read: { transcriptTimestamps: false, sqliteViews: true },
     ocr: { language: 'deu' },
@@ -326,7 +336,7 @@ describe('mergeSettings (settings + request)', () => {
       fetchPictures: false,
       allowLocalNetwork: false,
       renderedFormat: 'png',
-      codeColour: false,
+      codeColor: false,
       pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: false },
       read: { transcriptTimestamps: false, sqliteViews: true },
       ocrLanguage: 'deu',
@@ -360,9 +370,9 @@ describe('mergeSettings (settings + request)', () => {
       pictureFormat: 'jpeg',
       fetchPictures: true,
       allowLocalNetwork: true,
-      codeColour: true,
+      codeColor: true,
     } as Record<string, unknown>)
-    expect(merged).toMatchObject({ pictureFormat: 'png', fetchPictures: false, allowLocalNetwork: false, codeColour: false })
+    expect(merged).toMatchObject({ pictureFormat: 'png', fetchPictures: false, allowLocalNetwork: false, codeColor: false })
   })
 
   it('ignores a request value that is not valid, and keeps the setting', () => {
@@ -396,7 +406,7 @@ describe('mergeSettings (settings + request)', () => {
       fetchPictures: true,
       allowLocalNetwork: true,
       renderedFormat: 'svg',
-      codeColour: true,
+      codeColor: true,
       pdf: { pageSize: 'Letter', scale: 0.9, headerFooter: false, landscape: false },
       read: { transcriptTimestamps: true, sqliteViews: false },
       ocrLanguage: 'eng',

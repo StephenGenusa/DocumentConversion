@@ -39,16 +39,16 @@ describe('the AZW4 writer', () => {
   })
 
   /*
-   * Colour alone is not enough here. A reader that cannot show the fixed page
+   * Color alone is not enough here. A reader that cannot show the fixed page
    * rebuilds text from it, and Calibre's viewer does exactly that: its AZW4
-   * input reflows the embedded PDF (pdftohtml -xml), reads each run's colour
+   * input reflows the embedded PDF (pdftohtml -xml), reads each run's color
    * and never writes it out, so every AZW4 is black and white there. Bold and
    * italic survive (they come from the font names), so the page carries the
    * e-reader palette, whose keywords are bold and comments italic, as the
-   * epub and AZW3 do. That the embedded PDF really is coloured is checked on
+   * epub and AZW3 do. That the embedded PDF really is colored is checked on
    * the real render, in tests/e2e/matrix.cjs.
    */
-  it('colours code with the e-reader palette, so keywords stay bold when a reader reflows it', async () => {
+  it('colors code with the e-reader palette, so keywords stay bold when a reader reflows it', async () => {
     let page = ''
     await createAzw4Writer(async (html) => {
       page = html

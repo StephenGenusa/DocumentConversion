@@ -8,7 +8,7 @@ import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import type { Extensions } from '@tiptap/core'
 import { RenderedBlocks, blockNodeView, inlineNodeView } from './block-views'
-import { CodeColour } from './code-colour'
+import { CodeColor } from './code-color'
 
 /**
  * The editor schema must model everything the hub sanitizer passes
@@ -272,6 +272,6 @@ export const EDITOR_EXTENSIONS: Extensions = [
   MathBlock,
   MathInline,
   RenderedBlocks,
-  // Colours ordinary code blocks only; diagrams and formulas are nodes of their own.
-  CodeColour,
+  // Colors ordinary code blocks only; diagrams and formulas are nodes of their own.
+  CodeColor,
 ]

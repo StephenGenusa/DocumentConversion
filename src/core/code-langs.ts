@@ -96,7 +96,7 @@ const EXT_TO_LANG = new Map<string, string>(
     diff: 'diff',
     patch: 'diff',
     // .m is deliberately absent: it is Objective-C and MATLAB both, and a
-    // guess prints one of them in the other's colours.
+    // guess prints one of them in the other's colors.
   }),
 )
 

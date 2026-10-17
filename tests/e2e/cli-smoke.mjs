@@ -287,7 +287,7 @@ const otherSettings = settingsFile('other-settings.json', {
   version: 1,
   pictures: { format: 'png' },
   pdf: { pageSize: 'A4' },
-  code: { colour: false },
+  code: { color: false },
   ocr: { language: 'deu' },
   rendered: { format: 'gif' },
 })
@@ -419,7 +419,7 @@ if (!intranetIp) {
 // over a settings file that turned it off.
 const code = join(work, 'code.md')
 writeFileSync(code, '# Code\n\n```js\nconst answer = 42\n```\n')
-const plainSettings = settingsFile('plain-code-settings.json', { version: 1, code: { colour: false } })
+const plainSettings = settingsFile('plain-code-settings.json', { version: 1, code: { color: false } })
 run('code colored by default', [code, '--to', 'html', '--out', join(work, 'code.html')], { expectCode: 0 })
 run('--no-code-color', [code, '--to', 'html', '--no-code-color', '--out', join(work, 'code-plain.html')], { expectCode: 0 })
 run('--settings with code color off', [code, '--to', 'html', '--settings', plainSettings, '--out', join(work, 'code-file.html')], { expectCode: 0 })

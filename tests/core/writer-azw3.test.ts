@@ -111,7 +111,7 @@ describe('the AZW3 writer', () => {
     expect(ch.html).not.toContain('font-family')
   })
 
-  it('keeps code colouring: hljs spans in the text, the palette in the CSS', async () => {
+  it('keeps code coloring: hljs spans in the text, the palette in the CSS', async () => {
     const html =
       '<h1>Code</h1><pre><code class="language-python">def total(items):\n    # add them up\n    return sum(items)</code></pre>' +
       '<pre><code class="language-javascript">const x = 1 // one</code></pre>'

@@ -29,10 +29,10 @@ const RECORD_SIZE = 4096
 
 export function createAzw4Writer(render: RenderHtmlToPdf) {
   /*
-   * The page is coloured, but a reader that cannot show a fixed page rebuilds
+   * The page is colored, but a reader that cannot show a fixed page rebuilds
    * text from it, and keeps bold and italic (they come from the font names)
-   * but not colour. Calibre's viewer is one: its AZW4 input reflows the PDF
-   * through pdftohtml -xml, reads each run's colour and never writes it out,
+   * but not color. Calibre's viewer is one: its AZW4 input reflows the PDF
+   * through pdftohtml -xml, reads each run's color and never writes it out,
    * so every AZW4 is black and white there. The e-reader palette, as in the
    * epub and AZW3, makes keywords bold and comments italic, so the code still
    * reads as code in such a view.

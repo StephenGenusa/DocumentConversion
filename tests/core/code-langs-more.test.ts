@@ -7,7 +7,7 @@ import { writeHtml } from '../../src/core/writers/html'
 
 const read = (text: string, filename: string) => readCode({ bytes: Buffer.from(text, 'utf8'), filename })
 
-describe('more languages print with colour', () => {
+describe('more languages print with color', () => {
   // In highlight.js/lib/common: nothing to register.
   const common: Record<string, string> = {
     'a.php': 'php', 'a.phtml': 'php', 'a.swift': 'swift', 'a.lua': 'lua', 'a.pl': 'perl', 'a.pm': 'perl',

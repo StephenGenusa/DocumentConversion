@@ -80,7 +80,7 @@ const sp = (s: string): string => s.replace(/ /g, '&#32;')
 
 const SOURCES: Record<string, { html: string; plain: string }> = {
   'plain text (terminal, Notepad, a .py in a plain editor)': { html: '', plain: PY },
-  'VS Code: a div per line, coloured spans': {
+  'VS Code: a div per line, colored spans': {
     html: `<meta charset='utf-8'><div style="color: #d4d4d4;background-color: #1e1e1e;font-family: Consolas, 'Courier New', monospace;white-space: pre;">${spans(PY, (i) => (i % 2 ? 'color: #569cd6;' : 'color: #d4d4d4;'))}</div>`,
     plain: PY,
   },
@@ -88,7 +88,7 @@ const SOURCES: Record<string, { html: string; plain: string }> = {
     html: `<div style="color: #000000;background-color: #fffffe;font-family: monospace;white-space: pre;">${spans(PY, () => 'color: #0000ff;')}</div>`,
     plain: PY,
   },
-  'JetBrains: one <pre> with coloured spans and no language': {
+  'JetBrains: one <pre> with colored spans and no language': {
     html: `<html><head><meta charset="utf-8"></head><body><pre style="background-color:#2b2b2b;color:#a9b7c6;font-family:'JetBrains Mono',monospace;">${escaped(PY)
       .split('\n')
       .map((l) => l.replace(/\b(def|import|for|in|if|return)\b/g, '<span style="color:#cc7832;">$1</span>'))
@@ -98,7 +98,7 @@ const SOURCES: Record<string, { html: string; plain: string }> = {
   // The owner's source. PyCharm's "Copy as rich text" (on by default): one
   // <pre> styled inline, newlines in the text, keywords in spans that carry
   // their trailing space, and no language named anywhere.
-  'PyCharm: rich-text copy, Darcula colours as inline styles': {
+  'PyCharm: rich-text copy, Darcula colors as inline styles': {
     html: `<html><head><meta http-equiv="content-type" content="text/html; charset=UTF-8"></head><body><pre style="background-color:#2b2b2b;color:#a9b7c6;font-family:'JetBrains Mono',monospace;font-size:9.8pt;">${escaped(PY)
       .replace(/^# .*$/m, (c) => `<span style="color:#7a7e85;">${c}</span>`)
       .replace(/\b(def|import|for|in|if|return) /g, '<span style="color:#cc7832;">$1 </span>')
@@ -259,7 +259,7 @@ describe('guessing a language', () => {
     expect(guessCodeLanguages(decided)).toBe(decided)
   })
 
-  it('a .txt file stays a listing without colour', async () => {
+  it('a .txt file stays a listing without color', async () => {
     const out = await conv.convert({ bytes: Buffer.from(PY), filename: 'notes.txt' }, 'txt', 'html')
     expect(text(out)).not.toContain('hljs')
   })
@@ -315,7 +315,7 @@ describe('Word', () => {
   const docXml = async (html: string): Promise<string> =>
     (await JSZip.loadAsync(await writeDocx({ html }))).file('word/document.xml')!.async('string')
 
-  it('colours highlighted code by run, line by line, without touching the formatting stand-in', async () => {
+  it('colors highlighted code by run, line by line, without touching the formatting stand-in', async () => {
     const xml = await docXml(`<pre><code class="language-python">${escaped(PY)}</code></pre>`)
     expect(xml).toMatch(/<w:color w:val="cf222e"\/>/i) // keywords
     expect(xml).toMatch(/<w:color w:val="59636e"\/>/i) // the comment
@@ -326,13 +326,13 @@ describe('Word', () => {
     expect(read).toBe(PY.replace(/>/g, '&gt;'))
   })
 
-  it('keeps Courier on a coloured block inside a list item', async () => {
+  it('keeps Courier on a colored block inside a list item', async () => {
     const xml = await docXml(`<ul><li><p>Step:</p><pre><code class="language-python">def f():\n    return 1</code></pre></li></ul>`)
     const run = /<w:rPr>(?:(?!<\/w:rPr>)[\s\S])*cf222e(?:(?!<\/w:rPr>)[\s\S])*<\/w:rPr>/i.exec(xml)?.[0]
     expect(run).toContain('w:ascii="Courier"')
   })
 
-  it('leaves an unknown or plaintext block uncoloured', async () => {
+  it('leaves an unknown or plaintext block uncolored', async () => {
     const xml = await docXml('<pre><code class="language-plaintext">def f():\n    return 1</code></pre>')
     expect(xml).not.toMatch(/cf222e/i)
   })

@@ -73,7 +73,7 @@ const EOF_RECORD = Buffer.from([0xe9, 0x8e, 0x0d, 0x0a])
 
 export async function writeAzw3(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
   const html = kindleFallback(doc.html)
-  const epub = await writeEpub(html === doc.html ? doc : { ...doc, html }, { notes: 'plain', codeColour: opts?.codeColour })
+  const epub = await writeEpub(html === doc.html ? doc : { ...doc, html }, { notes: 'plain', codeColor: opts?.codeColor })
   const zip = await JSZip.loadAsync(epub)
   const resources = await resourcesOf(zip)
 
@@ -102,7 +102,7 @@ export async function writeAzw3(doc: HubDocument, opts?: ConvertOptions): Promis
   /*
    * The EPUB's stylesheet is the book's second flow (FDST entry 1), linked
    * from each skeleton's head the way kindlegen does. Before it was, every
-   * rule in style.css - code colouring among them - never reached the book.
+   * rule in style.css - code coloring among them - never reached the book.
    */
   const css = (await zip.file('OEBPS/style.css')?.async('string')) ?? ''
   const SKEL_OPEN = css

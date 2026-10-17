@@ -7,32 +7,32 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import hljs, { HLJS_CSS } from '../../../core/hljs'
 
 /**
- * Code blocks coloured while they are edited, by the same highlight.js and the
+ * Code blocks colored while they are edited, by the same highlight.js and the
  * same palette as the pdf and html outputs (core/hljs.ts), so the pane looks
- * like the printed page. The colours are decorations: they are drawn, never
+ * like the printed page. The colors are decorations: they are drawn, never
  * part of the document, so what the editor saves is unchanged.
  *
- * Only a block with a language highlight.js knows is coloured; no language or
+ * Only a block with a language highlight.js knows is colored; no language or
  * `plaintext` stays plain, as in the outputs (the guess is made at intake).
  *
  * Cost: one keystroke re-highlights only the block it touched, and every other
- * block's colours are mapped through the change. A block too big to
- * highlight inside a keystroke keeps its mapped colours while typing and is
- * re-highlighted once typing pauses. A re-highlight replaces only the colours
+ * block's colors are mapped through the change. A block too big to
+ * highlight inside a keystroke keeps its mapped colors while typing and is
+ * re-highlighted once typing pauses. A re-highlight replaces only the colors
  * that changed: the rest stay the same decorations, so the view redraws the
  * edited line, not every span of the block.
  */
 
-/** A code block of this many lines or more is not coloured (plain monospace, as before). */
-export const COLOUR_LINE_LIMIT = 6000
-/** Blocks up to this many characters are re-coloured on the keystroke; bigger ones after a pause. */
-export const SYNC_COLOUR_CHARS = 20_000
-/** How long typing must pause before a big block is re-coloured. */
-export const COLOUR_PAUSE_MS = 250
+/** A code block of this many lines or more is not colored (plain monospace, as before). */
+export const COLOR_LINE_LIMIT = 6000
+/** Blocks up to this many characters are re-colored on the keystroke; bigger ones after a pause. */
+export const SYNC_COLOR_CHARS = 20_000
+/** How long typing must pause before a big block is re-colored. */
+export const COLOR_PAUSE_MS = 250
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
-    codeColour: {
+    codeColor: {
       /** The language of the code block at the cursor; '' for plain text. One undo step. */
       setCodeLanguage: (language: string) => ReturnType
       /** Focus the language picker of the code block at the cursor. */
@@ -41,7 +41,7 @@ declare module '@tiptap/core' {
   }
 }
 
-/** The highlight.js language for a block's `language` attr, or null when it is not coloured. */
+/** The highlight.js language for a block's `language` attr, or null when it is not colored. */
 function grammarOf(language: unknown): string | null {
   if (typeof language !== 'string' || !language) return null
   const lang = hljs.getLanguage(language)
@@ -54,7 +54,7 @@ const canonical = new Map(hljs.listLanguages().map((name) => [hljs.getLanguage(n
 
 const ENTITY = /&(?:amp|lt|gt|quot|#x27);/g
 
-/** Each coloured stretch of `code`, as [from, to, classes] offsets into it. */
+/** Each colored stretch of `code`, as [from, to, classes] offsets into it. */
 function tokens(code: string, language: string): [number, number, string][] {
   const { value } = hljs.highlight(code, { language, ignoreIllegals: true })
   const out: [number, number, string][] = []
@@ -83,47 +83,47 @@ function lineCountReaches(text: string, limit: number): boolean {
   return n >= limit
 }
 
-/** What colouring a block gets now: none, on the keystroke, or after the pause. */
+/** What coloring a block gets now: none, on the keystroke, or after the pause. */
 function plan(node: PMNode): { language: string; now: boolean } | null {
   const language = grammarOf(node.attrs.language)
   if (!language) return null
   const text = node.textContent
-  if (lineCountReaches(text, COLOUR_LINE_LIMIT)) return null
-  return { language, now: text.length <= SYNC_COLOUR_CHARS }
+  if (lineCountReaches(text, COLOR_LINE_LIMIT)) return null
+  return { language, now: text.length <= SYNC_COLOR_CHARS }
 }
 
-interface ColourState {
+interface ColorState {
   decorations: DecorationSet
   /** Start positions of big blocks waiting for the pause. */
   waiting: number[]
 }
 
-const key = new PluginKey<ColourState>('codeColour')
+const key = new PluginKey<ColorState>('codeColor')
 
 function isCodeBlock(node: PMNode): boolean {
   return node.type.name === 'codeBlock'
 }
 
 /**
- * Above this many stale colours a block's decorations are rebuilt with the
+ * Above this many stale colors a block's decorations are rebuilt with the
  * rest of the set rather than removed one by one: DecorationSet.remove looks
  * each one up in the block's list, which is quadratic in a big block.
  */
 const REMOVE_ONE_BY_ONE = 64
 
 /*
- * A colour takes in what is typed at its end (and, first in its block, at its
- * start). Typed text then always lands inside a coloured or a plain stretch
+ * A color takes in what is typed at its end (and, first in its block, at its
+ * start). Typed text then always lands inside a colored or a plain stretch
  * that is already drawn, never in a new stretch of its own between two
- * colours: ProseMirror matches a block's stretches in order, so one new
+ * colors: ProseMirror matches a block's stretches in order, so one new
  * stretch had it rewrite every span after it, the whole rest of the block.
  */
-function colour(from: number, to: number, cls: string, first: boolean): Decoration {
-  return Decoration.inline(from, to, { class: cls }, { colour: cls, inclusiveStart: first, inclusiveEnd: true })
+function color(from: number, to: number, cls: string, first: boolean): Decoration {
+  return Decoration.inline(from, to, { class: cls }, { color: cls, inclusiveStart: first, inclusiveEnd: true })
 }
 
-/** Re-colour the code block at `pos`, or queue it, replacing what it had. */
-function recolour(state: ColourState, doc: PMNode, pos: number, node: PMNode, force: boolean): ColourState {
+/** Re-color the code block at `pos`, or queue it, replacing what it had. */
+function recolor(state: ColorState, doc: PMNode, pos: number, node: PMNode, force: boolean): ColorState {
   const p = plan(node)
   let { decorations, waiting } = state
   waiting = waiting.filter((w) => w !== pos)
@@ -136,12 +136,12 @@ function recolour(state: ColourState, doc: PMNode, pos: number, node: PMNode, fo
     decorations = decorations.add(doc, [pickerWidget(pos, node.attrs.language)])
   }
   if (p && !p.now && !force) {
-    // Keep the mapped colours up until the pause.
+    // Keep the mapped colors up until the pause.
     return { decorations, waiting: [...waiting, pos] }
   }
-  // Only the colours that changed are replaced. The rest, mapped through the
+  // Only the colors that changed are replaced. The rest, mapped through the
   // edit, are kept as they are: the same objects, so the view leaves their
-  // spans alone and a re-colour after the pause redraws a line, not the block.
+  // spans alone and a re-color after the pause redraws a line, not the block.
   const old = decorations.find(pos, end, (spec) => spec.picker !== true).sort((x, y) => x.from - y.from || x.to - y.to)
   const fresh = p ? tokens(node.textContent, p.language) : []
   const stale: Decoration[] = []
@@ -152,14 +152,14 @@ function recolour(state: ColourState, doc: PMNode, pos: number, node: PMNode, fo
     const b = pos + 1 + to
     while (i < old.length && (old[i].from < a || (old[i].from === a && old[i].to < b))) stale.push(old[i++])
     const d = old[i]
-    if (d && d.from === a && d.to === b && d.spec.colour === cls && (d.spec.inclusiveStart === true) === (from === 0)) i++
-    else added.push(colour(a, b, cls, from === 0))
+    if (d && d.from === a && d.to === b && d.spec.color === cls && (d.spec.inclusiveStart === true) === (from === 0)) i++
+    else added.push(color(a, b, cls, from === 0))
   }
   while (i < old.length) stale.push(old[i++])
   if (stale.length > REMOVE_ONE_BY_ONE) {
-    // The block's colours afresh, beside everything else as it was.
+    // The block's colors afresh, beside everything else as it was.
     const others = decorations.find().filter((d) => d.spec.picker === true || d.to <= pos || d.from >= end)
-    const all = fresh.map(([from, to, cls]) => colour(pos + 1 + from, pos + 1 + to, cls, from === 0))
+    const all = fresh.map(([from, to, cls]) => color(pos + 1 + from, pos + 1 + to, cls, from === 0))
     decorations = DecorationSet.create(doc, [...others, ...all])
   } else {
     if (stale.length) decorations = decorations.remove(stale)
@@ -268,19 +268,19 @@ function touched(tr: Transaction): number[] {
   return [...found]
 }
 
-function initial(doc: PMNode): ColourState {
-  let state: ColourState = { decorations: DecorationSet.empty, waiting: [] }
+function initial(doc: PMNode): ColorState {
+  let state: ColorState = { decorations: DecorationSet.empty, waiting: [] }
   doc.descendants((node, pos) => {
-    if (isCodeBlock(node)) state = recolour(state, doc, pos, node, false)
+    if (isCodeBlock(node)) state = recolor(state, doc, pos, node, false)
     return !node.isTextblock
   })
   return state
 }
 
-function apply(tr: Transaction, value: ColourState): ColourState {
+function apply(tr: Transaction, value: ColorState): ColorState {
   const flush = tr.getMeta(key) === 'flush'
   if (!tr.docChanged && !flush) return value
-  let state: ColourState = value
+  let state: ColorState = value
   if (tr.docChanged) {
     const waiting: number[] = []
     for (const w of value.waiting) {
@@ -288,12 +288,12 @@ function apply(tr: Transaction, value: ColourState): ColourState {
       if (!r.deleted) waiting.push(r.pos)
     }
     state = { decorations: value.decorations.map(tr.mapping, tr.doc), waiting }
-    for (const pos of touched(tr)) state = recolour(state, tr.doc, pos, tr.doc.nodeAt(pos)!, false)
+    for (const pos of touched(tr)) state = recolor(state, tr.doc, pos, tr.doc.nodeAt(pos)!, false)
   }
   if (flush) {
     for (const pos of state.waiting) {
       const node = tr.doc.nodeAt(pos)
-      if (node && isCodeBlock(node)) state = recolour(state, tr.doc, pos, node, true)
+      if (node && isCodeBlock(node)) state = recolor(state, tr.doc, pos, node, true)
     }
     state = { ...state, waiting: [] }
   }
@@ -302,15 +302,15 @@ function apply(tr: Transaction, value: ColourState): ColourState {
 
 /** The palette, once per page: the same rules the pdf and html shell print. */
 function addStyles(doc: Document): void {
-  if (doc.getElementById('code-colour-css')) return
+  if (doc.getElementById('code-color-css')) return
   const style = doc.createElement('style')
-  style.id = 'code-colour-css'
+  style.id = 'code-color-css'
   style.textContent = HLJS_CSS
   doc.head.append(style)
 }
 
-export const CodeColour = Extension.create({
-  name: 'codeColour',
+export const CodeColor = Extension.create({
+  name: 'codeColor',
   addCommands() {
     return {
       setCodeLanguage:
@@ -346,7 +346,7 @@ export const CodeColour = Extension.create({
     return { 'Mod-Alt-l': () => this.editor.commands.focusCodeLanguage() }
   },
   addProseMirrorPlugins: () => [
-    new Plugin<ColourState>({
+    new Plugin<ColorState>({
       key,
       state: {
         init: (_config, state: EditorState) => initial(state.doc),
@@ -369,7 +369,7 @@ export const CodeColour = Extension.create({
           timer = setTimeout(() => {
             timer = undefined
             if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(key, 'flush').setMeta('addToHistory', false))
-          }, COLOUR_PAUSE_MS)
+          }, COLOR_PAUSE_MS)
         }
         schedule(view.state)
         return {

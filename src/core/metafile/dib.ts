@@ -4,7 +4,7 @@ import { encodePng } from './png'
 
 /*
  * The bitmaps a metafile carries: device-independent bitmaps (DIBs: a
- * BITMAPINFOHEADER or BITMAPCOREHEADER, a colour table, then the pixels)
+ * BITMAPINFOHEADER or BITMAPCOREHEADER, a color table, then the pixels)
  * and GDI+ bitmaps. Each is decoded to RGBA and written as a PNG for the
  * SVG, except a DIB that is a JPEG or PNG already (BI_JPEG, BI_PNG), which
  * is kept as it is. Sizes are checked before anything is allocated: a side
@@ -51,11 +51,11 @@ export class Budget {
 
 export interface DibOptions {
   budget: Budget
-  /** DIB_RGB_COLORS (0, the default) or DIB_PAL_COLORS (1: the colour table holds indexes into `palette`). */
+  /** DIB_RGB_COLORS (0, the default) or DIB_PAL_COLORS (1: the color table holds indexes into `palette`). */
   usage?: number
   /** The logical palette selected (0xRRGGBB each), for DIB_PAL_COLORS. */
   palette?: readonly number[]
-  /** A two-colour bitmap's colours instead of its own (a monochrome brush: text colour, background colour). */
+  /** A two-color bitmap's colors instead of its own (a monochrome brush: text color, background color). */
   mono?: readonly [number, number]
   /** Keep a 32-bit bitmap's alpha (AlphaBlend with AC_SRC_ALPHA); otherwise GDI ignores it. */
   keepAlpha?: boolean
@@ -70,7 +70,7 @@ interface DibHeader {
   compression: number
   clrUsed: number
   masks: number[] | null
-  /** Where the colour table starts, from the header's start. */
+  /** Where the color table starts, from the header's start. */
   tableAt: number
   core: boolean
 }
@@ -117,14 +117,14 @@ function readHeader(h: View): DibHeader | null {
   }
 }
 
-/** Entries in the colour table. */
+/** Entries in the color table. */
 function tableEntries(d: DibHeader): number {
   if (d.bpp > 8) return 0
   const max = 1 << d.bpp
   return d.clrUsed > 0 ? Math.min(d.clrUsed, max) : max
 }
 
-/** The colour table's size in bytes, as the header lays it out (with DIB_PAL_COLORS, 2 bytes an entry). */
+/** The color table's size in bytes, as the header lays it out (with DIB_PAL_COLORS, 2 bytes an entry). */
 function tableBytes(d: DibHeader, usage: number): number {
   if (d.bpp > 8) return d.clrUsed > 0 && !d.core ? d.clrUsed * 4 : 0
   return tableEntries(d) * (usage === 1 ? 2 : d.core ? 3 : 4)
@@ -137,7 +137,7 @@ export function packedBitsOffset(dib: View, usage = 0): number | null {
   return d.tableAt + tableBytes(d, usage)
 }
 
-function colours(h: View, d: DibHeader, opts: DibOptions): number[] {
+function colors(h: View, d: DibHeader, opts: DibOptions): number[] {
   const n = tableEntries(d)
   const out: number[] = []
   if (opts.mono && d.bpp === 1) return [opts.mono[0], opts.mono[1]]
@@ -208,7 +208,7 @@ function decodeRle(bits: View, width: number, height: number, four: boolean): In
 }
 
 /**
- * A DIB: its header and colour table in `info`, its pixels in `bits`.
+ * A DIB: its header and color table in `info`, its pixels in `bits`.
  * Decoded to RGBA (a Raster), or kept as it is when it is a JPEG or PNG
  * (a Picture). Null when it cannot be read or is over the limits.
  */
@@ -229,7 +229,7 @@ export function readDib(info: View, bits: View, opts: DibOptions): Raster | Pict
   if (!opts.budget.take(d.width, d.height)) return null
   const { width, height } = d
   const rgba = new Uint8Array(width * height * 4).fill(255)
-  const table = d.bpp <= 8 ? colours(info, d, opts) : []
+  const table = d.bpp <= 8 ? colors(info, d, opts) : []
   let alpha = false
   const put = (x: number, fileRow: number, rgb: number, a = 255): void => {
     const y = d.topDown ? fileRow : height - 1 - fileRow
@@ -324,7 +324,7 @@ export function crop(r: Raster, x: number, y: number, w: number, h: number): Ras
   return { width: w, height: h, rgba: out, alpha: r.alpha }
 }
 
-/** Premultiplied colour (AlphaBlend's source) back to straight colour. */
+/** Premultiplied color (AlphaBlend's source) back to straight color. */
 export function unpremultiply(r: Raster): void {
   const p = r.rgba
   for (let i = 0; i < p.length; i += 4) {
@@ -336,7 +336,7 @@ export function unpremultiply(r: Raster): void {
   }
 }
 
-/** Every pixel of colour `rgb` made transparent (TransparentBlt). */
+/** Every pixel of color `rgb` made transparent (TransparentBlt). */
 export function keyOut(r: Raster, rgb: number): void {
   const p = r.rgba
   const red = (rgb >> 16) & 0xff

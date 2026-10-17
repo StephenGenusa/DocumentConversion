@@ -63,8 +63,8 @@ const onDisk = async (): Promise<unknown> => JSON.parse(await readFile(file, 'ut
 describe('the file', () => {
   it('is settings.json in the folder given (userData)', async () => {
     const store = open()
-    await store.set({ key: 'code.colour', value: false })
-    expect(await onDisk()).toEqual({ version: 1, code: { colour: false } })
+    await store.set({ key: 'code.color', value: false })
+    expect(await onDisk()).toEqual({ version: 1, code: { color: false } })
   })
 
   it('is pretty-printed UTF-8 JSON, ending in a newline', async () => {
@@ -119,8 +119,8 @@ describe('the file', () => {
   it('creates the folder if it is not there yet', async () => {
     const nested = join(dir, 'not', 'yet')
     const store = track(openSettings({ dir: nested, region: () => 'US', ocrInstalled: () => true }))
-    await store.set({ key: 'code.colour', value: false })
-    expect(JSON.parse(await readFile(join(nested, SETTINGS_FILE), 'utf8'))).toEqual({ version: 1, code: { colour: false } })
+    await store.set({ key: 'code.color', value: false })
+    expect(JSON.parse(await readFile(join(nested, SETTINGS_FILE), 'utf8'))).toEqual({ version: 1, code: { color: false } })
   })
 
   it('writes one change after another, never two at once, and each sees the last', async () => {
@@ -128,9 +128,9 @@ describe('the file', () => {
     await Promise.all([
       store.set({ key: 'pdf.pageSize', value: 'A4' }),
       store.set({ key: 'pdf.scale', value: 1.25 }),
-      store.set({ key: 'code.colour', value: false }),
+      store.set({ key: 'code.color', value: false }),
     ])
-    expect(await onDisk()).toEqual({ version: 1, pdf: { pageSize: 'A4', scale: 1.25 }, code: { colour: false } })
+    expect(await onDisk()).toEqual({ version: 1, pdf: { pageSize: 'A4', scale: 1.25 }, code: { color: false } })
   })
 })
 
@@ -232,12 +232,12 @@ describe('a bad file', () => {
   })
 
   it('with one bad value keeps the file and every other value, and tells no one', async () => {
-    const text = JSON.stringify({ version: 1, pdf: { pageSize: 'B5', scale: 1.25 }, code: { colour: false } })
+    const text = JSON.stringify({ version: 1, pdf: { pageSize: 'B5', scale: 1.25 }, code: { color: false } })
     await writeFile(file, text)
     const store = open()
     await store.flushed()
     expect(store.get().pdf).toEqual({ pageSize: 'Letter', scale: 1.25, headerFooter: false })
-    expect(store.get().code.colour).toBe(false)
+    expect(store.get().code.color).toBe(false)
     expect(store.takeNotice()).toBeUndefined()
     expect(store.problems().map((p) => p.key)).toEqual(['pdf.pageSize'])
     expect(await readFile(file, 'utf8')).toBe(text)
@@ -257,7 +257,7 @@ describe('a bad file', () => {
     await writeFile(file, JSON.stringify({ version: 1, pdf: { pageSize: 'A3' } }))
     const store = open()
     expect(store.get().pdf.pageSize).toBe('A3')
-    await store.set({ key: 'code.colour', value: false })
+    await store.set({ key: 'code.color', value: false })
     expect(await readdir(dir)).toEqual(['settings.json'])
   })
 })
@@ -270,12 +270,12 @@ describe('keeping what this app does not know', () => {
     )
     const store = open()
     expect(store.get().pdf.pageSize).toBe('A4')
-    await store.set({ key: 'code.colour', value: false })
+    await store.set({ key: 'code.color', value: false })
     expect(await onDisk()).toEqual({
       version: 3,
       appearance: { theme: 'dark' },
       pdf: { pageSize: 'A4', margins: 'narrow' },
-      code: { colour: false },
+      code: { color: false },
     })
     await store.reset({})
     expect(await onDisk()).toEqual({ version: 3, appearance: { theme: 'dark' }, pdf: { margins: 'narrow' } })
@@ -322,12 +322,12 @@ describe('set', () => {
     const store = open()
     await store.flushed()
     const heard: unknown[] = []
-    const stop = store.onChange(async (s) => heard.push([s.code.colour, await onDisk()]))
-    await store.set({ key: 'code.colour', value: false })
+    const stop = store.onChange(async (s) => heard.push([s.code.color, await onDisk()]))
+    await store.set({ key: 'code.color', value: false })
     await new Promise((r) => setTimeout(r, 10))
-    expect(heard).toEqual([[false, { version: 1, code: { colour: false } }]])
+    expect(heard).toEqual([[false, { version: 1, code: { color: false } }]])
     stop()
-    await store.set({ key: 'code.colour', value: true })
+    await store.set({ key: 'code.color', value: true })
     expect(heard).toHaveLength(1)
   })
 
@@ -388,11 +388,11 @@ describe('reset', () => {
   it('one section removes its keys and leaves the others', async () => {
     const store = open()
     await store.set({ key: 'pdf.pageSize', value: 'A4' })
-    await store.set({ key: 'code.colour', value: false })
+    await store.set({ key: 'code.color', value: false })
     const result = await store.reset({ section: 'pdf' })
     expect(result).toMatchObject({ ok: true })
     expect(store.get().pdf.pageSize).toBe('Letter')
-    expect(await onDisk()).toEqual({ version: 1, code: { colour: false } })
+    expect(await onDisk()).toEqual({ version: 1, code: { color: false } })
   })
 
   it('all of them, with no section given', async () => {

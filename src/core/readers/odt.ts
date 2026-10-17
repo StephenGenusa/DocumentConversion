@@ -60,7 +60,7 @@ export function renderOdfTable(tableXml: string): string | null {
 
 /**
  * OpenDocument text. Content-focused like the rest of the app: headings,
- * paragraphs, lists, tables and inline formatting survive; fonts, colours and
+ * paragraphs, lists, tables and inline formatting survive; fonts, colors and
  * page layout do not.
  */
 export async function readOdt(src: SourceInput): Promise<HubDocument> {

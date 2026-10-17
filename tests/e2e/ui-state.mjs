@@ -571,16 +571,16 @@ try {
   await waitFor(`!!${EDITOR}`, 'the edit pane')
   const pastedCode = await js(`${EDITOR}.editor.getHTML()`)
   check('pasted Python opens as one Python code block, not a heading', /^<pre><code class="language-python"># Totals/.test(pastedCode) && !pastedCode.includes('<h1'), pastedCode.slice(0, 200))
-  // Coloured in the pane too, in the outputs' palette (lib/code-colour.ts).
-  await waitFor(`!!document.querySelector('.clip-pane__editor pre .hljs-keyword')`, 'the pasted Python to be coloured')
-  const tokenColours = () => js(`(() => {
+  // Colored in the pane too, in the outputs' palette (lib/code-color.ts).
+  await waitFor(`!!document.querySelector('.clip-pane__editor pre .hljs-keyword')`, 'the pasted Python to be colored')
+  const tokenColors = () => js(`(() => {
     const pre = document.querySelector('.clip-pane__editor pre')
     const kw = [...pre.querySelectorAll('.hljs-keyword')].find((s) => s.textContent === 'def')
     return { keyword: kw ? getComputedStyle(kw).color : null, plain: getComputedStyle(pre.querySelector('code') ?? pre).color, spans: pre.querySelectorAll('[class*="hljs-"]').length }
   })()`)
-  const colours = await tokenColours()
-  check('the pane colours the pasted Python: a keyword is not the colour of plain text', colours.keyword === 'rgb(207, 34, 46)' && colours.plain !== colours.keyword, JSON.stringify(colours))
-  // The language picker: Plain text takes the colours off and the class out; back to Python puts both back.
+  const colors = await tokenColors()
+  check('the pane colors the pasted Python: a keyword is not the color of plain text', colors.keyword === 'rgb(207, 34, 46)' && colors.plain !== colors.keyword, JSON.stringify(colors))
+  // The language picker: Plain text takes the colors off and the class out; back to Python puts both back.
   const pastedHtml = await js(`${EDITOR}.editor.getHTML()`)
   if (process.env.UI_SHOTS) {
     // A JavaScript block beside it, for the picture only; the pane is put back after.
@@ -596,11 +596,11 @@ try {
   check('Ctrl+Alt+L in a code block focuses its language picker, which lists the languages', focused?.value === 'python' && focused.options > 40, JSON.stringify(focused))
   const pick = (value) => js(`(() => { const s = document.activeElement?.getAttribute('aria-label') === 'Code language' ? document.activeElement : document.querySelector('select[aria-label="Code language"]'); s.focus(); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
   await pick('')
-  const asPlain = { html: await js(`${EDITOR}.editor.getHTML()`), ...(await tokenColours()) }
-  check('choosing Plain text in the picker uncolours the block and drops its class', asPlain.spans === 0 && /^<pre><code># Totals/.test(asPlain.html), JSON.stringify(asPlain).slice(0, 200))
+  const asPlain = { html: await js(`${EDITOR}.editor.getHTML()`), ...(await tokenColors()) }
+  check('choosing Plain text in the picker uncolors the block and drops its class', asPlain.spans === 0 && /^<pre><code># Totals/.test(asPlain.html), JSON.stringify(asPlain).slice(0, 200))
   await pick('python')
-  const back = { html: await js(`${EDITOR}.editor.getHTML()`), ...(await tokenColours()) }
-  check('choosing Python again colours it and saves class="language-python"', back.spans > 0 && /^<pre><code class="language-python"># Totals/.test(back.html), JSON.stringify(back).slice(0, 200))
+  const back = { html: await js(`${EDITOR}.editor.getHTML()`), ...(await tokenColors()) }
+  check('choosing Python again colors it and saves class="language-python"', back.spans > 0 && /^<pre><code class="language-python"># Totals/.test(back.html), JSON.stringify(back).slice(0, 200))
   // Real typing (through the DOM, not a command) right beside the picker, at the block's start.
   await js(`${EDITOR}.editor.commands.focus(1)`)
   // Tiptap focuses the view on the next animation frame; until then the page's
@@ -615,9 +615,9 @@ try {
   }
   await sleep(100)
   const typed = await js(`${EDITOR}.editor.getHTML()`)
-  check('typing at the start of a coloured block puts the text in the code, not in the picker', typed.startsWith('<pre><code class="language-python">z# Totals'), typed.slice(0, 120))
+  check('typing at the start of a colored block puts the text in the code, not in the picker', typed.startsWith('<pre><code class="language-python">z# Totals'), typed.slice(0, 120))
   await js(`${EDITOR}.editor.commands.setContent(${JSON.stringify(pastedHtml)})`)
-  // Keystroke to paint in a 5,000-line Python block, coloured and plain.
+  // Keystroke to paint in a 5,000-line Python block, colored and plain.
   const typingCost = (language) => js(`(async () => {
     const ed = ${EDITOR}.editor
     const unit = ['def total(items, rate=0.2):', '    """Sum the invented prices."""', '    out = 0', '    for i in items:', '        out += i.price * (1 + rate)  # tax', '    return round(out, 2)', '']
@@ -643,21 +643,21 @@ try {
     const median = (a) => Math.round(a.sort((x, y) => x - y)[a.length >> 1] * 10) / 10
     return { work: median(work), paint: median(paint), spans: document.querySelectorAll('.clip-pane__editor pre [class*="hljs-"]').length }
   })()`)
-  // Colouring is judged against the same block uncoloured, measured in
+  // Coloring is judged against the same block uncolored, measured in
   // turns and keeping each one's best, not against a fixed budget: a busy
   // desktop slows both alike (an absolute 30 ms failed at 54-57 ms that way).
   const best = (a, b) => (b === undefined || a.work < b.work ? a : b)
-  let colouredCost
+  let coloredCost
   let plainCost
   for (let round = 0; round < 3; round++) {
     plainCost = best(await typingCost(null), plainCost)
-    colouredCost = best(await typingCost('python'), colouredCost)
+    coloredCost = best(await typingCost('python'), coloredCost)
   }
-  console.log(`note  5,000-line Python block, keystroke in ms: coloured ${JSON.stringify(colouredCost)}, plain ${JSON.stringify(plainCost)}`)
+  console.log(`note  5,000-line Python block, keystroke in ms: colored ${JSON.stringify(coloredCost)}, plain ${JSON.stringify(plainCost)}`)
   check(
-    'typing in a 5,000-line Python block costs little more coloured than plain',
-    colouredCost.spans > 0 && colouredCost.work < plainCost.work * 1.5 + 5,
-    JSON.stringify({ coloured: colouredCost, plain: plainCost }),
+    'typing in a 5,000-line Python block costs little more colored than plain',
+    coloredCost.spans > 0 && coloredCost.work < plainCost.work * 1.5 + 5,
+    JSON.stringify({ colored: coloredCost, plain: plainCost }),
   )
   await js(`${EDITOR}.editor.commands.setContent(${JSON.stringify(pastedHtml)})`)
   await click('HTML')

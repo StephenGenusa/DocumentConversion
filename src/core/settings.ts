@@ -30,8 +30,8 @@ export interface Settings {
   web: { fetchPictures: boolean; allowLocalNetwork: boolean }
   /** Diagrams and formulas: Sharp (SVG) or Image (PNG), where the target takes both (spec B4). */
   rendered: { format: RenderFormat }
-  /** Code blocks coloured by language in the outputs (not the editor). */
-  code: { colour: boolean }
+  /** Code blocks colored by language in the outputs (not the editor). */
+  code: { color: boolean }
   /** What a new PDF starts with. Orientation stays a per-document choice. */
   pdf: { pageSize: PdfPageSize; scale: number; headerFooter: boolean }
   /** Reading choices that are set once: transcript times, SQLite view results. */
@@ -81,7 +81,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = deepFreeze({
   pictures: { format: 'jpeg' },
   web: { fetchPictures: true, allowLocalNetwork: true },
   rendered: { format: 'svg' },
-  code: { colour: true },
+  code: { color: true },
   pdf: { pageSize: 'Letter', scale: DEFAULT_PDF_SCALE, headerFooter: false },
   read: { transcriptTimestamps: true, sqliteViews: false },
   ocr: { language: 'eng' },
@@ -103,7 +103,7 @@ const RULES: { [S in SettingsSection]: Record<keyof Settings[S], Rule> } = {
   pictures: { format: oneOf(['png', 'jpeg']) },
   web: { fetchPictures: isBoolean, allowLocalNetwork: isBoolean },
   rendered: { format: oneOf(['svg', 'png']) },
-  code: { colour: isBoolean },
+  code: { color: isBoolean },
   pdf: {
     pageSize: oneOf(PDF_PAGE_SIZES),
     // The range Chromium prints at. A request's zoom is clamped into it; a saved one outside it is a bad file.
@@ -233,7 +233,14 @@ export function parseSettings(input: unknown): {
   if (has(input, 'version') && versionOf(input) === undefined) {
     problems.push({ key: 'version', message: `version ${shown(input.version)} is not a whole number from 1 up; read as 1` })
   }
-  const { raw, version } = migrate(input)
+  const migrated = migrate(input)
+  const version = migrated.version
+  let raw = migrated.raw
+  // `code.colour` was this key's name in unreleased 1.4 builds: read it as `code.color`, and drop it on the next write.
+  if (isRecord(raw.code) && has(raw.code, 'colour')) {
+    const { colour, ...code } = raw.code
+    raw = { ...raw, code: has(code, 'color') ? code : { ...code, color: colour } }
+  }
   for (const section of SECTIONS) {
     if (!has(raw, section)) continue
     const values = raw[section]
@@ -325,7 +332,7 @@ export interface EffectiveOptions {
   fetchPictures: boolean
   allowLocalNetwork: boolean
   renderedFormat: RenderFormat
-  codeColour: boolean
+  codeColor: boolean
   pdf: PdfRenderOptions & { pageSize: PdfPageSize }
   read: ReadOptions & { transcriptTimestamps: boolean; sqliteViews: boolean }
   ocrLanguage: string
@@ -336,7 +343,7 @@ export interface EffectiveOptions {
  * controls it shows (`appliedOptions`), so a value present here is one the
  * user can see, and it wins for this conversion; everything else comes from
  * the settings. The request is not trusted: a value that is not valid is
- * ignored and the setting used. Picture format, web and code colour have no
+ * ignored and the setting used. Picture format, web and code color have no
  * control on the conversion screen, so they are never taken from a request -
  * a stale or hostile page cannot override them.
  *
@@ -368,7 +375,7 @@ export function mergeSettings(settings: Readonly<Settings>, request: unknown): E
     renderedFormat: RULES.rendered.format.ok(req.renderedFormat)
       ? (req.renderedFormat as RenderFormat)
       : settings.rendered.format,
-    codeColour: settings.code.colour,
+    codeColor: settings.code.color,
     pdf: {
       pageSize,
       scale,

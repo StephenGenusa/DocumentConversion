@@ -102,7 +102,7 @@ function azw4Pdf(bytes) {
 }
 
 /** Every DeviceRGB fill (`r g b rg`) drawn by a PDF's Flate content streams. */
-function pdfFillColours(pdf) {
+function pdfFillColors(pdf) {
   const text = pdf.toString('latin1')
   const fills = []
   for (const m of text.matchAll(/stream\r?\n/g)) {
@@ -278,7 +278,7 @@ async function main() {
     // metafile that is only one. (Not an alternate, data-alt-src: the picture step chooses between the two.)
     const vectorImages = (hubText.match(/(?<![\w-])src="data:image\/x-[ew]mf[;,]/gi) ?? []).length
     // Code highlight.js finds tokens in (a shell prompt line may hold none).
-    const hasColouredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
+    const hasColoredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
 
     /**
@@ -369,22 +369,22 @@ async function main() {
             rec.note = `${rec.note ? rec.note + ', ' : ''}${formulas.length} SVG formulas (${inline.length} lowered)`
           }
         }
-        if (target === 'azw4' && hasColouredCode) {
-          // The embedded PDF, as printed: highlighted code is drawn in colour
+        if (target === 'azw4' && hasColoredCode) {
+          // The embedded PDF, as printed: highlighted code is drawn in color
           // (a fill that is not grey), and its keywords in a bold monospace
           // face, which is what a reader that reflows the page keeps.
           const pdf = azw4Pdf(out)
-          const fills = pdfFillColours(pdf)
-          const coloured = fills.filter(([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b) > 0.15)
-          if (coloured.length === 0) throw new Error('azw4 code is not coloured in its pdf')
+          const fills = pdfFillColors(pdf)
+          const colored = fills.filter(([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b) > 0.15)
+          if (colored.length === 0) throw new Error('azw4 code is not colored in its pdf')
           const fonts = [...pdf.toString('latin1').matchAll(/\/BaseFont\s*\/(?:[A-Z]{6}\+)?([^\s/<>\[\]]+)/g)].map((m) => m[1])
           if (!fonts.some((f) => /mono|consolas|courier|menlo/i.test(f) && /bold/i.test(f))) throw new Error('azw4 code keywords are not bold in its pdf')
-          rec.note = `${coloured.length} coloured fills`
+          rec.note = `${colored.length} colored fills`
         }
-        if (target === 'revealjs' && hasColouredCode) {
-          // Slides colour code as static spans with the screen palette.
+        if (target === 'revealjs' && hasColoredCode) {
+          // Slides color code as static spans with the screen palette.
           const text = out.toString('utf8')
-          if (!/<span class="hljs-/.test(text) || !text.includes('.hljs-keyword')) throw new Error('revealjs code is not coloured')
+          if (!/<span class="hljs-/.test(text) || !text.includes('.hljs-keyword')) throw new Error('revealjs code is not colored')
         }
         let azw3Html
         let azw3Pictures = 0

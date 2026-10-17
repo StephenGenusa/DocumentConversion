@@ -41,9 +41,9 @@ export interface CliRequest {
   noLocalNetwork?: boolean
   /** Allow intranet addresses, even if the settings file refuses them (web.allowLocalNetwork on). */
   localNetwork?: boolean
-  /** Plain code, not colored by language (settings: code.colour off). */
+  /** Plain code, not colored by language (settings: code.color off). */
   noCodeColor?: boolean
-  /** Code colored by language, even if the settings file says plain (code.colour on). */
+  /** Code colored by language, even if the settings file says plain (code.color on). */
   codeColor?: boolean
   /** The OCR language, with --ocr. */
   ocrLang?: string

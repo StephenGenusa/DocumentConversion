@@ -58,7 +58,7 @@ describe('the editor round-trips what the hub allows', () => {
     ['inline math in a list, a heading and a quote', '<ul><li><p><code class="language-math">x^2</code></p></li></ul><h2>On <code class="language-math">y</code></h2><blockquote><p><code class="language-math">z</code></p></blockquote>'],
     ['an ordinary code block beside them', '<pre><code class="language-python">x = 1</code></pre><pre><code class="language-math">a</code></pre>'],
     // A pasted snippet is given its language at intake (core/code-language.ts);
-    // the pane must hand it back, or the conversion prints it uncoloured.
+    // the pane must hand it back, or the conversion prints it uncolored.
     ['a pasted code block with its guessed language', '<pre><code class="language-python">def f():\n    return 1</code></pre>'],
     // Word equations (step 19): math inside footnotes and endnotes, inline and display.
     [
@@ -71,8 +71,8 @@ describe('the editor round-trips what the hub allows', () => {
     expect(roundTrip(html)).toBe(html)
   })
 
-  // Code is coloured in the editor by decorations, which never enter the
-  // document (lib/code-colour.ts); with a DOM, code-colour.test.ts checks getHTML too.
+  // Code is colored in the editor by decorations, which never enter the
+  // document (lib/code-color.ts); with a DOM, code-color.test.ts checks getHTML too.
   it.each([
     ['python', '<pre><code class="language-python">def f(x):\n    return x &lt; 2  # invented</code></pre>'],
     ['javascript', '<pre><code class="language-javascript">const s = "a &amp; b"</code></pre>'],
@@ -80,7 +80,7 @@ describe('the editor round-trips what the hub allows', () => {
     ['an alias', '<pre><code class="language-js">let n = 0</code></pre>'],
     ['no language', '<pre><code>x = 1</code></pre>'],
     ['plaintext', '<pre><code class="language-plaintext">x = 1</code></pre>'],
-    ['a block over the colouring limit', `<pre><code class="language-python">${Array.from({ length: 6100 }, (_, i) => `n${i} = ${i}`).join('\n')}</code></pre>`],
+    ['a block over the coloring limit', `<pre><code class="language-python">${Array.from({ length: 6100 }, (_, i) => `n${i} = ${i}`).join('\n')}</code></pre>`],
   ])('keeps a code block (%s) byte for byte', (_name, html) => {
     expect(roundTrip(html)).toBe(html)
   })

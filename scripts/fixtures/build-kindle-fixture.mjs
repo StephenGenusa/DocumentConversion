@@ -38,15 +38,15 @@ function photograph(width, height) {
   g.strokeStyle = '#4a3b2c'
   g.lineWidth = 14
   for (let x = width / 6; x < width; x += width / 3) g.strokeRect(x - width / 8, height * 0.08, width / 4, height * 0.45)
-  // Shelves with books of many colours.
-  const colours = ['#8c2f39', '#2f5d8a', '#c79a3b', '#3e7d4f', '#6b4c8a', '#b5651d']
+  // Shelves with books of many colors.
+  const colors = ['#8c2f39', '#2f5d8a', '#c79a3b', '#3e7d4f', '#6b4c8a', '#b5651d']
   for (let row = 0; row < 3; row++) {
     const y = height * 0.6 + row * height * 0.13
     g.fillStyle = '#5a4330'
     g.fillRect(0, y + height * 0.1, width, height * 0.02)
     for (let x = 8, i = row; x < width - 20; i++) {
       const w = 14 + ((i * 37) % 22)
-      g.fillStyle = colours[i % colours.length]
+      g.fillStyle = colors[i % colors.length]
       g.fillRect(x, y + ((i * 13) % 12), w, height * 0.1 - ((i * 13) % 12))
       x += w + 3
     }

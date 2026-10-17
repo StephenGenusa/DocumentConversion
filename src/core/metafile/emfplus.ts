@@ -258,7 +258,7 @@ export class EmfPlusPlayer implements PlusHook {
             for (let i = 0; i < n; i++) stops.push([v.f32(at + 4 + i * 4), v.u32(at + 4 + n * 4 + i * 4)])
           }
         } else if (flags & 0x08) {
-          // Blend factors: the mix of the end colour at each position.
+          // Blend factors: the mix of the end color at each position.
           const n = v.u32(at)
           if (n >= 2 && n <= 256 && v.has(at + 4, n * 8)) {
             stops = []
@@ -268,7 +268,7 @@ export class EmfPlusPlayer implements PlusHook {
         return { kind: 'linear', rect, stops, transform, wrap }
       }
       case 3:
-        // A path gradient: its centre colour.
+        // A path gradient: its centre color.
         return { kind: 'solid', argb: v.u32(16) }
       default:
         this.lost.add('texture brushes')
@@ -550,7 +550,7 @@ export class EmfPlusPlayer implements PlusHook {
         const map: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5 }
         const style = map[brush.style]
         if (style === undefined) {
-          // The percentage and pattern hatches: their colours mixed.
+          // The percentage and pattern hatches: their colors mixed.
           return argbPaint(mix(brush.back, brush.fore, 0.5))
         }
         const t = 8 * this.out.hairline
@@ -809,7 +809,7 @@ export class EmfPlusPlayer implements PlusHook {
         this.object(flags, v)
         return
       case 0x4009: {
-        // Clear: the whole picture, in a colour.
+        // Clear: the whole picture, in a color.
         const p = new PathData()
         const u = this.universe
         p.moveTo(u.l, u.t)
@@ -1136,7 +1136,7 @@ export class EmfPlusPlayer implements PlusHook {
   }
 }
 
-/** Two ARGB colours mixed, `t` of the way from the first to the second. */
+/** Two ARGB colors mixed, `t` of the way from the first to the second. */
 function mix(a: number, b: number, t: number): number {
   t = Math.max(0, Math.min(1, t))
   const ch = (sh: number): number => Math.round(((a >>> sh) & 0xff) * (1 - t) + ((b >>> sh) & 0xff) * t)

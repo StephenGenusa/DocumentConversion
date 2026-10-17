@@ -22,7 +22,7 @@
  * formula, which carry a class of their own.
  *
  * The guess is kept to common languages and has to clear a bar, because a
- * wrong colouring is worse than none: highlight.js will name SOME language for
+ * wrong coloring is worse than none: highlight.js will name SOME language for
  * anything, including a paragraph of prose or a server log.
  */
 import hljs from './hljs'
@@ -172,7 +172,7 @@ function codeWithMarkup(from: Element, into: Element): void {
  * `language-X` when the page named a language anywhere it is conventionally
  * named. Runs before sanitising, while the classes and attributes are there.
  *
- * A highlighter's spans go: they are colour the writers will redraw, and left
+ * A highlighter's spans go: they are color the writers will redraw, and left
  * in, they made the write-time highlighter print `<span>` literally. With
  * `keepMarkup` (a file being read) the author's bold, italic and links stay,
  * as the page showed them; without it (a paste into the editor, whose code
@@ -386,7 +386,7 @@ export function codeBlockText(body: string): string {
  * Hub HTML with a guessed `language-X` on each code block that has no class.
  * A block with any class is someone's decision, `language-plaintext` included,
  * and an inline `<code>` is never guessed. Nor is a block the author formatted
- * (bold, a link): colouring it would print the text without that markup.
+ * (bold, a link): coloring it would print the text without that markup.
  */
 export function guessCodeLanguages(html: string): string {
   if (!html.includes('<pre')) return html

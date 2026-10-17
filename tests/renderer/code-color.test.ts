@@ -5,11 +5,11 @@ import { TextSelection } from '@tiptap/pm/state'
 import { DecorationSet, type Decoration } from '@tiptap/pm/view'
 import { EDITOR_EXTENSIONS } from '../../src/renderer/src/lib/editor-extensions'
 import { configureBlockViews } from '../../src/renderer/src/lib/block-views'
-import { COLOUR_LINE_LIMIT, SYNC_COLOUR_CHARS, COLOUR_PAUSE_MS, codeLanguages, pickerValue } from '../../src/renderer/src/lib/code-colour'
+import { COLOR_LINE_LIMIT, SYNC_COLOR_CHARS, COLOR_PAUSE_MS, codeLanguages, pickerValue } from '../../src/renderer/src/lib/code-color'
 import hljs from '../../src/core/hljs'
 
 /*
- * Code coloured while it is edited: decorations only, never the document.
+ * Code colored while it is edited: decorations only, never the document.
  * All code here is invented for the test.
  */
 
@@ -52,8 +52,8 @@ const PY = '<pre><code class="language-python">def area(w, h):\n    return w * h
 const JS = '<pre><code class="language-javascript">const n = 42\nfunction twice(x) { return x * 2 }</code></pre>'
 const SQL = '<pre><code class="language-sql">SELECT name FROM parts WHERE weight &gt; 3;</code></pre>'
 
-describe('code coloured in the editor', () => {
-  it('colours python, javascript and sql blocks with the classes the outputs use', () => {
+describe('code colored in the editor', () => {
+  it('colors python, javascript and sql blocks with the classes the outputs use', () => {
     make(PY + JS + SQL)
     const [py, js, sql] = blocks()
     expect(spans(py)).toContain('hljs-keyword:def')
@@ -66,12 +66,12 @@ describe('code coloured in the editor', () => {
     expect(editor!.state.doc.child(2).textContent).toBe('SELECT name FROM parts WHERE weight > 3;')
   })
 
-  it('leaves a block with no language, plaintext or an unknown language uncoloured', () => {
+  it('leaves a block with no language, plaintext or an unknown language uncolored', () => {
     make('<pre><code>def f(): pass</code></pre><pre><code class="language-plaintext">def f(): pass</code></pre><pre><code class="language-nosuchlang">def f(): pass</code></pre>')
     for (const b of blocks()) expect(spans(b)).toEqual([])
   })
 
-  it('never puts the colouring in the document: what is saved is byte for byte what came in', () => {
+  it('never puts the coloring in the document: what is saved is byte for byte what came in', () => {
     const html = PY + JS + SQL + '<pre><code>plain</code></pre>'
     const e = make(html)
     expect(blocks().some((b) => spans(b).length > 0)).toBe(true)
@@ -79,7 +79,7 @@ describe('code coloured in the editor', () => {
     expect(e.getHTML()).not.toContain('hljs')
   })
 
-  it('re-colours a block as it is typed in', () => {
+  it('re-colors a block as it is typed in', () => {
     const e = make('<pre><code class="language-python">x = 1</code></pre>')
     expect(spans(blocks()[0]).some((s) => s.startsWith('hljs-keyword'))).toBe(false)
     typeInto(e, 0, '\nwhile x: pass')
@@ -94,35 +94,35 @@ describe('code coloured in the editor', () => {
   })
 })
 
-describe(`the ${COLOUR_LINE_LIMIT}-line limit`, () => {
-  it('shows a block of the limit or more as plain monospace, editable, and colours it again once shorter', () => {
+describe(`the ${COLOR_LINE_LIMIT}-line limit`, () => {
+  it('shows a block of the limit or more as plain monospace, editable, and colors it again once shorter', () => {
     vi.useFakeTimers()
-    const e = make(`<pre><code class="language-python">${lines(COLOUR_LINE_LIMIT - 1)}</code></pre>`)
-    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    const e = make(`<pre><code class="language-python">${lines(COLOR_LINE_LIMIT - 1)}</code></pre>`)
+    vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
     expect(spans(blocks()[0]).length).toBeGreaterThan(0)
 
     // The limit reached: plain at once, not after the pause.
     typeInto(e, 0, '\nwhile True: pass')
     expect(spans(blocks()[0])).toEqual([])
-    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
     expect(spans(blocks()[0])).toEqual([])
     expect(e.state.doc.textContent.endsWith('while True: pass')).toBe(true)
 
-    // One line removed: coloured again.
+    // One line removed: colored again.
     const pos = codeBlockPositions(e)[0]
     const end = pos + 1 + e.state.doc.nodeAt(pos)!.content.size
     e.view.dispatch(e.state.tr.delete(end - '\nwhile True: pass'.length, end))
-    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
     expect(spans(blocks()[0]).length).toBeGreaterThan(0)
   })
 
   it('round-trips a block over the limit byte for byte', () => {
-    const html = `<pre><code class="language-python">${lines(COLOUR_LINE_LIMIT + 10)}</code></pre>`
+    const html = `<pre><code class="language-python">${lines(COLOR_LINE_LIMIT + 10)}</code></pre>`
     expect(make(html).getHTML()).toBe(html)
   })
 })
 
-describe('colouring cost', () => {
+describe('coloring cost', () => {
   it('re-highlights only the block that changed in a document of many small blocks', () => {
     const many = Array.from({ length: 200 }, (_, i) => `<pre><code class="language-python">n${i} = ${i}</code></pre><p>Text ${i}.</p>`).join('')
     const e = make(many)
@@ -137,22 +137,22 @@ describe('colouring cost', () => {
     })
     e.view.dispatch(e.state.tr.insertText('more', para + 1))
     expect(spy).toHaveBeenCalledTimes(2)
-    // The other blocks keep their colours.
+    // The other blocks keep their colors.
     expect(spans(blocks()[3])).toContain('hljs-number:3')
   })
 
-  it('keeps a keystroke in a 5,000-line python block cheap: the block is re-coloured after a pause, not on the key', () => {
+  it('keeps a keystroke in a 5,000-line python block cheap: the block is re-colored after a pause, not on the key', () => {
     // performance.now stays real: it is what is measured.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const unit = ['def total(items, rate=0.2):', '    """Sum the invented prices."""', '    out = 0', '    for i in items:', '        out += i.price * (1 + rate)  # tax', '    return round(out, 2)', '']
     const code = Array.from({ length: 5000 }, (_, i) => unit[i % unit.length]).join('\n')
-    expect(code.length).toBeGreaterThan(SYNC_COLOUR_CHARS)
+    expect(code.length).toBeGreaterThan(SYNC_COLOR_CHARS)
     const e = make(`<pre><code class="language-python">${code}</code></pre>`)
-    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
     expect(spans(blocks()[0])).toContain('hljs-keyword:def')
 
     const spy = vi.spyOn(hljs, 'highlight')
-    // The colouring's own share of a keystroke (the plugin's transaction work)
+    // The coloring's own share of a keystroke (the plugin's transaction work)
     // and the whole dispatch. The dispatch is mostly happy-dom, which walks
     // every node of the block each time ProseMirror pauses and resumes its
     // DOM observer, and under a loaded suite it varies with whatever else runs.
@@ -171,25 +171,25 @@ describe('colouring cost', () => {
       dispatch.push(t2 - t1)
     }
     const median = (a: number[]): number => [...a].sort((x, y) => x - y)[a.length >> 1]
-    process.stdout.write(`5,000-line python block: keystroke colouring median ${median(apply).toFixed(2)} ms, dispatch median ${median(dispatch).toFixed(2)} ms, max ${Math.max(...dispatch).toFixed(2)} ms\n`)
+    process.stdout.write(`5,000-line python block: keystroke coloring median ${median(apply).toFixed(2)} ms, dispatch median ${median(dispatch).toFixed(2)} ms, max ${Math.max(...dispatch).toFixed(2)} ms\n`)
     expect(spy).not.toHaveBeenCalled()
-    // Re-highlighting or rebuilding the block's 9,000 colours costs tens of ms.
+    // Re-highlighting or rebuilding the block's 9,000 colors costs tens of ms.
     expect(median(apply)).toBeLessThan(10)
     // Generous: under load the suite runs every worker at once.
     expect(median(dispatch)).toBeLessThan(60)
-    // Colours stay up (mapped) while typing, and the block is re-coloured once, after the pause.
+    // Colors stay up (mapped) while typing, and the block is re-colored once, after the pause.
     expect(spans(blocks()[0])).toContain('hljs-keyword:def')
-    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
     expect(spy).toHaveBeenCalledTimes(1)
   })
 
-  it('redraws only what changed when typing between two colours in a big block, before and after its re-colour', () => {
+  it('redraws only what changed when typing between two colors in a big block, before and after its re-color', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const unit = ['def total(items, rate=0.2):', '    """Sum the invented prices."""', '    out = 0', '    for i in items:', '        out += i.price * (1 + rate)  # tax', '    return round(out, 2)', '']
     const code = Array.from({ length: 1000 }, (_, i) => unit[i % unit.length]).join('\n')
-    expect(code.length).toBeGreaterThan(SYNC_COLOUR_CHARS)
+    expect(code.length).toBeGreaterThan(SYNC_COLOR_CHARS)
     const e = make(`<pre><code class="language-python">${code}</code></pre>`)
-    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
     const pre = blocks()[0]
     const mutations = (act: () => void): number => {
       const seen = new MutationObserver(() => {})
@@ -199,17 +199,17 @@ describe('colouring cost', () => {
       seen.disconnect()
       return n
     }
-    // Two colours side by side, well inside the block: "rate=" then "0.2".
-    const coloured = [...pre.querySelectorAll('span[class*="hljs-"]')]
-    const number = coloured.find((s, i) => i > 200 && s.className.includes('hljs-number') && s.previousSibling === coloured[i - 1])!
+    // Two colors side by side, well inside the block: "rate=" then "0.2".
+    const colored = [...pre.querySelectorAll('span[class*="hljs-"]')]
+    const number = colored.find((s, i) => i > 200 && s.className.includes('hljs-number') && s.previousSibling === colored[i - 1])!
     expect(number).toBeTruthy()
     const at = e.view.posAtDOM(number.firstChild!, 0)
     const spansBefore = spans(pre).length
     for (let k = 0; k < 4; k++) {
-      // Each key, then the re-colour after the pause: a handful of DOM changes,
+      // Each key, then the re-color after the pause: a handful of DOM changes,
       // not a rewrite of the thousands of spans after the caret.
       const key = mutations(() => e.view.dispatch(e.state.tr.setSelection(TextSelection.create(e.state.doc, at + k)).insertText('x')))
-      const pause = mutations(() => vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1))
+      const pause = mutations(() => vi.advanceTimersByTime(COLOR_PAUSE_MS + 1))
       expect(key).toBeLessThan(10)
       expect(pause).toBeLessThan(10)
     }
@@ -217,28 +217,28 @@ describe('colouring cost', () => {
     expect(spans(pre)).toContain('hljs-keyword:def')
   })
 
-  it('re-colours a big block after the pause by replacing only the colours that changed', () => {
+  it('re-colors a big block after the pause by replacing only the colors that changed', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const code = Array.from({ length: 1000 }, (_, i) => `value_${i} = ${i}  # invented`).join('\n')
-    expect(code.length).toBeGreaterThan(SYNC_COLOUR_CHARS)
+    expect(code.length).toBeGreaterThan(SYNC_COLOR_CHARS)
     const e = make(`<pre><code class="language-python">${code}</code></pre>`)
-    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
+    vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
     // ProseMirror empties the arrays it is given, so each is copied as it is passed.
     const added: Decoration[] = []
     const removed: Decoration[] = []
     const { add, remove } = DecorationSet.prototype
     vi.spyOn(DecorationSet.prototype, 'add').mockImplementation(function (this: DecorationSet, doc, d) {
-      added.push(...d.filter((x) => x.spec.colour))
+      added.push(...d.filter((x) => x.spec.color))
       return add.call(this, doc, d)
     })
     vi.spyOn(DecorationSet.prototype, 'remove').mockImplementation(function (this: DecorationSet, d) {
-      removed.push(...d.filter((x) => x.spec.colour))
+      removed.push(...d.filter((x) => x.spec.color))
       return remove.call(this, d)
     })
     const create = vi.spyOn(DecorationSet, 'create')
     typeInto(e, 0, '\nmore = 1')
-    vi.advanceTimersByTime(COLOUR_PAUSE_MS + 1)
-    // The new line's colours, not the block's thousands.
+    vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
+    // The new line's colors, not the block's thousands.
     expect(added.length).toBeGreaterThan(0)
     expect(added.length).toBeLessThan(5)
     expect(removed.length).toBeLessThan(5)
@@ -248,7 +248,7 @@ describe('colouring cost', () => {
 })
 
 describe('the language picker', () => {
-  it('lists the languages the outputs colour, with friendly names and the common ones first', () => {
+  it('lists the languages the outputs color, with friendly names and the common ones first', () => {
     const langs = codeLanguages()
     const names = langs.map((l) => l.value)
     expect(names[0]).toBe('')
@@ -270,7 +270,7 @@ describe('the language picker', () => {
     expect(pickerValue('nosuchlang')).toBe('nosuchlang')
   })
 
-  it('sets the language: re-coloured at once, saved as its class, undone in one step', () => {
+  it('sets the language: re-colored at once, saved as its class, undone in one step', () => {
     const e = make('<pre><code>SELECT 1 FROM t;</code></pre><p>After.</p>')
     expect(spans(blocks()[0])).toEqual([])
     e.chain().setTextSelection(3).setCodeLanguage('sql').run()
@@ -303,7 +303,7 @@ describe('the language picker', () => {
     for (const rb of host.querySelectorAll('.rb')) expect(rb.querySelector('select')).toBeNull()
   })
 
-  it('lists every language once it is used, and changing it re-colours at once and saves the class, one undo step', () => {
+  it('lists every language once it is used, and changing it re-colors at once and saves the class, one undo step', () => {
     const e = make('<pre><code>SELECT 1 FROM t;</code></pre><p>After.</p>')
     expect(picker(0).options.length).toBe(1)
     picker(0).dispatchEvent(new Event('focus'))

@@ -46,7 +46,7 @@ function joinSource(source: string | string[] | undefined): string {
   return source ?? ''
 }
 
-/** Tracebacks carry terminal colour codes; strip both real ESC sequences and bare ones. */
+/** Tracebacks carry terminal color codes; strip both real ESC sequences and bare ones. */
 function stripAnsi(s: string): string {
   // eslint-disable-next-line no-control-regex
   return s.replace(/\u001b?\[[0-9;]*m/g, '')
@@ -73,7 +73,7 @@ function preBlock(text: string, className?: string): string {
  * on `pre` and `code` and no other attribute anywhere, because everything the
  * sanitizer passes has to round-trip the TipTap editor losslessly — so the
  * role of a block (input / result / stream / error) and its prompt number both
- * ride here, and the shell turns them into a gutter and colours. A cell that
+ * ride here, and the shell turns them into a gutter and colors. A cell that
  * was never run has no count and gets no count class: the shell prints the
  * empty `In [ ]:` prompt Jupyter shows rather than inventing a number.
  */

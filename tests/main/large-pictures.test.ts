@@ -54,7 +54,7 @@ function noisePng(width: number, height: number): Buffer {
   ])
 }
 
-/** An SVG of `bytes` or so: a plan of small coloured squares. */
+/** An SVG of `bytes` or so: a plan of small colored squares. */
 function bigSvg(bytes: number): string {
   const parts: string[] = []
   let size = 0

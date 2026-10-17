@@ -18,7 +18,7 @@
  *   reading-room-photo-plan.svg
  *                              the plan with four small pictures placed on it
  *                              as data URIs, one of each type an SVG may hold:
- *                              PNG, JPEG, GIF and WebP (one colour each, so a
+ *                              PNG, JPEG, GIF and WebP (one color each, so a
  *                              drawing shows at a glance which were kept).
  *   reading-room-inline-plan.html
  *                              a page drawing the plan inline (an <svg>
@@ -33,7 +33,7 @@
  *                              percent-encoded one: the shape that gave Word
  *                              output an unusable `image/svg+xml` part.
  *   reading-room-seating.html  a seating chart: 150 quiet seating markers,
- *                              each its own colour (so 150 distinct SVG
+ *                              each its own color (so 150 distinct SVG
  *                              images), more than Word conversion once took
  *                              (it stopped at 100).
  *
@@ -128,11 +128,11 @@ const markedPlan = `<?xml version="1.0" encoding="UTF-8"?>\n${plan({
   ].join('\n'),
 })}\n`
 
-/** A 24 px square of one colour, encoded as `format` (png, jpeg, webp). */
-function swatch(colour, format) {
+/** A 24 px square of one color, encoded as `format` (png, jpeg, webp). */
+function swatch(color, format) {
   const c = createCanvas(24, 24)
   const g = c.getContext('2d')
-  g.fillStyle = colour
+  g.fillStyle = color
   g.fillRect(0, 0, 24, 24)
   g.fillStyle = '#ffffff'
   g.fillRect(8, 8, 8, 8)

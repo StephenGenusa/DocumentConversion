@@ -142,13 +142,13 @@ async function main() {
     const r = await host.render({ kind: 'svg', source: NESTED, display: true, format: 'png' })
     out.svgNested = r.png ? { left: pngPixel(r.png, 10, 20), right: pngPixel(r.png, 70, 20) } : { error: r.error }
   }
-  // PNG, JPEG, GIF and WebP pictures placed in an SVG image (data URIs): drawn, each in its own colour.
+  // PNG, JPEG, GIF and WebP pictures placed in an SVG image (data URIs): drawn, each in its own color.
   {
     const { createCanvas } = require('@napi-rs/canvas')
-    const solid = (colour, format) => {
+    const solid = (color, format) => {
       const c = createCanvas(4, 4)
       const g = c.getContext('2d')
-      g.fillStyle = colour
+      g.fillStyle = color
       g.fillRect(0, 0, 4, 4)
       return c.encodeSync(format, 100)
     }
@@ -226,7 +226,7 @@ async function main() {
       out.pictureTiffLoop = await picture(uri('image/tiff', t), 5 * 1024 * 1024, 'png')
     }
     {
-      // Two of its pixels, as the page drew them (one transparent pixel keeps it PNG): the colours kept, not only the size.
+      // Two of its pixels, as the page drew them (one transparent pixel keeps it PNG): the colors kept, not only the size.
       const r = await host.render({ kind: 'picture', source: uri('image/tiff', tiff({ width: 40, height: 4, pixel: (x, y) => (x + y === 0 ? [0, 0, 0, 0] : x < 20 ? [255, 0, 0, 255] : [0, 0, 255, 255]), kind: 'rgba' })), display: true, format: 'png', fit: { maxBytes: 5 * 1024 * 1024 } })
       out.pictureTiffPixels = r.png ? [pngPixel(r.png, 5, 1), pngPixel(r.png, 35, 1)] : r.error
     }

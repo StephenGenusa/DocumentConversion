@@ -178,7 +178,7 @@ export const SETTINGS_PAGES: SettingsPage[] = [
     section: 'code',
     settings: [
       {
-        key: 'code.colour',
+        key: 'code.color',
         title: 'Color code by language',
         kind: 'check',
         help:

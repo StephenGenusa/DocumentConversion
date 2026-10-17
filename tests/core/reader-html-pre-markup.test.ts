@@ -9,7 +9,7 @@ import type { GuardedFetchDeps } from '../../src/core/net/guarded-fetch'
 /*
  * A page's <pre> can carry the author's own markup: the command to type in
  * bold, a name linked to its docs. Reading a file keeps the inline markup the
- * hub allows; a highlighter's spans still go (their colour is redrawn at write
+ * hub allows; a highlighter's spans still go (their color is redrawn at write
  * time), and a paste into the editor is still flattened on purpose.
  */
 

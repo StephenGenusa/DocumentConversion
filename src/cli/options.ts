@@ -63,7 +63,7 @@ export function cliConvertOptions(
       pictureFormat: req.pictures ?? merged.pictureFormat,
       // Each on/off pair: whichever flag was given, else the setting (args.ts
       // has refused both at once).
-      codeColour: req.codeColor ? true : req.noCodeColor ? false : merged.codeColour,
+      codeColor: req.codeColor ? true : req.noCodeColor ? false : merged.codeColor,
       web: {
         fetchPictures: req.fetch ? true : req.noFetch ? false : merged.fetchPictures,
         allowLocalNetwork: req.localNetwork ? true : req.noLocalNetwork ? false : merged.allowLocalNetwork,

@@ -57,7 +57,7 @@ describe('the reveal.js writer', () => {
     const PY = '<pre><code class="language-python">def area(w, h):\n    # width by height\n    return w * h</code></pre>'
     const JS = '<pre><code class="language-javascript">const n = 42; // answer</code></pre>'
 
-    it('colours python and javascript blocks with static spans', async () => {
+    it('colors python and javascript blocks with static spans', async () => {
       const html = await deck(`<h1>A</h1>${PY}<hr><h1>B</h1>${JS}`)
       expect(html).toContain('<code class="language-python hljs"><span class="hljs-keyword">def</span>')
       expect(html).toContain('<span class="hljs-comment"># width by height</span>')
@@ -71,7 +71,7 @@ describe('the reveal.js writer', () => {
       expect(html).toMatch(/--r-background-color:#fff/)
     })
 
-    it('needs no highlight plugin: nothing is coloured in the browser', async () => {
+    it('needs no highlight plugin: nothing is colored in the browser', async () => {
       const html = await deck(PY)
       expect(html).toContain('plugins: [ RevealNotes ]')
       expect(html).not.toMatch(/RevealHighlight/)
@@ -96,7 +96,7 @@ describe('the reveal.js writer', () => {
       expect(html).not.toContain('.hljs-keyword')
     })
 
-    it('does not colour code in the speaker notes', async () => {
+    it('does not color code in the speaker notes', async () => {
       const html = await deck('<p>a</p><aside><pre><code class="language-python">def f(): pass</code></pre></aside>')
       expect(html).toContain('<aside class="notes"><pre><code class="language-python">def f(): pass</code></pre></aside>')
     })
@@ -119,7 +119,7 @@ describe('the reveal.js writer keeps text escaped', () => {
     expect(markup).not.toContain('<b>')
   })
 
-  it('still colours code with a language, its entities intact', async () => {
+  it('still colors code with a language, its entities intact', async () => {
     const html = await deck('<pre><code class="language-js">if (a &gt; b &amp;&amp; c &lt; d) {}</code></pre>')
     expect(html).toContain('&gt;')
     expect(html).toContain('&amp;&amp;')

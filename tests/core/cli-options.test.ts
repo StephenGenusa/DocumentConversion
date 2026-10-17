@@ -26,7 +26,7 @@ describe('cliConvertOptions: built-in defaults (settings spec 5.7)', () => {
     expect(notes).toEqual([])
     expect(o.pictureFormat).toBe('jpeg')
     expect(o.web).toEqual({ fetchPictures: true, allowLocalNetwork: true })
-    expect(o.codeColour).toBe(true)
+    expect(o.codeColor).toBe(true)
     expect(o.renderedFormat).toBe('svg')
     expect(o.pdf).toEqual({ pageSize: 'Letter', scale: 0.9, headerFooter: false, landscape: false })
     expect(o.read).toEqual({ transcriptTimestamps: true, sqliteViews: false })
@@ -43,7 +43,7 @@ describe('cliConvertOptions: built-in defaults (settings spec 5.7)', () => {
     ])
     expect(o.pictureFormat).toBe('png')
     expect(o.web).toEqual({ fetchPictures: true, allowLocalNetwork: false })
-    expect(o.codeColour).toBe(false)
+    expect(o.codeColor).toBe(false)
     expect(o.ocr).toBe(true)
     expect(o.ocrLanguage).toBe('deu')
     expect(o.pdf).toEqual({ pageSize: 'A4', scale: 1.5, headerFooter: true, landscape: true })
@@ -63,7 +63,7 @@ describe('cliConvertOptions: a settings file', () => {
     pictures: { format: 'png' },
     web: { fetchPictures: false },
     rendered: { format: 'png' },
-    code: { colour: false },
+    code: { color: false },
     pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true },
     read: { transcriptTimestamps: false, sqliteViews: true },
     ocr: { language: 'fra' },
@@ -73,7 +73,7 @@ describe('cliConvertOptions: a settings file', () => {
     const { options: o } = options(saved, ['a.png', '--to', 'pdf', '--ocr'])
     expect(o.pictureFormat).toBe('png')
     expect(o.web).toEqual({ fetchPictures: false, allowLocalNetwork: true })
-    expect(o.codeColour).toBe(false)
+    expect(o.codeColor).toBe(false)
     expect(o.renderedFormat).toBe('png')
     expect(o.pdf).toEqual({ pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: false })
     expect(o.read).toEqual({ transcriptTimestamps: false, sqliteViews: true })
@@ -97,9 +97,9 @@ describe('cliConvertOptions: a settings file', () => {
   it('--fetch and --code-color turn back on what the file turned off', () => {
     const { options: o } = options(saved, ['a.md', '--to', 'pdf', '--fetch', '--code-color'])
     expect(o.web).toEqual({ fetchPictures: true, allowLocalNetwork: true })
-    expect(o.codeColour).toBe(true)
+    expect(o.codeColor).toBe(true)
     // Each turns on only its own setting.
-    expect(options(saved, ['a.md', '--to', 'pdf', '--fetch']).options.codeColour).toBe(false)
+    expect(options(saved, ['a.md', '--to', 'pdf', '--fetch']).options.codeColor).toBe(false)
     expect(options(saved, ['a.md', '--to', 'pdf', '--code-color']).options.web.fetchPictures).toBe(false)
   })
 

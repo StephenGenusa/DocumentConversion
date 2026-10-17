@@ -29,7 +29,7 @@ const AUTO = `<office:automatic-styles>
 <style:style style:name="T2" style:family="text"><style:text-properties fo:font-style="italic"/></style:style>
 <style:style style:name="T3" style:family="text"><style:text-properties style:text-position="sub 58%"/></style:style>
 <style:style style:name="TPlain" style:family="text"><style:text-properties fo:font-weight="normal"/></style:style>
-<style:style style:name="TColour" style:family="text"><style:text-properties fo:color="#ff0000"/></style:style>
+<style:style style:name="TColor" style:family="text"><style:text-properties fo:color="#ff0000"/></style:style>
 <style:style style:name="P1" style:family="paragraph"><style:text-properties style:text-underline-style="solid"/></style:style>
 </office:automatic-styles>`
 
@@ -213,7 +213,7 @@ describe('.ods inline formatting', () => {
   })
 
   it('leaves a cell alone when its styles say nothing about the formatting kinds', async () => {
-    const html = await read(table('Codes', row(cell(p('<text:span text:style-name="TColour">red</text:span> text')))))
+    const html = await read(table('Codes', row(cell(p('<text:span text:style-name="TColor">red</text:span> text')))))
     expect(html).toContain('<td>red text</td>')
   })
 

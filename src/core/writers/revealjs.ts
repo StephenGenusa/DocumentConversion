@@ -22,14 +22,14 @@ import type { ConvertOptions, HubDocument } from '../types'
  */
 
 /**
- * Code is coloured here, as static hljs spans styled by class, not by reveal's
- * highlight plugin: that colours in the browser and brings its own theme, and
+ * Code is colored here, as static hljs spans styled by class, not by reveal's
+ * highlight plugin: that colors in the browser and brings its own theme, and
  * this deck must open as it is. The palette is the screen one the html and
  * pdf share (GitHub light), because the `simple` theme is a white slide with
  * black text; the block gets that palette's faint ground so it reads as code
  * beside the slide's prose. Plain text and the blocks that are
  * drawn (formulas, diagrams) are left as they came; the notes are words for
- * the speaker and are not coloured.
+ * the speaker and are not colored.
  */
 const LEFT_AS_IS = ['plaintext', 'text', 'math', 'mermaid', 'dot']
 const CODE_CSS = `
@@ -47,7 +47,7 @@ export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Pr
   const slides = splitSlides(footnotesForOutput(doc.html, 'plain'), { splitOn: (opts?.slides?.splitOn as SplitOn) ?? 'auto' })
   const title = doc.title?.trim() || doc.sourceName?.trim() || 'Presentation'
 
-  let coloured = false
+  let colored = false
   /*
    * An empty deck still has to be a valid document. Emitting a file with no
    * <section> gives reveal nothing to show and looks like a corrupted export,
@@ -57,8 +57,8 @@ export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Pr
     slides.length > 0
       ? slides
           .map((s) => {
-            const code = opts?.codeColour === false ? { html: s.html, any: false } : highlightCodeBlocks(s.html, { skip: LEFT_AS_IS })
-            coloured ||= code.any
+            const code = opts?.codeColor === false ? { html: s.html, any: false } : highlightCodeBlocks(s.html, { skip: LEFT_AS_IS })
+            colored ||= code.any
             return `<section>${code.html}${notesMarkup(s.notes)}</section>`
           })
           .join('\n')
@@ -73,7 +73,7 @@ export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Pr
 <title>${escapeHtml(title)}</title>
 <!-- reveal.js ${REVEAL_VERSION}, MIT, (C) Hakim El Hattab and contributors -->
 <style>${REVEAL_CSS}</style>
-${coloured ? `<style>${CODE_CSS}</style>\n` : ''}</head>
+${colored ? `<style>${CODE_CSS}</style>\n` : ''}</head>
 <body>
 <div class="reveal"><div class="slides">
 ${sections}

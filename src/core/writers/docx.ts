@@ -83,7 +83,7 @@ function standInGif(width: number, height: number, tag: string): Buffer {
   screen.write('GIF89a', 0, 'latin1')
   screen.writeUInt16LE(width, 6)
   screen.writeUInt16LE(height, 8)
-  screen[10] = 0x80 // a global colour table of two colours
+  screen[10] = 0x80 // a global color table of two colors
   const comment = Buffer.from(tag, 'latin1')
   return Buffer.concat([
     screen,
@@ -378,7 +378,7 @@ function orderCellProperties(xml: string): string {
 async function recompress(
   docx: Buffer,
   lowerings: Map<string, number> = new Map(),
-  coloured: ColouredLook[] = [],
+  colored: ColoredLook[] = [],
   originals: Map<string, Original> = new Map(),
 ): Promise<Buffer> {
   try {
@@ -391,7 +391,7 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', orderCellProperties(styleRuns(await body.async('string'), coloured)))
+    if (body) zip.file('word/document.xml', orderCellProperties(styleRuns(await body.async('string'), colored)))
     if (lowerings.size > 0) {
       try {
         await lowerFormulas(zip, lowerings)
@@ -720,23 +720,23 @@ function breakCodeLines(source: string): string {
 }
 
 /**
- * Each code block whose language highlight.js knows, coloured as the pdf and
- * html outputs colour it. Word cannot apply a stylesheet, so the colour goes
+ * Each code block whose language highlight.js knows, colored as the pdf and
+ * html outputs color it. Word cannot apply a stylesheet, so the color goes
  * on each run: a <span> with an inline `color`, which html-to-docx writes as
  * `w:color`. Run after unwrapSpans, which would strip these, and before
  * breakCodeLines, which splits their text at each newline (a multi-line
- * docstring or comment keeps its colour on every line).
+ * docstring or comment keeps its color on every line).
  */
-function colourCode(source: string): string {
+function colorCode(source: string): string {
   if (!/<code class="language-/.test(source)) return source
   return source.replace(/(<pre(?:\s[^>]*)?>\s*<code class="language-([\w+-]+)">)([\s\S]*?)(<\/code>)/g, (match, open: string, lang: string, body: string, close: string) =>
     hljs.getLanguage(lang) ? `${open}${highlightedRuns(codeBlockText(body), lang)}${close}` : match,
   )
 }
 
-/** colourCode, unless code colour is off (ConvertOptions.codeColour): then code stays plain. */
-function colourCodeIf(on: boolean, source: string): string {
-  return on ? colourCode(source) : source
+/** colorCode, unless code color is off (ConvertOptions.codeColor): then code stays plain. */
+function colorCodeIf(on: boolean, source: string): string {
+  return on ? colorCode(source) : source
 }
 
 /** The font html-to-docx itself gives a top-level code block. */
@@ -776,7 +776,7 @@ function monospaceCode(source: string): string {
         const parent = node.parent!
         splice(parent, parent.children.indexOf(node), 1, [new Element('span', { style: `font-family: ${CODE_FONT}` }, [new Text(node.data)])])
       } else if (isElement(node) && node.name === 'span' && node.attribs.style) {
-        // colourCode's runs: already one span per piece of text, so the font joins the colour.
+        // colorCode's runs: already one span per piece of text, so the font joins the color.
         if (!/font-family/.test(node.attribs.style)) node.attribs.style += `; font-family: ${CODE_FONT}`
       } else if (isElement(node)) wrap(node.children)
     }
@@ -785,7 +785,7 @@ function monospaceCode(source: string): string {
   return serialize(dom.children)
 }
 
-/** Run formatting, one bit each, carried to Word in a stand-in colour (see flattenFormatting). */
+/** Run formatting, one bit each, carried to Word in a stand-in color (see flattenFormatting). */
 const BOLD = 1
 const ITALIC = 2
 const UNDERLINE = 4
@@ -810,41 +810,41 @@ const TRANSPARENT = new Set(['span', 'small', 'big', 'abbr', 'acronym', 'time', 
 const UNTOUCHED = new Set(['svg', 'math', 'script', 'style'])
 
 /**
- * The stand-in colour: `0D0C` and the formatting bits as two hex digits, or
- * `0D0B` and the index of a formatted run's real colour and bits in the
- * document's ColouredLook list. Near black, so a run the post-pass somehow
+ * The stand-in color: `0D0C` and the formatting bits as two hex digits, or
+ * `0D0B` and the index of a formatted run's real color and bits in the
+ * document's ColoredLook list. Near black, so a run the post-pass somehow
  * misses still reads as text.
  */
 const STAND_IN = /<w:color w:val="0D0([BC])([0-9A-Fa-f]{2})"\/>/
 const STAND_IN_BITS = /0D0([BC])([0-9A-F]{2})/i
 
-/** A formatted run that also has a colour: its bits and its colour as Word's RRGGBB. */
-interface ColouredLook {
+/** A formatted run that also has a color: its bits and its color as Word's RRGGBB. */
+interface ColoredLook {
   bits: number
-  colour: string
+  color: string
 }
 
-/** The most coloured looks one document gives stand-ins to (two hex digits); the rest lose the colour, as before. */
-const MAX_COLOURED = 256
+/** The most colored looks one document gives stand-ins to (two hex digits); the rest lose the color, as before. */
+const MAX_COLORED = 256
 
 interface Look {
   bits: number
   font?: string
-  /** The run's own colour: on its formatting tag, or a highlighted code block's (colourCode's spans). */
-  colour?: string
+  /** The run's own color: on its formatting tag, or a highlighted code block's (colorCode's spans). */
+  color?: string
   /** The `color` of the paragraph, heading or cell around it, which html-to-docx gives its plain runs. */
-  blockColour?: string
+  blockColor?: string
   /** Inside a <pre>: a line break is kept in its span (see breakCodeLines). */
   pre?: boolean
 }
 
 /** Elements whose `color` html-to-docx carries to every run in them (measured: not div, li or blockquote). */
-const COLOURED_BLOCK = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th'])
+const COLORED_BLOCK = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th'])
 
-const colourIn = (el: Element): string | undefined => /(?:^|;)\s*color:\s*([^;]+)/i.exec(el.attribs.style ?? '')?.[1]?.trim()
+const colorIn = (el: Element): string | undefined => /(?:^|;)\s*color:\s*([^;]+)/i.exec(el.attribs.style ?? '')?.[1]?.trim()
 
-/** A CSS colour as Word's RRGGBB: hex or rgb() only; a name or hsl() is left to html-to-docx. */
-function wordColour(css: string): string | undefined {
+/** A CSS color as Word's RRGGBB: hex or rgb() only; a name or hsl() is left to html-to-docx. */
+function wordColor(css: string): string | undefined {
   const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(css)?.[1]
   if (hex) return (hex.length === 3 ? hex.replace(/./g, '$&$&') : hex).toUpperCase()
   const rgb = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*[\d.]+%?\s*)?\)$/i.exec(css)
@@ -866,7 +866,7 @@ function wordColour(css: string): string | undefined {
  * the one shape html-to-docx writes faithfully (see unwrapSpans) — whose
  * `color` is a stand-in naming every style the text has, inherited through
  * any depth of nesting; the formatting tags themselves are taken away. Once
- * the document is written, styleRuns turns each stand-in colour back into
+ * the document is written, styleRuns turns each stand-in color back into
  * Word's own w:b, w:i, w:u, w:strike, w:vertAlign and w:highlight. The code
  * font travels as the span's font-family, which html-to-docx does honour.
  *
@@ -884,14 +884,14 @@ function wordColour(css: string): string | undefined {
  * monospaceCode have shaped it: html-to-docx keeps only the innermost tag
  * there too, and a <strong>'s bold ran on to the end of the block. Every
  * piece of its text is given the code font, a highlighted block's runs keep
- * their colour, and its line-break spans stay as they are.
+ * their color, and its line-break spans stay as they are.
  *
- * A stand-in colour takes the place of the colour html-to-docx gives a run
+ * A stand-in color takes the place of the color html-to-docx gives a run
  * from its paragraph, heading or cell, so the bold words of a red paragraph
- * came out black. A formatted run with a colour, the paragraph's or its own
- * (which wins), is listed in `coloured`, and its stand-in names the entry.
+ * came out black. A formatted run with a color, the paragraph's or its own
+ * (which wins), is listed in `colored`, and its stand-in names the entry.
  */
-function flattenFormatting(source: string, coloured: ColouredLook[] = []): string {
+function flattenFormatting(source: string, colored: ColoredLook[] = []): string {
   if (!/<(strong|b|em|i|cite|var|dfn|u|ins|s|del|strike|sup|sub|mark|code|kbd|samp|tt|span|small|big|abbr|acronym|time|data|bdi|bdo|font|q|a|pre)\b/i.test(source)) {
     return source
   }
@@ -906,26 +906,26 @@ function flattenFormatting(source: string, coloured: ColouredLook[] = []): strin
     }
     if (MONOSPACE.has(el.name)) return { ...look, font: CODE_FONT }
     if (el.name === 'span') {
-      // monospaceCode's and colourCode's spans: the only ones left by now.
+      // monospaceCode's and colorCode's spans: the only ones left by now.
       const font = /font-family:\s*([^;]+)/i.exec(el.attribs.style ?? '')?.[1]?.trim()
       return { ...look, ...(font ? { font } : {}) }
     }
     if (TRANSPARENT.has(el.name)) return look
     return null
   }
-  const withOwnColour = (el: Element, look: Look): Look => {
-    const colour = colourIn(el)
-    return colour ? { ...look, colour } : look
+  const withOwnColor = (el: Element, look: Look): Look => {
+    const color = colorIn(el)
+    return color ? { ...look, color } : look
   }
 
   const index = new Map<string, number>()
   const standIn = (look: Look): string => {
-    const colour = wordColour(look.colour ?? look.blockColour ?? '')
-    if (colour) {
-      const key = `${look.bits}:${colour}`
+    const color = wordColor(look.color ?? look.blockColor ?? '')
+    if (color) {
+      const key = `${look.bits}:${color}`
       let at = index.get(key)
-      if (at === undefined && coloured.length < MAX_COLOURED) {
-        at = coloured.push({ bits: look.bits, colour }) - 1
+      if (at === undefined && colored.length < MAX_COLORED) {
+        at = colored.push({ bits: look.bits, color }) - 1
         index.set(key, at)
       }
       if (at !== undefined) return `#0D0B${at.toString(16).toUpperCase().padStart(2, '0')}`
@@ -933,9 +933,9 @@ function flattenFormatting(source: string, coloured: ColouredLook[] = []): strin
     return `#0D0C${look.bits.toString(16).toUpperCase().padStart(2, '0')}`
   }
 
-  // No bits: a run's own colour goes as it is, and the block's is left to html-to-docx.
+  // No bits: a run's own color goes as it is, and the block's is left to html-to-docx.
   const styleOf = (look: Look): string =>
-    [look.bits ? `color: ${standIn(look)}` : look.colour ? `color: ${look.colour}` : '', look.font ? `font-family: ${look.font}` : '']
+    [look.bits ? `color: ${standIn(look)}` : look.color ? `color: ${look.color}` : '', look.font ? `font-family: ${look.font}` : '']
       .filter(Boolean)
       .join('; ')
 
@@ -943,14 +943,14 @@ function flattenFormatting(source: string, coloured: ColouredLook[] = []): strin
 
   const restyle = (node: AnyNode, look: Look): AnyNode[] => {
     if (node instanceof Text) {
-      if (node.data === '' || (!look.bits && !look.font && !look.colour)) return [node]
+      if (node.data === '' || (!look.bits && !look.font && !look.color)) return [node]
       return [new Element('span', { style: styleOf(look) }, [new Text(node.data)])]
     }
     if (!isElement(node) || UNTOUCHED.has(node.name)) return [node]
     if (look.pre && lineBreak(node)) return [node.name === 'br' ? new Element('span', {}, [node]) : node]
     if (node.name === 'pre') {
       splice(node, 0, node.children.length, node.children.flatMap((child) => restyle(child, { ...look, font: CODE_FONT, pre: true })))
-      joinSpaces(node, coloured)
+      joinSpaces(node, colored)
       if (!elementsOf(node.children, 'a').length) return [node]
       // html-to-docx writes the runs of a <pre> itself and makes no hyperlink
       // of an <a> there; it does in a paragraph's own children. Every run now
@@ -961,14 +961,14 @@ function flattenFormatting(source: string, coloured: ColouredLook[] = []): strin
       return [node]
     }
     const formatted = lookOf(node, look)
-    const own = formatted && withOwnColour(node, formatted)
-    const blockColour = COLOURED_BLOCK.has(node.name) ? colourIn(node) : undefined
-    const inner = own ?? (blockColour ? { ...look, blockColour, colour: undefined } : look)
+    const own = formatted && withOwnColor(node, formatted)
+    const blockColor = COLORED_BLOCK.has(node.name) ? colorIn(node) : undefined
+    const inner = own ?? (blockColor ? { ...look, blockColor, color: undefined } : look)
     let kids = node.children.flatMap((child) => restyle(child, inner))
     if (node.name === 'q') kids = [new Text('\u201C'), ...kids, new Text('\u201D')]
     if (own) return kids
     splice(node, 0, node.children.length, kids)
-    joinSpaces(node, coloured)
+    joinSpaces(node, colored)
     if (node.name === 'a' && node.children.length > 1 && !elementsOf(node.children, 'img').length) {
       splice(node, 0, node.children.length, [new Element('span', {}, [...node.children])])
     }
@@ -993,12 +993,12 @@ function leafText(node: AnyNode | null | undefined): Text | null {
 }
 
 /** A leaf whose formatting draws across its spaces too: strike, underline, highlight. */
-function drawsLine(node: AnyNode, coloured: ColouredLook[]): boolean {
+function drawsLine(node: AnyNode, colored: ColoredLook[]): boolean {
   if (!isElement(node)) return false
   const standIn = STAND_IN_BITS.exec(node.attribs.style ?? '')
   if (!standIn) return false
   const value = parseInt(standIn[2], 16)
-  const bits = standIn[1].toUpperCase() === 'B' ? (coloured[value]?.bits ?? 0) : value
+  const bits = standIn[1].toUpperCase() === 'B' ? (colored[value]?.bits ?? 0) : value
   return (bits & (STRIKE | UNDERLINE | MARK)) !== 0
 }
 
@@ -1023,7 +1023,7 @@ const KEPT = /[\uE003\uE004]/g
  * font, its spaces written as `&#32;`: html-to-docx drops white space between
  * two tags (its minifier), not a character reference.
  */
-function joinSpaces(parent: Element, coloured: ColouredLook[]): void {
+function joinSpaces(parent: Element, colored: ColoredLook[]): void {
   for (let i = 0; i < parent.children.length; i++) {
     const node = parent.children[i]
     const own = leafText(node)
@@ -1032,7 +1032,7 @@ function joinSpaces(parent: Element, coloured: ColouredLook[]): void {
     const next = parent.children[i + 1]
     const before = leafText(prev)
     const after = leafText(next)
-    const draws = (n: AnyNode): boolean => drawsLine(n, coloured)
+    const draws = (n: AnyNode): boolean => drawsLine(n, colored)
     const into = after && (next instanceof Text || (!draws(next) && (!before || draws(prev)))) ? next : before ? prev : after ? next : null
     if (!into) continue
     if (draws(into)) {
@@ -1060,10 +1060,10 @@ const rank = (element: string): number => {
   return at < 0 ? RPR_ORDER.length : at
 }
 
-/** The run properties a stand-in colour stands for. */
-function propertiesFor(bits: number, colour?: string): string[] {
+/** The run properties a stand-in color stands for. */
+function propertiesFor(bits: number, color?: string): string[] {
   const out: string[] = []
-  if (colour) out.push(`<w:color w:val="${colour}"/>`)
+  if (color) out.push(`<w:color w:val="${color}"/>`)
   if (bits & BOLD) out.push('<w:b/>')
   if (bits & ITALIC) out.push('<w:i/>')
   if (bits & STRIKE) out.push('<w:strike/>')
@@ -1075,12 +1075,12 @@ function propertiesFor(bits: number, colour?: string): string[] {
 }
 
 /**
- * Each stand-in colour flattenFormatting left becomes the formatting it
+ * Each stand-in color flattenFormatting left becomes the formatting it
  * stands for, the run's properties put in the schema's order (html-to-docx
  * writes them in the order it met them: a hyperlink's w:rStyle after w:b),
- * and a coloured one's colour put back.
+ * and a colored one's color put back.
  */
-function styleRuns(xml: string, coloured: ColouredLook[] = []): string {
+function styleRuns(xml: string, colored: ColoredLook[] = []): string {
   if (!STAND_IN.test(xml)) return xml
   return xml.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/g, (whole, inner: string) => {
     const standIn = STAND_IN.exec(inner)
@@ -1088,27 +1088,27 @@ function styleRuns(xml: string, coloured: ColouredLook[] = []): string {
     const kept = (inner.match(/<w:\w+\b[^>]*?\/>|<w:(\w+)\b[^>]*>[\s\S]*?<\/w:\1>/g) ?? []).filter((e) => !STAND_IN.test(e))
     const names = new Set(kept.map((e) => /^<w:(\w+)/.exec(e)?.[1]))
     const value = parseInt(standIn[2], 16)
-    const look = standIn[1].toUpperCase() === 'B' ? coloured[value] : { bits: value, colour: undefined }
-    const added = propertiesFor(look?.bits ?? 0, look?.colour).filter((e) => !names.has(/^<w:(\w+)/.exec(e)?.[1]))
+    const look = standIn[1].toUpperCase() === 'B' ? colored[value] : { bits: value, color: undefined }
+    const added = propertiesFor(look?.bits ?? 0, look?.color).filter((e) => !names.has(/^<w:(\w+)/.exec(e)?.[1]))
     const all = [...kept, ...added].sort((a, b) => rank(a) - rank(b))
     return `<w:rPr>${all.join('')}</w:rPr>`
   })
 }
 
 export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
-  const coloured: ColouredLook[] = []
+  const colored: ColoredLook[] = []
   const originals = new Map<string, Original>()
   const pictures = dropUnresolvableImages(standInOriginals(footnotesForOutput(doc.html, 'plain'), originals))
   const html = renderDocumentShell(
     {
       ...doc,
       html: flattenFormatting(
-        monospaceCode(breakCodeLines(colourCodeIf(opts?.codeColour !== false, centreOwnLineFormulas(unwrapSpans(flattenForDocx(pictures)))))),
-        coloured,
+        monospaceCode(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centreOwnLineFormulas(unwrapSpans(flattenForDocx(pictures)))))),
+        colored,
       ),
     },
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)
-  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), coloured, originals)
+  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals)
 }

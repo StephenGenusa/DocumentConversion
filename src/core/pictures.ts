@@ -47,7 +47,7 @@ import { createHash } from 'node:crypto'
  *                 the SVG rasterised by the render host, fitted to Word's
  *                 page and drawn at twice that, like an SVG image. PNG,
  *                 not JPEG, whatever pictureFormat says: lines and text
- *                 stay crisp and colours flat.
+ *                 stay crisp and colors flat.
  *
  * Where an RTF picture comes with a bitmap beside it (\\nonshppict), a
  * metafile that can be drawn is chosen over that bitmap: it is the

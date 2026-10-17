@@ -104,7 +104,7 @@ describe('RULES: the key can only come from the table itself', () => {
     expect(colorizeStatusEmoji(prose)).toBe(prose)
   })
 
-  it('still colours a status emoji', () => {
+  it('still colors a status emoji', () => {
     expect(colorizeStatusEmoji('done ✅')).toContain('#16a34a')
   })
 })

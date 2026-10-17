@@ -13,7 +13,7 @@ import { metafileCorpus } from '../../scripts/fixtures/metafile-corpus.mjs'
 /**
  * The metafile corpus drawn (src/core/metafile), sanitised and rasterised
  * by the real render host, as a conversion to Kindle does: key points of
- * each picture checked for the colour they should be. Needs a display;
+ * each picture checked for the color they should be. Needs a display;
  * skipped without one.
  */
 const ROOT = resolve(__dirname, '..', '..')
@@ -94,7 +94,7 @@ describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
     }
   }, 120_000)
 
-  /** The colour at (x, y) in CSS px of the picture (the PNG is twice that), within a little of `want`. */
+  /** The color at (x, y) in CSS px of the picture (the PNG is twice that), within a little of `want`. */
   function expectAt(name: string, x: number, y: number, want: string, slack = 24): void {
     const r = result[name]
     expect(r?.error, name).toBeUndefined()

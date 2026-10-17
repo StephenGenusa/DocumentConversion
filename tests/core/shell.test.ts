@@ -99,7 +99,7 @@ describe('renderDocumentShell', () => {
 
     /**
      * A figure output rendered as a bare full-bleed <img>: no gutter, no
-     * coloured rule, nothing tying it to the cell that produced it, while the
+     * colored rule, nothing tying it to the cell that produced it, while the
      * text outputs beside it got both. An <img> cannot carry a class — the hub
      * allowlist permits `class` on `pre`/`code` only — so the shell selects it
      * by the alt text the notebook reader stamps on every figure it inlines.

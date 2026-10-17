@@ -17,7 +17,7 @@
  *   dib24(width, height, (x, y) => [r, g, b])   // a 24-bit DIB: { info, bits }
  *   png(width, height, (x, y) => [r, g, b])     // a PNG
  *
- * Colours are 0xRRGGBB here; the writers store them as COLORREF (0x00BBGGRR).
+ * Colors are 0xRRGGBB here; the writers store them as COLORREF (0x00BBGGRR).
  */
 import { deflateSync } from 'node:zlib'
 
@@ -64,7 +64,7 @@ export function dib24(width, height, pixel) {
   return { info, bits }
 }
 
-/** A 1-bit DIB (a monochrome pattern), its two colours black and white. */
+/** A 1-bit DIB (a monochrome pattern), its two colors black and white. */
 export function dib1(width, height, set) {
   const info = Buffer.alloc(48)
   info.writeUInt32LE(40, 0)
@@ -348,16 +348,16 @@ export class WmfWriter {
     this.records.push(Buffer.concat([head, body]))
     return this
   }
-  colour(rgb) {
+  color(rgb) {
     return u32s(colorref(rgb))
   }
   setWindowOrg(x, y) { return this.rec(0x020b, y, x) }
   setWindowExt(x, y) { return this.rec(0x020c, y, x) }
   setBkMode(m) { return this.rec(0x0102, m) }
-  setTextColor(rgb) { return this.rec(0x0209, this.colour(rgb)) }
+  setTextColor(rgb) { return this.rec(0x0209, this.color(rgb)) }
   setTextAlign(a) { return this.rec(0x012e, a) }
-  pen(style, width, rgb) { return this.rec(0x02fa, style, width, 0, this.colour(rgb)) }
-  brush(style, rgb, hatch = 0) { return this.rec(0x02fc, style, this.colour(rgb), hatch) }
+  pen(style, width, rgb) { return this.rec(0x02fa, style, width, 0, this.color(rgb)) }
+  brush(style, rgb, hatch = 0) { return this.rec(0x02fc, style, this.color(rgb), hatch) }
   font({ height = -16, weight = 400, escapement = 0, face = 'Arial' } = {}) {
     const lf = Buffer.alloc(50)
     lf.writeInt16LE(height, 0)

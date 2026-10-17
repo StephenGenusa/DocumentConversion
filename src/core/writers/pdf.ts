@@ -40,7 +40,7 @@ export function createPdfWriter(render: RenderHtmlToPdf, shellOpts?: Pick<ShellO
     }
     const html = colorizeStatusEmoji(doc.html)
     const shell = (body: string): string =>
-      renderDocumentShell({ ...doc, html: body }, { ...shellOpts, target: 'pdf', codeColour: opts?.codeColour })
+      renderDocumentShell({ ...doc, html: body }, { ...shellOpts, target: 'pdf', codeColor: opts?.codeColor })
 
     /** Render one piece, splitting it further if the renderer refuses it. */
     const renderPiece = async (body: string, maxRows: number, maxCells: number, depth: number): Promise<Buffer[]> => {
