@@ -233,8 +233,11 @@ export const AUTO_TABLE_ROWS = 500
 /** The longest word a table may hold and still be laid out by its content. */
 export const AUTO_TABLE_WORD = 28
 
-/** Whether the document's tables are small enough, in rows and in words, to be laid out by their content. */
-function autoTables(body: string): boolean {
+/**
+ * Whether the document's tables are small enough, in rows and in words, to be
+ * laid out by their content. The Word writer asks the same (docx.ts sizeTables).
+ */
+export function autoTables(body: string): boolean {
   if ((body.match(/<tr[\s>]/g)?.length ?? 0) > AUTO_TABLE_ROWS) return false
   for (const table of body.match(/<table[\s>][\s\S]*?<\/table>/g) ?? []) {
     const text = table.replace(/<[^>]*>/g, ' ').replace(/&[#\w]+;/g, 'x')

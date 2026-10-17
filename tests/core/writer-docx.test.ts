@@ -410,7 +410,7 @@ describe('writeDocx writes merged cells in schema order', () => {
     expect(xml).not.toMatch(/<w:gridSpan w:val="0"\/>/)
     const rows = [...xml.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((m) => m[0])
     const last = rows[rows.length - 1]
-    expect(last).toMatch(/<w:tcPr><w:gridSpan w:val="2"\/><w:vMerge w:val="continue"\/>/)
+    expect(last).toMatch(/<w:tcPr>(?:<w:tcW [^>]*\/>)?<w:gridSpan w:val="2"\/><w:vMerge w:val="continue"\/>/)
   })
 })
 

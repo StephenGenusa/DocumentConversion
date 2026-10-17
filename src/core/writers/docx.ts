@@ -5,7 +5,7 @@ import { parseDocument } from 'htmlparser2'
 import { findAll, textContent } from 'domutils'
 import { Element, Text, type AnyNode } from 'domhandler'
 import render from 'dom-serializer'
-import { renderDocumentShell } from '../shell'
+import { autoTables, renderDocumentShell } from '../shell'
 import { replaceImages } from '../inline-images'
 import { ownRows } from '../table-grid'
 import { footnotesForOutput } from '../footnotes'
@@ -516,6 +516,288 @@ function trailingRowSpans(xml: string): string {
   })
 }
 
+/** What the Word writer knows of each table from the HTML it hands html-to-docx, in document order. */
+interface TableLayout {
+  /** Its rows, to be sure the table met in the XML is this one. */
+  rows: number
+  /** The rows of its <thead>, Word's header rows. */
+  header: number
+}
+
+/** Each table's rows and header rows, from the HTML html-to-docx is given (nested tables are flattened by then). */
+function tableLayouts(html: string): TableLayout[] {
+  if (!html.includes('<table')) return []
+  return (html.match(/<table[\s>][\s\S]*?<\/table>/g) ?? []).map((table) => ({
+    rows: table.match(/<tr[\s>]/g)?.length ?? 0,
+    header: /<thead[\s>]([\s\S]*?)<\/thead>/.exec(table)?.[1].match(/<tr[\s>]/g)?.length ?? 0,
+  }))
+}
+
+/** Times New Roman's advance widths in thousandths of an em, a to z, then A to Z (its metrics, rounded). */
+const LOWER_EM = [444, 500, 444, 500, 444, 333, 500, 500, 278, 278, 500, 278, 778, 500, 500, 500, 500, 333, 389, 278, 500, 500, 722, 500, 500, 444]
+const UPPER_EM = [722, 667, 667, 722, 611, 556, 722, 722, 333, 389, 722, 611, 889, 722, 722, 556, 722, 667, 556, 611, 722, 722, 944, 722, 722, 611]
+
+/**
+ * A character's width in Times New Roman (html-to-docx's font), in ems:
+ * enough to tell a column of two-letter codes from a column of sentences.
+ */
+function charEm(ch: string): number {
+  const code = ch.charCodeAt(0)
+  if (code >= 97 && code <= 122) return LOWER_EM[code - 97] / 1000
+  if (code >= 65 && code <= 90) return UPPER_EM[code - 65] / 1000
+  if (code >= 48 && code <= 57) return 0.5
+  if (' \u00a0.,·'.includes(ch)) return 0.25
+  if (":;'!|/()[]`-".includes(ch)) return 0.3
+  if ('%@&'.includes(ch)) return 0.85
+  return ch.codePointAt(0)! >= 0x2e80 ? 1 : 0.55
+}
+
+/** html-to-docx's run size when a run names none, in half-points (styles.xml's docDefaults). */
+const DEFAULT_HALF_POINTS = 22
+/** A word measured is given this much more room: the estimate must not wrap it. */
+const WORD_SLACK = 1.1
+/** Twips per EMU, for a picture's width. */
+const EMU_PER_TWIP = 635
+
+/** A cell's narrowest (its longest word or picture) and widest (its longest line) width, in twips, without its margins. */
+function measureCell(cell: string): { min: number; max: number } {
+  let min = 0
+  let max = 0
+  for (const p of cell.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) ?? []) {
+    const indent = Number(/<w:ind\b[^>]*w:(?:left|start)="(\d+)"/.exec(p)?.[1] ?? 0)
+    let line = 0
+    let word = 0
+    const endWord = (): void => {
+      min = Math.max(min, indent + word * WORD_SLACK)
+      word = 0
+    }
+    const endLine = (): void => {
+      endWord()
+      max = Math.max(max, indent + line * WORD_SLACK)
+      line = 0
+    }
+    for (const run of p.match(/<w:r\b[^>]*>[\s\S]*?<\/w:r>/g) ?? []) {
+      const rPr = /<w:rPr>([\s\S]*?)<\/w:rPr>/.exec(run)?.[1] ?? ''
+      const em = (Number(/<w:sz w:val="(\d+)"/.exec(rPr)?.[1] ?? DEFAULT_HALF_POINTS) || DEFAULT_HALF_POINTS) * 10
+      const bold = /<w:b(?:\s*\/>|\s+w:val="(?:1|true|on)")/.test(rPr) ? 1.08 : 1
+      const mono = /<w:rFonts\b[^>]*(?:Courier|Mono|Consolas)/i.test(rPr)
+      for (const piece of run.matchAll(/<w:t\b[^>]*>([^<]*)<\/w:t>|<w:(br|cr|tab)\b[^>]*\/>|<wp:extent cx="(\d+)"/g)) {
+        if (piece[3]) {
+          const picture = Number(piece[3]) / EMU_PER_TWIP
+          endWord()
+          min = Math.max(min, indent + picture)
+          line += picture
+          continue
+        }
+        if (piece[2] === 'tab') {
+          endWord()
+          line += em / 2
+          continue
+        }
+        if (piece[2]) {
+          endLine()
+          continue
+        }
+        const text = piece[1].replace(/&(?:#\d+|#x[\da-f]+|\w+);/gi, 'x')
+        for (const ch of text) {
+          const width = em * (mono ? 0.6 : charEm(ch)) * bold
+          line += width
+          if (ch === ' ' || ch === ' ') endWord()
+          else word += width
+        }
+      }
+    }
+    endLine()
+  }
+  return { min, max }
+}
+
+/**
+ * Widths for columns that would like `max` and need `min`, sharing `room`
+ * out. When every column fits at its widest, the rest goes in proportion to
+ * that (the table is as wide as the text, as the PDF's is). When not, the
+ * columns are filled like water to one level: a column wanting less than the
+ * level gets all it wants, every other one the level (never less than its
+ * minimum), so a column of short entries ("86.4 kN·m", "OK") stays on one
+ * line and the columns of sentences wrap, sharing the rest alike. (A
+ * browser's auto layout gives each column its minimum and the rest in
+ * proportion to how much more it wants, and a column of sentences takes
+ * nearly all of it.) When not even the minimums fit, the minimums are shrunk
+ * alike. Whole twips, summing to `room`.
+ */
+function shareWidth(min: number[], max: number[], room: number): number[] {
+  const total = (ns: number[]): number => ns.reduce((a, b) => a + b, 0)
+  const lo = total(min)
+  const hi = total(max)
+  let widths: number[]
+  if (lo >= room) widths = min.map((m) => (m * room) / lo)
+  else if (hi <= room) widths = hi > 0 ? max.map((m) => (m * room) / hi) : max.map(() => room / max.length)
+  else {
+    const at = (level: number): number[] => min.map((m, i) => Math.max(m, Math.min(max[i], level)))
+    let low = 0
+    let high = Math.max(...max)
+    for (let i = 0; i < 40; i++) {
+      const level = (low + high) / 2
+      if (total(at(level)) > room) high = level
+      else low = level
+    }
+    widths = at(low)
+  }
+  const whole = widths.map(Math.floor)
+  const widest = whole.indexOf(Math.max(...whole))
+  whole[widest] += room - total(whole)
+  return whole
+}
+
+/** `need` spread over the columns from `at`, `span` of them, where they hold less: in proportion to `by`, or evenly. */
+function cover(widths: number[], at: number, span: number, need: number, by: number[]): void {
+  const have = widths.slice(at, at + span).reduce((a, b) => a + b, 0)
+  if (need <= have) return
+  const weights = by.slice(at, at + span)
+  const weight = weights.reduce((a, b) => a + b, 0)
+  for (let i = 0; i < span; i++) widths[at + i] += ((need - have) * (weight > 0 ? weights[i] / weight : 1 / span))
+}
+
+/**
+ * html-to-docx shares a table's width out evenly among its columns (a grid
+ * of equal w:gridCol and no cell widths), so a "#" column took as much of
+ * the page as a column of sentences and "86.4 kN·m" broke in two beside it.
+ * Where the PDF lays the document's tables out by their content (shell.ts
+ * autoTables: modest tables, words kept whole), each column is measured here
+ * (measureCell: its longest word as its minimum, its longest line as what it
+ * would like; a cell spanning columns covers them together, after the single
+ * cells) and the width between the margins of the page the writer emits is
+ * shared out (shareWidth): short columns whole, the columns of sentences
+ * sharing the rest, with narrower cell margins where they keep more cells on
+ * one line (contentWidths). The grid, the table's w:tblW and every cell's
+ * w:tcW say the widths: LibreOffice follows the grid,
+ * Word the cell widths, and Word's autofit layout (left on) still widens a
+ * column whose word the estimate made too narrow, where a fixed layout would
+ * break the word. A table whose widths the source gave (a grid not even, or a
+ * table or cell width already written) keeps them, as does every table of a
+ * document the PDF prints with even columns.
+ *
+ * The rows of a table's <thead> are marked as Word's header rows: repeated at
+ * the top of each page the table runs onto, never split across two, and kept
+ * with the row after them (w:keepNext in their paragraphs), where a two-row
+ * header had been left at the foot of a page with its rows on the next. Only
+ * when every table met is the one the HTML had at that place (`layouts`, by
+ * its count of rows).
+ */
+function sizeTables(xml: string, layouts: TableLayout[], byContent: boolean): string {
+  if (!xml.includes('<w:tbl>')) return xml
+  const met = xml.match(/<w:tbl>/g)?.length ?? 0
+  const page = /<w:sectPr\b(?:(?!<w:sectPr\b)[\s\S])*$/.exec(xml)?.[0] ?? ''
+  const twips = (re: RegExp, fallback: number): number => Number(re.exec(page)?.[1] ?? fallback)
+  const textWidth =
+    twips(/<w:pgSz\b[^>]*w:w="(\d+)"/, 8.5 * 1440) - twips(/<w:pgMar\b[^>]*w:left="(\d+)"/, 1800) - twips(/<w:pgMar\b[^>]*w:right="(\d+)"/, 1800) - twips(/<w:pgMar\b[^>]*w:gutter="(\d+)"/, 0)
+  let index = 0
+  return xml.replace(/<w:tbl>((?:(?!<w:tbl>)[\s\S])*?)<\/w:tbl>/g, (_whole, inner: string) => {
+    const layout = layouts.length === met ? layouts[index] : undefined
+    index++
+    const rowsOf = (): RegExpMatchArray[] => [...inner.matchAll(/<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g)]
+    if (layout && layout.header > 0 && layout.header < layout.rows && rowsOf().length === layout.rows) inner = headerRows(inner, layout.header)
+    if (byContent && textWidth > 0) inner = contentWidths(inner, textWidth)
+    return `<w:tbl>${inner}</w:tbl>`
+  })
+}
+
+/** The first `count` rows of a table marked as its header (see sizeTables). */
+function headerRows(inner: string, count: number): string {
+  let row = 0
+  return inner.replace(/(<w:tr\b[^>]*>)([\s\S]*?<\/w:tr>)/g, (whole, open: string, rest: string) => {
+    if (row++ >= count) return whole
+    const marks = '<w:cantSplit/><w:tblHeader/>'
+    const props = /^\s*<w:trPr\/>/.test(rest)
+      ? rest.replace(/<w:trPr\/>/, `<w:trPr>${marks}</w:trPr>`)
+      : /^\s*<w:trPr>/.test(rest)
+        ? rest.replace(/<\/w:trPr>/, `${marks}</w:trPr>`)
+        : `<w:trPr>${marks}</w:trPr>${rest}`
+    const kept = props
+      .replace(/<w:pPr\/>/g, '<w:pPr><w:keepNext/></w:pPr>')
+      .replace(/<w:pPr>([\s\S]*?)<\/w:pPr>/g, (p, inside: string) => (inside.includes('<w:keepNext/>') ? p : `<w:pPr><w:keepNext/>${inside}</w:pPr>`))
+      .replace(/<w:p>(?!\s*<w:pPr)/g, '<w:p><w:pPr><w:keepNext/></w:pPr>')
+    return open + kept
+  })
+}
+
+/** A table's grid, its w:tblW and its cells' w:tcW, from what its columns hold (see sizeTables). */
+function contentWidths(inner: string, textWidth: number): string {
+  const grid = /<w:tblGrid>([\s\S]*?)<\/w:tblGrid>/.exec(inner)
+  let props = /<w:tblPr>([\s\S]*?)<\/w:tblPr>/.exec(inner)?.[1] ?? ''
+  if (!grid || /<w:tblW\b/.test(props) || inner.includes('<w:tcW')) return inner
+  const given = [...grid[1].matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) => Number(m[1]))
+  const columns = given.length
+  if (columns === 0 || new Set(given).size > 1) return inner
+  const margin = (side: string): number => Number(new RegExp(`<w:tblCellMar>[\\s\\S]*?<w:${side}\\b[^>]*w:w="(\\d+)"`).exec(props)?.[1] ?? 108)
+  const room = textWidth - Number(/<w:tblInd w:w="(\d+)"/.exec(props)?.[1] ?? 0)
+  const span = (cell: string): number => Number(/<w:gridSpan w:val="(\d+)"/.exec(cell)?.[1] ?? 1) || 1
+  // Each cell's text measured once: where it starts, how many columns, how narrow and how wide.
+  const measured: { at: number; span: number; min: number; max: number }[] = []
+  for (const row of inner.match(/<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g) ?? []) {
+    let at = 0
+    for (const cell of row.match(TC) ?? []) {
+      const n = span(cell)
+      if (at + n > columns) return inner
+      measured.push({ at, span: n, ...measureCell(cell) })
+      at += n
+    }
+    if (at !== columns) return inner
+  }
+  // The columns' least and wanted widths with `side` twips of margin either side of a cell (and a little for the borders).
+  const bounds = (side: number): { min: number[]; max: number[] } => {
+    const padding = 2 * side + 30
+    const min = new Array<number>(columns).fill(padding)
+    const max = new Array<number>(columns).fill(padding)
+    for (const m of measured.filter((c) => c.span === 1)) {
+      min[m.at] = Math.max(min[m.at], m.min + padding)
+      max[m.at] = Math.max(max[m.at], m.max + padding)
+    }
+    for (const m of measured.filter((c) => c.span > 1).sort((x, y) => x.span - y.span)) {
+      cover(min, m.at, m.span, m.min + padding, max)
+      cover(max, m.at, m.span, m.max + padding, max)
+    }
+    for (let i = 0; i < columns; i++) max[i] = Math.max(max[i], min[i])
+    return { min, max }
+  }
+  // html-to-docx's cell margins (0.11 in either side) cost a table of eight
+  // columns nearly two inches. Word's own default (0.075 in) and 0.05 in are
+  // tried too, and the margin that leaves the fewest cells wrapping (of
+  // those whose words all fit whole, if any do) is the table's; of equals,
+  // the widest.
+  const held = Math.max(margin('left'), margin('right'))
+  const wrapped = (side: number, widths: number[]): number =>
+    measured.filter((m) => widths.slice(m.at, m.at + m.span).reduce((x, y) => x + y, 0) + 1 < m.max + 2 * side + 30).length
+  let best: { side: number; widths: number[]; fits: boolean; wraps: number } | undefined
+  for (const side of [held, ...[108, 72].filter((m) => m < held)]) {
+    const { min, max } = bounds(side)
+    const fits = min.reduce((x, y) => x + y, 0) <= room
+    const widths = shareWidth(min, max, room)
+    const wraps = wrapped(side, widths)
+    if (!best || (fits && !best.fits) || (fits === best.fits && wraps < best.wraps)) best = { side, widths, fits, wraps }
+  }
+  const { side, widths } = best!
+  if (side !== held) {
+    props = props.replace(/<w:tblCellMar>[\s\S]*?<\/w:tblCellMar>/, (mar) => mar.replace(/(<w:(?:left|right|start|end)\b[^>]*w:w=")\d+"/g, `$1${side}"`))
+    inner = inner.replace(/<w:tblPr>[\s\S]*?<\/w:tblPr>/, () => `<w:tblPr>${props}</w:tblPr>`)
+  }
+  const total = widths.reduce((a, b) => a + b, 0)
+  const sized = inner
+    .replace(/<w:tblGrid>[\s\S]*?<\/w:tblGrid>/, () => `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`)
+    .replace(/<w:tblPr>/, `<w:tblPr><w:tblW w:w="${total}" w:type="dxa"/>`)
+  return sized.replace(/<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g, (row) => {
+    let at = 0
+    return row.replace(TC, (cell) => {
+      const n = span(cell)
+      const width = `<w:tcW w:w="${widths.slice(at, at + n).reduce((a, b) => a + b, 0)}" w:type="dxa"/>`
+      at += n
+      if (cell.includes('<w:tcPr>')) return cell.replace('<w:tcPr>', `<w:tcPr>${width}`)
+      if (cell.includes('<w:tcPr/>')) return cell.replace('<w:tcPr/>', `<w:tcPr>${width}</w:tcPr>`)
+      return cell.replace('<w:tc>', `<w:tc><w:tcPr>${width}</w:tcPr>`)
+    })
+  })
+}
+
 /**
  * html-to-docx's document template opens the body with its w:sectPr (page
  * size and margins), and the paragraphs follow it; the schema (CT_Body) has
@@ -542,6 +824,7 @@ async function recompress(
   originals: Map<string, Original> = new Map(),
   languages: string[] = [],
   bordered: CellBorders[] = [],
+  tables: { layouts: TableLayout[]; byContent: boolean } = { layouts: [], byContent: false },
 ): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
@@ -553,7 +836,7 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered))))), languages))
+    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(sizeTables(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), tables.layouts, tables.byContent)), languages))
     for (const name of ['word/styles.xml', 'word/numbering.xml']) {
       const part = zip.file(name)
       if (part) zip.file(name, schemaOrder(await part.async('string')))
@@ -1653,5 +1936,7 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)
-  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages, bordered)
+  // Columns sized by content where the PDF sizes them so: decided on the hub's HTML, as there.
+  const tables = { layouts: tableLayouts(html), byContent: doc.html.includes('<table') && autoTables(doc.html) }
+  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages, bordered, tables)
 }
