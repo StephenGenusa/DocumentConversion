@@ -31,11 +31,31 @@ describe('pastedHtmlToHub', () => {
     expect(out).toContain('[image: org chart]')
   })
 
-  it('refuses images on private addresses, like a fetched page does', async () => {
-    const d = deps({ 'http://intranet.local/secret.png': PNG }, '10.0.0.5')
-    const out = await pastedHtmlToHub('<img src="http://intranet.local/secret.png" alt="x">', d)
-    expect(out).not.toContain('data:image/png')
-    expect(d.fetch).not.toHaveBeenCalled()
+  it('embeds images from the intranet (owner, 2026-10-16)', async () => {
+    for (const [src, address] of [
+      ['http://intranet/logo.png', '10.0.0.5'],
+      ['http://wiki.corp/logo.png', '192.168.1.9'],
+      ['http://10.1.2.3/logo.png', '10.1.2.3'],
+    ]) {
+      const d = deps({ [src]: PNG }, address)
+      const out = await pastedHtmlToHub(`<img src="${src}" alt="x">`, d)
+      expect(out, src).toContain('data:image/png')
+    }
+  })
+
+  it('refuses images on loopback and link-local addresses, like a fetched page does', async () => {
+    for (const [src, address] of [
+      ['http://intranet.local/secret.png', '127.0.0.1'],
+      ['http://localhost/secret.png', '93.184.216.34'],
+      ['http://169.254.169.254/latest/meta-data/', '169.254.169.254'],
+      ['http://[::1]/secret.png', '::1'],
+      ['http://[fe80::1]/secret.png', 'fe80::1'],
+    ]) {
+      const d = deps({ [src]: PNG }, address)
+      const out = await pastedHtmlToHub(`<img src="${src}" alt="x">`, d)
+      expect(out, src).not.toContain('data:image/png')
+      expect(d.fetch, src).not.toHaveBeenCalled()
+    }
   })
 
   it('cannot resolve a relative source, since a paste has no base URL', async () => {
@@ -190,8 +210,8 @@ describe('pictures an SVG names by address (<image href="https://…">)', () => 
     expect(d.fetch).not.toHaveBeenCalled()
   })
 
-  it('refuses them on private addresses, like any other picture', async () => {
-    const d = deps({ 'http://intranet.local/photo.png': PNG }, '10.0.0.5')
+  it('refuses them on loopback addresses, like any other picture', async () => {
+    const d = deps({ 'http://intranet.local/photo.png': PNG }, '127.0.0.1')
     const out = await resolveRemoteImages(svgImg(planSvg('http://intranet.local/photo.png')), 'html', d)
     expect(d.fetch).not.toHaveBeenCalled()
     expect(svgsIn(out)[0]).not.toContain('data:image/png')

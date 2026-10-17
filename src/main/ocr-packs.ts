@@ -2,13 +2,13 @@ import { app } from 'electron'
 import { mkdir, readdir, rename, unlink, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { lookup as dnsLookup } from 'node:dns/promises'
 import { guardedFetch } from '../core/net/guarded-fetch'
 import { installPack, packPathIn, type PackFetch } from '../ocr/pack-install'
 import { installedLanguages, packIsGzipped, resolvePack } from '../ocr/resolve-pack'
 import { LANGUAGES, downloadUrl, findLanguage, type ModelSet } from '../ocr/languages'
 import { digestFor } from '../ocr/checksums.generated'
 import { ocrLangDir } from './ocr-host'
+import { urlFetchDeps } from './net'
 
 /**
  * Downloading and managing OCR language packs.
@@ -31,20 +31,13 @@ const fs = {
   mkdir: async (path: string) => void (await mkdir(path, { recursive: true })),
 }
 
-/** The same address resolution the URL reader is given. */
-const netDeps = {
-  fetch: (url: string, init: RequestInit) => globalThis.fetch(url, init),
-  lookup: async (host: string): Promise<string[]> =>
-    (await dnsLookup(host, { all: true })).map((a) => a.address),
-}
-
 const fetchPack =
   (signal?: AbortSignal): PackFetch =>
   async (url) => {
     try {
       // A pack is larger than a web page, so the default 10 MB budget would
       // refuse the bigger `best` models outright.
-      const result = await guardedFetch(url, netDeps, { signal, maxBytes: 64 * 1024 * 1024 })
+      const result = await guardedFetch(url, urlFetchDeps, { signal, maxBytes: 64 * 1024 * 1024 })
       return { ok: true, bytes: result.bytes }
     } catch (err) {
       return { ok: false, error: (err as Error).message, cancelled: signal?.aborted }

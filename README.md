@@ -161,8 +161,9 @@ Three inputs are not file formats:
 - **A web page address.** Paste a link or use *From URL*. The readable article
   is extracted with Mozilla Readability and its images embedded, up to 100
   images and 25 MB.
-  Every redirect hop is checked against private and loopback addresses, so a
-  page cannot make the app fetch something on your local network.
+  Every redirect hop is checked against loopback and link-local addresses, so
+  a page cannot make the app fetch something on your own machine or a cloud
+  metadata service. Intranet addresses are allowed.
 - **A ZIP archive.** Expanded into its convertible entries, each becoming a
   separate input. Junk entries such as macOS resource forks are skipped, with a
   cap of 100 entries.
@@ -248,9 +249,14 @@ built in:
 
 Every download goes through the same checks as *From URL*:
 
-- Only `http` and `https`. Each redirect hop is checked, and an address on your
-  local network or loopback is refused, so a document cannot make the app reach
-  your router, a printer or a service on your own machine.
+- Only `http` and `https`. Pictures on your intranet are fetched: private
+  addresses (10.x, 172.16–31.x, 192.168.x, IPv6 `fc00::/7`) and single-word
+  host names such as `http://intranet/logo.png`. Each redirect hop is checked,
+  and this machine (`localhost`, 127.x, `::1`), link-local addresses
+  (169.254.x, where cloud metadata services answer, and `fe80::`), and
+  multicast and reserved addresses are refused, so a document cannot make the
+  app reach a service on your own machine. The connection is made to the
+  address that was checked, so a name cannot change its answer in between.
 - Up to 100 images, 2 MB each and 25 MB in total per input, four at a time,
   with 10 seconds allowed per image. When the total is exceeded the largest
   images are dropped first.
@@ -500,7 +506,8 @@ npm run build:mac     # zip            -> dist/Document Converter-<version>-mac.
     printing.
   - `slides.ts` — cuts the document into slides.
   - `merge.ts`, `pdf-merge.ts` — join documents, and join PDFs page for page.
-  - `net/guarded-fetch.ts` — the fetcher that refuses private addresses.
+  - `net/guarded-fetch.ts` — the fetcher that refuses loopback, link-local and
+    reserved addresses.
 - `src/ocr/` — the recognition pipeline, the language catalogue, and
   checksum-gated pack installation. No Electron dependency.
 - `src/cli/` — argument parsing and output-path resolution. No side effects.
