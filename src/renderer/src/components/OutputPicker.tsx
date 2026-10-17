@@ -34,10 +34,10 @@ const FORMATS: TargetFormat[] = [
   'xlsx',
 ]
 
-const ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2]
+export const ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2]
 
 /** The zoom steps, with `current` among them in order when it is not one. */
-function zoomLevels(current: number): number[] {
+export function zoomLevels(current: number): number[] {
   return ZOOM_LEVELS.includes(current) ? ZOOM_LEVELS : [...ZOOM_LEVELS, current].sort((a, b) => a - b)
 }
 const PAGE_SIZES: PdfPageSize[] = ['Letter', 'A4', 'Legal', 'A3', 'Tabloid']

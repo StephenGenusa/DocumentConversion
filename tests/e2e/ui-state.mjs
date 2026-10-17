@@ -283,6 +283,45 @@ try {
   let titles = await windowTitles()
   check('the window title shows the version', titles.includes(`Document Converter ${version}`), JSON.stringify(titles))
 
+  // Settings (settings spec 7): Ctrl+, is the menu item's accelerator. A key
+  // sent over the DevTools protocol goes straight to the page and never
+  // reaches the native menu, so the check is that the item carries Ctrl+, and
+  // that invoking it - what the accelerator does - opens the dialog. Escape is
+  // the page's own, so it is pressed for real.
+  const dialogOpen = `!!document.querySelector('dialog.settings[open]')`
+  const pressEscape = async () => {
+    for (const type of ['rawKeyDown', 'keyUp']) {
+      await new Promise((r) => {
+        const id = ++seq
+        pending.set(id, r)
+        ws.send(JSON.stringify({ id, method: 'Input.dispatchKeyEvent', params: { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 } }))
+      })
+    }
+  }
+  const settingsItem = await mainEval(
+    `(() => { const i = process.mainModule.require('electron').Menu.getApplicationMenu().getMenuItemById('settings'); return i && { label: i.label, accelerator: i.accelerator } })()`,
+  )
+  check('the menu has Settings… at Ctrl+,', settingsItem?.label === 'Settings…' && settingsItem.accelerator === 'CmdOrCtrl+,', JSON.stringify(settingsItem))
+  await js(`document.activeElement?.blur()`)
+  await mainEval(`process.mainModule.require('electron').Menu.getApplicationMenu().getMenuItemById('settings').click()`)
+  await waitFor(dialogOpen, 'the Settings dialog to open from the menu')
+  check(
+    'Ctrl+, opens the Settings dialog, on its first section',
+    await js(`document.activeElement?.getAttribute('role') === 'tab' && document.activeElement.textContent === 'Pictures'`),
+    await js(`document.activeElement?.outerHTML.slice(0, 120)`),
+  )
+  await pressEscape()
+  await waitFor(`!document.querySelector('dialog.settings')`, 'Escape to close the Settings dialog')
+  check('Escape closes it', true)
+  // From the start screen's link: Escape gives the focus back to the link.
+  // A script's click() does not move the focus as a real one does.
+  await js(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Settings').focus()`)
+  await click('Settings')
+  await waitFor(dialogOpen, 'the Settings dialog to open from the link')
+  await pressEscape()
+  await waitFor(`!document.querySelector('dialog.settings')`, 'Escape to close the Settings dialog')
+  check('closing gives the focus back to what opened it', await js(`document.activeElement?.textContent === 'Settings'`), await js(`document.activeElement?.outerHTML.slice(0, 120)`))
+
   // About opens from the start screen, in its own window, with Chromium's 20 MB of notices collapsed.
   const opened = Date.now()
   await click('About and licences')

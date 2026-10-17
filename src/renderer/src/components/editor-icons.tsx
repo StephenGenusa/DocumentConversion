@@ -156,3 +156,22 @@ export function IconDiagram(): React.JSX.Element {
     </svg>
   )
 }
+
+/** A gear, for the Settings button in the header. Eight teeth: still a gear at 16 px, not a sun. */
+export function IconSettings(): React.JSX.Element {
+  return (
+    <svg {...svg}>
+      <path d="M12.85 6.79L14.53 7.02L14.53 8.98L12.85 9.21L12.29 10.57L13.31 11.92L11.92 13.31L10.57 12.29L9.21 12.85L8.98 14.53L7.02 14.53L6.79 12.85L5.43 12.29L4.08 13.31L2.69 11.92L3.71 10.57L3.15 9.21L1.47 8.98L1.47 7.02L3.15 6.79L3.71 5.43L2.69 4.08L4.08 2.69L5.43 3.71L6.79 3.15L7.02 1.47L8.98 1.47L9.21 3.15L10.57 3.71L11.92 2.69L13.31 4.08L12.29 5.43Z" />
+      <circle cx="8" cy="8" r="2.2" />
+    </svg>
+  )
+}
+
+/** A cross, for closing a dialog. */
+export function IconClose(): React.JSX.Element {
+  return (
+    <svg {...svg}>
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </svg>
+  )
+}

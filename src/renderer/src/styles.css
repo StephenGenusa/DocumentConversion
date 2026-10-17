@@ -229,3 +229,79 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .tb-menu__item { display: flex; justify-content: space-between; gap: 1rem; align-items: center; text-align: left; background: none; border: 0; border-radius: 6px; padding: .4rem .6rem; font: inherit; font-size: .85rem; color: inherit; cursor: pointer; }
 .tb-menu__item:hover, .tb-menu__item:focus-visible { background: #eef2ff; outline: none; }
 .tb-menu__keys { color: #71717a; font-size: .75rem; }
+.app__header { position: relative; }
+.app__settings { position: absolute; top: 0; right: 0; color: #52525b; }
+.app__settings:hover { color: #18181b; }
+
+/*
+ * The Settings dialog (SettingsDialog.tsx, settings spec 7.3). 720×520 in the
+ * 1040×700 window, the section list on the left. Below 720 px wide the list is
+ * a row of tabs (wrapping, at a large text size); nothing scrolls sideways.
+ * Only the panel scrolls: the title and the footer stay.
+ */
+.settings {
+  width: min(720px, calc(100vw - 32px));
+  height: min(520px, calc(100vh - 32px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 1px solid #e4e4e7;
+  border-radius: 12px;
+  background: #fff;
+  color: inherit;
+  box-shadow: 0 16px 48px rgba(24, 24, 27, .22);
+  overflow: hidden;
+}
+.settings[open] { display: flex; flex-direction: column; }
+.settings::backdrop { background: rgba(24, 24, 27, .35); }
+.settings__head { display: flex; align-items: center; justify-content: space-between; padding: .75rem .75rem .75rem 1.25rem; border-bottom: 1px solid #e4e4e7; }
+.settings__head h2 { margin: 0; font-size: 1.1rem; }
+.settings__close { color: #52525b; }
+.settings__body { flex: 1; min-height: 0; display: flex; }
+.settings__nav { width: 180px; flex: none; display: flex; flex-direction: column; justify-content: space-between; gap: .5rem; padding: .75rem .5rem; border-right: 1px solid #e4e4e7; background: #fafafa; }
+.settings__tabs { display: flex; flex-direction: column; gap: .15rem; }
+.settings__tab { text-align: left; background: none; border: 1px solid transparent; border-radius: 8px; padding: .45rem .7rem; font: inherit; font-size: .9rem; color: #3f3f46; cursor: pointer; }
+.settings__tab:hover { background: #f4f4f5; }
+.settings__tab--on, .settings__tab--on:hover { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; font-weight: 600; }
+.settings__reset-all { align-self: flex-start; margin: 0 .7rem .25rem; font-size: .85rem; }
+.settings__panel { flex: 1; min-width: 0; overflow-y: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
+.settings__panel > .app__notice { flex: none; }
+.settings__foot { display: flex; align-items: center; gap: .75rem; padding: .75rem 1.25rem; border-top: 1px solid #e4e4e7; }
+.settings__status { flex: 1; color: #71717a; font-size: .85rem; text-align: right; }
+.settings__confirm { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .85rem; }
+.settings :focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+.setting { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
+.setting--under { margin-left: 1.3rem; }
+.setting__title { font-weight: 600; font-size: .92rem; padding: 0; }
+.setting__choices { display: flex; flex-direction: column; gap: .3rem; margin: .1rem 0 0; }
+.setting__choice, .setting__check { display: flex; align-items: center; gap: .5rem; font-size: .9rem; cursor: pointer; }
+.setting__check input, .setting__choice input { margin: 0; flex: none; }
+.setting select { align-self: flex-start; }
+.setting__help { margin: 0; font-size: .85rem; line-height: 1.45; color: #52525b; }
+.setting__affects { margin: 0; font-size: .8rem; color: #71717a; }
+.setting__check ~ p { margin-left: 1.3rem; }
+
+@media (max-width: 719px) {
+  .settings__body { flex-direction: column; }
+  .settings__nav { width: auto; border-right: 0; border-bottom: 1px solid #e4e4e7; padding: .4rem .5rem; }
+  /* Six short names fit in one row at the window's minimum width; at a larger
+     text size they wrap to a second row rather than scroll sideways. */
+  .settings__tabs { flex-direction: row; flex-wrap: wrap; }
+  .settings__tab { white-space: nowrap; padding: .4rem .6rem; }
+  .settings__reset-all { align-self: center; margin: 0; white-space: nowrap; font-size: .85rem; }
+  .settings__head, .settings__foot, .settings__panel { padding-left: 1rem; padding-right: 1rem; }
+}
+
+/*
+ * Windows High Contrast and other forced colors: backgrounds are replaced by
+ * the system's, so the selected section needs a mark that survives - its
+ * border, in the system highlight, with the others' borders hidden - and the
+ * dialog an edge of its own.
+ */
+@media (forced-colors: active) {
+  .settings { border-color: CanvasText; }
+  .settings__tab { border-color: Canvas; }
+  .settings__tab--on, .settings__tab--on:hover { border-color: Highlight; outline: 1px solid Highlight; }
+  .settings :focus-visible { outline-color: Highlight; }
+  .settings::backdrop { background: rgba(0, 0, 0, .5); }
+}

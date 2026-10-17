@@ -16,6 +16,8 @@ import { ClipboardPane } from './components/ClipboardPane'
 import { OutputPicker } from './components/OutputPicker'
 import { ResultView } from './components/ResultView'
 import { BatchResults } from './components/BatchResults'
+import { SettingsDialog } from './components/SettingsDialog'
+import { IconSettings } from './components/editor-icons'
 import { applyLiveEdit, keepEdits, markDiskState, toRequest, type LiveEdit } from './lib/items'
 import { allowedMergeTargets, allowedTargets } from '../../core/target-validity'
 import { DEFAULT_SETTINGS } from '../../core/settings'
@@ -63,6 +65,9 @@ function App(): React.JSX.Element {
   const [cancelLabel, setCancelLabel] = useState('Cancel')
   const [notice, setNotice] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  /** "Your settings file could not be read and was reset.": up until the dialog has been seen. */
+  const [settingsNotice, setSettingsNotice] = useState<string | null>(null)
   const jobRef = useRef<string | null>(null)
   /** Set by the mounted edit pane; null whenever no pane is on screen. */
   const liveRef = useRef<(() => LiveEdit) | null>(null)
@@ -107,6 +112,19 @@ function App(): React.JSX.Element {
       stop()
     }
   }, [])
+
+  // Settings… in the menu and Cmd/Ctrl+, (an accelerator, so it works from the
+  // editor too); the start screen's link and the header's gear call the same.
+  useEffect(() => window.api.onOpenSettings(() => setSettingsOpen(true)), [])
+  // Main gives the notice once; it stays on screen until the dialog is closed.
+  useEffect(() => {
+    void window.api.settingsNotice().then((n) => n && setSettingsNotice(n), () => {})
+  }, [])
+
+  function closeSettings(): void {
+    setSettingsOpen(false)
+    setSettingsNotice(null)
+  }
 
   const editingItem = editingId !== null ? (items.find((i) => i.id === editingId) ?? null) : null
 
@@ -495,6 +513,18 @@ function App(): React.JSX.Element {
     <div className="app">
       <header className="app__header">
         <h1>Document Converter</h1>
+        {/* The start screen has its own Settings link, beside About. */}
+        {(hasInput || showResults) && (
+          <button
+            type="button"
+            className="btn btn--icon btn--ghost app__settings"
+            aria-label="Settings"
+            title="Settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <IconSettings />
+          </button>
+        )}
         <p>
           Files, web pages and the clipboard → PDF, Word, Markdown, HTML, EPUB, Kindle and slides. Runs entirely on your
           computer.
@@ -521,7 +551,9 @@ function App(): React.JSX.Element {
           if (hasInput) void intake.onPaste(e)
         }}
       >
-        {!hasInput && !showResults && <DropZone intake={intake} notice={notice} busy={busy} />}
+        {!hasInput && !showResults && (
+          <DropZone intake={intake} notice={notice ?? settingsNotice} busy={busy} onOpenSettings={() => setSettingsOpen(true)} />
+        )}
         {hasInput && !showResults && (
           <>
             {editingItem !== null ? (
@@ -660,6 +692,7 @@ function App(): React.JSX.Element {
         )}
         {batch && <BatchResults outDir={batch.outDir} rows={batch.rows} onRetry={retryRow} onDone={reset} />}
       </main>
+      {settingsOpen && <SettingsDialog onClose={closeSettings} notice={settingsNotice} />}
     </div>
   )
 }

@@ -7,10 +7,12 @@ export function DropZone({
   intake,
   notice,
   busy,
+  onOpenSettings,
 }: {
   intake: Intake
   notice: string | null
   busy?: boolean
+  onOpenSettings?: () => void
 }): React.JSX.Element {
   const [hover, setHover] = useState(false)
   const [urlField, setUrlField] = useState<string | null>(null)
@@ -99,9 +101,17 @@ export function DropZone({
       )}
       {/*
         The menu bar is hidden until Alt on Windows and Linux, so Help → About
-        would go unfound without a way in from here.
+        and File → Settings would go unfound without a way in from here.
       */}
       <p className="dropzone__about">
+        {onOpenSettings && (
+          <>
+            <button type="button" className="link-button" onClick={onOpenSettings}>
+              Settings
+            </button>
+            <span aria-hidden="true"> · </span>
+          </>
+        )}
         <button type="button" className="link-button" onClick={() => void window.api.openAbout()}>
           About and licences
         </button>
