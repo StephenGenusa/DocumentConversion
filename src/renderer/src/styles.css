@@ -282,10 +282,11 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .setting__check ~ p { margin-left: 1.3rem; }
 .setting[data-ocr-packs]:focus { outline: none; }
 .ocr-packs { list-style: none; margin: .1rem 0 0; padding: 0; border: 1px solid #e4e4e7; border-radius: 8px; }
-.ocr-packs__item { display: flex; align-items: center; gap: .75rem; padding: .4rem .6rem; font-size: .9rem; min-height: 2rem; }
+.ocr-packs__item { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .4rem .6rem; font-size: .9rem; min-height: 2rem; }
 .ocr-packs__item + .ocr-packs__item { border-top: 1px solid #f4f4f5; }
 .ocr-packs__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ocr-packs__size { color: #71717a; font-size: .8rem; white-space: nowrap; }
+.ocr-packs__confirm { flex-basis: 100%; }
 
 @media (max-width: 719px) {
   .settings__body { flex-direction: column; }

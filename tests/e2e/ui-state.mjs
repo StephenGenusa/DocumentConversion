@@ -961,7 +961,42 @@ try {
       packs[1].remove,
     JSON.stringify(packs),
   )
-  await js(`document.querySelector('dialog.settings button[aria-label="Remove German"]').click()`)
+  // Remove asks first, in the dialog, with the focus on Cancel. Escape (pressed
+  // for real) and Cancel both back out of it and keep the pack.
+  const askRemove = async () => {
+    await js(`document.querySelector('dialog.settings button[aria-label="Remove German"]').click()`)
+    await waitFor(`!!document.querySelector('dialog.settings .ocr-packs__confirm')`, 'the Remove question')
+  }
+  await askRemove()
+  const asked = {
+    question: await inDialog(`d.querySelector('.ocr-packs__confirm span').textContent`),
+    focus: await js(`document.activeElement?.textContent`),
+  }
+  check(
+    'Remove asks first, with the download size and the default, focus on Cancel',
+    /^Remove German\? Getting it back needs a download \(about [\d.]+ MB\)\. The default language will become English\.$/.test(asked.question) &&
+      asked.focus === 'Cancel',
+    JSON.stringify(asked),
+  )
+  await pressEscape()
+  await waitFor(`!document.querySelector('dialog.settings .ocr-packs__confirm')`, 'Escape to back out of the Remove question')
+  check(
+    'Escape backs out of the Remove question, not the dialog, and keeps the pack',
+    (await js(dialogOpen)) && existsSync(pack) && (await js(`document.activeElement?.getAttribute('aria-label')`)) === 'Remove German',
+    JSON.stringify({ open: await js(dialogOpen), onDisk: existsSync(pack), focus: await js(`document.activeElement?.outerHTML.slice(0, 120)`) }),
+  )
+  await askRemove()
+  const answer = (text) =>
+    js(`[...document.querySelectorAll('dialog.settings .ocr-packs__confirm button')].find((b) => b.textContent === ${JSON.stringify(text)}).click()`)
+  await answer('Cancel')
+  await waitFor(`!document.querySelector('dialog.settings .ocr-packs__confirm')`, 'Cancel to back out of the Remove question')
+  check(
+    'Cancel keeps the pack',
+    existsSync(pack) && (await inDialog(`!!d.querySelector('[data-language="deu"]')`)),
+    JSON.stringify({ onDisk: existsSync(pack) }),
+  )
+  await askRemove()
+  await answer('Remove')
   await waitFor(`!document.querySelector('dialog.settings [data-language="deu"]')`, 'German to be removed')
   const removed = {
     status: await js(`document.querySelector('.settings__status').textContent`),

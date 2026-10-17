@@ -86,16 +86,8 @@ export interface OcrLanguageListing {
   source?: 'bundled' | 'downloaded'
   set?: 'fast' | 'best'
   size: { fast: number; best: number }
-}
-
-export interface OcrLanguageListing {
-  code: string
-  name: string
-  script: string
-  installed: boolean
-  source?: 'bundled' | 'downloaded'
-  set?: 'fast' | 'best'
-  size: { fast: number; best: number }
+  /** What installing it downloads (the fast model), when the recorded table knows; `size` may be an estimate. */
+  downloadSize?: number
 }
 
 export type PdfPageSize = 'Letter' | 'A4' | 'Legal' | 'A3' | 'Tabloid'

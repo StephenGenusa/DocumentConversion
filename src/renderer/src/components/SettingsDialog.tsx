@@ -22,7 +22,8 @@ import { IconClose } from './editor-icons'
  * fetching). Each says what it changes in its "Affects:" line.
  *
  * OCR (spec 4.7) also manages the downloaded language packs: removing one is
- * housekeeping, not a setting, so it is not undone by Reset.
+ * housekeeping, not a setting, so it is not undone by Reset. It is the one
+ * change here that costs something to undo (a download), so it asks first.
  */
 
 /** The outputs, as an "Affects:" line names them, in the order it lists them. */
@@ -260,24 +261,59 @@ export const SETTINGS_PAGES: SettingsPage[] = [
 ]
 
 /**
+ * The question Remove asks: what getting the language back costs, and what
+ * happens to the default. The size is the recorded one or none: an estimate
+ * would be a guess presented as a fact.
+ */
+export function removeQuestion(name: string, downloadSize: number | undefined, isDefault: boolean): string {
+  const size = downloadSize ? ` (about ${megabytes(downloadSize)})` : ''
+  const english = isDefault ? ' The default language will become English.' : ''
+  return `Remove ${name}? Getting it back needs a download${size}.${english}`
+}
+
+/**
  * The installed OCR languages, with their size and Remove (spec 4.7). English
- * is part of the app and has no Remove. Removing the default language leaves
+ * is part of the app and has no Remove. Remove asks first, in the language's
+ * row, with the focus on Cancel; Escape backs out of the question (`onAsking`
+ * tells the dialog not to close). Removing the default language leaves
  * English in force (the store's rule, spec 5.3): the status line says so.
  */
 function OcrPacks({
   defaultLanguage,
   onStatus,
   onRemoved,
+  onAsking,
 }: {
   defaultLanguage: string
   onStatus: (text: string) => void
   onRemoved?: (code: string) => void
+  onAsking: (asking: boolean) => void
 }): React.JSX.Element {
   const ids = useId()
   const [languages, refresh] = useOcrLanguages()
   const [busy, setBusy] = useState<string | null>(null)
+  const [asking, setAsking] = useState<string | null>(null)
   const groupRef = useRef<HTMLDivElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  /** The language whose Remove button gets the focus back when the question goes. */
+  const backTo = useRef<string | null>(null)
   const installed = languages.filter((l) => l.installed)
+
+  useEffect(() => {
+    onAsking(asking !== null)
+    if (asking) cancelRef.current?.focus()
+    else if (backTo.current) {
+      groupRef.current?.querySelector<HTMLButtonElement>(`[data-language="${backTo.current}"] button`)?.focus()
+      backTo.current = null
+    }
+  }, [asking, onAsking])
+  // Left for another section with the question up: Escape closes the dialog again.
+  useEffect(() => () => onAsking(false), [onAsking])
+
+  function ask(code: string | null): void {
+    if (code === null) backTo.current = asking
+    setAsking(code)
+  }
 
   async function remove(code: string): Promise<void> {
     const language = installed.find((l) => l.code === code)
@@ -322,13 +358,42 @@ function OcrPacks({
             <span className="ocr-packs__size">
               {l.source === 'bundled' ? 'Included' : megabytes(l.size[l.set ?? 'fast'])}
             </span>
-            {l.source === 'downloaded' && (
+            {l.source === 'downloaded' && asking === l.code && (
+              <div
+                className="settings__confirm ocr-packs__confirm"
+                role="group"
+                aria-labelledby={`${ids}-ask`}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Escape') return
+                  // Stopped here, so the dialog neither closes nor sees it.
+                  e.preventDefault()
+                  e.stopPropagation()
+                  ask(null)
+                }}
+              >
+                <span id={`${ids}-ask`}>{removeQuestion(l.name, l.downloadSize, l.code === defaultLanguage)}</span>
+                <button
+                  type="button"
+                  className="btn btn--mini"
+                  onClick={() => {
+                    setAsking(null)
+                    void remove(l.code)
+                  }}
+                >
+                  Remove
+                </button>
+                <button ref={cancelRef} type="button" className="btn btn--mini" onClick={() => ask(null)}>
+                  Cancel
+                </button>
+              </div>
+            )}
+            {l.source === 'downloaded' && asking !== l.code && (
               <button
                 type="button"
                 className="btn btn--mini"
                 aria-label={`Remove ${l.name}`}
                 disabled={busy !== null}
-                onClick={() => void remove(l.code)}
+                onClick={() => ask(l.code)}
               >
                 Remove
               </button>
@@ -382,6 +447,8 @@ export function SettingsDialog({
   const [page, setPage] = useState(0)
   const [status, setStatus] = useState('')
   const [confirming, setConfirming] = useState(false)
+  /** The OCR section's Remove is asking its question: Escape is for that, not the dialog. */
+  const [packAsking, setPackAsking] = useState(false)
   const narrow = useNarrow()
 
   // Opened as a modal: the rest of the window is inert and the focus stays
@@ -569,10 +636,11 @@ export function SettingsDialog({
       className="settings"
       aria-labelledby={`${ids}-title`}
       // Escape: the dialog closes through its owner, which unmounts it. With
-      // the Reset all question up, Escape backs out of the question instead.
+      // the Reset all or a Remove question up, Escape backs out of the
+      // question instead.
       onCancel={(e) => {
         e.preventDefault()
-        if (!confirming) onClose()
+        if (!confirming && !packAsking) onClose()
       }}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && confirming) {
@@ -627,7 +695,12 @@ export function SettingsDialog({
           )}
           {current.settings.map(view)}
           {current.packs && settings && (
-            <OcrPacks defaultLanguage={settings.ocr.language} onStatus={setStatus} onRemoved={onOcrPackRemoved} />
+            <OcrPacks
+              defaultLanguage={settings.ocr.language}
+              onStatus={setStatus}
+              onRemoved={onOcrPackRemoved}
+              onAsking={setPackAsking}
+            />
           )}
         </div>
       </div>

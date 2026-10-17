@@ -52,6 +52,7 @@ export interface PackListing {
   source?: 'bundled' | 'downloaded'
   set?: ModelSet
   size: { fast: number; best: number }
+  downloadSize?: number
 }
 
 export function listPacks(): PackListing[] {
@@ -73,6 +74,8 @@ export function listPacks(): PackListing[] {
         fast: digestFor(language.code, 'fast')?.size ?? language.size.fast,
         best: digestFor(language.code, 'best')?.size ?? language.size.best,
       },
+      // The app downloads only the fast model; no recorded size, no estimate.
+      downloadSize: digestFor(language.code, 'fast')?.size,
     }
   })
 }

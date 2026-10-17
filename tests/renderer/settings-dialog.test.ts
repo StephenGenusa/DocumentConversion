@@ -17,10 +17,10 @@ let saved: Settings
 let raw: Record<string, unknown>
 let changed: ((s: Settings) => void) | null
 /** The OCR languages, as `listOcrLanguages` gives them: English bundled, German downloaded, French not installed. */
-let packs: { code: string; name: string; script: string; installed: boolean; source?: string; set?: string; size: { fast: number; best: number } }[]
+let packs: { code: string; name: string; script: string; installed: boolean; source?: string; set?: string; size: { fast: number; best: number }; downloadSize?: number }[]
 const freshPacks = (): typeof packs => [
   { code: 'eng', name: 'English', script: 'Latin', installed: true, source: 'bundled', set: 'fast', size: { fast: 4_000_000, best: 12_000_000 } },
-  { code: 'deu', name: 'German', script: 'Latin', installed: true, source: 'downloaded', set: 'fast', size: { fast: 1_520_000, best: 8_000_000 } },
+  { code: 'deu', name: 'German', script: 'Latin', installed: true, source: 'downloaded', set: 'fast', size: { fast: 1_520_000, best: 8_000_000 }, downloadSize: 1_520_000 },
   { code: 'fra', name: 'French', script: 'Latin', installed: false, size: { fast: 1_100_000, best: 7_000_000 } },
 ]
 const api = {
@@ -258,6 +258,13 @@ describe('the OCR section', () => {
   }
   const items = (): HTMLElement[] => [...panel().querySelectorAll<HTMLElement>('.ocr-packs__item')]
   const status = (): string | null | undefined => host.querySelector('.settings__status')?.textContent
+  const question = (): string | null | undefined => panel().querySelector('.ocr-packs__confirm')?.textContent
+  /** Remove German, and answer Remove to the question that follows. */
+  const removeGerman = async (): Promise<void> => {
+    act(() => items()[1].querySelector('button')!.click())
+    act(() => button('Remove').click())
+    await flush()
+  }
 
   it('picks the default language with the conversion screen\'s picker, and saves it', async () => {
     saved = { ...saved, ocr: { language: 'deu' } }
@@ -312,11 +319,62 @@ describe('the OCR section', () => {
     expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('Installed languages')
   })
 
-  it('removes a language, and says when that puts the default back to English', async () => {
+  it('asks before removing a language, with what getting it back costs', async () => {
+    await ocrTab()
+    act(() => panel().querySelector<HTMLButtonElement>('button[aria-label="Remove German"]')!.click())
+    expect(api.removeOcrLanguage).not.toHaveBeenCalled()
+    expect(question()).toBe('Remove German? Getting it back needs a download (about 1.5 MB).RemoveCancel')
+    // The question is in the row, in place of its Remove button, with the focus on the safe answer.
+    expect(items()[1].querySelector('button[aria-label="Remove German"]')).toBeNull()
+    expect(document.activeElement).toBe(button('Cancel'))
+
+    // Escape backs out of the question, not the dialog.
+    key(button('Cancel'), 'Escape')
+    expect(question()).toBeUndefined()
+    expect(onClose).not.toHaveBeenCalled()
+    expect(dialog().open).toBe(true)
+    expect(document.activeElement).toBe(panel().querySelector('button[aria-label="Remove German"]'))
+
+    // Cancel keeps the pack too.
+    act(() => panel().querySelector<HTMLButtonElement>('button[aria-label="Remove German"]')!.click())
+    act(() => button('Cancel').click())
+    await flush()
+    expect(question()).toBeUndefined()
+    expect(document.activeElement).toBe(panel().querySelector('button[aria-label="Remove German"]'))
+    expect(api.removeOcrLanguage).not.toHaveBeenCalled()
+    expect(items().map((i) => i.dataset.language)).toEqual(['eng', 'deu'])
+  })
+
+  it('lets Escape close the dialog again after leaving the section with the question up', async () => {
+    await ocrTab()
+    act(() => items()[1].querySelector('button')!.click())
+    act(() => tab('Code').click())
+    act(() => {
+      dialog().dispatchEvent(new Event('cancel', { cancelable: true }))
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('says in the question when the language is the default', async () => {
     saved = { ...saved, ocr: { language: 'deu' } }
     await ocrTab()
     act(() => items()[1].querySelector('button')!.click())
-    await flush()
+    expect(question()).toBe(
+      'Remove German? Getting it back needs a download (about 1.5 MB). The default language will become English.RemoveCancel',
+    )
+  })
+
+  it('leaves the size out of the question when the recorded size is not known', async () => {
+    delete packs[1].downloadSize
+    await ocrTab()
+    act(() => items()[1].querySelector('button')!.click())
+    expect(question()).toBe('Remove German? Getting it back needs a download.RemoveCancel')
+  })
+
+  it('removes a language, and says when that puts the default back to English', async () => {
+    saved = { ...saved, ocr: { language: 'deu' } }
+    await ocrTab()
+    await removeGerman()
     expect(api.removeOcrLanguage).toHaveBeenCalledWith('deu', 'fast')
     expect(items().map((i) => i.dataset.language)).toEqual(['eng'])
     expect(status()).toBe('German is removed. The default language is now English.')
@@ -330,16 +388,14 @@ describe('the OCR section', () => {
 
   it('removes a language that is not the default without a word about English', async () => {
     await ocrTab()
-    act(() => items()[1].querySelector('button')!.click())
-    await flush()
+    await removeGerman()
     expect(status()).toBe('German is removed.')
   })
 
   it('says when a pack could not be removed, and keeps it listed', async () => {
     api.removeOcrLanguage.mockImplementationOnce(async () => ({ ok: false, message: 'EACCES' }))
     await ocrTab()
-    act(() => items()[1].querySelector('button')!.click())
-    await flush()
+    await removeGerman()
     expect(status()).toBe('Not removed: EACCES')
     expect(items().map((i) => i.dataset.language)).toEqual(['eng', 'deu'])
     expect(onOcrPackRemoved).not.toHaveBeenCalled()
