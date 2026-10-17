@@ -11,8 +11,9 @@ import { buildDocx, noteRef } from '../../scripts/fixtures/lib-docx.mjs'
 /*
  * Word equations in the docx reader (spec B12, plan step 19): taken out of the
  * XML before mammoth (which drops them), turned into TeX, and put back as the
- * hub's math (B1). Inline unless a math paragraph stands alone in its
- * paragraph. The conversion itself is tests/core/omml-tex.test.ts.
+ * hub's math (B1). A math paragraph is display math (alone in its paragraph,
+ * a block; beside text, display inside the paragraph), anything else inline.
+ * The conversion itself is tests/core/omml-tex.test.ts.
  */
 
 const r = (t: string): string => `<m:r><m:t xml:space="preserve">${t}</m:t></m:r>`
@@ -30,6 +31,7 @@ async function read(opts: { body: string; footnotes?: string[]; endnotes?: strin
 
 const inline = (tex: string): string => `<code class="language-math">${tex}</code>`
 const display = (tex: string): string => `<pre><code class="language-math">${tex}</code></pre>`
+const shown = (tex: string): string => `<code class="language-math math-display">${tex}</code>`
 
 describe('Word equations in the docx reader', () => {
   it('inline math in running text (the spec’s "Inline x² end.", which used to lose the x²)', async () => {
@@ -43,9 +45,9 @@ describe('Word equations in the docx reader', () => {
     expect(html).toBe(`<p>Before.</p>${display('x^{2}')}<p>After.</p>`)
   })
 
-  it('a math paragraph sharing its paragraph with text is inline', async () => {
-    const { html } = await read({ body: `<w:p>${t('So ')}${mathPara(xSquared)}</w:p>` })
-    expect(html).toBe(`<p>So ${inline('x^{2}')}</p>`)
+  it('a math paragraph sharing its paragraph with text is display math inside the paragraph; an m:oMath there stays inline', async () => {
+    const { html } = await read({ body: `<w:p>${t('So ')}${mathPara(xSquared)}${t(' and ')}${xSquared}${t('.')}</w:p>` })
+    expect(html).toBe(`<p>So ${shown('x^{2}')} and ${inline('x^{2}')}.</p>`)
   })
 
   it('an m:oMath alone in its paragraph, not in a math paragraph, stays inline (B12)', async () => {
@@ -143,6 +145,40 @@ describe('Word equations through a conversion', () => {
     expect(md.toString('utf8')).toContain('So ${x+y}$ here.')
     await conv.convert({ bytes: md, filename: 'e.md' }, 'md', 'docx')
     expect(asked).toEqual([{ source: 'x+y', display: false }])
+  })
+
+  describe('a math paragraph in a paragraph with text', () => {
+    const shared = (): Promise<Buffer> =>
+      buildDocx({ body: `<w:p>${t('The sum ')}${mathPara(`<m:oMath><m:f><m:num>${r('a')}</m:num><m:den>${r('b')}</m:den></m:f></m:oMath>`)}${t(' is big, and ')}${xSquared}${t(' small.')}</w:p>` })
+
+    it('docx → md: $$…$$ in place, the m:oMath beside it $…$', async () => {
+      const conv = createConverter(async () => Buffer.from(''))
+      const md = (await conv.convert({ bytes: await shared(), filename: 'e.docx' }, 'docx', 'md')).parts[0].bytes.toString('utf8')
+      expect(md.trim()).toBe('The sum $$\\frac{a}{b}$$ is big, and $x^{2}$ small.')
+    })
+
+    it('docx → docx: drawn as display, centered in a paragraph of its own between the text', async () => {
+      const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+      const asked: Array<{ source: string; display: boolean }> = []
+      const render: RenderBlocks = async (reqs) => {
+        asked.push(...reqs.map(({ source, display }) => ({ source, display })))
+        return reqs.map(() => ({ png: PNG, width: 20, height: 16, baseline: 4 }))
+      }
+      const conv = createConverter(async () => Buffer.from(''), { renderBlocks: render })
+      const out = await conv.convert({ bytes: await shared(), filename: 'e.docx' }, 'docx', 'docx')
+      expect(asked).toEqual([
+        { source: '\\frac{a}{b}', display: true },
+        { source: 'x^{2}', display: false },
+      ])
+      const xml = await (await JSZip.loadAsync(out.parts[0].bytes)).files['word/document.xml'].async('string')
+      const paras = [...xml.matchAll(/<w:p>[\s\S]*?<\/w:p>|<w:p [\s\S]*?<\/w:p>/g)].map((m) => m[0])
+      const at = paras.findIndex((p) => p.includes('<w:drawing>'))
+      expect(paras[at - 1]).toContain('The sum')
+      expect(paras[at]).toContain('<w:jc w:val="center"/>')
+      expect(paras[at]).not.toContain('<w:t')
+      expect(paras[at + 1]).toContain('is big, and')
+      expect(paras[at + 1]).toContain('<w:drawing>')
+    })
   })
 
   it('docx → docx: equations come back as pictures, not as Word equations', async () => {

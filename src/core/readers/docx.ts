@@ -820,7 +820,7 @@ export function restoreCodeBlocks(html: string, marker: string, blocks: string[]
  */
 export interface WordEquation {
   tex: string
-  /** An `m:oMathPara`: a math paragraph, drawn on a line of its own when it is alone in its paragraph. */
+  /** An `m:oMathPara`: a math paragraph, drawn on a line of its own (a block when it is alone in its paragraph). */
   display: boolean
   /** Some element was not understood and is its linear text in `tex`. */
   partial: boolean
@@ -924,8 +924,11 @@ async function extractEquations(
 
 /**
  * Put each equation back where its marker stands: a math paragraph alone in
- * its paragraph as display math, everything else as inline math (B12, B1).
- * A marker that cannot be matched is removed, so none ever reaches the hub.
+ * its paragraph as display math, one that shares its paragraph with text as
+ * display math inside the paragraph (the hub's `math-display`, as pandoc
+ * reads `$$…$$` in a sentence), and every `m:oMath` outside a math paragraph
+ * as inline math (B12, B1). A marker that cannot be matched is removed, so
+ * none ever reaches the hub.
  */
 export function restoreEquations(html: string, marker: string, equations: WordEquation[]): string {
   const m = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -942,7 +945,7 @@ export function restoreEquations(html: string, marker: string, equations: WordEq
   })
   out = out.replace(new RegExp(token, 'g'), (_, n: string) => {
     const e = eq(n)
-    return e?.tex ? `<code class="language-math">${escapeHtml(e.tex)}</code>` : ''
+    return e?.tex ? `<code class="language-math${e.display ? ' math-display' : ''}">${escapeHtml(e.tex)}</code>` : ''
   })
   // Anything left of a marker (torn by something upstream) goes too.
   return out.replace(new RegExp(`${m}\\d*\ue001?`, 'g'), '')
