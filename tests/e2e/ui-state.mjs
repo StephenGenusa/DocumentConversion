@@ -421,6 +421,35 @@ try {
   await waitFor(`!document.querySelector('dialog.settings')`, 'Escape to close the Settings dialog')
   check('closing gives the focus back to what opened it', await js(`document.activeElement?.textContent === 'Settings'`), await js(`document.activeElement?.outerHTML.slice(0, 120)`))
 
+  // Native dialogs (owner's bug, 2026-10-17): each is modal on the window
+  // that asked, and only one is open at a time. The real dialog cannot be
+  // driven, so showOpenDialog is stood in for in the main process: it
+  // records what it was given and stays open until the test closes it.
+  await mainEval(`(() => {
+    const { dialog, BrowserWindow } = process.mainModule.require('electron')
+    const real = dialog.showOpenDialog
+    globalThis.__dialogStub = { real, calls: [], close: null }
+    dialog.showOpenDialog = (...args) => {
+      const owner = args[0] instanceof BrowserWindow ? args[0] : null
+      globalThis.__dialogStub.calls.push({ owned: !!owner, title: owner?.getTitle() ?? '' })
+      return new Promise((resolve) => (globalThis.__dialogStub.close = () => resolve({ canceled: true, filePaths: [] })))
+    }
+  })()`)
+  await click('Open files…')
+  for (let i = 0; i < 50 && !(await mainEval('globalThis.__dialogStub.calls.length')); i++) await sleep(100)
+  await click('Open files…')
+  await sleep(800)
+  const dialogCalls = await mainEval('globalThis.__dialogStub.calls')
+  check('Open shows its dialog on the app\'s window', dialogCalls.length >= 1 && dialogCalls[0].owned && dialogCalls[0].title.startsWith('Document Converter'), JSON.stringify(dialogCalls))
+  check('a second Open while the dialog is showing opens no second dialog', dialogCalls.length === 1, JSON.stringify(dialogCalls))
+  await mainEval('globalThis.__dialogStub.close?.()')
+  await sleep(300)
+  await click('Open files…')
+  for (let i = 0; i < 50 && (await mainEval('globalThis.__dialogStub.calls.length')) < 2; i++) await sleep(100)
+  check('once it has closed, Open shows a dialog again', (await mainEval('globalThis.__dialogStub.calls.length')) === 2, JSON.stringify(await mainEval('globalThis.__dialogStub.calls')))
+  await mainEval(`(() => { globalThis.__dialogStub.close?.(); process.mainModule.require('electron').dialog.showOpenDialog = globalThis.__dialogStub.real; delete globalThis.__dialogStub })()`)
+  await sleep(300)
+
   // About opens from the start screen, in its own window, with Chromium's 20 MB of notices collapsed.
   const opened = Date.now()
   await click('About and licenses')

@@ -1,4 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, clipboard, session } from 'electron'
+import type { OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue, WebContents } from 'electron'
+import { createDialogGate } from './dialogs'
 import { join, dirname, isAbsolute } from 'path'
 import { writeFile, readFile, stat } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -123,6 +125,26 @@ function baseName(filename?: string): string {
 
 /** The converter's window: About and the hidden render window are windows too. */
 let mainWindow: BrowserWindow | null = null
+
+/** Every native dialog: modal on the window that asked, one at a time (dialogs.ts). */
+const dialogs = createDialogGate()
+const CANCELED_OPEN: OpenDialogReturnValue = { canceled: true, filePaths: [] }
+const CANCELED_SAVE: SaveDialogReturnValue = { canceled: true, filePath: '' }
+
+/** The window a request came from, which owns its dialog; the converter's window if that has none. */
+function dialogOwner(sender: WebContents): BrowserWindow | null {
+  return BrowserWindow.fromWebContents(sender) ?? mainWindow
+}
+
+/** An open dialog (files or a folder) on the asking window, through the gate. */
+function openDialog(sender: WebContents, options: OpenDialogOptions): Promise<OpenDialogReturnValue> {
+  return dialogs.show(dialogOwner(sender), (win) => (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options)), CANCELED_OPEN)
+}
+
+/** A save dialog on the asking window, through the gate. */
+function saveDialog(sender: WebContents, options: SaveDialogOptions): Promise<SaveDialogReturnValue> {
+  return dialogs.show(dialogOwner(sender), (win) => (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options)), CANCELED_SAVE)
+}
 
 /**
  * Settings… from the menu or its accelerator (settings spec 7.1). The dialog
@@ -255,8 +277,8 @@ async function loadPath(path: string): Promise<LoadedFile[]> {
 }
 
 function registerIpc(settings: SettingsStore): void {
-  ipcMain.handle('app:open-file', async () => {
-    const res = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+  ipcMain.handle('app:open-file', async (e) => {
+    const res = await openDialog(e.sender, { properties: ['openFile', 'multiSelections'] })
     if (res.canceled || res.filePaths.length === 0) return null
     return (await Promise.all(res.filePaths.map(loadPath))).flat()
   })
@@ -655,7 +677,7 @@ function registerIpc(settings: SettingsStore): void {
         const bytes = await inputBytes({ base64, handle })
         const out = await runConversion(bytes, filename, source, target, opts, ctx)
         const defaultPath = defaultSavePath(sourceDir, baseName(filename) + EXTENSIONS[target])
-        const save = await dialog.showSaveDialog({ defaultPath, filters: [FILTERS[target]] })
+        const save = await saveDialog(e.sender, { defaultPath, filters: [FILTERS[target]] })
         if (save.canceled || !save.filePath) return { status: 'canceled' as const }
         rememberSaveDir(save.filePath)
         const ext = save.filePath.match(/\.[^.\\/]+$/)?.[0] ?? ''
@@ -699,7 +721,7 @@ function registerIpc(settings: SettingsStore): void {
       const snapshot = settings.get()
       let outDir = givenOutDir
       if (!outDir) {
-        const pick = await dialog.showOpenDialog({
+        const pick = await openDialog(e.sender, {
           defaultPath: defaultSaveDir(items[0]?.sourceDir),
           properties: ['openDirectory', 'createDirectory'],
         })
@@ -792,7 +814,7 @@ function registerIpc(settings: SettingsStore): void {
           items[0]?.sourceDir,
           `${baseName(items[0]?.filename)}-merged${EXTENSIONS[target]}`,
         )
-        const save = await dialog.showSaveDialog({ defaultPath, filters: [FILTERS[target]] })
+        const save = await saveDialog(e.sender, { defaultPath, filters: [FILTERS[target]] })
         if (save.canceled || !save.filePath) return { status: 'canceled' as const }
         rememberSaveDir(save.filePath)
         await writeFile(save.filePath, out.parts[0].bytes)
