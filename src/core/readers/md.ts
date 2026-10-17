@@ -1,8 +1,10 @@
 import MarkdownIt from 'markdown-it'
 import type StateInline from 'markdown-it/lib/rules_inline/state_inline.mjs'
 import type StateCore from 'markdown-it/lib/rules_core/state_core.mjs'
+import type StateBlock from 'markdown-it/lib/rules_block/state_block.mjs'
 import { full as emoji } from 'markdown-it-emoji'
 import footnote from 'markdown-it-footnote'
+import deflist from 'markdown-it-deflist'
 import { safeLabel } from '../footnotes'
 import { BRACED_PLAIN, diagramLanguage, mathClose, TEX_SHAPED } from '../rendered-blocks'
 import { parseHTML } from 'linkedom'
@@ -105,6 +107,61 @@ md.core.ruler.after('text_join', 'task_lists', (state: StateCore) => {
  * note's text was gone.
  */
 md.use(footnote)
+
+/*
+ * Definition lists, in the syntax pandoc, PHP Markdown Extra and kramdown
+ * share and the Markdown writer writes: a term on a line of its own, each
+ * definition after `:` (or pandoc's `~`) and a space, its later lines and
+ * paragraphs indented. Without the plugin a glossary written out and read
+ * back came back as paragraphs that began with a colon.
+ *
+ * The shape is narrow enough to leave prose alone: the term must be a
+ * paragraph of ONE line (a `: ` line inside a longer paragraph continues it)
+ * and the marker needs a space after it, so `:tada:`, `:1` and `~/docs` are
+ * text. `~` is kept because pandoc writes it too; a one-line paragraph
+ * followed by a line starting "~ " is about as rare in prose as one followed
+ * by ": ", and either way every word arrives, only arranged as a list.
+ * One thing the plugin takes that would lose a character: a list's first
+ * marker with nothing after it ("Hello" then a line that is just `:`). The
+ * first definition must have text on its marker's line, as the writer writes
+ * it; later ones inside a list already begun are the plugin's to read.
+ * The plugin uses `md` only to register its one rule (and for isSpace), so
+ * it is handed a ruler that registers that rule behind the check.
+ */
+type BeforeArgs = Parameters<MarkdownIt['block']['ruler']['before']>
+const firstMarkerHasText = (state: StateBlock, startLine: number): boolean => {
+  const line = state.isEmpty(startLine + 1) ? startLine + 2 : startLine + 1
+  return /^[:~][ \t]+\S/.test(state.src.slice(state.bMarks[line] + state.tShift[line], state.eMarks[line]))
+}
+md.use((m: MarkdownIt) =>
+  deflist({
+    utils: m.utils,
+    block: {
+      ruler: {
+        before: (at: string, name: string, rule: BeforeArgs[2], opts: BeforeArgs[3]) =>
+          m.block.ruler.before(
+            at,
+            name,
+            (state, startLine, endLine, silent) => (silent || firstMarkerHasText(state, startLine)) && rule(state, startLine, endLine, silent),
+            opts,
+          ),
+      },
+    },
+  }),
+)
+
+// A tight definition (no blank line after its term) comes from the plugin
+// with its paragraph hidden, so `<dd>text</dd>`. The hub form is the one
+// Djot's renderer writes, every definition's text in a paragraph.
+md.core.ruler.after('block', 'definition_paragraphs', (state: StateCore) => {
+  // Only the definition's own paragraph: a tight list inside it stays tight.
+  const dd: number[] = []
+  for (const tok of state.tokens) {
+    if (tok.type === 'dd_open') dd.push(tok.level + 1)
+    else if (tok.type === 'dd_close') dd.pop()
+    else if (tok.level === dd.at(-1) && (tok.type === 'paragraph_open' || tok.type === 'paragraph_close')) tok.hidden = false
+  }
+})
 
 interface FootnoteEnv {
   footnotes?: { refs?: Record<string, number>; list?: { label?: string; count: number }[] }

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
 import { readDjot } from '../../src/core/readers/djot'
 import { readRst } from '../../src/core/readers/rst'
+import { readMarkdown } from '../../src/core/readers/md'
 import { sanitizeToHub } from '../../src/core/allowlist'
 import { createConverter } from '../../src/core/convert'
 import { writeDocx, definitionListsForDocx } from '../../src/core/writers/docx'
@@ -41,6 +42,48 @@ describe('definition lists', () => {
 
   it('Markdown: the term on its line, each definition after `:   `, its later paragraphs indented', async () => {
     expect(await write('md')).toBe('Shelf mark\n:   Where a book _stands_.\n\n    It is on the spine.\n\nFolio\n:   A large book.')
+  })
+
+  it('Markdown reads the pandoc syntax into the hub form, as the writer writes it', async () => {
+    const written = await write('md')
+    expect(squash((await readMarkdown({ bytes: Buffer.from(written) })).html)).toBe(HUB)
+  })
+
+  it('Markdown reads several definitions, `~` markers, a blank line after the term and inline formatting', async () => {
+    const src = 'Pressed **flower**\n\n:   A `dried` one.\n:   A [book](https://example.com/b) of them.\n\nVellum\n~   Calf _skin_.\n'
+    expect(squash((await readMarkdown({ bytes: Buffer.from(src) })).html)).toBe(
+      '<dl><dt>Pressed <strong>flower</strong></dt><dd><p>A <code>dried</code> one.</p></dd><dd><p>A <a href="https://example.com/b">book</a> of them.</p></dd>' +
+        '<dt>Vellum</dt><dd><p>Calf <em>skin</em>.</p></dd></dl>',
+    )
+  })
+
+  it('Markdown leaves ordinary paragraphs alone', async () => {
+    const cases = [
+      'First line\nsecond line\n: not a definition\n', // a colon inside a paragraph continues it
+      'Paths\n~/docs and ~/src\n', // a tilde with no space after it
+      ':tada: shipped\n', // an emoji shortcode
+      'Ratio\n:1 to 2\n',
+      'Hello\n:\n', // a bare colon would be lost
+    ]
+    for (const src of cases) expect((await readMarkdown({ bytes: Buffer.from(src) })).html).not.toContain('<dl>')
+  })
+
+  it('md -> md keeps a definition list, every paragraph and its formatting', async () => {
+    const src = 'Shelf **mark**\n:   Where a book _stands_.\n\n    It is on the `spine`.\n:   Or its call number.\n\nFolio\n:   A large book.\n'
+    const once = (await conv.convert({ bytes: Buffer.from(src), filename: 'g.md' }, 'md', 'md')).parts[0].bytes.toString('utf8')
+    expect(once).toBe('Shelf **mark**\n:   Where a book _stands_.\n\n    It is on the `spine`.\n:   Or its call number.\n\nFolio\n:   A large book.')
+    const twice = (await conv.convert({ bytes: Buffer.from(once), filename: 'g.md' }, 'md', 'md')).parts[0].bytes.toString('utf8')
+    expect(twice).toBe(once)
+  })
+
+  it('md -> txt and md -> docx still get the list', async () => {
+    const src = 'Shelf mark\n:   Where a book _stands_.\n\n    It is on the spine.\n\nFolio\n:   A large book.\n'
+    const txt = (await conv.convert({ bytes: Buffer.from(src), filename: 'g.md' }, 'md', 'txt')).parts[0].bytes.toString('utf8')
+    expect(txt).toBe('Shelf mark\n    Where a book stands.\n\n    It is on the spine.\n\nFolio\n    A large book.')
+    const docx = (await conv.convert({ bytes: Buffer.from(src), filename: 'g.md' }, 'md', 'docx')).parts[0].bytes
+    const xml = await (await JSZip.loadAsync(docx)).file('word/document.xml')!.async('string')
+    expect(xml).toMatch(/<w:b\/>[\s\S]*Shelf mark/)
+    expect(xml).toMatch(/<w:ind w:left="720"[\s\S]*Where a book/)
   })
 
   it('plain text: the term, then its definition indented under it', async () => {
