@@ -210,6 +210,58 @@ describe('docx: a document set in a monospace face is not code', () => {
   })
 })
 
+/*
+ * Our docx writer names each code block's language in a hidden bookmark
+ * around it (code-bookmark.ts), which Word and LibreOffice keep; the reader
+ * gives the block that language rather than a guess.
+ */
+describe('docx: a code block language kept in a hidden bookmark', () => {
+  const mark = (id: number, name: string): string => `<w:bookmarkStart w:id="${id}" w:name="${name}"/>`
+  const end = (id: number): string => `<w:bookmarkEnd w:id="${id}"/>`
+  const code = (text: string): string => run(text, font('Courier'))
+
+  it('names the block by the bookmark inside its paragraph, and leaves no anchor', async () => {
+    const html = await read(para('Intro') + `<w:p>${mark(5, '_DocConvCode_0_ini')}${code('[core]')}${br}${code('name = x')}${end(5)}</w:p>`)
+    expect(html).toContain('<pre><code class="language-ini">[core]\nname = x</code></pre>')
+    expect(html).not.toContain('DocConvCode')
+  })
+
+  it('reads a bookmark around the paragraph too, as another editor may save it', async () => {
+    const html = await read(`${mark(1, '_DocConvCode_0_c_2b_2b')}<w:p>${code('int main() {}')}</w:p>${end(1)}` + para('After'))
+    expect(html).toContain('<pre><code class="language-c++">int main() {}</code></pre>')
+    expect(html).not.toContain('DocConvCode')
+  })
+
+  it('names a block inside a list item', async () => {
+    const html = await read(item(run('Step one:') + br + mark(2, '_DocConvCode_0_objective_2dc') + code('[obj go];') + end(2) + br + run('Then this.')))
+    expect(html).toMatch(/<li>Step one:<pre><code class="language-objective-c">\[obj go\];<\/code><\/pre>Then this\.<\/li>/)
+    expect(html).not.toContain('DocConvCode')
+  })
+
+  it('keeps two neighboring blocks apart, each with its language', async () => {
+    const html = await read(`<w:p>${mark(1, '_DocConvCode_0_ini')}${code('a = 1')}${end(1)}</w:p><w:p>${mark(2, '_DocConvCode_1_text')}${code('b c')}${end(2)}</w:p>`)
+    expect(html).toContain('<pre><code class="language-ini">a = 1</code></pre><pre><code class="language-text">b c</code></pre>')
+  })
+
+  it('ignores a bookmark on text that is no longer code, or one that is garbled', async () => {
+    const html = await read(`<w:p>${mark(1, '_DocConvCode_0_python')}${run('Now prose.')}${end(1)}</w:p><w:p>${mark(2, '_DocConvCode_1_py_zz')}${code('x  = 1')}${end(2)}</w:p>`)
+    expect(html).toContain('<p>Now prose.</p>')
+    expect(html).toContain('<pre><code>x  = 1</code></pre>')
+    expect(html).not.toContain('DocConvCode')
+  })
+
+  it('leaves no anchor when the document has no code at all', async () => {
+    const html = await read(`<w:p>${mark(1, '_DocConvCode_0_python')}${run('Just prose.')}${end(1)}</w:p>`)
+    expect(html).toBe('<p>Just prose.</p>')
+  })
+
+  it('keeps other bookmarks as they were', async () => {
+    const html = await read(`<w:p>${mark(1, 'Chapter1')}${run('Title text')}${end(1)}</w:p><w:p>${mark(2, '_DocConvCode_0_ini')}${code('a = 1')}${end(2)}</w:p>`)
+    expect(html).toContain('<a id="Chapter1"></a>')
+    expect(html).toContain('language-ini')
+  })
+})
+
 describe('md → docx → md', () => {
   const conv = createConverter(async () => Buffer.from(''))
   const roundTrip = async (md: string): Promise<string> => {
@@ -238,6 +290,32 @@ describe('md → docx → md', () => {
     expect(md).toMatch(/^ {4}2\.\s+After$/m)
     expect(md).toMatch(/^1\.\s+Numbered\n\s*\n {4}```\w*\n {4}a = 1\n {4}```$/m)
     expect(md).toMatch(/^2\.\s+B$/m)
+  })
+
+  it('gives back the language of each block, where the guess would get it wrong or not know it', async () => {
+    const blocks: [string, string][] = [
+      ['ini', '[core]\nname = x'],
+      ['text', 'def f():\n    return 1'],
+      ['c++', 'int main() {\n  return 0;\n}'],
+      ['cpp', 'int x = 0;'],
+      ['csharp', 'public class A {\n  public int B { get; set; }\n}'],
+      ['objective-c', '@interface Foo : NSObject\n@end'],
+      ['javascript', 'class A {\n  #x = 1;\n  get x() { return this.#x }\n}'],
+    ]
+    const md = await roundTrip(blocks.map(([lang, code]) => `\`\`\`${lang}\n${code}\n\`\`\``).join('\n\nNext.\n\n') + '\n')
+    for (const [lang, code] of blocks) expect(md).toContain(`\`\`\`${lang}\n${code}\n\`\`\``)
+    expect(md).not.toContain('DocConvCode')
+  })
+
+  it('gives back the language of a block inside a list item', async () => {
+    const md = await roundTrip('- Step one:\n\n  ```ini\n  [core]\n  name = x\n  ```\n\n  Then this.\n- Two\n')
+    expect(md).toMatch(/^\*\s+Step one:\n\s*\n {4}```ini\n {4}\[core\]\n {4}name = x\n {4}```\n\s*\n {4}Then this\.$/m)
+  })
+
+  it('still guesses the language of a block in a docx without our bookmark', async () => {
+    const bytes = await docx(`<w:p>${run('def total(items):', font('Courier'))}${br}${run('    return sum(items)', font('Courier'))}</w:p>`)
+    const back = await conv.convert({ bytes, filename: 'a.docx' }, 'docx', 'md')
+    expect(back.parts[0].bytes.toString('utf8')).toContain('```python\ndef total(items):\n    return sum(items)\n```')
   })
 
   it('gives back inline code in a sentence, bold and linked too', async () => {

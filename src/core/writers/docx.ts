@@ -15,6 +15,7 @@ import type { ConvertOptions, HubDocument } from '../types'
 import { DOCX_OWN_LINE } from '../draw-blocks'
 import { pictureType, wordTakes } from '../pictures'
 import { originalSize } from '../picture-headers'
+import { codeBookmarkName } from '../code-bookmark'
 
 /**
  * html-to-docx tries to load every <img> and gives up on the whole document
@@ -380,6 +381,7 @@ async function recompress(
   lowerings: Map<string, number> = new Map(),
   colored: ColoredLook[] = [],
   originals: Map<string, Original> = new Map(),
+  languages: string[] = [],
 ): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
@@ -391,7 +393,7 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', orderCellProperties(styleRuns(await body.async('string'), colored)))
+    if (body) zip.file('word/document.xml', codeBookmarks(orderCellProperties(styleRuns(await body.async('string'), colored)), languages))
     if (lowerings.size > 0) {
       try {
         await lowerFormulas(zip, lowerings)
@@ -739,6 +741,79 @@ function colorCode(source: string): string {
 /** colorCode, unless code color is off (ConvertOptions.codeColor): then code stays plain. */
 function colorCodeIf(on: boolean, source: string): string {
   return on ? colorCode(source) : source
+}
+
+/**
+ * Stand-ins for where each code block with a language starts and ends:
+ * CODE_OPEN or CODE_CLOSE, the block's number in `languages`, CODE_STOP.
+ * Private-use, so never real content (see KEPT).
+ */
+const CODE_OPEN = ''
+const CODE_CLOSE = ''
+const CODE_STOP = ''
+
+/**
+ * Word keeps no code language, so the docx reader had to guess it. Each code
+ * block's language goes in a hidden bookmark around the block instead
+ * (code-bookmark.ts says why a bookmark). The library writes no bookmarks, so
+ * each block is given a stand-in at its start and end, a <span> of its own
+ * that html-to-docx makes a run of its own, and codeBookmarks turns those runs
+ * into the bookmark. Run after breakCodeLines, which would take a newline
+ * off the end stand-in rather than the code, and before flattenFormatting,
+ * which gives the stand-ins the code font like the rest of the block.
+ */
+function markCodeLanguages(source: string, languages: string[]): string {
+  if (!/<code class="language-/.test(source)) return source
+  const dom = parseDocument(source)
+  let changed = false
+  for (const pre of elementsOf(dom.children, 'pre')) {
+    const code = pre.children.find((c): c is Element => isElement(c) && c.name === 'code')
+    const lang = /(?:^|\s)language-([\w+-]+)/.exec(code?.attribs.class ?? '')?.[1]
+    if (!code || !lang) continue
+    const n = languages.push(lang) - 1
+    splice(code, 0, 0, [new Element('span', {}, [new Text(`${CODE_OPEN}${n}${CODE_STOP}`)])])
+    splice(code, code.children.length, 0, [new Element('span', {}, [new Text(`${CODE_CLOSE}${n}${CODE_STOP}`)])])
+    changed = true
+  }
+  return changed ? serialize(dom.children) : source
+}
+
+/**
+ * markCodeLanguages's stand-in runs as the bookmarks they stand for: a
+ * bookmarkStart in place of the run at the block's start and a bookmarkEnd in
+ * place of the one at its end, children of the paragraph among its runs, as
+ * CT_P allows. A stand-in that shares its run with text (a space joined to
+ * it) leaves the run, the bookmark going before it at the start, after it at
+ * the end. A block that lost either stand-in, or whose name cannot be a
+ * bookmark name, gets none; every stand-in goes.
+ */
+function codeBookmarks(xml: string, languages: string[]): string {
+  if (!languages.length || !/[]/.test(xml)) return xml
+  const stand = /[](\d+)/g
+  const found = new Map<number, number>()
+  for (const m of xml.matchAll(stand)) found.set(Number(m[1]), (found.get(Number(m[1])) ?? 0) + 1)
+  // Clear of any bookmark id already there (html-to-docx 1.8.0 writes none).
+  let id = Math.max(-1, ...[...xml.matchAll(/<w:bookmark(?:Start|End)\b[^>]*\bw:id="(\d+)"/g)].map((m) => Number(m[1]))) + 1
+  const ids = new Map<number, { id: number; name: string }>()
+  for (const [n, count] of found) {
+    const name = count === 2 ? codeBookmarkName(ids.size, languages[n] ?? '') : undefined
+    if (name) ids.set(n, { id: id++, name })
+  }
+  const out = xml.replace(/<w:r(?:\s[^>]*)?>(?:(?!<\/w:r>)[\s\S])*?[]\d+(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, (r) => {
+    const marks = [...r.matchAll(stand)]
+    const rest = r.replace(stand, '')
+    const empty = [...rest.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].every((t) => t[1] === '') && !/<w:(?:br|tab|cr)\b/.test(rest)
+    let before = ''
+    let after = ''
+    for (const m of marks) {
+      const b = ids.get(Number(m[1]))
+      if (!b) continue
+      if (m[0].startsWith(CODE_OPEN)) before += `<w:bookmarkStart w:id="${b.id}" w:name="${b.name}"/>`
+      else after += `<w:bookmarkEnd w:id="${b.id}"/>`
+    }
+    return before + (empty ? '' : rest) + after
+  })
+  return out.replace(/[-]/g, '')
 }
 
 /** The font html-to-docx itself gives a top-level code block. */
@@ -1100,17 +1175,18 @@ function styleRuns(xml: string, colored: ColoredLook[] = []): string {
 export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
   const colored: ColoredLook[] = []
   const originals = new Map<string, Original>()
+  const languages: string[] = []
   const pictures = dropUnresolvableImages(standInOriginals(footnotesForOutput(doc.html, 'plain'), originals))
   const html = renderDocumentShell(
     {
       ...doc,
       html: flattenFormatting(
-        monospaceCode(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(pictures)))))),
+        monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(pictures))))), languages)),
         colored,
       ),
     },
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)
-  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals)
+  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages)
 }

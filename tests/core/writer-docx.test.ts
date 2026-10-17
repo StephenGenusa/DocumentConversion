@@ -481,3 +481,68 @@ describe('writeDocx keeps a paragraph color on formatted text', () => {
     expect(await colorsOf('<p>plain <strong>alpha</strong></p>', 'alpha')).toEqual([''])
   })
 })
+
+/**
+ * Word keeps no code language, so each block's language goes in a hidden
+ * bookmark around it (code-bookmark.ts): a bookmarkStart before the block's
+ * first run and a bookmarkEnd after its last, inside its paragraph (CT_P
+ * allows both among the runs), in a list item after the break that starts it.
+ */
+describe('writeDocx records each code block language in a hidden bookmark', () => {
+  /** Every element balanced, as an XML parser would require. */
+  const expectWellFormed = (xml: string): void => {
+    const stack: string[] = []
+    for (const m of xml.replace(/<\?[\s\S]*?\?>/g, '').matchAll(/<(\/?)([\w:.-]+)\b[^>]*?(\/?)>/g)) {
+      if (m[3]) continue
+      if (!m[1]) stack.push(m[2])
+      else expect(stack.pop(), `closing ${m[2]}`).toBe(m[2])
+    }
+    expect(stack).toEqual([])
+  }
+
+  const html =
+    '<p>Intro</p><pre><code class="language-c++">int alpha;\nint beta;</code></pre>' +
+    '<ul><li>Item<pre><code class="language-objective-c">gamma = 1;</code></pre>After</li></ul>' +
+    '<pre><code>plain delta</code></pre><pre><code class="language-ini">a=1</code></pre>'
+
+  it('puts a bookmark naming the language around each named block, in its paragraph', async () => {
+    const xml = await documentXml(html)
+    expectWellFormed(xml)
+    expect(xml).not.toMatch(/[-]/)
+    const starts = [...xml.matchAll(/<w:bookmarkStart w:id="(\d+)" w:name="([^"]*)"\/>/g)]
+    expect(starts.map((s) => s[2])).toEqual(['_DocConvCode_0_c_2b_2b', '_DocConvCode_1_objective_2dc', '_DocConvCode_2_ini'])
+    const ids = starts.map((s) => s[1])
+    expect(new Set(ids).size).toBe(3)
+    for (const [i, s] of starts.entries()) {
+      expect(s[2].length).toBeLessThanOrEqual(40)
+      expect(s[2]).toMatch(/^[A-Za-z_][\w]*$/)
+      const ends = [...xml.matchAll(new RegExp(`<w:bookmarkEnd w:id="${ids[i]}"/>`, 'g'))]
+      expect(ends.length).toBe(1)
+      // Start and end in the same paragraph, start first.
+      const para = [...xml.matchAll(/<w:p>[\s\S]*?<\/w:p>/g)].map((m) => m[0]).find((p) => p.includes(s[0]))!
+      expect(para.indexOf(s[0])).toBeLessThan(para.indexOf(ends[0][0]))
+      // Children of the paragraph, never inside a run or its properties.
+      const before = para.slice(0, para.indexOf(s[0]))
+      expect(before.split('<w:r>').length).toBe(before.split('</w:r>').length)
+      expect(before).not.toMatch(/<w:pPr>(?![\s\S]*<\/w:pPr>)/)
+    }
+    // A top-level block: the start straight after the paragraph's properties, the end its last child.
+    expect(xml).toMatch(/<\/w:pPr>\s*<w:bookmarkStart w:id="\d+" w:name="_DocConvCode_0_c_2b_2b"\/>\s*<w:r>/)
+    expect(xml).toMatch(new RegExp(`</w:r>\\s*<w:bookmarkEnd w:id="${ids[0]}"/>\\s*</w:p>`))
+    // In a list item: after the break that ends the item's text.
+    expect(xml).toMatch(/<w:br\b[^>]*\/>\s*<\/w:r>\s*<w:bookmarkStart w:id="\d+" w:name="_DocConvCode_1_objective_2dc"\/>\s*<w:r>/)
+  })
+
+  it('leaves the text and lines as they were', async () => {
+    expect(await linesOf(html, 'alpha')).toEqual(['int alpha;', 'int beta;'])
+    expect(await linesOf(html, 'gamma')).toEqual(['Item', 'gamma = 1;', 'After'])
+    expect(await fontsOf(html, 'gamma')).toEqual(['Courier'])
+    expect(await textOf(html, 'delta')).toBe('plain delta')
+  })
+
+  it('writes the bookmark with code color off too', async () => {
+    const buf = await writeDocx({ html }, { codeColor: false })
+    const xml = await (await JSZip.loadAsync(buf)).file('word/document.xml')!.async('string')
+    expect(xml).toContain('w:name="_DocConvCode_0_c_2b_2b"')
+  })
+})

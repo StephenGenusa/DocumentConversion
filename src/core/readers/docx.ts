@@ -11,6 +11,7 @@ import {
 } from '../inline-images'
 import type { HubDocument, ReadContext, SourceInput } from '../types'
 import { ommlLinearText, ommlToTex } from '../omml-tex'
+import { codeBookmarkLanguage } from '../code-bookmark'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode, type ParentNode } from 'domhandler'
 import render from 'dom-serializer'
@@ -560,8 +561,10 @@ function dropBackLinks(li: Element): void {
  * one paragraph with a break per line, and Word's one paragraph per line.
  * Consecutive code paragraphs are one block. As with equations, each block is
  * taken out of the XML before mammoth sees it and stands as a marker meanwhile;
- * the block's text comes back as `<pre><code>`, and convert.ts guesses its
- * language as it does for any unnamed block (Word keeps no language).
+ * the block's text comes back as `<pre><code>`. Its language is the one our
+ * docx writer named in a hidden bookmark around it (code-bookmark.ts), when
+ * there is one; otherwise convert.ts guesses it as it does for any unnamed
+ * block (Word keeps no language).
  *
  * Not a code block: a word of code in a sentence (the paragraph is not all
  * monospace), a heading or list paragraph, and a one-line monospace paragraph
@@ -646,10 +649,42 @@ function codeParagraphText(inner: string): string {
   return text
 }
 
+/** A code block taken out of the XML: its text, and the language its bookmark names. */
+export interface CodeBlock {
+  text: string
+  language?: string
+}
+
+/** The start of one of our language bookmarks (code-bookmark.ts). */
+const CODE_BOOKMARK = /<w:bookmarkStart\b[^>]*\bw:name="(_DocConvCode_[^"]*)"[^>]*\/>/
+
+/** The language the first of our bookmarks starting in `xml` names, if any and readable. */
+const bookmarkLanguage = (xml: string): string | undefined => {
+  const name = CODE_BOOKMARK.exec(xml)?.[1]
+  return name === undefined ? undefined : codeBookmarkLanguage(decodeXml(name))
+}
+
+/**
+ * Our language bookmarks taken out, start and end, so mammoth makes no
+ * anchor of them: on a block they have done their work, and on text that is
+ * no longer code (its font changed) they name nothing.
+ */
+function dropCodeBookmarks(xml: string): string {
+  const starts = new RegExp(CODE_BOOKMARK.source, 'g')
+  const ids = new Set([...xml.matchAll(starts)].map((m) => /\bw:id="([^"]*)"/.exec(m[0])?.[1]))
+  if (!ids.size) return xml
+  return xml.replace(starts, '').replace(/<w:bookmarkEnd\b[^>]*\bw:id="([^"]*)"[^>]*\/>/g, (end, id: string) => (ids.has(id) ? '' : end))
+}
+
+/** Bookmarks between two paragraphs are not anything between them. */
+const BOOKMARK = /<w:bookmark(?:Start|End)\b[^>]*\/>/g
+
 interface CodeParagraph {
   start: number
   end: number
   text: string
+  /** Where the paragraph before it ends: one of our bookmarks there starts this block. */
+  from: number
 }
 
 /**
@@ -712,10 +747,13 @@ const MONOSPACE_SHARE = 0.8
 
 /**
  * Replace each run of code paragraphs in `xml` (word/document.xml) with one
- * marker paragraph, appending each block's text to `blocks` in order. With
- * `inline`, the runs of code left in sentences are given that style id too.
+ * marker paragraph, appending each block's text and language to `blocks` in
+ * order. With `inline`, the runs of code left in sentences are given that
+ * style id too. Our language bookmarks are taken out (dropCodeBookmarks); one
+ * starting in a paragraph also starts a new block, so two blocks written one
+ * after the other stay two.
  */
-export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, blocks: string[], inline?: string): string {
+export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, blocks: CodeBlock[], inline?: string): string {
   const styles = parseWordStyles(stylesXml)
   // Where each table lies, to tell a paragraph in a cell.
   const tables: [number, number][] = []
@@ -754,12 +792,15 @@ export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, b
     if (group.length) groups.push(group)
     group = []
   }
+  let previous = 0
   for (const { start, end, code } of found) {
     if (!code || (setInMonospace && !code.byStyle)) close()
     else {
-      if (group.length && xml.slice(group[group.length - 1].end, start).trim() !== '') close()
-      group.push({ start, end, text: code.text })
+      const prev = group[group.length - 1]
+      if (prev && (xml.slice(prev.end, start).replace(BOOKMARK, '').trim() !== '' || CODE_BOOKMARK.test(xml.slice(prev.end, end)))) close()
+      group.push({ start, end, text: code.text, from: previous })
     }
+    previous = end
   }
   close()
 
@@ -767,11 +808,12 @@ export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, b
   let last = 0
   for (const g of groups) {
     out += xml.slice(last, g[0].start) + `<w:p><w:r><w:t>${marker}${blocks.length}\ue001</w:t></w:r></w:p>`
-    blocks.push(g.map((p) => p.text).join('\n'))
+    blocks.push({ text: g.map((p) => p.text).join('\n'), language: bookmarkLanguage(xml.slice(g[0].from, g[g.length - 1].end)) })
     last = g[g.length - 1].end
   }
   out += xml.slice(last)
   if (fonts && !setInMonospace) out = takeItemCodeBlocks(out, styles, marker, blocks)
+  out = dropCodeBookmarks(out)
   // The blocks are markers by now, so none of their runs is read as inline code.
   return inline === undefined ? out : markInlineCode(out, styles, inline, fonts && !setInMonospace)
 }
@@ -797,7 +839,7 @@ const PARAGRAPH_CHILDREN = ['w:r', 'w:hyperlink', 'w:ins', 'w:del', 'w:smartTag'
  * nothing tells a listing apart. Only with fonts on and the document not set
  * in a monospace face (see takeCodeBlocks).
  */
-function takeItemCodeBlocks(xml: string, styles: Map<string, WordStyle>, marker: string, blocks: string[]): string {
+function takeItemCodeBlocks(xml: string, styles: Map<string, WordStyle>, marker: string, blocks: CodeBlock[]): string {
   if (!xml.includes('<w:numPr')) return xml
   let out = ''
   let last = 0
@@ -815,7 +857,7 @@ function takeItemCodeBlocks(xml: string, styles: Map<string, WordStyle>, marker:
 }
 
 /** One list paragraph with its code lines as marker runs, or undefined when it has none. */
-function itemCodeParagraph(paragraph: string, styles: Map<string, WordStyle>, marker: string, blocks: string[]): string | undefined {
+function itemCodeParagraph(paragraph: string, styles: Map<string, WordStyle>, marker: string, blocks: CodeBlock[]): string | undefined {
   const head = /^<w:p\b[^>]*>\s*(?:<w:pPr\b[\s\S]*?<\/w:pPr>|<w:pPr\/>)?/.exec(paragraph)![0]
   if (!/<w:numPr\b/.test(head) || /<w:outlineLvl\b/.test(head)) return undefined
   const pStyle = /<w:pStyle\b[^>]*\bw:val="([^"]*)"/.exec(head)?.[1]
@@ -888,7 +930,9 @@ function itemCodeParagraph(paragraph: string, styles: Map<string, WordStyle>, ma
       .map((l) => codeParagraphText(pieces.slice(l.first, l.last + 1).map((pc) => pc.xml).join('')))
       .join('\n')
     replaced.set(lines[i].first, { last: lines[j].last, xml: `<w:r><w:t>${marker}${blocks.length}\ue002</w:t></w:r>` })
-    blocks.push(text)
+    // Our bookmark starts after the break that ends the line before (lines[0] is text).
+    const span = pieces.slice(lines[i - 1].last + 1, lines[j].last + 1).map((pc) => pc.xml).join('')
+    blocks.push({ text, language: bookmarkLanguage(span) })
     i = j
   }
   if (!replaced.size) return undefined
@@ -984,7 +1028,7 @@ function markInlineCode(xml: string, styles: Map<string, WordStyle>, id: string,
 /** The package with its code blocks replaced by markers, or undefined when it has none. */
 async function extractCodeBlocks(
   bytes: Buffer,
-): Promise<{ bytes: Buffer; marker: string; blocks: string[]; inline?: string } | undefined> {
+): Promise<{ bytes: Buffer; marker: string; blocks: CodeBlock[]; inline?: string } | undefined> {
   try {
     const zip = await JSZip.loadAsync(bytes)
     const doc = zip.files['word/document.xml']
@@ -992,14 +1036,15 @@ async function extractCodeBlocks(
     const xml = await doc.async('string')
     const stylesXml = (await zip.files['word/styles.xml']?.async('string')) ?? ''
     // Cheap test first: no monospace face or code style named anywhere, no code.
-    if (!MONOSPACE_HINT.test(xml) && !MONOSPACE_HINT.test(stylesXml)) return undefined
+    if (!MONOSPACE_HINT.test(xml) && !MONOSPACE_HINT.test(stylesXml) && !CODE_BOOKMARK.test(xml)) return undefined
     const marker = uniqueMarker([xml], 'code')
-    const blocks: string[] = []
+    const blocks: CodeBlock[] = []
     let inline = 'DocConvInlineCode'
     for (let i = 0; stylesXml.includes(inline) || xml.includes(inline); i++) inline = `DocConvInlineCode${i.toString(36)}x`
     const taken = takeCodeBlocks(xml, stylesXml, marker, blocks, inline)
     const hasInline = taken.includes(`w:val="${inline}"`)
-    if (blocks.length === 0 && !hasInline) return undefined
+    // Kept for our bookmarks alone too, taken out of text that is no longer code.
+    if (blocks.length === 0 && !hasInline && taken === xml) return undefined
     zip.file('word/document.xml', taken)
     return { bytes: await zip.generateAsync({ type: 'nodebuffer' }), marker, blocks, inline: hasInline ? inline : undefined }
   } catch {
@@ -1025,14 +1070,22 @@ export function codeInsideFormatting(html: string): string {
   return out
 }
 
-/** Each code block's marker paragraph as `<pre><code>`; a marker found anywhere else as its text. */
-export function restoreCodeBlocks(html: string, marker: string, blocks: string[]): string {
+/**
+ * Each code block's marker paragraph as `<pre><code>`, of the language its
+ * bookmark named (left for convert.ts to guess when none); a marker found
+ * anywhere else as its text.
+ */
+export function restoreCodeBlocks(html: string, marker: string, blocks: CodeBlock[]): string {
   const m = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const text = (n: string): string => escapeHtml(blocks[Number(n)] ?? '')
+  const text = (n: string): string => escapeHtml(blocks[Number(n)]?.text ?? '')
+  const block = (n: string): string => {
+    const language = blocks[Number(n)]?.language
+    return `<pre><code${language ? ` class="language-${language}"` : ''}>${text(n)}</code></pre>`
+  }
   return html
-    .replace(new RegExp(`<p>${m}(\\d+)\ue001</p>`, 'g'), (_, n: string) => `<pre><code>${text(n)}</code></pre>`)
+    .replace(new RegExp(`<p>${m}(\\d+)\ue001</p>`, 'g'), (_, n: string) => block(n))
     // A block inside a list item (takeItemCodeBlocks), the breaks around it gone.
-    .replace(new RegExp(`(?:<br\\s*/?>\\s*)*${m}(\\d+)\ue002(?:\\s*<br\\s*/?>)*`, 'g'), (_, n: string) => `<pre><code>${text(n)}</code></pre>`)
+    .replace(new RegExp(`(?:<br\\s*/?>\\s*)*${m}(\\d+)\ue002(?:\\s*<br\\s*/?>)*`, 'g'), (_, n: string) => block(n))
     .replace(new RegExp(`${m}(\\d+)\ue001`, 'g'), (_, n: string) => text(n))
 }
 
