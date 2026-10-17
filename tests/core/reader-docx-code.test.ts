@@ -23,6 +23,15 @@ const STYLES =
   `<w:style w:type="character" w:styleId="Mono"><w:name w:val="Mono"/><w:rPr><w:rFonts w:ascii="Menlo" w:hAnsi="Menlo"/></w:rPr></w:style>` +
   `</w:styles>`
 
+/** A bulleted list (numId 1) and a numbered one (numId 2), two levels each. */
+const NUMBERING =
+  `<?xml version="1.0"?><w:numbering ${W}>` +
+  `<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/></w:lvl>` +
+  `<w:lvl w:ilvl="1"><w:numFmt w:val="bullet"/><w:lvlText w:val="◦"/></w:lvl></w:abstractNum>` +
+  `<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>` +
+  `<w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/><w:lvlText w:val="%2."/></w:lvl></w:abstractNum>` +
+  `<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num></w:numbering>`
+
 async function docx(body: string, styles = STYLES): Promise<Buffer> {
   const zip = new JSZip()
   zip.file(
@@ -40,9 +49,11 @@ async function docx(body: string, styles = STYLES): Promise<Buffer> {
   zip.file(
     'word/_rels/document.xml.rels',
     `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-      `<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+      `<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+      `<Relationship Id="rIdNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`,
   )
   zip.file('word/styles.xml', styles)
+  zip.file('word/numbering.xml', NUMBERING)
   zip.file('word/document.xml', `<?xml version="1.0"?><w:document ${W}><w:body>${body}</w:body></w:document>`)
   return zip.generateAsync({ type: 'nodebuffer' })
 }
@@ -51,6 +62,9 @@ const para = (text: string): string => `<w:p><w:r><w:t xml:space="preserve">${te
 const styled = (style: string, runs: string): string => `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr>${runs}</w:p>`
 const run = (text: string, rPr = ''): string => `<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}<w:t xml:space="preserve">${text}</w:t></w:r>`
 const font = (name: string): string => `<w:rFonts w:ascii="${name}" w:hAnsi="${name}"/>`
+const item = (runs: string, numId = 1, ilvl = 0): string =>
+  `<w:p><w:pPr><w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>${runs}</w:p>`
+const br = '<w:r><w:br/></w:r>'
 
 const read = async (body: string, styles?: string): Promise<string> => (await readDocx({ bytes: await docx(body, styles), filename: 'a.docx' })).html
 
@@ -86,6 +100,33 @@ describe('docx: code blocks', () => {
     expect(html).not.toContain('<pre>')
     expect(html).toContain('<p>Call <code>run()</code> twice.</p>')
     expect(html).toContain('ID-42')
+  })
+})
+
+describe('docx: a code block inside a list item', () => {
+  it('reads the monospace lines after a break as a block in the item, text either side kept', async () => {
+    // Word's own shape: the break inside a run of the text.
+    const html = await read(
+      item(
+        `<w:r><w:t>Run:</w:t><w:br/></w:r>${run('npm  install', font('Consolas'))}${br}${br}` +
+          `<w:r><w:rPr>${font('Consolas')}</w:rPr><w:tab/><w:t>npm test</w:t><w:br/></w:r>${run('Then this.')}`,
+        2,
+      ) + item(run('Two'), 2),
+    )
+    expect(html).toBe('<ol><li>Run:<pre><code>npm  install\n\n\tnpm test</code></pre>Then this.</li><li>Two</li></ol>')
+  })
+
+  it('leaves a list item set wholly in a monospace font, or with a word of code in it, alone', async () => {
+    const html = await read(
+      item(run('ls -la', font('Courier New'))) +
+        item(`${run('first', font('Courier New'))}${br}${run('second', font('Courier New'))}`) +
+        item(`${run('Call ')}${run('run()', font('Courier New'))}`) +
+        item(`${run('Note')}${br}${run('Then ')}${run('x', font('Courier New'))}${run(' again.')}`),
+    )
+    expect(html).not.toContain('<pre>')
+    expect(html).toContain('<li><code>ls -la</code></li>')
+    expect(html).toContain('<li>Call <code>run()</code></li>')
+    expect(html).toContain('Then <code>x</code> again.')
   })
 })
 
@@ -184,6 +225,19 @@ describe('md → docx → md', () => {
     expect(md).toContain('```\nplain  two  spaces\n  indented <tag> & more\n```')
     expect(md).toContain('Middle.')
     expect(md).toContain('End with `inline` code.')
+  })
+
+  it('gives back a fenced block inside list items, under the item, text after it and nesting kept', async () => {
+    const md = await roundTrip(
+      '- Step one:\n\n  ```\n  npm  install\n\n  \tnpm test\n  ```\n\n  Then this.\n- Two\n' +
+        '  1. Nested:\n\n     ```python\n     def total(items):\n         return sum(items)\n     ```\n  2. After\n\n' +
+        'Between.\n\n1. Numbered\n\n   ```\n   a = 1\n   ```\n2. B\n',
+    )
+    expect(md).toMatch(/^\*\s+Step one:\n\s*\n {4}```\w*\n {4}npm {2}install\n\s*\n {4}\tnpm test\n {4}```\n\s*\n {4}Then this\.$/m)
+    expect(md).toMatch(/^ {4}1\.\s+Nested:\n\s*\n {8}```python\n {8}def total\(items\):\n {12}return sum\(items\)\n {8}```$/m)
+    expect(md).toMatch(/^ {4}2\.\s+After$/m)
+    expect(md).toMatch(/^1\.\s+Numbered\n\s*\n {4}```\w*\n {4}a = 1\n {4}```$/m)
+    expect(md).toMatch(/^2\.\s+B$/m)
   })
 
   it('gives back inline code in a sentence, bold and linked too', async () => {

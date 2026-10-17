@@ -566,7 +566,9 @@ function dropBackLinks(li: Element): void {
  * Not a code block: a word of code in a sentence (the paragraph is not all
  * monospace), a heading or list paragraph, and a one-line monospace paragraph
  * in a table cell (an ID column, not a listing). Those are inline code
- * instead (see markInlineCode).
+ * instead (see markInlineCode). A block inside a list item, which our writer
+ * puts after a break in the item's paragraph, is read there (see
+ * takeItemCodeBlocks).
  */
 
 /** Style names that mean a code block, compared lower case without spaces or dashes. */
@@ -769,8 +771,136 @@ export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, b
     last = g[g.length - 1].end
   }
   out += xml.slice(last)
+  if (fonts && !setInMonospace) out = takeItemCodeBlocks(out, styles, marker, blocks)
   // The blocks are markers by now, so none of their runs is read as inline code.
   return inline === undefined ? out : markInlineCode(out, styles, inline, fonts && !setInMonospace)
+}
+
+/** A line break inside a paragraph (not a page or column break). */
+const LINE_BREAK = /<w:br\b(?![^>]*\bw:type="(?:page|column)")[^>]*\/>|<w:cr\b[^>]*\/>/g
+
+/** The parts of a paragraph between its properties and its end that can hold runs. */
+const PARAGRAPH_CHILDREN = ['w:r', 'w:hyperlink', 'w:ins', 'w:del', 'w:smartTag', 'w:sdt', 'w:fldSimple', 'w:customXml', 'w:moveTo', 'w:moveFrom']
+
+/**
+ * A code block inside a list item. Our docx writer puts it in the item's own
+ * paragraph (Word has no block inside a numbered paragraph): the item's text,
+ * a break, the block's lines in Courier a break apart (a blank line as two),
+ * and, when the item goes on after it, a break and the rest of its text.
+ *
+ * So in a list paragraph whose first line is ordinary text, each stretch of
+ * later lines set wholly in a monospace face (by the same test as a code
+ * paragraph's runs, blank lines allowed inside) becomes a marker run, which
+ * restoreCodeBlocks makes `<pre><code>` inside the `<li>`, the breaks around
+ * it dropped. A list paragraph that is all monospace, or a word of code in
+ * one, is left to inline code: Word's own list items look like that, and
+ * nothing tells a listing apart. Only with fonts on and the document not set
+ * in a monospace face (see takeCodeBlocks).
+ */
+function takeItemCodeBlocks(xml: string, styles: Map<string, WordStyle>, marker: string, blocks: string[]): string {
+  if (!xml.includes('<w:numPr')) return xml
+  let out = ''
+  let last = 0
+  let cursor = 0
+  for (const p of scanElements(xml, ['w:p'])) {
+    const at = xml.indexOf(p.xml, cursor)
+    if (at < 0) continue
+    cursor = at + p.xml.length
+    const fresh = itemCodeParagraph(p.xml, styles, marker, blocks)
+    if (fresh === undefined) continue
+    out += xml.slice(last, at) + fresh
+    last = cursor
+  }
+  return out + xml.slice(last)
+}
+
+/** One list paragraph with its code lines as marker runs, or undefined when it has none. */
+function itemCodeParagraph(paragraph: string, styles: Map<string, WordStyle>, marker: string, blocks: string[]): string | undefined {
+  const head = /^<w:p\b[^>]*>\s*(?:<w:pPr\b[\s\S]*?<\/w:pPr>|<w:pPr\/>)?/.exec(paragraph)![0]
+  if (!/<w:numPr\b/.test(head) || /<w:outlineLvl\b/.test(head)) return undefined
+  const pStyle = /<w:pStyle\b[^>]*\bw:val="([^"]*)"/.exec(head)?.[1]
+  if (pStyle && /^heading|^title$/i.test(pStyle)) return undefined
+  const body = paragraph.slice(head.length, paragraph.length - '</w:p>'.length)
+  if (!body.match(LINE_BREAK)) return undefined
+  const paragraphFont = styleFont(styles, pStyle)
+  const monospaceRun = (r: string): boolean => {
+    const rPr = /^<w:r\b[^>]*>\s*(<w:rPr\b[\s\S]*?<\/w:rPr>|<w:rPr\/>)?/.exec(r)?.[1] ?? ''
+    const rStyle = /<w:rStyle\b[^>]*\bw:val="([^"]*)"/.exec(rPr)?.[1]
+    const font = rPrFont(rPr) ?? styleFont(styles, rStyle) ?? paragraphFont
+    return font !== undefined && MONOSPACE.test(font)
+  }
+
+  // The paragraph as pieces: each break a piece of its own (a run holding
+  // text and breaks is split, its properties on each part), and whether each
+  // other piece shows text and is all monospace.
+  const pieces: { xml: string; isBreak: boolean; shown: boolean; mono: boolean }[] = []
+  const piece = (x: string): void => {
+    const shown = codeParagraphText(x).trim() !== '' || /<w:(?:drawing|pict|object)\b|<m:oMath/.test(x)
+    const mono = !/<w:(?:drawing|pict|object)\b|<m:oMath/.test(x) && scanElements(x, ['w:r']).every((r) => codeParagraphText(r.inner).trim() === '' || monospaceRun(r.xml))
+    pieces.push({ xml: x, isBreak: false, shown, mono })
+  }
+  let from = 0
+  for (const el of scanElements(body, PARAGRAPH_CHILDREN)) {
+    const elAt = body.indexOf(el.xml, from)
+    if (elAt < 0) return undefined
+    if (elAt > from) piece(body.slice(from, elAt))
+    from = elAt + el.xml.length
+    const breaks = el.inner.match(LINE_BREAK)
+    if (!breaks) {
+      piece(el.xml)
+      continue
+    }
+    // A break in a link or a tracked change: not split, so not read.
+    if (el.name !== 'w:r') return undefined
+    const open = /^<w:r\b[^>]*>/.exec(el.xml)![0]
+    const rPr = /^\s*(<w:rPr\b[\s\S]*?<\/w:rPr>|<w:rPr\/>)/.exec(el.inner)?.[1] ?? ''
+    const content = el.inner.slice(el.inner.indexOf(rPr) + rPr.length)
+    for (const part of content.split(new RegExp(`(${LINE_BREAK.source})`))) {
+      if (part === '' || part === undefined) continue
+      const x = `${open}${rPr}${part}</w:r>`
+      if (part.match(LINE_BREAK)?.[0] === part) pieces.push({ xml: x, isBreak: true, shown: false, mono: false })
+      else piece(x)
+    }
+  }
+  if (from < body.length) piece(body.slice(from))
+
+  // The lines between breaks: text, code or blank.
+  const lines: { first: number; last: number; kind: 'text' | 'code' | 'blank' }[] = []
+  let start = 0
+  pieces.forEach((pc, i) => {
+    if (!pc.isBreak && i < pieces.length - 1) return
+    const end = pc.isBreak ? i - 1 : i
+    const own = pieces.slice(start, end + 1)
+    const kind = !own.some((o) => o.shown) ? 'blank' : own.every((o) => !o.shown || o.mono) ? 'code' : 'text'
+    lines.push({ first: start, last: end, kind })
+    start = i + 1
+  })
+  // The item's own text comes first.
+  if (lines.find((l) => l.kind !== 'blank')?.kind !== 'text') return undefined
+
+  const replaced = new Map<number, { last: number; xml: string }>()
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].kind !== 'code') continue
+    let j = i
+    for (let k = i + 1; k < lines.length && lines[k].kind !== 'text'; k++) if (lines[k].kind === 'code') j = k
+    const text = lines
+      .slice(i, j + 1)
+      .map((l) => codeParagraphText(pieces.slice(l.first, l.last + 1).map((pc) => pc.xml).join('')))
+      .join('\n')
+    replaced.set(lines[i].first, { last: lines[j].last, xml: `<w:r><w:t>${marker}${blocks.length}\ue002</w:t></w:r>` })
+    blocks.push(text)
+    i = j
+  }
+  if (!replaced.size) return undefined
+  let fresh = head
+  for (let i = 0; i < pieces.length; i++) {
+    const block = replaced.get(i)
+    if (block) {
+      fresh += block.xml
+      i = block.last
+    } else fresh += pieces[i].xml
+  }
+  return fresh + '</w:p>'
 }
 
 /**
@@ -901,6 +1031,8 @@ export function restoreCodeBlocks(html: string, marker: string, blocks: string[]
   const text = (n: string): string => escapeHtml(blocks[Number(n)] ?? '')
   return html
     .replace(new RegExp(`<p>${m}(\\d+)\ue001</p>`, 'g'), (_, n: string) => `<pre><code>${text(n)}</code></pre>`)
+    // A block inside a list item (takeItemCodeBlocks), the breaks around it gone.
+    .replace(new RegExp(`(?:<br\\s*/?>\\s*)*${m}(\\d+)\ue002(?:\\s*<br\\s*/?>)*`, 'g'), (_, n: string) => `<pre><code>${text(n)}</code></pre>`)
     .replace(new RegExp(`${m}(\\d+)\ue001`, 'g'), (_, n: string) => text(n))
 }
 
