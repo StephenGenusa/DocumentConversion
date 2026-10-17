@@ -380,6 +380,38 @@ try {
   await pressEscape()
   await waitFor(`!document.querySelector('dialog.settings')`, 'Escape to close the Settings dialog')
   check('Escape closes it', true)
+  // And the accelerator itself, pressed for real: on X11, XTest sends Ctrl+,
+  // through the X server to the app's window (made active for it, then the
+  // focus goes back where it was). Elsewhere it is skipped, not failed.
+  const x11 = await mainEval(
+    `(() => { const w = process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible() && w.getTitle().startsWith('Document Converter')); return { platform: process.platform, display: process.env.DISPLAY ?? '', wayland: process.env.XDG_SESSION_TYPE === 'wayland' && !!process.env.WAYLAND_DISPLAY, xid: w ? w.getNativeWindowHandle().readUInt32LE(0) : 0 } })()`,
+  )
+  const keySkip =
+    x11.platform !== 'linux' ? 'not Linux'
+    : !x11.display ? 'no X display'
+    : x11.wayland && !headless ? 'a Wayland session'
+    : !x11.xid ? 'no app window'
+    : spawnSync('which', ['python3']).status !== 0 ? 'python3 is not installed'
+    : null
+  if (keySkip) console.log(`skip  a real Ctrl+, opens the Settings dialog (skipped: ${keySkip})`)
+  else {
+    const sent = spawnSync('python3', ['-I', join(ROOT, 'tests', 'e2e', 'xtest-key.py'), String(x11.xid), 'Control_L', 'comma'], {
+      env: { ...process.env, DISPLAY: x11.display },
+      encoding: 'utf8',
+      timeout: 15_000,
+    })
+    if (sent.status === 77) console.log(`skip  a real Ctrl+, opens the Settings dialog (${sent.stdout.trim()})`)
+    else {
+      let opened = sent.status === 0
+      for (let i = 0; opened && i < 50 && !(await js(dialogOpen)); i++) await sleep(100)
+      opened = opened && (await js(dialogOpen))
+      check('a real Ctrl+, opens the Settings dialog', opened, `${sent.status} ${sent.stdout}${sent.stderr}`)
+      if (opened) {
+        await pressEscape()
+        await waitFor(`!document.querySelector('dialog.settings')`, 'Escape to close the Settings dialog')
+      }
+    }
+  }
   // From the start screen's link: Escape gives the focus back to the link.
   // A script's click() does not move the focus as a real one does.
   await js(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Settings').focus()`)
