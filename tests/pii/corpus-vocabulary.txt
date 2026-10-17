@@ -48,6 +48,7 @@ answer
 answered
 anti-harassment
 any
+app
 appear
 appearance
 appendix
@@ -108,6 +109,7 @@ bigcup
 bit
 bitmap
 bits
+black
 bmatrix
 board
 bold
@@ -153,6 +155,7 @@ came
 can
 cancel
 cancelled
+cannot
 cap
 capacity
 card
@@ -287,6 +290,7 @@ desks
 desktop
 detail
 devi
+device
 diagram
 different
 differently
@@ -531,6 +535,7 @@ jhalloway
 job
 jobs
 joining
+jpeg
 jpg
 jump
 juno
@@ -539,6 +544,7 @@ just
 keep
 kept
 key
+kinds
 know
 kraft
 label
@@ -594,6 +600,7 @@ long
 looking
 lower
 lr
+mac
 made
 mail
 mainly
@@ -732,6 +739,7 @@ opscenter
 or
 order
 org
+os
 ostrander
 other
 otherwise
@@ -823,10 +831,12 @@ procedures
 process
 processed
 processor
+processors
 prod
 products
 professionalism
 program
+programs
 progressive
 project
 projection
@@ -849,6 +859,7 @@ quarto
 question
 questions
 queue
+quickdraw
 quickly
 quiet
 quill
@@ -944,6 +955,7 @@ safety
 same
 satisfaction
 saved
+say
 says
 sbraddock
 scaled
@@ -1060,6 +1072,7 @@ steps
 stick
 still
 stock
+stood
 storage
 stored
 stores
@@ -1132,6 +1145,7 @@ tilde
 time
 times
 to
+today
 together
 tolerated
 too
@@ -1235,6 +1249,7 @@ whenever
 where
 which
 whistleblower
+white
 who
 whose
 why

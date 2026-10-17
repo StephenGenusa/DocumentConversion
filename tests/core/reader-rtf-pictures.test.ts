@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createCanvas } from '@napi-rs/canvas'
+import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readRtf } from '../../src/core/readers/rtf'
@@ -9,6 +9,8 @@ import { wmfSize } from '../../src/core/picture-headers'
 import type { RenderBlocks, RenderResult } from '../../src/core/rendered-blocks'
 // @ts-expect-error: a plain .mjs fixture library, no types.
 import { emf, wmf } from '../../scripts/fixtures/lib-tiff.mjs'
+// @ts-expect-error: a plain .mjs fixture library, no types.
+import { pictPackBits, pictDirect, pictBits, pictQuickTime, pictDrawing, ddb } from '../../scripts/fixtures/lib-pict.mjs'
 
 /*
  * Pictures in RTF (\pict): PNG, JPEG, EMF, WMF and DIB, as hex or \bin
@@ -130,10 +132,10 @@ describe('RTF pictures', () => {
     expect(html).toMatch(/<td>[^<]*Sign[^<]*<\/td>\s*<td>\s*<img [^>]*src="data:image\/png;base64,/)
   })
 
-  it('a picture in a format nothing reads (QuickDraw, an OS/2 metafile, a WMF that is not one) is left out, the text kept', async () => {
-    const html = await read(`One {\\pict\\macpict\\picw2\\pich2 00aa11bb22} two {\\pict\\wmetafile8 ${'ab'.repeat(300)}} three`)
+  it('a WMF that is not one is left out, the text kept', async () => {
+    const html = await read(`One {\\pict\\wmetafile8 ${'ab'.repeat(300)}} two`)
     expect(pictures(html)).toEqual([])
-    expect(html).toMatch(/One\s+two\s+three/)
+    expect(html).toMatch(/One\s+two/)
   })
 
   /** A floating picture frame as Word writes it: the picture in the shape's `pib`, a copy in `\\shprslt` for readers that know no shapes. */
@@ -191,6 +193,115 @@ describe('RTF pictures', () => {
   it('hex with an odd digit or stray characters does not break the document', async () => {
     const html = await read(`{\\pict\\pngblip 89504e470}{\\pict\\pngblip zz}{\\pict} kept`)
     expect(html).toContain('kept')
+  })
+})
+
+describe('RTF pictures of the rarer kinds: QuickDraw, OS/2 metafiles, device-dependent bitmaps', () => {
+  /** Blue on the left half, pale on the right, a dark bar across the middle rows. */
+  const rgb = (x: number, y: number): [number, number, number] => (y >= 4 && y < 6 ? [20, 20, 20] : x < 6 ? [58, 110, 165] : [242, 230, 200])
+  const W = 12
+  const H = 10
+  const expectPixels = async (png: Buffer, w = W, h = H, at = rgb) => {
+    const image = await loadImage(png)
+    expect([image.width, image.height]).toEqual([w, h])
+    const g = createCanvas(w, h).getContext('2d')
+    g.drawImage(image, 0, 0)
+    const { data } = g.getImageData(0, 0, w, h)
+    for (const [x, y] of [[0, 0], [11, 0], [3, 5], [8, 9]]) {
+      const o = (y * w + x) * 4
+      expect([data[o], data[o + 1], data[o + 2]]).toEqual(at(x, y))
+    }
+  }
+
+  it('a QuickDraw picture of an 8-bit PackBitsRect becomes a PNG of it, sized by its frame (points)', async () => {
+    const html = await read(`Before {\\pict\\macpict\\picw${W}\\pich${H} ${hex(pictPackBits({ width: W, height: H, rgb }))}} after`)
+    const [p] = pictures(html)
+    expect(p.type).toBe('image/png')
+    await expectPixels(p.bytes!)
+    // 12 x 10 points = 16 x 13 CSS px.
+    expect([p.width, p.height]).toEqual(['16', '13'])
+    expect(html).toMatch(/Before <img [^>]+> after/)
+  })
+
+  it('a QuickDraw picture of 32-bit DirectBitsRect bands becomes one PNG of the bands together', async () => {
+    const html = await read(`{\\pict\\macpict\\picwgoal${W * 15}\\pichgoal${H * 15} ${hex(pictDirect({ width: W, height: H, rgb, bands: 3 }))}}`)
+    const [p] = pictures(html)
+    expect(p.type).toBe('image/png')
+    await expectPixels(p.bytes!)
+    expect([p.width, p.height]).toEqual([String(W), String(H)])
+  })
+
+  it('a version 1 QuickDraw picture of a one-bit BitsRect: black where a bit is set', async () => {
+    const html = await read(`{\\pict\\macpict ${hex(pictBits({ width: W, height: H, rgb }))}}`)
+    const [p] = pictures(html)
+    const mono = (x: number, y: number): [number, number, number] => {
+      const [r, g, b] = rgb(x, y)
+      return r + g + b < 384 ? [0, 0, 0] : [255, 255, 255]
+    }
+    await expectPixels(p.bytes!, W, H, mono)
+  })
+
+  it('a QuickDraw picture holding a QuickTime JPEG becomes that JPEG, byte for byte', async () => {
+    const photo = jpeg()
+    const html = await read(`{\\pict\\macpict ${hex(pictQuickTime({ width: 8, height: 6, image: photo }))}}`)
+    const [p] = pictures(html)
+    expect(p.type).toBe('image/jpeg')
+    expect(p.bytes!.equals(photo)).toBe(true)
+  })
+
+  it('a QuickDraw drawing with no picture in it, or not a QuickDraw picture at all: a placeholder that says so', async () => {
+    const html = await read(
+      `One {\\pict\\macpict ${hex(pictDrawing({ width: W, height: H }))}} two {\\pict{\\*\\picprop{\\sp{\\sn wzDescription}{\\sv Shelf plan}}}\\macpict 00aa11bb22} three`,
+    )
+    expect(pictures(html)).toEqual([])
+    expect(html).toContain('One <em>[image: a QuickDraw (Mac) drawing, which this app cannot draw]</em> two')
+    expect(html).toContain('<em>[image: Shelf plan — a QuickDraw (Mac) drawing, which this app cannot draw]</em> three')
+  })
+
+  it('an OS/2 metafile: a placeholder that says so', async () => {
+    const html = await read(`One {\\pict\\pmmetafile8\\picw100\\pich100 0012d3a8a800000000} two`)
+    expect(html).toContain('One <em>[image: an OS/2 metafile, which this app cannot draw]</em> two')
+  })
+
+  it('a picture not drawn here gives way to the other of a pair', async () => {
+    const html = await read(`{\\*\\shppict{\\pict\\macpict ${hex(pictDrawing({ width: W, height: H }))}}}{\\nonshppict{\\pict\\pngblip ${hex(png())}}}`)
+    expect(pictures(html).map((p) => [p.type, p.alternate])).toEqual([['image/png', undefined]])
+    expect(html).not.toContain('[image:')
+  })
+
+  it('a device-dependent bitmap (\\wbitmap) becomes a PNG: 1 bit black and white, 24 bits BGR', async () => {
+    const mono = ddb({ width: W, height: H, depth: 1, rgb })
+    const color = ddb({ width: W, height: H, depth: 24, rgb })
+    const html = await read(
+      `{\\pict\\wbitmap0\\wbmbitspixel1\\wbmplanes1\\wbmwidthbytes${mono.widthBytes}\\picw${W}\\pich${H} ${hex(mono.bits)}}` +
+        `{\\pict\\wbitmap0\\wbmbitspixel24\\wbmplanes1\\wbmwidthbytes${color.widthBytes}\\picw${W}\\pich${H}\\picwgoal360\\pichgoal300 ${hex(color.bits)}}`,
+    )
+    const [a, b] = pictures(html)
+    expect([a.type, a.width, a.height]).toEqual(['image/png', String(W), String(H)])
+    await expectPixels(a.bytes!, W, H, (x, y) => {
+      const [r, g, bl] = rgb(x, y)
+      return r + g + bl >= 384 ? [255, 255, 255] : [0, 0, 0]
+    })
+    expect([b.type, b.width, b.height]).toEqual(['image/png', '24', '20'])
+    await expectPixels(b.bytes!)
+  })
+
+  it('the old-pictures fixture: three pictures, two placeholders that say why', async () => {
+    const bytes = readFileSync(join(__dirname, '../corpus/reading-room-old-pictures.rtf'))
+    const html = (await readRtf({ bytes, filename: 'reading-room-old-pictures.rtf' })).html
+    expect(pictures(html).map((p) => [p.type, p.width, p.height])).toEqual([
+      ['image/png', '48', '48'],
+      ['image/jpeg', '160', '107'],
+      ['image/png', '16', '16'],
+    ])
+    expect(html).toContain('[image: Shelf plan from the old handbook — a QuickDraw (Mac) drawing, which this app cannot draw]')
+    expect(html).toContain('[image: an OS/2 metafile, which this app cannot draw]')
+  })
+
+  it('a device-dependent bitmap with too few bits, or of several planes, is left out', async () => {
+    const html = await read(`One {\\pict\\wbitmap0\\wbmbitspixel24\\wbmplanes1\\wbmwidthbytes36\\picw12\\pich10 00ff00} two {\\pict\\wbitmap0\\wbmbitspixel1\\wbmplanes4\\wbmwidthbytes2\\picw12\\pich1 ${'00'.repeat(8)}} three`)
+    expect(pictures(html)).toEqual([])
+    expect(html).toMatch(/One\s+two\s+three/)
   })
 })
 

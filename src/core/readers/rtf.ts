@@ -13,8 +13,11 @@ import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import type { HubDocument, SourceInput } from '../types'
 import { imageMime } from './image'
-import { vectorMime } from '../pictures'
+import { pictureType, vectorMime } from '../pictures'
 import { archiveInlineBudget, createImageLedger, imagePlaceholder, OVER_BUDGET } from '../inline-images'
+import { pictPicture } from '../metafile/pict'
+import { encodePng } from '../metafile/png'
+import { MAX_BITMAP_PIXELS } from '../metafile/dib'
 
 /**
  * Keep the formatting a span was given inside its own group.
@@ -1400,20 +1403,86 @@ interface RtfPicture {
   width?: number
   height?: number
   alt?: string
+  /** A picture of a kind that is not drawn here: what it is, for its placeholder ("a QuickDraw picture …"); `bytes` is empty. */
+  notDrawn?: string
 }
 
 /** Where a lifted picture stood. Plain ASCII, like tableToken and NOTE_MARK, so it comes through both RTF paths as text. */
 const PICTURE_MARK = (i: number): string => `zZrTfPiC${i}Zz`
 const PICTURE_MARK_RE = /zZrTfPiC(\d+)Zz/g
 
-/** The picture types a `\\pict` names, by control word. QuickDraw, OS/2 metafiles and device-dependent bitmaps are not read. */
+/**
+ * The picture types a `\\pict` names, by control word. The last three are
+ * the rarer ones: a QuickDraw picture (Mac), an OS/2 Presentation Manager
+ * metafile, and a device-dependent bitmap (readPict says what each becomes).
+ */
 const PICT_TYPES: Record<string, string> = lookup({
   pngblip: 'image/png',
   jpegblip: 'image/jpeg',
   emfblip: 'image/x-emf',
   wmetafile: 'image/x-wmf',
   dibitmap: 'image/bmp',
+  macpict: 'image/x-pict',
+  pmmetafile: 'image/x-os2-metafile',
+  wbitmap: 'image/x-ddb',
 })
+
+/** What the placeholder says of a picture that is not drawn. */
+const NOT_DRAWN_PICT = 'a QuickDraw (Mac) drawing, which this app cannot draw'
+const NOT_DRAWN_OS2 = 'an OS/2 metafile, which this app cannot draw'
+
+/** The colors of a 4-bit device bitmap: the 16 VGA colors. */
+const VGA_COLORS = [
+  0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xc0c0c0,
+  0x808080, 0xff0000, 0x00ff00, 0xffff00, 0x0000ff, 0xff00ff, 0x00ffff, 0xffffff,
+]
+
+/** Windows' 20 static colors, the first ten and last ten of an 8-bit device's palette. */
+const STATIC_COLORS = [
+  0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xc0c0c0, 0xc0dcc0, 0xa6caf0,
+  0xfffbf0, 0xa0a0a4, 0x808080, 0xff0000, 0x00ff00, 0xffff00, 0x0000ff, 0xff00ff, 0x00ffff, 0xffffff,
+]
+
+/**
+ * A PNG of a device-dependent bitmap (`\\wbitmap`): rows of the device's own
+ * pixels, top row first, `widthBytes` a row, with no color table, so the
+ * colors are the ones such a device has: 1 bit, black (0) and white (1); 4
+ * bits, the VGA colors; 8 bits, Windows' static colors at either end of the
+ * palette and gray for the rest (an application's own colors there are not
+ * in the file); 16 bits 5-5-5; 24 and 32 bits BGR. One plane only (a planar
+ * EGA bitmap is not read). Null when the bits are too few for the size.
+ */
+function ddbToPng(bits: Buffer, w: number, h: number, depth: number, planes: number, widthBytes: number): Buffer | null {
+  if (planes !== 1 || ![1, 4, 8, 16, 24, 32].includes(depth)) return null
+  if (!(w >= 1 && h >= 1 && w <= MAX_PICTURE_SIDE && h <= MAX_PICTURE_SIDE && w * h <= MAX_BITMAP_PIXELS)) return null
+  const stride = widthBytes > 0 ? widthBytes : Math.ceil((w * depth) / 16) * 2
+  if (stride * 8 < w * depth || bits.length < stride * h) return null
+  const rgba = new Uint8Array(w * h * 4)
+  for (let y = 0; y < h; y++) {
+    const row = y * stride
+    for (let x = 0; x < w; x++) {
+      let c: number
+      if (depth === 1) c = (bits[row + (x >> 3)] >> (7 - (x & 7))) & 1 ? 0xffffff : 0
+      else if (depth === 4) c = VGA_COLORS[(bits[row + (x >> 1)] >> (x & 1 ? 0 : 4)) & 15]
+      else if (depth === 8) {
+        const i = bits[row + x]
+        c = i < 10 ? STATIC_COLORS[i] : i >= 246 ? STATIC_COLORS[i - 236] : i * 0x010101
+      } else if (depth === 16) {
+        const v = bits.readUInt16LE(row + x * 2)
+        c = (Math.round((((v >> 10) & 31) * 255) / 31) << 16) | (Math.round((((v >> 5) & 31) * 255) / 31) << 8) | Math.round(((v & 31) * 255) / 31)
+      } else {
+        const at = row + x * (depth / 8)
+        c = (bits[at + 2] << 16) | (bits[at + 1] << 8) | bits[at]
+      }
+      const o = (y * w + x) * 4
+      rgba[o] = c >> 16
+      rgba[o + 1] = (c >> 8) & 0xff
+      rgba[o + 2] = c & 0xff
+      rgba[o + 3] = 255
+    }
+  }
+  return encodePng(w, h, rgba, false)
+}
 
 /** Hex digits and the line breaks between them. */
 const HEX_RUN = /[0-9a-fA-F][0-9a-fA-F\s]*/y
@@ -1489,8 +1558,11 @@ function placeableWmf(meta: Buffer, twipsWide: number, twipsHigh: number): Buffe
  * (the blip control word), its data (hex digits, or `\\binN` raw bytes), its
  * sizes (`\\picwgoal`/`\\pichgoal` in twips, scaled by `\\picscalex`/`y`
  * percent; `\\picw`/`\\pich`, a metafile's in hundredths of a millimeter)
- * and the description Word keeps in `\\picprop`. Null when it is of a type
- * not read here or its data is not that type (the bytes say, not the word).
+ * and the description Word keeps in `\\picprop`. A QuickDraw picture becomes
+ * the bitmap or JPEG inside it, a device-dependent bitmap a PNG; a QuickDraw
+ * picture with neither, and an OS/2 metafile, come back `notDrawn`, for a
+ * placeholder that says so. Null when its data is not its type (the bytes
+ * say, not the word) or the group names no type.
  */
 function readPict(rtf: string, open: number, end: number): RtfPicture | null {
   const words: Record<string, number> = lookup({})
@@ -1543,12 +1615,30 @@ function readPict(rtf: string, open: number, end: number): RtfPicture | null {
   const scale = (n?: number): number => (n && n > 0 ? n / 100 : 1)
   const sx = scale(words.picscalex)
   const sy = scale(words.picscaley)
-  const metafile = type === 'image/x-emf' || type === 'image/x-wmf'
+  const metafile = type === 'image/x-emf' || type === 'image/x-wmf' || type === 'image/x-os2-metafile'
   // twips: the size asked for, else a metafile's own extent (0.01 mm).
   let tw = words.picwgoal > 0 ? words.picwgoal : metafile && words.picw > 0 ? (words.picw * 1440) / 2540 : 0
   let th = words.pichgoal > 0 ? words.pichgoal : metafile && words.pich > 0 ? (words.pich * 1440) / 2540 : 0
+  let notDrawn: string | undefined
+  if (type === 'image/x-pict') {
+    // The bitmap or QuickTime image a QuickDraw picture holds (metafile/pict.ts); its frame is in points.
+    const pict = pictPicture(bytes)
+    if (pict) {
+      type = pict.mime
+      bytes = pict.bytes
+      if (!(tw > 0 && th > 0)) [tw, th] = [pict.width * 20, pict.height * 20]
+    } else notDrawn = NOT_DRAWN_PICT
+  } else if (type === 'image/x-os2-metafile') notDrawn = NOT_DRAWN_OS2
+  else if (type === 'image/x-ddb') {
+    const png = ddbToPng(bytes, words.picw, words.pich, words.wbmbitspixel ?? 1, words.wbmplanes ?? 1, words.wbmwidthbytes ?? 0)
+    if (!png) return null
+    type = 'image/png'
+    bytes = png
+    if (!(tw > 0 && th > 0)) [tw, th] = [words.picw * 15, words.pich * 15]
+  }
   tw *= sx
   th *= sy
+  if (notDrawn) return { mime: type, bytes: Buffer.alloc(0), alt, notDrawn }
   if (type === 'image/bmp') {
     const bmp = dibToBmp(bytes)
     if (!bmp) return null
@@ -1559,6 +1649,9 @@ function readPict(rtf: string, open: number, end: number): RtfPicture | null {
     bytes = wmf
   } else if (type === 'image/x-emf') {
     if (vectorMime(bytes) !== 'image/x-emf') return null
+  } else if (type === 'image/tiff') {
+    // Only a QuickDraw picture's QuickTime image comes to this.
+    if (pictureType(bytes) !== type) return null
   } else if (imageMime(bytes) !== type) return null
   const picture: RtfPicture = { mime: type, bytes, alt }
   const width = Math.round(tw / 15)
@@ -1617,7 +1710,8 @@ function floatingPicture(rtf: string, open: number, end: number): LiftedPicture 
     const inner = liftRtfPictures(rtf.slice(resultOpen, Math.min(groupEnd(rtf, resultOpen), end)))
     fallback = inner.pictures[0]?.picture
   }
-  const picture = main ?? fallback
+  const drawn = (p?: RtfPicture | null): p is RtfPicture => !!p && !p.notDrawn
+  const picture = drawn(main) ? main : drawn(fallback) ? fallback : (main ?? fallback)
   if (!picture) return null
   const desc = shapeProperty(rtf, instOpen, instEnd, 'wzDescription')
   const alt = desc ? rtfPlainText(rtf.slice(desc.open + 4, desc.end - 1)) : ''
@@ -1635,7 +1729,7 @@ function floatingPicture(rtf: string, open: number, end: number): LiftedPicture 
       picture.height = height
     }
   }
-  return main && fallback ? { picture, alternate: fallback } : { picture }
+  return picture === main && drawn(fallback) ? { picture, alternate: fallback } : { picture }
 }
 
 /**
@@ -1686,7 +1780,9 @@ function liftRtfPictures(rtf: string): { rtf: string; pictures: LiftedPicture[] 
         alternate = pictIn(rtf, open, next)
       }
     }
-    if (!picture) [picture, alternate] = [alternate, null]
+    // One not drawn here gives way to a fallback that is, and is no fallback itself.
+    if (!picture || (picture.notDrawn && alternate && !alternate.notDrawn)) [picture, alternate] = [alternate, null]
+    if (alternate?.notDrawn) alternate = null
     out += rtf.slice(i, m.index)
     if (picture) {
       out += PICTURE_MARK(pictures.length)
@@ -1706,6 +1802,9 @@ function placePictures(html: string, pictures: LiftedPicture[], sourceLength: nu
     const entry = pictures[Number(n)]
     if (!entry) return ''
     const { picture, alternate } = entry
+    if (picture.notDrawn) {
+      return imagePlaceholder(picture.alt ? `${escapeHtml(picture.alt)} — ${picture.notDrawn}` : picture.notDrawn, 'inline')
+    }
     if (!ledger.admit(picture.bytes.length + (alternate?.bytes.length ?? 0))) {
       return imagePlaceholder(picture.alt ? `${escapeHtml(picture.alt)} — ${OVER_BUDGET}` : OVER_BUDGET, 'inline')
     }
