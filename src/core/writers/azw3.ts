@@ -4,7 +4,7 @@ import { buildPalmDb } from './palmdb'
 import { buildCncx, buildFdst, buildIndex, type IndexEntry } from './kf8-index'
 import { EXTH, buildRecord0, exthString, exthUint, splitTextRecords, TEXT_RECORD_SIZE, type ExthRecord } from './mobi-header'
 import { kindleFallback } from '../pictures'
-import type { HubDocument } from '../types'
+import type { ConvertOptions, HubDocument } from '../types'
 
 /**
  * AZW3 (KF8) output.
@@ -71,9 +71,9 @@ async function resourcesOf(zip: JSZip): Promise<Resources> {
  */
 const EOF_RECORD = Buffer.from([0xe9, 0x8e, 0x0d, 0x0a])
 
-export async function writeAzw3(doc: HubDocument): Promise<Buffer> {
+export async function writeAzw3(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
   const html = kindleFallback(doc.html)
-  const epub = await writeEpub(html === doc.html ? doc : { ...doc, html }, { notes: 'plain' })
+  const epub = await writeEpub(html === doc.html ? doc : { ...doc, html }, { notes: 'plain', codeColour: opts?.codeColour })
   const zip = await JSZip.loadAsync(epub)
   const resources = await resourcesOf(zip)
 

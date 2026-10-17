@@ -8,9 +8,10 @@ import type { ConvertOptions } from '../core/types'
  *
  * The renderer sends only the controls it shows (`appliedOptions`), so a value
  * in `request` is one the user can see and it wins for this conversion; the
- * rest come from `settings`. Picture format has no control on the screen and
- * is never read from a request. Each handler takes `settings` once, when its
- * job starts, so a change made during a conversion applies to the next one.
+ * rest come from `settings`. Picture format and code colour have no control
+ * on the screen and are never read from a request. Each handler takes
+ * `settings` once, when its job starts, so a change made during a conversion
+ * applies to the next one.
  *
  * Pure: no Electron, so it is tested on its own. The CLI does not come here;
  * it has its own defaults and flags (cli-run.ts).
@@ -26,5 +27,6 @@ export function conversionOptions(settings: Readonly<Settings>, request: unknown
     ocr: req.ocr === true,
     ocrLanguage: merged.ocrLanguage,
     read: merged.read,
+    codeColour: merged.codeColour,
   }
 }

@@ -13,6 +13,7 @@ describe('conversionOptions (settings + request)', () => {
     pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true },
     read: { transcriptTimestamps: false, sqliteViews: true },
     ocr: { language: 'deu' },
+    code: { colour: false },
   }).settings
 
   it('takes every option from the settings when the request carries none', () => {
@@ -24,6 +25,7 @@ describe('conversionOptions (settings + request)', () => {
       ocr: false,
       ocrLanguage: 'deu',
       read: { transcriptTimestamps: false, sqliteViews: true },
+      codeColour: false,
     })
   })
 
@@ -48,8 +50,14 @@ describe('conversionOptions (settings + request)', () => {
     expect(opts.read).toEqual({ transcriptTimestamps: true, sqliteViews: true, jsonAs: 'text' })
   })
 
-  it('a picture format in a request is ignored: there is no such control', () => {
-    expect(conversionOptions(saved, { pictureFormat: 'jpeg' }).pictureFormat).toBe('png')
+  it('picture format and code colour in a request are ignored: there are no such controls', () => {
+    const opts = conversionOptions(saved, { pictureFormat: 'jpeg', codeColour: true })
+    expect(opts.pictureFormat).toBe('png')
+    expect(opts.codeColour).toBe(false)
+  })
+
+  it('code is coloured by default', () => {
+    expect(conversionOptions(DEFAULT_SETTINGS, {}).codeColour).toBe(true)
   })
 
   it('a bad value in a request is ignored and the setting used', () => {

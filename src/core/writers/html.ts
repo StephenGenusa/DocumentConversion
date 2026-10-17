@@ -1,6 +1,6 @@
 import { renderDocumentShell } from '../shell'
-import type { HubDocument } from '../types'
+import type { ConvertOptions, HubDocument } from '../types'
 
-export async function writeHtml(doc: HubDocument): Promise<Buffer> {
-  return Buffer.from(renderDocumentShell(doc, { target: 'html' }), 'utf8')
+export async function writeHtml(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
+  return Buffer.from(renderDocumentShell(doc, { target: 'html', codeColour: opts?.codeColour }), 'utf8')
 }

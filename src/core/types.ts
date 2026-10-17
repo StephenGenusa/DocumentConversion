@@ -298,6 +298,12 @@ export interface ConvertOptions {
    * Kindle book) is converted to: PNG when not given (pictures.ts).
    */
   pictureFormat?: PictureFormat
+  /**
+   * Code blocks coloured by language (Settings → Code, spec 4.4): html, pdf,
+   * Word, EPUB, the Kindle books and slides. On when not given; off writes
+   * code plain, with no highlight.js spans and no token colours.
+   */
+  codeColour?: boolean
 }
 
 export type RenderHtmlToPdf = (html: string, opts?: PdfRenderOptions) => Promise<Buffer>

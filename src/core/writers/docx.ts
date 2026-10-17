@@ -11,7 +11,7 @@ import { ownRows } from '../table-grid'
 import { footnotesForOutput } from '../footnotes'
 import hljs, { highlightedRuns } from '../hljs'
 import { codeBlockText } from '../code-language'
-import type { HubDocument } from '../types'
+import type { ConvertOptions, HubDocument } from '../types'
 import { DOCX_OWN_LINE } from '../draw-blocks'
 import { pictureType, wordTakes } from '../pictures'
 import { originalSize } from '../picture-headers'
@@ -734,6 +734,11 @@ function colourCode(source: string): string {
   )
 }
 
+/** colourCode, unless code colour is off (ConvertOptions.codeColour): then code stays plain. */
+function colourCodeIf(on: boolean, source: string): string {
+  return on ? colourCode(source) : source
+}
+
 /** The font html-to-docx itself gives a top-level code block. */
 const CODE_FONT = 'Courier'
 
@@ -1090,7 +1095,7 @@ function styleRuns(xml: string, coloured: ColouredLook[] = []): string {
   })
 }
 
-export async function writeDocx(doc: HubDocument): Promise<Buffer> {
+export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
   const coloured: ColouredLook[] = []
   const originals = new Map<string, Original>()
   const pictures = dropUnresolvableImages(standInOriginals(footnotesForOutput(doc.html, 'plain'), originals))
@@ -1098,7 +1103,7 @@ export async function writeDocx(doc: HubDocument): Promise<Buffer> {
     {
       ...doc,
       html: flattenFormatting(
-        monospaceCode(breakCodeLines(colourCode(centreOwnLineFormulas(unwrapSpans(flattenForDocx(pictures)))))),
+        monospaceCode(breakCodeLines(colourCodeIf(opts?.codeColour !== false, centreOwnLineFormulas(unwrapSpans(flattenForDocx(pictures)))))),
         coloured,
       ),
     },

@@ -12,6 +12,8 @@ export interface ShellOptions {
    * is a Kindle book (AZW4) and may be read where colour does not reach.
    */
   codePalette?: 'screen' | 'ereader'
+  /** Code coloured by language (pdf and html): on unless false (ConvertOptions.codeColour). */
+  codeColour?: boolean
 }
 
 /**
@@ -213,7 +215,7 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
   if (opts?.target === 'pdf' || opts?.target === 'html') {
     // Linked notes: the anchors are made here, from labels the hub owns.
     body = footnotesForOutput(body, 'links')
-    const highlighted = highlightCodeBlocks(body)
+    const highlighted = opts.codeColour === false ? { html: body, any: false } : highlightCodeBlocks(body)
     if (highlighted.any) {
       body = highlighted.html
       css += opts.codePalette === 'ereader' ? EREADER_HLJS_CSS : HLJS_CSS

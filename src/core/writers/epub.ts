@@ -310,12 +310,15 @@ export interface EpubOptions {
    * files, so it asks for plain numbers instead.
    */
   notes?: 'epub' | 'plain'
+  /** Code coloured by language: on unless false (ConvertOptions.codeColour). */
+  codeColour?: boolean
 }
 
 export async function writeEpub(doc: HubDocument, opts: EpubOptions = {}): Promise<Buffer> {
   // Code coloured as in the pdf and html, spans styled by class from
   // style.css; plaintext has nothing to colour and is left as it came.
-  const highlighted = highlightCodeBlocks(footnotesForOutput(doc.html, opts.notes ?? 'epub'), { skip: ['plaintext'] })
+  const notes = footnotesForOutput(doc.html, opts.notes ?? 'epub')
+  const highlighted = opts.codeColour === false ? { html: notes, any: false } : highlightCodeBlocks(notes, { skip: ['plaintext'] })
   const dom = parseDocument(highlighted.html)
   const nodes = unwrapContainers(dom.children as AnyNode[])
   const images = extractImages(nodes)

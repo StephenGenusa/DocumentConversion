@@ -57,7 +57,7 @@ export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Pr
     slides.length > 0
       ? slides
           .map((s) => {
-            const code = highlightCodeBlocks(s.html, { skip: LEFT_AS_IS })
+            const code = opts?.codeColour === false ? { html: s.html, any: false } : highlightCodeBlocks(s.html, { skip: LEFT_AS_IS })
             coloured ||= code.any
             return `<section>${code.html}${notesMarkup(s.notes)}</section>`
           })
