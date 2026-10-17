@@ -49,6 +49,7 @@ import { urlFetchDeps } from './net'
 import { appTitle, PACKAGE_NAME } from './app-identity'
 import { installAppMenu } from './menu'
 import { readSample, type SampleId } from './samples'
+import { isSampleId } from '../core/samples'
 import { openAboutWindow } from './about-window'
 import { renderForEditor } from './render-ipc'
 
@@ -805,6 +806,8 @@ function registerIpc(settings: SettingsStore): void {
   )
 
   ipcMain.handle('app:open-about', () => openAboutWindow())
+  // The start screen's Sample documents link: the same as the Help menu's item.
+  ipcMain.handle('app:request-sample', (_e, { id }: { id: unknown }) => (isSampleId(id) ? openSample(id) : undefined))
 
   // Settings (spec 5.6): every request checked against the schema in settings.ts.
   // Each conversion above takes a copy when it starts (conversionOptions).

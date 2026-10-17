@@ -1,4 +1,5 @@
 import type { Settings, SettingKey, SettingValue, SettingsSection } from '../core/settings'
+import type { SampleId } from '../core/samples'
 
 export type { Settings, SettingKey, SettingValue, SettingsSection }
 
@@ -308,6 +309,8 @@ export interface Api {
   settingsNotice(): Promise<string | undefined>
   /** Called when the menu's Settings… (or Cmd/Ctrl+,) asks for the dialog. Returns the way to stop. */
   onOpenSettings(cb: () => void): () => void
+  /** Open a sample from the start screen: main sends it back through `onOpenSample`, as the Help menu's item does. */
+  openSample(id: SampleId): Promise<void>
   /** Called when Help → Sample Documents opens a sample: an untitled copy, or why it could not be read. Returns the way to stop. */
   onOpenSample(cb: (sample: OpenedSample) => void): () => void
   /** Called with the new settings after each saved change. Returns the way to stop. */

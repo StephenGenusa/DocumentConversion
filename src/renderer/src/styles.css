@@ -82,6 +82,11 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .dropzone__about { margin: 1.25rem 0 0; font-size: .8rem; }
 .link-button { background: none; border: 0; padding: 0; color: #71717a; text-decoration: underline; cursor: pointer; font: inherit; }
 .link-button:hover { color: #3f3f46; }
+/* The start screen's Sample documents menu (menu-button pattern, like .tb-menu). */
+.sample-menu { position: relative; display: inline-block; }
+.sample-menu__list { position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); z-index: 30; min-width: 15rem; background: #fff; border: 1px solid #d4d4d8; border-radius: 8px; box-shadow: 0 8px 24px rgba(24, 24, 27, .14); padding: .25rem; display: flex; flex-direction: column; }
+.sample-menu__item { text-align: left; background: none; border: 0; border-radius: 6px; padding: .4rem .6rem; font: inherit; font-size: .85rem; color: #18181b; cursor: pointer; }
+.sample-menu__item:hover, .sample-menu__item:focus-visible { background: #eef2ff; outline: none; }
 .dropzone__url { display: flex; gap: .5rem; justify-content: center; margin-top: .75rem; }
 .dropzone__url input { flex: 1; max-width: min(40rem, 100%); padding: .45rem .7rem; border: 1px solid #d4d4d8; border-radius: 8px; font-size: .9rem; }
 .convert-actions { display: flex; flex-direction: column; gap: .5rem; }

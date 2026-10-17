@@ -1377,6 +1377,42 @@ try {
   await waitFor(`[...document.querySelectorAll('.card__name')].some((e) => e.textContent === 'Architecture Diagram (sample, untitled)')`, 'the SVG sample to be added')
   await shot('sample-architecture')
   check('Help → Sample Documents → Architecture Diagram (SVG) adds the picture as an untitled copy', !(await js(`!!document.querySelector('.clip-pane')`)), 'the editor opened')
+
+  // The start screen's Sample documents link, by real keys: Down opens it on
+  // the first sample, Escape closes it back to the link, Down Down Enter opens
+  // the Lab Report as the Help menu's item does.
+  await startOver()
+  const SAMPLE_LINK = `document.querySelector('.sample-menu button[aria-haspopup="menu"]')`
+  const focused = () => js(`document.activeElement?.textContent ?? null`)
+  const enter = async () => {
+    // Enter with its text, as a keyboard sends it: a button is pressed on the character, not the raw key.
+    await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' })
+    await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  }
+  await js(`${SAMPLE_LINK}.focus()`)
+  await pressKey('ArrowDown', 'ArrowDown', 40)
+  await waitFor(`!!document.querySelector('.sample-menu [role="menu"]')`, 'the Sample documents menu')
+  const offered = await js(`[...document.querySelectorAll('.sample-menu [role="menuitem"]')].map((e) => e.textContent)`)
+  check(
+    'the start screen offers the Help menu\'s samples, Down opening it on the first',
+    JSON.stringify(offered) === JSON.stringify([...SAMPLES.map(([, name]) => name), 'Architecture Diagram (SVG)']) && (await focused()) === 'Engineering Design Note',
+    JSON.stringify({ offered, focused: await focused() }),
+  )
+  await shot('sample-menu')
+  await pressKey('Escape', 'Escape', 27)
+  check(
+    'Escape closes the Sample documents menu back to its link',
+    (await js(`!document.querySelector('.sample-menu [role="menu"]')`)) && (await focused()) === 'Sample documents',
+    String(await focused()),
+  )
+  await pressKey('ArrowDown', 'ArrowDown', 40)
+  await waitFor(`document.activeElement?.getAttribute('role') === 'menuitem'`, 'the first sample to take the focus')
+  await pressKey('ArrowDown', 'ArrowDown', 40)
+  await pressKey('ArrowDown', 'ArrowDown', 40)
+  await enter()
+  await waitFor(`document.querySelector('.clip-pane .card__name')?.textContent === 'Lab Report (sample, untitled)'`, 'the Lab Report to open from the start screen')
+  await waitFor(`!!${EDITOR}?.querySelector('h1')?.textContent.includes('Crystal Violet Fading')`, "the Lab Report's heading")
+  check('the start screen\'s Sample documents link opens a sample as the Help menu does', true)
 } catch (err) {
   failures++
   console.log(`FAIL  ${err.message}`)
