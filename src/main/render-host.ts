@@ -3,8 +3,8 @@ import { existsSync } from 'fs'
 import { join, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { renderCacheKey } from '../core/draw-blocks'
-import { sanitizeSvg } from '../core/svg-sanitize'
-import { svgIntrinsicSize } from '../core/svg-images'
+import { sanitizeSvg, sanitizeSvgDoc } from '../core/svg-sanitize'
+import { svgSizeOf } from '../core/svg-images'
 import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
 
 /**
@@ -437,9 +437,10 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
         // An SVG image (spec D10): no engine, only the rasterizer. Sanitized
         // here too, whatever core did, and sized from its own root.
         draws++
-        const svg = sanitizeSvg(req.source)
-        const size = svg ? svgIntrinsicSize(svg) : null
-        if (!svg || !size) return { result: { error: 'it is not a readable SVG' }, cacheable: true }
+        const doc = sanitizeSvgDoc(req.source)
+        if (!doc) return { result: { error: 'it is not a readable SVG' }, cacheable: true }
+        const { svg } = doc
+        const size = svgSizeOf(doc.root)
         const width = Math.max(1, Math.round(size.width))
         const height = Math.max(1, Math.round(size.height))
         if (!isSize(width) || !isSize(height)) return { result: { error: 'the picture is too large' }, cacheable: true }

@@ -9,7 +9,6 @@ import {
   MAX_NESTING,
   svgDataUri,
   svgImageRefs,
-  svgImageUrls,
   withSvgImagePictures,
 } from './svg-sanitize'
 
@@ -516,9 +515,11 @@ export function hasRemoteImages(html: string): boolean {
 
 /** Whether the SVG, or one nested in it as a data URI (as deep as the sanitizer keeps), names a picture on the network. */
 function svgNamesRemote(svg: string, depth: number): boolean {
-  if (svgImageUrls(svg).some(isRemoteImageSrc)) return true
+  // One read of the SVG for both: the addresses are among its references.
+  const refs = svgImageRefs(svg)
+  if (refs.some((ref) => isWebAddress(ref) && isRemoteImageSrc(ref))) return true
   if (depth >= MAX_NESTING) return false
-  return svgImageRefs(svg).some((ref) => {
+  return refs.some((ref) => {
     const inner = decodeSvgDataUri(ref)
     return inner !== null && svgNamesRemote(inner, depth + 1)
   })

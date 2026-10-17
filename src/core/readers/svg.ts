@@ -1,7 +1,7 @@
 import { ConversionError } from '../errors'
 import { escapeHtml } from '../shell'
-import { sanitizeSvg } from '../svg-sanitize'
-import { svgDataUri, svgIntrinsicSize } from '../svg-images'
+import { sanitizeSvgDoc } from '../svg-sanitize'
+import { svgDataUri, svgSizeOf } from '../svg-images'
 import type { HubDocument, SourceInput } from '../types'
 import { imageMime, readImage, svgText } from './image'
 
@@ -19,9 +19,10 @@ import { imageMime, readImage, svgText } from './image'
 export async function readSvg(src: SourceInput): Promise<HubDocument> {
   if (imageMime(src.bytes)) return readImage(src)
   // Pictures it names by address are kept for the read step to fetch.
-  const svg = sanitizeSvg(svgText(src.bytes), { keepImageUrls: true })
-  const size = svg ? svgIntrinsicSize(svg) : null
-  if (!svg || !size) throw new ConversionError('image-unsupported', 'This is not a readable SVG image')
+  const doc = sanitizeSvgDoc(svgText(src.bytes), { keepImageUrls: true })
+  if (!doc) throw new ConversionError('image-unsupported', 'This is not a readable SVG image')
+  const { svg } = doc
+  const size = svgSizeOf(doc.root)
   const name = src.filename?.split(/[\\/]/).pop()
   const alt = escapeHtml(name ?? 'image').replace(/"/g, '&quot;')
   const width = Math.max(1, Math.round(size.width))

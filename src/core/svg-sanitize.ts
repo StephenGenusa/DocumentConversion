@@ -1,4 +1,5 @@
-import { DOMParser } from 'linkedom'
+import { createHash } from 'node:crypto'
+import { Parser } from 'htmlparser2'
 import { imageMime } from './readers/image'
 
 /**
@@ -45,9 +46,16 @@ import { imageMime } from './readers/image'
  * ordinary SVG and is cleaned with the rest.
  *
  * Returns null when the input is not an SVG document at all.
+ *
+ * Done in one streaming pass (htmlparser2's XML tokenizer, the one linkedom
+ * builds its tree from), writing the cleaned SVG as it reads: no tree is
+ * built, so a 12 MB drawing costs a small multiple of its size, not the
+ * gigabyte a DOM of it took. A cleaned SVG is remembered (by hash) for the
+ * rest of the process, so the same SVG cleaned again where it is written, and
+ * again by the render host, is not read a second and third time.
  */
 export function sanitizeSvg(svg: string, opts: SanitizeOptions = {}): string | null {
-  return sanitizeAt(svg, 0, opts)
+  return sanitizeSvgDoc(svg, opts)?.svg ?? null
 }
 
 export interface SanitizeOptions {
@@ -63,23 +71,369 @@ export interface SanitizeOptions {
 /** How many SVG images may be nested inside one another below the outer SVG. */
 export const MAX_NESTING = 4
 
-function svgRoot(svg: string): Element | null {
-  let doc: Document
-  try {
-    doc = new DOMParser().parseFromString(svg, 'image/svg+xml') as unknown as Document
-  } catch {
-    return null
-  }
-  const root = doc.documentElement
-  return root && localName(root) === 'svg' ? root : null
+/** Attributes by name, as written, their values as text (entities read). */
+export type SvgAttributes = Record<string, string>
+
+/** A sanitized SVG, with what its root says, so a caller need not read it again for that. */
+export interface CleanSvg {
+  svg: string
+  /** The root element's name as written (`svg`, `svg:svg`). */
+  name: string
+  /** The root's attributes, cleaned. */
+  root: Readonly<SvgAttributes>
+  /** How long the root's start tag is in `svg`. */
+  headLength: number
+  /** Whether it names no picture by address: clean without keepImageUrls too. */
+  strict: boolean
 }
 
-function sanitizeAt(svg: string, depth: number, opts: SanitizeOptions = {}): string | null {
-  const root = svgRoot(svg)
-  if (!root) return null
-  cleanAttributes(root)
-  clean(root, depth, opts.keepImageUrls === true)
-  return root.toString()
+/** The sanitized SVG with what its root says, or null when it is not an SVG. */
+export function sanitizeSvgDoc(svg: string, opts: SanitizeOptions = {}): CleanSvg | null {
+  const keepImageUrls = opts.keepImageUrls === true
+  const known = knownClean(svg, keepImageUrls)
+  if (known) return known
+  const mode: Mode = { keepImageUrls, keptAddress: false }
+  const parts = sanitizeParts(svg, 0, mode)
+  if (!parts) return null
+  // Kept for the read step names no address after all: as clean as without keepImageUrls.
+  const out = cleanSvgOf(parts.name, parts.root, parts.rest, !mode.keptAddress)
+  remember(out)
+  return out
+}
+
+/**
+ * The cleaned SVG with its root's attributes replaced by `attributes`
+ * (cleaned again as any root's are): how a picture is sized for drawing,
+ * without reading the rest of it again.
+ */
+export function withRootAttributes(clean: CleanSvg, attributes: SvgAttributes): CleanSvg {
+  // The rest is as clean as it was, and the root has just been cleaned.
+  const out = cleanSvgOf(clean.name, cleanAttributes(attributes), clean.svg.slice(clean.headLength), clean.strict)
+  remember(out)
+  return out
+}
+
+/**
+ * The attributes of an SVG's root, read from its start tag alone, or null
+ * when it is not an SVG. Not sanitized: for a size, not for drawing.
+ */
+export function svgRootAttributes(svg: string): SvgAttributes | null {
+  let found: SvgAttributes | null = null
+  let done = false
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        if (done) return
+        done = true
+        if (localName(name) === 'svg') found = { ...attribs }
+        parser.pause()
+      },
+    },
+    PARSER_OPTIONS,
+  )
+  parser.write(svg)
+  if (!done) parser.end()
+  return found
+}
+
+const PARSER_OPTIONS = { xmlMode: true, decodeEntities: true, lowerCaseAttributeNames: false } as const
+
+// ---- What has been cleaned already ------------------------------------
+
+/**
+ * SVGs this process has cleaned, by SHA-256 of the clean markup: cleaning a
+ * clean SVG gives it back as it is, so one seen here is not read again. Only
+ * large ones (the hash costs less than the read only there), only outer ones
+ * (a nested SVG is cleaned with fewer levels of nesting left), and `strict`
+ * only for those that name no picture by address (one cleaned with
+ * keepImageUrls may still). Kept on globalThis so core and the render host
+ * share it when they are bundled apart; it holds hashes and root attributes,
+ * never the markup.
+ */
+interface Known {
+  strict: boolean
+  name: string
+  root: Readonly<SvgAttributes>
+  headLength: number
+}
+
+const KNOWN_MIN_LENGTH = 64 * 1024
+const KNOWN_MAX = 256
+const KNOWN_KEY = Symbol.for('docconversion.svg-sanitize.known-clean')
+
+function knownMap(): Map<string, Known> {
+  const g = globalThis as unknown as Record<symbol, Map<string, Known> | undefined>
+  return (g[KNOWN_KEY] ??= new Map())
+}
+
+const hashOf = (svg: string): string => createHash('sha256').update(svg, 'utf8').digest('base64')
+
+function knownClean(svg: string, keepImageUrls: boolean): CleanSvg | null {
+  if (svg.length < KNOWN_MIN_LENGTH) return null
+  const map = knownMap()
+  const key = hashOf(svg)
+  const k = map.get(key)
+  if (!k || !(k.strict || keepImageUrls)) return null
+  map.delete(key)
+  map.set(key, k)
+  return { svg, name: k.name, root: k.root, headLength: k.headLength, strict: k.strict }
+}
+
+function remember(clean: CleanSvg): void {
+  if (clean.svg.length < KNOWN_MIN_LENGTH) return
+  const map = knownMap()
+  const key = hashOf(clean.svg)
+  const was = map.get(key)
+  map.delete(key)
+  map.set(key, { strict: clean.strict || was?.strict === true, name: clean.name, root: clean.root, headLength: clean.headLength })
+  while (map.size > KNOWN_MAX) map.delete(map.keys().next().value!)
+}
+
+// ---- Writing ------------------------------------------------------------
+
+/** Text written in pieces and joined once, a run at a time, so a long SVG is not one string per tag. */
+class Sink {
+  private parts: string[] = []
+  private runs: string[] = []
+  length = 0
+  push(text: string): void {
+    if (!text) return
+    this.parts.push(text)
+    this.length += text.length
+    if (this.parts.length >= 4096) {
+      this.runs.push(this.parts.join(''))
+      this.parts = []
+    }
+  }
+  text(): string {
+    if (this.parts.length > 0) {
+      this.runs.push(this.parts.join(''))
+      this.parts = []
+    }
+    const all = this.runs.length === 1 ? this.runs[0] : this.runs.join('')
+    this.runs = all ? [all] : []
+    return all
+  }
+}
+
+const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\u00a0': '&#160;' }
+const escapeText = (text: string): string => text.replace(/[&<>\u00a0]/g, (c) => ESCAPES[c])
+const escapeAttr = (text: string): string => text.replace(/[&<>"\u00a0]/g, (c) => ESCAPES[c])
+
+/** An XML name, as a parser reading what is written would take it: anything else would make the markup unreadable. */
+const XML_NAME = /^[A-Za-z_:À-￿][\w.:·À-￿-]*$/
+
+function startTag(name: string, attributes: SvgAttributes): string {
+  let out = `<${name}`
+  for (const [k, v] of Object.entries(attributes)) out += ` ${k}="${escapeAttr(v)}"`
+  return out
+}
+
+function cleanSvgOf(name: string, root: SvgAttributes, rest: string, strict: boolean): CleanSvg {
+  const head = `${startTag(name, root)}${rest ? '>' : ' />'}`
+  return { svg: head + rest, name, root, headLength: head.length, strict }
+}
+
+// ---- Cleaning -----------------------------------------------------------
+
+interface Parts {
+  name: string
+  root: SvgAttributes
+  /** Everything after the root's start tag: its content and end tag, or '' when it has none. */
+  rest: string
+}
+
+/** An element being written: its start tag is open (no `>` yet) until it is given content. */
+interface Open {
+  name: string
+  sink: Sink
+  opened: boolean
+  /** A <style> element: its text, kept until its end to see whether it is safe. */
+  css?: string[]
+}
+
+/** An <image> named by a web address, read to its end for its <title>. */
+interface PendingImage {
+  name: string
+  attributes: SvgAttributes
+  ref: string
+  level: number
+  title?: string[]
+  titleLevel?: number
+  titleDone: boolean
+}
+
+/** How a document is cleaned, and whether a picture named by address was kept (at any depth). */
+interface Mode {
+  keepImageUrls: boolean
+  keptAddress: boolean
+}
+
+function sanitizeParts(svg: string, depth: number, mode: Mode): Parts | null {
+  let level = 0
+  /** The level of the element being dropped with everything in it, or 0. */
+  let skipping = 0
+  let pending: PendingImage | null = null
+  let root: { name: string; attributes: SvgAttributes } | null = null
+  let notSvg = false
+  let finished = false
+  const rootSink = new Sink()
+  const stack: Open[] = []
+
+  /** Where the current element's content goes, its start tag closed first. */
+  const into = (): Sink => {
+    const top = stack[stack.length - 1]
+    if (!top) return rootSink
+    if (!top.opened) {
+      top.sink.push('>')
+      top.opened = true
+    }
+    return top.sink
+  }
+
+  const parser = new Parser(
+    {
+      onopentag(rawName, attribs) {
+        if (finished) return
+        level++
+        if (skipping) return
+        if (pending) {
+          // Inside an <image>: nothing is drawn, only its first <title> read.
+          if (level === pending.level + 1 && !pending.title && !pending.titleDone && localName(rawName) === 'title') {
+            pending.title = []
+            pending.titleLevel = level
+          }
+          return
+        }
+        if (!root) {
+          if (localName(rawName) !== 'svg' || !XML_NAME.test(rawName)) {
+            notSvg = true
+            finished = true
+            parser.pause()
+            return
+          }
+          root = { name: rawName, attributes: cleanAttributes(attribs) }
+          return
+        }
+        const name = localName(rawName)
+        if (!XML_NAME.test(rawName)) {
+          skipping = level
+          return
+        }
+        if (name === 'image') {
+          const ref = imageRef(attribs)
+          const nested = ref ? nestedImage(ref, depth, mode) : null
+          if (ref && nested) {
+            const attributes = cleanAttributes({ ...attribs, [ref.name]: nested }, ref.name)
+            // Nothing inside an <image> is drawn.
+            into().push(`${startTag(rawName, attributes)} />`)
+            skipping = level
+            return
+          }
+          if (ref && isWebAddress(ref.value)) {
+            pending = { name: rawName, attributes: attribs, ref: ref.name, level, titleDone: false }
+            return
+          }
+        }
+        if (DROPPED_ELEMENTS.has(name) || (ANIMATION.has(name) && animatesAReference(attribs))) {
+          skipping = level
+          return
+        }
+        // A <style> is written apart, to its parent only once its text is known to be safe.
+        const sink = name === 'style' ? new Sink() : into()
+        sink.push(startTag(rawName, cleanAttributes(attribs)))
+        stack.push({ name: rawName, sink, opened: false, css: name === 'style' ? [] : undefined })
+      },
+
+      ontext(text) {
+        if (finished || skipping || !root || level === 0) return
+        if (pending) {
+          if (pending.title && !pending.titleDone) pending.title.push(text)
+          return
+        }
+        for (const open of stack) open.css?.push(text)
+        into().push(escapeText(text))
+      },
+
+      onclosetag() {
+        if (finished) return
+        const at = level
+        level--
+        if (skipping) {
+          if (at === skipping) skipping = 0
+          return
+        }
+        if (pending) {
+          if (at === pending.titleLevel) pending.titleDone = true
+          if (at === pending.level) {
+            const p = pending
+            pending = null
+            if (mode.keepImageUrls) mode.keptAddress = true
+            into().push(webImage(p, mode.keepImageUrls))
+          }
+          return
+        }
+        if (at === 1) {
+          // The root's end: nothing after it is written.
+          finished = true
+          parser.pause()
+          return
+        }
+        const open = stack.pop()!
+        const end = open.opened ? `</${open.name}>` : ' />'
+        if (open.css) {
+          if (unsafeCss(open.css.join(''))) return
+          open.sink.push(end)
+          into().push(open.sink.text())
+          return
+        }
+        open.sink.push(end)
+      },
+      // Comments, processing instructions, the doctype: nothing an SVG needs, and never written.
+    },
+    PARSER_OPTIONS,
+  )
+  parser.write(svg)
+  if (!finished) parser.end()
+  if (notSvg || !root) return null
+  const r = root as { name: string; attributes: SvgAttributes }
+  const content = rootSink.text()
+  return { name: r.name, root: r.attributes, rest: content ? `${content}</${r.name}>` : '' }
+}
+
+/**
+ * An <image> named by a web address: kept, for the read step to fetch, with
+ * its description as its aria-label (`keepImageUrls`), or else its
+ * description in text where its top-left corner was, as `imagePlaceholder`
+ * (inline-images.ts) writes it for an <img>.
+ */
+function webImage(p: PendingImage, keepImageUrls: boolean): string {
+  const title = p.title ? p.title.join('') : undefined
+  if (keepImageUrls) {
+    const label = title?.replace(/\s+/g, ' ').trim()
+    const attributes = label && !('aria-label' in p.attributes) ? { 'aria-label': label, ...p.attributes } : p.attributes
+    return `${startTag(p.name, cleanAttributes(attributes, p.ref))} />`
+  }
+  const label = ('aria-label' in p.attributes ? p.attributes['aria-label'] : (title ?? '')).replace(/\s+/g, ' ').trim()
+  const colon = p.name.indexOf(':')
+  const name = `${colon >= 0 ? p.name.slice(0, colon + 1) : ''}text`
+  const height = userUnits(p.attributes, 'height')
+  const size = height && height > 0 ? Math.min(12, height) : 12
+  const attributes: SvgAttributes = {
+    x: String(userUnits(p.attributes, 'x') ?? 0),
+    y: String((userUnits(p.attributes, 'y') ?? 0) + size),
+    'font-size': String(size),
+    'font-family': 'sans-serif',
+    fill: '#555',
+  }
+  if (p.attributes.transform) attributes.transform = p.attributes.transform
+  return `${startTag(name, cleanAttributes(attributes))}>${escapeText(`[image: ${label || 'not included'}]`)}</${name}>`
+}
+
+/** A length attribute as a plain number of user units, or undefined. */
+function userUnits(attributes: SvgAttributes, name: string): number | undefined {
+  const m = /^\s*([+-]?\d*\.?\d+)\s*(?:px)?\s*$/i.exec(attributes[name] ?? '')
+  return m ? Number(m[1]) : undefined
 }
 
 const SVG_DATA_URI = /^\s*data:image\/svg\+xml((?:;[^,]*)?),([\s\S]*)$/i
@@ -129,41 +483,119 @@ function rasterDataUri(src: string): string | null {
  * or xlink:href, as written) and the picture as a base64 data URI - for an
  * SVG, the sanitized SVG. Null when the <image> is anything else, or an SVG
  * nested too deep.
+
+/**
+ * A nested picture's reference, cleaned: the picture as a base64 data URI -
+ * for an SVG, the sanitized SVG. Null when the <image> is anything else, or
+ * an SVG nested too deep.
  */
-function nestedImage(el: Element, depth: number, opts: SanitizeOptions): { name: string; src: string } | null {
-  const ref = imageRef(el)
-  if (!ref) return null
-  const value = ref.value ?? ''
-  const raster = rasterDataUri(value)
-  if (raster) return { name: ref.name, src: raster }
+function nestedImage(ref: { name: string; value: string }, depth: number, mode: Mode): string | null {
+  const raster = rasterDataUri(ref.value)
+  if (raster) return raster
   if (depth >= MAX_NESTING) return null
-  const svg = decodeSvgDataUri(value)
-  const clean = svg === null ? null : sanitizeAt(svg, depth + 1, opts)
-  return clean === null ? null : { name: ref.name, src: svgDataUri(clean) }
+  const svg = decodeSvgDataUri(ref.value)
+  const parts = svg === null ? null : sanitizeParts(svg, depth + 1, mode)
+  return parts === null ? null : svgDataUri(cleanSvgOf(parts.name, parts.root, parts.rest, true).svg)
 }
 
 /**
  * The one href of an <image> (href or xlink:href), or null when it has none
  * or two: two references could disagree on what is shown.
  */
-function imageRef(el: Element): Attr | null {
-  const refs = [...el.attributes].filter((a) => attrLocalName(a.name) === 'href')
-  return refs.length === 1 ? refs[0] : null
+function imageRef(attributes: SvgAttributes): { name: string; value: string } | null {
+  const refs = Object.keys(attributes).filter((name) => attrLocalName(name) === 'href')
+  return refs.length === 1 ? { name: refs[0], value: attributes[refs[0]] } : null
 }
 
-const XML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+/**
+ * Each <image> of the outer SVG, in document order (not those inside another
+ * <image>, which draws nothing): its start tag's name, attributes and place
+ * in the markup. [] when it is not an SVG.
+ */
+function outerImages(svg: string): Array<{ name: string; attributes: SvgAttributes; start: number; end: number }> {
+  // No <image> anywhere: nothing to read the whole SVG for.
+  if (!/image/i.test(svg)) return []
+  const out: Array<{ name: string; attributes: SvgAttributes; start: number; end: number }> = []
+  let level = 0
+  let inImage = 0
+  let rooted = false
+  let done = false
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        if (done) return
+        level++
+        if (!rooted) {
+          rooted = true
+          if (localName(name) !== 'svg') {
+            done = true
+            parser.pause()
+          }
+          return
+        }
+        if (inImage) return
+        if (localName(name) === 'image') {
+          inImage = level
+          out.push({ name, attributes: attribs, start: parser.startIndex, end: parser.endIndex })
+        }
+      },
+      onclosetag() {
+        if (done) return
+        if (level === inImage) inImage = 0
+        if (--level === 0) {
+          done = true
+          parser.pause()
+        }
+      },
+    },
+    PARSER_OPTIONS,
+  )
+  parser.write(svg)
+  if (!done) parser.end()
+  return out
+}
 
 /**
- * An attribute's value as text. linkedom hands an XML attribute back as it
- * was written, entities and all (and escapes what it is given on the way
- * out), so `a?b=1&amp;c=2` is the address `a?b=1&c=2`.
+ * The web address each picture in an SVG names, as written, in document order:
+ * what the read step fetches. Only the outer SVG's; [] when it is not an SVG.
  */
-function attrText(value: string | null | undefined): string {
-  return (value ?? '').replace(/&(?:#x([0-9a-f]+)|#(\d+)|(amp|lt|gt|quot|apos));/gi, (m, hex: string, dec: string, name: string) => {
-    if (name) return XML_ENTITIES[name.toLowerCase()] ?? m
-    const code = hex ? parseInt(hex, 16) : Number(dec)
-    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m
+export function svgImageUrls(svg: string): string[] {
+  return svgImageRefs(svg).filter(isWebAddress)
+}
+
+/**
+ * Every picture reference of the outer SVG (each <image>'s one href, as
+ * text), in document order, repeats included: web addresses and data URIs
+ * alike. [] when it is not an SVG.
+ */
+export function svgImageRefs(svg: string): string[] {
+  return outerImages(svg).flatMap((img) => {
+    const ref = imageRef(img.attributes)
+    return ref ? [ref.value] : []
   })
+}
+
+/**
+ * The SVG with each picture whose reference (an address, or a nested SVG's
+ * data URI, as svgImageRefs gives it) is in `pictures` given that data URI
+ * instead, everything else as it was. Sanitized again afterwards, which
+ * checks each picture is what it claims.
+ */
+export function withSvgImagePictures(svg: string, pictures: ReadonlyMap<string, string>): string {
+  if (pictures.size === 0) return svg
+  const out: string[] = []
+  let at = 0
+  for (const img of outerImages(svg)) {
+    const ref = imageRef(img.attributes)
+    const picture = ref ? pictures.get(ref.value) : undefined
+    const attributes = ref && picture ? { ...img.attributes, [ref.name]: picture } : img.attributes
+    const tag = svg.slice(img.start, img.end + 1)
+    out.push(svg.slice(at, img.start), `${startTag(img.name, attributes)}${/\/\s*>$/.test(tag) ? ' />' : '>'}`)
+    at = img.end + 1
+  }
+  if (at === 0) return svg
+  out.push(svg.slice(at))
+  return out.join('')
 }
 
 /** A web address, as a page would load it: http(s), or relative to or with the scheme of one. */
@@ -177,96 +609,6 @@ export function isWebAddress(value: string): boolean {
   }
 }
 
-/** Every <image> below `el`, in document order. */
-function imagesIn(el: Element): Element[] {
-  const out: Element[] = []
-  for (const child of [...el.childNodes]) {
-    if (child.nodeType !== 1) continue
-    if (localName(child as Element) === 'image') out.push(child as Element)
-    else out.push(...imagesIn(child as Element))
-  }
-  return out
-}
-
-/**
- * The web address each picture in an SVG names, as written, in document order:
- * what the read step fetches. Only the outer SVG's; [] when it is not an SVG.
- */
-export function svgImageUrls(svg: string): string[] {
-  const root = svgRoot(svg)
-  if (!root) return []
-  return imagesIn(root).flatMap((el) => {
-    const ref = imageRef(el)
-    const url = attrText(ref?.value)
-    return ref && isWebAddress(url) ? [url] : []
-  })
-}
-
-/**
- * Every picture reference of the outer SVG (each <image>'s one href, as
- * text), in document order, repeats included: web addresses and data URIs
- * alike. [] when it is not an SVG.
- */
-export function svgImageRefs(svg: string): string[] {
-  const root = svgRoot(svg)
-  if (!root) return []
-  return imagesIn(root).flatMap((el) => {
-    const ref = imageRef(el)
-    return ref ? [attrText(ref.value)] : []
-  })
-}
-
-/**
- * The SVG with each picture whose reference (an address, or a nested SVG's
- * data URI, as svgImageRefs gives it) is in `pictures` given that data URI
- * instead, everything else as it was. Sanitized again afterwards, which
- * checks each picture is what it claims.
- */
-export function withSvgImagePictures(svg: string, pictures: ReadonlyMap<string, string>): string {
-  const root = svgRoot(svg)
-  if (!root) return svg
-  for (const el of imagesIn(root)) {
-    const ref = imageRef(el)
-    const picture = ref ? pictures.get(attrText(ref.value)) : undefined
-    if (ref && picture) el.setAttribute(ref.name, picture)
-  }
-  return root.toString()
-}
-
-/** A length attribute as a plain number of user units, or undefined. */
-function userUnits(el: Element, name: string): number | undefined {
-  const m = /^\s*([+-]?\d*\.?\d+)\s*(?:px)?\s*$/i.exec(el.getAttribute(name) ?? '')
-  return m ? Number(m[1]) : undefined
-}
-
-/**
- * What a picture that could not be fetched becomes: its description (an
- * aria-label or <title>) in text where the picture's top-left corner was,
- * as `imagePlaceholder` (inline-images.ts) writes it for an <img>.
- */
-function imagePlaceholderText(el: Element): Element {
-  const label = (el.hasAttribute('aria-label') ? attrText(el.getAttribute('aria-label')) : (childTitle(el) ?? '')).replace(/\s+/g, ' ').trim()
-  const colon = el.tagName.indexOf(':')
-  const text = el.ownerDocument.createElement(`${colon >= 0 ? el.tagName.slice(0, colon + 1) : ''}text`)
-  const height = userUnits(el, 'height')
-  const size = height && height > 0 ? Math.min(12, height) : 12
-  text.setAttribute('x', String(userUnits(el, 'x') ?? 0))
-  text.setAttribute('y', String((userUnits(el, 'y') ?? 0) + size))
-  text.setAttribute('font-size', String(size))
-  text.setAttribute('font-family', 'sans-serif')
-  text.setAttribute('fill', '#555')
-  const transform = el.getAttribute('transform')
-  if (transform) text.setAttribute('transform', transform)
-  text.textContent = `[image: ${label || 'not included'}]`
-  return text
-}
-
-function childTitle(el: Element): string | undefined {
-  for (const child of [...el.childNodes]) {
-    if (child.nodeType === 1 && localName(child as Element) === 'title') return child.textContent ?? undefined
-  }
-  return undefined
-}
 
 /** Elements removed with everything inside them. Lower-cased local names. */
 const DROPPED_ELEMENTS = new Set([
@@ -301,85 +643,45 @@ const DROPPED_ELEMENTS = new Set([
 /** Animation elements, which can set an attribute (an href) to a new value. */
 const ANIMATION = new Set(['set', 'animate', 'animatemotion', 'animatetransform', 'animatecolor'])
 
-function localName(el: Element): string {
-  const name = (el.localName || el.tagName || '').toLowerCase()
-  const colon = name.lastIndexOf(':')
-  return colon >= 0 ? name.slice(colon + 1) : name
-}
-
-function attrLocalName(name: string): string {
+const ELEMENT_LOCAL = (name: string): string => {
   const lower = name.toLowerCase()
   const colon = lower.lastIndexOf(':')
   return colon >= 0 ? lower.slice(colon + 1) : lower
 }
 
-function clean(el: Element, depth: number, keepImageUrls: boolean): void {
-  for (const child of [...el.childNodes]) {
-    if (child.nodeType === 1) {
-      const element = child as Element
-      const name = localName(element)
-      const nested = name === 'image' ? nestedImage(element, depth, { keepImageUrls }) : null
-      if (nested) {
-        element.setAttribute(nested.name, nested.src)
-        cleanAttributes(element, nested.name)
-        // Nothing inside an <image> is drawn.
-        element.replaceChildren()
-        continue
-      }
-      const ref = name === 'image' ? imageRef(element) : null
-      if (ref && isWebAddress(attrText(ref.value))) {
-        if (keepImageUrls) {
-          const title = childTitle(element)?.replace(/\s+/g, ' ').trim()
-          if (title && !element.hasAttribute('aria-label')) element.setAttribute('aria-label', title)
-          cleanAttributes(element, ref.name)
-          element.replaceChildren()
-        } else {
-          const text = imagePlaceholderText(element)
-          element.replaceWith(text)
-          cleanAttributes(text)
-        }
-        continue
-      }
-      if (DROPPED_ELEMENTS.has(name) || (ANIMATION.has(name) && animatesAReference(element))) {
-        element.remove()
-        continue
-      }
-      if (name === 'style' && unsafeCss(element.textContent ?? '')) {
-        element.remove()
-        continue
-      }
-      cleanAttributes(element)
-      clean(element, depth, keepImageUrls)
-    } else if (child.nodeType !== 3 && child.nodeType !== 4) {
-      // Comments, processing instructions: nothing an SVG needs.
-      child.remove()
-    }
-  }
-}
+/** An element's name without its prefix, lower-cased. */
+const localName = ELEMENT_LOCAL
 
-/** Removes the unsafe attributes; `keep` is a nested picture's reference, already cleaned. */
-function cleanAttributes(el: Element, keep?: string): void {
-  for (const attr of [...el.attributes]) {
-    if (attr.name === keep) continue
-    const name = attrLocalName(attr.name)
-    const value = attr.value ?? ''
-    if (
-      name.startsWith('on') ||
-      // xml:base would turn a "#fragment" into a reference to another file.
-      name === 'base' ||
-      ((name === 'href' || name === 'src') && !value.trimStart().startsWith('#')) ||
-      (name === 'style' ? unsafeCss(value) : unsafeCss(value, true))
-    ) {
-      el.removeAttribute(attr.name)
+/** An attribute's name without its prefix, lower-cased. */
+const attrLocalName = ELEMENT_LOCAL
+
+/** The attributes that are safe, as a new set; `keep` is a nested picture's reference, already cleaned. */
+function cleanAttributes(attributes: Readonly<SvgAttributes>, keep?: string): SvgAttributes {
+  const out: SvgAttributes = {}
+  for (const [attrName, value] of Object.entries(attributes)) {
+    if (attrName !== keep) {
+      const name = attrLocalName(attrName)
+      if (
+        !XML_NAME.test(attrName) ||
+        name.startsWith('on') ||
+        // xml:base would turn a "#fragment" into a reference to another file.
+        name === 'base' ||
+        ((name === 'href' || name === 'src') && !value.trimStart().startsWith('#')) ||
+        (name === 'style' ? unsafeCss(value) : unsafeCss(value, true))
+      ) {
+        continue
+      }
     }
+    out[attrName] = value
   }
+  return out
 }
 
 /** `<set attributeName="href" to="javascript:…">` and its kind, or one with a non-fragment value. */
-function animatesAReference(el: Element): boolean {
-  const target = attrLocalName(el.getAttribute('attributeName') ?? '')
+function animatesAReference(attributes: Readonly<SvgAttributes>): boolean {
+  const target = attrLocalName(attributes.attributeName ?? '')
   if (target === 'href' || target === 'src' || target.startsWith('on')) return true
-  return ['to', 'from', 'values', 'by'].some((a) => unsafeCss(el.getAttribute(a) ?? '', true))
+  return ['to', 'from', 'values', 'by'].some((a) => unsafeCss(attributes[a] ?? '', true))
 }
 
 /**

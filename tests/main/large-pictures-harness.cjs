@@ -6,7 +6,9 @@
  *   electron large-pictures-harness.cjs <bundled core.cjs> <bundled render-host.js> <resources/render> <cases.json> <outDir>
  *
  * Each case is { name, target, htmlFile }: the hub's HTML is read from
- * htmlFile, written for `target`, and the output saved as <outDir>/<name>.
+ * htmlFile, written for `target`, and the output saved as <outDir>/<name>;
+ * or { name, target, sourceFile, source }: that file read as `source` and
+ * converted, read and write both measured.
  * Writes { name: { ms, baseMainMb, peakMainMb, peakAllMb, advice, error? } }
  * (harness-result.cjs) and exits. Run with --js-flags=--expose-gc,
  * so each case starts from what the one before let go.
@@ -50,13 +52,19 @@ app.whenReady().then(async () => {
     const conv = createConverter(async () => Buffer.from('%PDF-1.4\n%%EOF'), { renderBlocks: host.renderBlocks })
     const out = {}
     for (const c of JSON.parse(readFileSync(casesFile, 'utf8'))) {
-      const html = readFileSync(c.htmlFile, 'utf8')
+      const html = c.htmlFile ? readFileSync(c.htmlFile, 'utf8') : undefined
+      const bytes = c.sourceFile ? readFileSync(c.sourceFile) : undefined
       const advice = []
+      // What the sanitizer remembers of SVGs it has cleaned (svg-sanitize.ts), forgotten too.
+      globalThis[Symbol.for('docconversion.svg-sanitize.known-clean')]?.clear()
       if (global.gc) global.gc()
       const baseMainMb = Math.round(process.memoryUsage().rss / 1048576)
       try {
+        const ctx = { onAdvice: (_kind, message) => advice.push(message) }
         const { value, ms } = await measured(() =>
-          conv.write({ html, title: c.name }, c.target, {}, { onAdvice: (_kind, message) => advice.push(message) }),
+          bytes
+            ? conv.convert({ bytes, filename: c.sourceFile.split('/').pop() }, c.source, c.target, {}, ctx)
+            : conv.write({ html, title: c.name }, c.target, {}, ctx),
         )
         writeFileSync(join(outDir, c.name), value.parts[0].bytes)
         out[c.name] = { ms, baseMainMb, peakMainMb: measured.peakMainMb, peakAllMb: measured.peakAllMb, advice }

@@ -128,6 +128,7 @@ describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the 
       formulas: formulas(2500),
     }
     for (const [name, html] of Object.entries(files)) await writeFile(join(dir, `${name}.html`), html)
+    await writeFile(join(dir, 'plan.svg'), svg)
     const cases = [
       ['tiff.docx', 'docx', 'tiff'],
       ['png.docx', 'docx', 'png'],
@@ -138,7 +139,9 @@ describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the 
       ['emf.azw3', 'azw3', 'emf'],
       ['formulas.html', 'html', 'formulas'],
       ['formulas.docx', 'docx', 'formulas'],
-    ].map(([name, target, input]) => ({ name, target, htmlFile: join(dir, `${input}.html`) }))
+    ].map(([name, target, input]): Record<string, string> => ({ name, target, htmlFile: join(dir, `${input}.html`) }))
+    // The .svg file itself, read and written: every pass over it, from the reader to the render host.
+    cases.push({ name: 'svg-file.docx', target: 'docx', sourceFile: join(dir, 'plan.svg'), source: 'svg' })
     await writeFile(join(dir, 'cases.json'), JSON.stringify(cases))
 
     result = await runHarness<typeof result>(
@@ -207,9 +210,9 @@ describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the 
     expect(parts[0].length).toBe(sizes.png)
   })
 
-  it('Word: a 12 MB SVG gets its PNG copy', async () => {
-    ok('svg.docx')
-    const parts = await media('svg.docx')
+  it.each(['svg.docx', 'svg-file.docx'])('Word: a 12 MB SVG gets its PNG copy (%s)', async (name) => {
+    ok(name)
+    const parts = await media(name)
     expect(parts.filter(isPng)).toHaveLength(1)
   })
 

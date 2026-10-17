@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeSvg, svgImageRefs, svgImageUrls, withSvgImagePictures } from '../../src/core/svg-sanitize'
+import { sanitizeSvg, sanitizeSvgDoc, svgImageRefs, svgImageUrls, withRootAttributes, withSvgImagePictures } from '../../src/core/svg-sanitize'
 
 const SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">'
 const wrap = (inner: string): string => `${SVG_OPEN}${inner}</svg>`
@@ -285,5 +285,66 @@ describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
   it('refuses what is not an SVG', () => {
     expect(sanitizeSvg('<html><body>x</body></html>')).toBeNull()
     expect(sanitizeSvg('')).toBeNull()
+  })
+
+  it('gives a clean SVG back as it is: cleaning twice is cleaning once', () => {
+    const png = `data:image/png;base64,${PNG.toString('base64')}`
+    const inner = wrap('<script>x()</script><circle r="1"/><image href="https://example.invalid/a.png"/>')
+    for (const svg of [
+      wrap('<defs><marker id="m"><path d="M0 0"/></marker></defs><g><rect width="4" style="fill:url(#m)"/><text>a &amp; b &lt; c\u00a0d</text></g>'),
+      wrap('<style><![CDATA[ .a > b { fill: #000 } ]]></style><g/><rect></rect>'),
+      wrap(`<image href="${png}"/><image href="data:image/svg+xml;base64,${Buffer.from(inner).toString('base64')}"/>`),
+      wrap('<image href="https://example.invalid/a.png"><title>Desk</title></image><a href="#x" title="&quot;q&quot;">t</a>'),
+    ]) {
+      for (const keepImageUrls of [false, true]) {
+        const once = sanitizeSvg(svg, { keepImageUrls })!
+        expect(sanitizeSvg(once, { keepImageUrls }), once).toBe(once)
+      }
+    }
+  })
+
+  it('drops attributes and elements whose names would make the markup unreadable', () => {
+    const out = clean('<rect a"b="1" width="2"/><x<y>t</x<y>')
+    expect(out).toContain('<rect width="2" />')
+    expect(out).not.toContain('a"b')
+  })
+
+  describe('a large SVG, remembered once cleaned', () => {
+    // Over the size the sanitizer remembers (64 KiB).
+    const rects = Array.from({ length: 3000 }, (_, i) => `<rect x="${i}" width="1" height="1" fill="#${(i * 99).toString(16).padStart(6, '0').slice(-6)}"/>`).join('')
+    const forget = (): void => (globalThis as unknown as Record<symbol, Map<string, unknown>>)[Symbol.for('docconversion.svg-sanitize.known-clean')]?.clear()
+
+    it('is given back the same, whether remembered or not', () => {
+      forget()
+      const svg = wrap(`<script>x()</script>${rects}`)
+      const first = sanitizeSvgDoc(svg)!
+      expect(first.svg.length).toBeGreaterThan(64 * 1024)
+      const again = sanitizeSvgDoc(first.svg)!
+      expect(again).toEqual(first)
+      forget()
+      expect(sanitizeSvgDoc(first.svg)).toEqual(first)
+    })
+
+    it('is not taken as clean of web addresses when one was kept for the read step', () => {
+      forget()
+      const svg = wrap(`${rects}<image href="https://example.invalid/a.png"><title>Desk</title></image>`)
+      const kept = sanitizeSvg(svg, { keepImageUrls: true })!
+      expect(kept).toContain('example.invalid')
+      expect(sanitizeSvg(kept, { keepImageUrls: true })).toBe(kept)
+      const strict = sanitizeSvg(kept)!
+      expect(strict).not.toContain('example.invalid')
+      expect(strict).toContain('[image: Desk]')
+    })
+
+    it('cleans a root given new attributes again, the rest as it was', () => {
+      forget()
+      const doc = sanitizeSvgDoc(wrap(rects))!
+      // A comment that hid a url() whole: split at ";" it no longer does.
+      const sized = withRootAttributes(doc, { ...doc.root, width: '10', onload: 'alert(1)', style: 'x:url(http://evil.invalid/a)', href: 'http://evil.invalid/' })
+      expect(sized.svg).not.toContain('evil')
+      expect(sized.svg).not.toContain('onload')
+      expect(sized.svg.slice(sized.headLength)).toBe(doc.svg.slice(doc.headLength))
+      expect(sanitizeSvg(sized.svg)).toBe(sized.svg)
+    })
   })
 })

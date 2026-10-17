@@ -1,9 +1,8 @@
-import { DOMParser } from 'linkedom'
 import { parseDocument } from 'htmlparser2'
 import { Element, type ChildNode } from 'domhandler'
 import { removeElement, replaceElement, textContent } from 'domutils'
 import serialize from 'dom-serializer'
-import { decodeSvgDataUri, sanitizeSvg, svgDataUri } from './svg-sanitize'
+import { decodeSvgDataUri, sanitizeSvg, sanitizeSvgDoc, svgDataUri, svgRootAttributes, withRootAttributes, type SvgAttributes } from './svg-sanitize'
 import { DOCX_MAX_WIDTH, rendersBlocks, type DrawContext } from './draw-blocks'
 import { imagePlaceholder } from './inline-images'
 import type { RenderResult } from './rendered-blocks'
@@ -99,26 +98,11 @@ function viewBoxOf(value: string | null): { width: number; height: number } | un
   return { width: parts[2], height: parts[3] }
 }
 
-function svgRoot(svg: string): Element | null {
-  let doc: Document
-  try {
-    doc = new DOMParser().parseFromString(svg, 'image/svg+xml') as unknown as Document
-  } catch {
-    return null
-  }
-  const root = doc.documentElement as unknown as globalThis.Element | null
-  if (!root) return null
-  const name = (root.localName || root.tagName || '').toLowerCase()
-  return (name === 'svg' || name.endsWith(':svg') ? root : null) as unknown as Element | null
-}
-
-type DomElement = globalThis.Element
-
-/** The size an SVG is shown at when nothing else says, in CSS px: as a browser sizes it in an <img>. */
-function intrinsicOf(root: DomElement): { width: number; height: number } {
-  const w = lengthPx(root.getAttribute('width'))
-  const h = lengthPx(root.getAttribute('height'))
-  const box = viewBoxOf(root.getAttribute('viewBox'))
+/** The size an SVG is shown at when nothing else says, in CSS px, from its root's attributes: as a browser sizes it in an <img>. */
+export function svgSizeOf(root: Readonly<SvgAttributes>): { width: number; height: number } {
+  const w = lengthPx(root.width ?? null)
+  const h = lengthPx(root.height ?? null)
+  const box = viewBoxOf(root.viewBox ?? null)
   if (w && h) return { width: w, height: h }
   if (box) {
     if (w) return { width: w, height: (w * box.height) / box.width }
@@ -129,10 +113,10 @@ function intrinsicOf(root: DomElement): { width: number; height: number } {
   return { width: w ?? 300, height: h ?? 150 }
 }
 
-/** An SVG's own size in CSS px (width/height, else its viewBox, else 300x150), or null when it is not an SVG. */
+/** An SVG's own size in CSS px (width/height, else its viewBox, else 300x150), or null when it is not an SVG. Reads its root's start tag only. */
 export function svgIntrinsicSize(svg: string): { width: number; height: number } | null {
-  const root = svgRoot(svg) as unknown as DomElement | null
-  return root ? intrinsicOf(root) : null
+  const root = svgRootAttributes(svg)
+  return root ? svgSizeOf(root) : null
 }
 
 export interface RasterSize {
@@ -150,11 +134,9 @@ export interface RasterSize {
  * the host's cache key. Null when it is not an SVG.
  */
 export function prepareSvgForRaster(svg: string, size: RasterSize): { svg: string; width: number; height: number } | null {
-  const clean = sanitizeSvg(svg)
+  const clean = sanitizeSvgDoc(svg)
   if (!clean) return null
-  const root = svgRoot(clean) as unknown as DomElement | null
-  if (!root) return null
-  const own = intrinsicOf(root)
+  const own = svgSizeOf(clean.root)
   let w: number
   let h: number
   if (size.width && size.width > 0) {
@@ -171,22 +153,24 @@ export function prepareSvgForRaster(svg: string, size: RasterSize): { svg: strin
   const width = Math.max(1, Math.round(w * scale))
   const height = Math.max(1, Math.round(h * scale))
 
+  // Only the root's start tag changes; the rest is not read again.
+  const root: SvgAttributes = { ...clean.root }
   // Without a viewBox the drawing's user units are px of its own size, and it
   // would not scale with a new width and height.
-  if (!viewBoxOf(root.getAttribute('viewBox'))) root.setAttribute('viewBox', `0 0 ${trim(own.width)} ${trim(own.height)}`)
-  root.setAttribute('width', String(width))
-  root.setAttribute('height', String(height))
-  const style = root.getAttribute('style')
+  if (!viewBoxOf(root.viewBox ?? null)) root.viewBox = `0 0 ${trim(own.width)} ${trim(own.height)}`
+  root.width = String(width)
+  root.height = String(height)
+  const style = root.style
   if (style) {
     // A size in the root's style outranks the attributes.
     const rest = style
       .split(';')
       .filter((d) => d.trim() && !/^\s*(width|height|min-width|min-height|max-width|max-height)\s*:/i.test(d))
       .join(';')
-    if (rest) root.setAttribute('style', rest)
-    else root.removeAttribute('style')
+    if (rest) root.style = rest
+    else delete root.style
   }
-  return { svg: root.toString(), width, height }
+  return { svg: withRootAttributes(clean, root).svg, width, height }
 }
 
 function trim(n: number): string {
@@ -429,9 +413,10 @@ function inlineSvgImage(raw: string, el: Element): string | null {
   let svgText = raw
   if (!/\sxmlns\s*=/.test(open)) svgText = svgText.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"')
   if (/\bxlink:/.test(raw) && !/\sxmlns:xlink\s*=/.test(open)) svgText = svgText.replace(/^<svg\b/i, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"')
-  const clean = sanitizeSvg(htmlEntitiesAsXml(svgText), { keepImageUrls: true })
-  const size = clean ? svgIntrinsicSize(clean) : null
-  if (!clean || !size) return null
+  const doc = sanitizeSvgDoc(htmlEntitiesAsXml(svgText), { keepImageUrls: true })
+  if (!doc) return null
+  const clean = doc.svg
+  const size = svgSizeOf(doc.root)
   const title = el.children.find((c): c is Element => c instanceof Element && c.name === 'title')
   const alt = (el.attribs['aria-label'] ?? (title ? textContent(title) : '')).replace(/\s+/g, ' ').trim()
   const attrs = [
