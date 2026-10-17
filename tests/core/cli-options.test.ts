@@ -28,7 +28,7 @@ describe('cliConvertOptions: built-in defaults (settings spec 5.7)', () => {
     expect(o.web).toEqual({ fetchPictures: true, allowLocalNetwork: true })
     expect(o.codeColor).toBe(true)
     expect(o.renderedFormat).toBe('svg')
-    expect(o.pdf).toEqual({ pageSize: 'Letter', scale: 0.9, headerFooter: false, landscape: false })
+    expect(o.pdf).toEqual({ pageSize: 'Letter', scale: 0.9, headerFooter: false, landscape: 'auto' })
     expect(o.read).toEqual({ transcriptTimestamps: true, sqliteViews: false })
     expect(o.ocr).toBe(false)
     expect(o.ocrLanguage).toBe('eng')
@@ -50,6 +50,10 @@ describe('cliConvertOptions: built-in defaults (settings spec 5.7)', () => {
     expect(o.renderedFormat).toBe('png')
     expect(o.read).toEqual({ transcriptTimestamps: false, sqliteViews: true, jsonAs: 'text' })
     expect(o.slides).toEqual({ splitOn: 'h2' })
+    // --orientation: auto, portrait or landscape (--landscape above is landscape).
+    for (const [v, landscape] of [['auto', 'auto'], ['portrait', false], ['landscape', true]] as const) {
+      expect(options(DEFAULT_SETTINGS, ['a.md', '--to', 'pdf', '--orientation', v]).options.pdf?.landscape, v).toBe(landscape)
+    }
     // The notice names the flag, not the window's Settings → Web.
     expect(options(DEFAULT_SETTINGS, ['a.md', '--to', 'pdf', '--no-fetch']).options.web).toEqual({
       fetchPictures: false,
@@ -81,7 +85,7 @@ describe('cliConvertOptions: a settings file', () => {
     })
     expect(o.codeColor).toBe(false)
     expect(o.renderedFormat).toBe('png')
-    expect(o.pdf).toEqual({ pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: false })
+    expect(o.pdf).toEqual({ pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: 'auto' })
     expect(o.read).toEqual({ transcriptTimestamps: false, sqliteViews: true })
     expect(o.ocrLanguage).toBe('fra')
   })

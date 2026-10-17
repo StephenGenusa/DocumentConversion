@@ -43,7 +43,7 @@ export function cliConvertOptions(
       pdf: {
         scale: req.scale,
         pageSize: req.page,
-        landscape: req.landscape,
+        landscape: req.orientation === 'landscape' ? true : req.orientation === 'portrait' ? false : undefined,
         headerFooter: req.headerFooter ? true : req.noHeaderFooter ? false : undefined,
       },
       renderedFormat: req.diagrams,

@@ -279,10 +279,17 @@ export interface PdfPageInches {
  */
 export const KINDLE_PAGE_INCHES: PdfPageInches = { width: 3.6, height: 4.8 }
 
+/**
+ * The page's orientation: `'auto'` (Automatic, the default) lets the PDF
+ * writer choose from the document (orientation.ts); `true` and `false` are
+ * Landscape and Portrait, exactly as asked.
+ */
+export type PdfLandscape = 'auto' | boolean
+
 export interface PdfRenderOptions {
   scale: number
   pageSize: PdfPageSize | PdfPageInches
-  landscape: boolean
+  landscape: PdfLandscape
   headerFooter: boolean
   /** Derived by the pdf writer from doc.title ?? doc.sourceName (HTML-escaped). Never accepted from the renderer. */
   headerText?: string
@@ -331,4 +338,7 @@ export interface ConvertOptions {
   web?: WebPolicy
 }
 
-export type RenderHtmlToPdf = (html: string, opts?: PdfRenderOptions) => Promise<Buffer>
+/** What the page is printed with: the options with the orientation settled (Automatic chosen by the PDF writer). */
+export type PdfPrintOptions = Omit<PdfRenderOptions, 'landscape'> & { landscape: boolean }
+
+export type RenderHtmlToPdf = (html: string, opts?: PdfPrintOptions) => Promise<Buffer>

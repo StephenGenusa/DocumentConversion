@@ -52,7 +52,7 @@ function App(): React.JSX.Element {
   // The conversion screen's values start from the settings and last this
   // session; a change here is never written back (settings spec 6).
   // Session-persistent so repeated conversions keep the chosen page setup.
-  const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ ...BUILT_IN_START.pdf, landscape: false })
+  const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ ...BUILT_IN_START.pdf, landscape: 'auto' })
   const [slideOptions, setSlideOptions] = useState<SlideOptions>({ splitOn: 'auto' })
   // Diagrams as SVG or PNG (spec B4).
   const [renderedFormat, setRenderedFormat] = useState<RenderedFormat>(BUILT_IN_START.renderedFormat)

@@ -339,7 +339,7 @@ describe('mergeSettings (settings + request)', () => {
       allowLocalNetwork: false,
       renderedFormat: 'png',
       codeColor: false,
-      pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: false },
+      pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: 'auto' },
       read: { transcriptTimestamps: false, sqliteViews: true },
       ocrLanguage: 'deu',
     })
@@ -365,6 +365,13 @@ describe('mergeSettings (settings + request)', () => {
       headerFooter: true,
       landscape: true,
     })
+  })
+
+  it('takes the orientation from the request alone: Automatic, unless it says Portrait or Landscape', () => {
+    expect(mergeSettings(saved, {}).pdf.landscape).toBe('auto')
+    expect(mergeSettings(saved, { pdf: { landscape: 'auto' } }).pdf.landscape).toBe('auto')
+    expect(mergeSettings(saved, { pdf: { landscape: false } }).pdf.landscape).toBe(false)
+    expect(mergeSettings(saved, { pdf: { landscape: true } }).pdf.landscape).toBe(true)
   })
 
   it('never takes a settings-only choice from the request', () => {
@@ -409,7 +416,7 @@ describe('mergeSettings (settings + request)', () => {
       allowLocalNetwork: true,
       renderedFormat: 'svg',
       codeColor: true,
-      pdf: { pageSize: 'Letter', scale: 0.9, headerFooter: false, landscape: false },
+      pdf: { pageSize: 'Letter', scale: 0.9, headerFooter: false, landscape: 'auto' },
       read: { transcriptTimestamps: true, sqliteViews: false },
       ocrLanguage: 'eng',
     })

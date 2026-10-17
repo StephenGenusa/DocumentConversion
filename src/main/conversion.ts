@@ -6,7 +6,7 @@ import { mkdtemp, writeFile, rm } from 'fs/promises'
 import { createConverter, readContextOf } from '../core/convert'
 import { FOR_PASTING } from '../core/draw-blocks'
 import { getReader } from '../core/readers'
-import { normalizePdfOptions } from '../core/pdf-options'
+import { HEADER_FOOTER_MARGIN_INCHES, normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
 import { mergeHubDocuments } from '../core/merge'
 import { mergePdfs, type PdfMergeInput } from '../core/pdf-merge'
@@ -20,13 +20,14 @@ import { looksLikeHeader, rowsToHtmlTable } from '../core/readers/csv'
 import { extractPdfPageLines, pdfPagesToHub, type PdfPageSource } from '../core/readers/pdf'
 import type { OcrPage } from '../ocr/pipeline'
 import { advisePageFit } from '../core/page-fit'
+import { chooseOrientation } from '../core/orientation'
 import { urlFetchDeps } from './net'
 import { isUncFileUrl } from '../core/inline-images'
 import { TABLE_TARGETS } from '../core/types'
 import type {
   ConvertOptions,
   HubDocument,
-  PdfRenderOptions,
+  PdfPrintOptions,
   ReadContext,
   ReadOptions,
   SourceFormat,
@@ -100,8 +101,9 @@ function offlinePrintSession(): Session {
   return printSession
 }
 
-export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Promise<Buffer> {
-  const { scale, pageSize, landscape, headerFooter, headerText } = opts ?? normalizePdfOptions(undefined)
+export async function renderHtmlToPdf(html: string, opts?: PdfPrintOptions): Promise<Buffer> {
+  // With no options the page is the default one, portrait (the PDF writer always says).
+  const { scale, pageSize, landscape, headerFooter, headerText } = opts ?? { ...normalizePdfOptions(undefined), landscape: false }
   // Chromium draws header/footer templates inside the page margin: templates
   // need explicit font-size (default renders invisibly) and ~48pt of margin.
   const headerFooterOpts = headerFooter
@@ -109,7 +111,7 @@ export async function renderHtmlToPdf(html: string, opts?: PdfRenderOptions): Pr
         displayHeaderFooter: true,
         headerTemplate: `<div style="font-size:9px; width:100%; padding:0 0.4in; display:flex; justify-content:space-between;"><span>${headerText ?? ''}</span><span class="date"></span></div>`,
         footerTemplate: `<div style="font-size:9px; width:100%; text-align:center;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>`,
-        margins: { top: 0.67, bottom: 0.67 },
+        margins: { top: HEADER_FOOTER_MARGIN_INCHES, bottom: HEADER_FOOTER_MARGIN_INCHES },
       }
     : {}
   const dir = await mkdtemp(join(tmpdir(), 'docconv-'))
@@ -278,12 +280,14 @@ export async function runConversion(
   // downstream — writing, and the file the caller would save — must happen.
   throwIfCanceled(ctx.signal)
   if (target === 'pdf' && opts.pdf) {
-    // Tell the user when a different page setup would fit their tables; never
-    // change orientation or paper size behind their back.
+    // Tell the user when a different page setup would fit their tables. The
+    // paper size is never changed for them; the orientation only in
+    // Automatic, the default (orientation.ts), and the advice is about the
+    // page Automatic chose. Portrait and Landscape are kept exactly.
     // Page-fit advice is about named paper sizes; an explicit inch page is one
     // this app chose (AZW4), not one the user can act on.
     const named = typeof opts.pdf.pageSize === 'string' ? opts.pdf.pageSize : undefined
-    const advice = advisePageFit(hub.html, named, opts.pdf.landscape)
+    const advice = advisePageFit(hub.html, named, chooseOrientation(hub.html, opts.pdf.landscape, opts.pdf.pageSize).landscape)
     if (advice.suggestion) ctx.onAdvice?.('landscape', advice.reason ?? '', advice.suggestion)
   }
   return untilCanceled(converter.write(hub, target, opts, ctx), ctx.signal)

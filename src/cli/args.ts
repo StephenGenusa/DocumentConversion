@@ -24,7 +24,8 @@ export interface CliRequest {
   split?: 'auto' | 'hr' | 'h1' | 'h2'
   /** Diagrams as SVG or PNG, for the outputs that take SVG (spec B4). */
   diagrams?: 'svg' | 'png'
-  landscape: boolean
+  /** The pdf page's orientation; Automatic when not given. `--landscape` is `landscape`. */
+  orientation?: 'auto' | 'portrait' | 'landscape'
   headerFooter: boolean
   /** No PDF header and footer, even if the settings file has them on. */
   noHeaderFooter?: boolean
@@ -63,7 +64,9 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--table N]           csv/json target: extract only table N
   [--scale X]           pdf zoom factor 0.1-2.0 (default 0.9)
   [--page <size>]       pdf page size (Letter, A4, Legal, A3, Tabloid)
-  [--landscape]         pdf landscape orientation
+  [--orientation <auto|portrait|landscape>]  pdf page orientation: auto (default) turns the page for
+                        wide pictures and mostly-wide tables; portrait or landscape for every page
+  [--landscape]         the same as --orientation landscape
   [--header-footer]     pdf header/footer with title, date, page numbers
   [--no-header-footer]  pdf without a header/footer, even if --settings turns it on
   [--ocr]               OCR scanned PDFs and images (English unless --ocr-lang)
@@ -118,6 +121,7 @@ export const FLAG_SCOPES: FlagScope[] = [
   { flag: '--landscape', targets: ['pdf'], strict: false },
   { flag: '--header-footer', targets: ['pdf'], strict: false },
   // Flags from 1.4 on are strict.
+  { flag: '--orientation', targets: ['pdf'], strict: true },
   { flag: '--json-as', inputs: ['json'], strict: true },
   { flag: '--no-timestamps', inputs: ['subtitles'], strict: true },
   { flag: '--sqlite-views', inputs: ['sqlite'], strict: true },
@@ -164,13 +168,14 @@ export function parseArgs(argv: string[]): ParseResult {
     inputs: [],
     to: 'pdf',
     merge: false,
-    landscape: false,
     headerFooter: false,
     ocr: false,
     noClobber: false,
     headings: true,
   }
   let toSeen = false
+  let landscapeFlag = false
+  let orientationFlag = false
 
   const takeValue = (_flag: string, i: number): string | null => (i + 1 < argv.length ? argv[i + 1] : null)
 
@@ -232,6 +237,15 @@ export function parseArgs(argv: string[]): ParseResult {
         const match = rules.find((r) => r === v.toLowerCase())
         if (!match) return usage(`--split must be one of ${rules.join(', ')} (got ${v})`)
         req.split = match
+        break
+      }
+      case '--orientation': {
+        const v = takeValue(arg, i++)
+        const choices = ['auto', 'portrait', 'landscape'] as const
+        const match = choices.find((c) => c === v?.toLowerCase())
+        if (!match) return usage(`--orientation must be one of ${choices.join(', ')}${v ? ` (got ${v})` : ''}`)
+        req.orientation = match
+        orientationFlag = true
         break
       }
       case '--json-as': {
@@ -302,7 +316,7 @@ export function parseArgs(argv: string[]): ParseResult {
         req.headings = false
         break
       case '--landscape':
-        req.landscape = true
+        landscapeFlag = true
         break
       case '--header-footer':
         req.headerFooter = true
@@ -322,6 +336,9 @@ export function parseArgs(argv: string[]): ParseResult {
   }
 
   if (req.ocrLang && !req.ocr) return usage('--ocr-lang needs --ocr')
+  // --landscape is the older spelling of --orientation landscape: both at once would be a guess.
+  if (landscapeFlag && orientationFlag) return usage('--landscape and --orientation both set the orientation: give one')
+  if (landscapeFlag) req.orientation = 'landscape'
   // A flag and its --no- opposite: which one wins would be a guess.
   const opposites: [string, boolean | undefined, boolean | undefined][] = [
     ['fetch', req.fetch, req.noFetch],

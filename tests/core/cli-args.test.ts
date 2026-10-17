@@ -14,7 +14,7 @@ describe('parseArgs', () => {
     expect(req.inputs).toEqual(['spec.md'])
     expect(req.to).toBe('pdf')
     expect(req.merge).toBe(false)
-    expect(req.landscape).toBe(false)
+    expect(req.orientation).toBeUndefined()
     expect(req.headerFooter).toBe(false)
     expect(req.ocr).toBe(false)
     expect(req.noClobber).toBe(false)
@@ -51,7 +51,7 @@ describe('parseArgs', () => {
     expect(req.table).toBe(2)
     expect(req.scale).toBeCloseTo(1.25)
     expect(req.page).toBe('A4')
-    expect(req.landscape).toBe(true)
+    expect(req.orientation).toBe('landscape')
     expect(req.headerFooter).toBe(true)
     expect(req.ocr).toBe(true)
     expect(req.noClobber).toBe(true)
@@ -105,7 +105,7 @@ describe('USAGE text', () => {
   })
 
   it('names every flag parseArgs accepts', () => {
-    for (const flag of ['--out', '--from', '--merge', '--table', '--scale', '--page', '--landscape', '--ocr']) {
+    for (const flag of ['--out', '--from', '--merge', '--table', '--scale', '--page', '--orientation', '--landscape', '--ocr']) {
       expect(USAGE, `usage text is missing ${flag}`).toContain(flag)
     }
   })
@@ -168,6 +168,42 @@ describe('flag scope', () => {
       expect(scope, flag).toBeDefined()
       expect(scope!.strict, flag).toBe(false)
     }
+  })
+})
+
+/** --orientation <auto|portrait|landscape>, strict, pdf only; --landscape is its older spelling. */
+describe('--orientation', () => {
+  it('takes auto, portrait or landscape, in any case', () => {
+    for (const v of ['auto', 'portrait', 'landscape'] as const) {
+      expect(ok(['a.md', '--to', 'pdf', '--orientation', v]).orientation).toBe(v)
+    }
+    expect(ok(['a.md', '--to', 'pdf', '--orientation', 'Landscape']).orientation).toBe('landscape')
+  })
+
+  it('refuses anything else, and a missing value', () => {
+    expect(parseArgs(['a.md', '--to', 'pdf', '--orientation', 'sideways']).kind).toBe('usage')
+    expect(parseArgs(['a.md', '--to', 'pdf', '--orientation']).kind).toBe('usage')
+  })
+
+  it('takes --landscape as --orientation landscape, and refuses the two together', () => {
+    expect(ok(['a.md', '--to', 'pdf', '--landscape']).orientation).toBe('landscape')
+    for (const v of ['auto', 'portrait', 'landscape']) {
+      const r = parseArgs(['a.md', '--to', 'pdf', '--landscape', '--orientation', v])
+      expect(r.kind, v).toBe('usage')
+      if (r.kind === 'usage') expect(r.message).toMatch(/^--landscape and --orientation both set the orientation/)
+    }
+  })
+
+  it('exits 2 for any output but pdf (the Kindle page is always Automatic); --landscape is still ignored there', () => {
+    expect(checkFlagScope(['--orientation'], 'pdf', ['md'])).toBeNull()
+    for (const t of ['azw4', 'docx', 'html'] as const) {
+      expect(checkFlagScope(['--orientation'], t, ['md']), t).toMatch(/^--orientation applies only to pdf output/)
+      expect(checkFlagScope(['--landscape'], t, ['md']), t).toBeNull()
+    }
+  })
+
+  it('is listed in the usage', () => {
+    expect(USAGE).toContain('--orientation <auto|portrait|landscape>')
   })
 })
 

@@ -42,7 +42,7 @@ const OUTPUT_RULES: Record<OutputControl, (target: TargetFormat, inputs: Control
   renderedFormat: (target, inputs) => SVG_TARGETS.has(target) && inputs.some((i) => drawsSomething(i.features)),
 }
 
-/** The screen's values that start from a setting (settings spec 6). Orientation and slide split have none. */
+/** The screen's values that start from a setting (settings spec 6). Orientation and slide split have none: each starts at its automatic choice. */
 export interface SessionStart {
   pdf: { pageSize: PdfPageSize; scale: number; headerFooter: boolean }
   renderedFormat: RenderFormat

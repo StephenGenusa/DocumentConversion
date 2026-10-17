@@ -154,9 +154,16 @@ export function OutputPicker({
           <label>
             Orientation
             <select
-              value={pdfOptions.landscape ? 'landscape' : 'portrait'}
-              onChange={(e) => onPdfOptionsChange({ ...pdfOptions, landscape: e.target.value === 'landscape' })}
+              value={pdfOptions.landscape === true ? 'landscape' : pdfOptions.landscape === false ? 'portrait' : 'auto'}
+              title="Automatic turns the page for a wide picture or a document of wide tables"
+              onChange={(e) =>
+                onPdfOptionsChange({
+                  ...pdfOptions,
+                  landscape: e.target.value === 'auto' ? 'auto' : e.target.value === 'landscape',
+                })
+              }
             >
+              <option value="auto">Automatic</option>
               <option value="portrait">Portrait</option>
               <option value="landscape">Landscape</option>
             </select>

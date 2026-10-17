@@ -32,7 +32,11 @@ export interface Settings {
   rendered: { format: RenderFormat }
   /** Code blocks colored by language in the outputs (not the editor). */
   code: { color: boolean }
-  /** What a new PDF starts with. Orientation stays a per-document choice. */
+  /**
+   * What a new PDF starts with. Orientation has no setting: Automatic
+   * (orientation.ts) is the right start for everyone, and Portrait or
+   * Landscape is a choice for one document, made on the toolbar.
+   */
   pdf: { pageSize: PdfPageSize; scale: number; headerFooter: boolean }
   /** Reading choices that are set once: transcript times, SQLite view results. */
   read: { transcriptTimestamps: boolean; sqliteViews: boolean }
@@ -349,14 +353,14 @@ export interface EffectiveOptions {
  * control on the conversion screen, so they are never taken from a request -
  * a stale or hostile page cannot override them.
  *
- * Landscape and the JSON choice are per document and have no setting; they
- * come from the request alone (portrait, and the reader's own default).
+ * Orientation and the JSON choice are per document and have no setting; they
+ * come from the request alone (Automatic, and the reader's own default).
  */
 export function mergeSettings(settings: Readonly<Settings>, request: unknown): EffectiveOptions {
   const req = isRecord(request) ? request : {}
   const pdfReq = isRecord(req.pdf) ? req.pdf : {}
   const readReq = isRecord(req.read) ? req.read : {}
-  const bool = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback)
+  const bool = <T>(value: unknown, fallback: T): boolean | T => (typeof value === 'boolean' ? value : fallback)
 
   const scale =
     typeof pdfReq.scale === 'number' && Number.isFinite(pdfReq.scale)
@@ -382,7 +386,8 @@ export function mergeSettings(settings: Readonly<Settings>, request: unknown): E
       pageSize,
       scale,
       headerFooter: bool(pdfReq.headerFooter, settings.pdf.headerFooter),
-      landscape: bool(pdfReq.landscape, false),
+      // Automatic unless the request says Portrait (false) or Landscape (true).
+      landscape: bool(pdfReq.landscape, 'auto'),
     },
     read,
     ocrLanguage: RULES.ocr.language.ok(req.ocrLanguage) ? (req.ocrLanguage as string) : settings.ocr.language,

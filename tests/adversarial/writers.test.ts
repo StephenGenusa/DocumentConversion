@@ -955,7 +955,7 @@ describe('normalizePdfOptions', () => {
     expect(normalizePdfOptions({})).toEqual({
       scale: DEFAULT_PDF_SCALE,
       pageSize: 'Letter',
-      landscape: false,
+      landscape: 'auto',
       headerFooter: false,
     })
   })
@@ -964,7 +964,7 @@ describe('normalizePdfOptions', () => {
     const o = normalizePdfOptions(raw as unknown)
     expect(o.scale).toBe(DEFAULT_PDF_SCALE)
     expect(o.pageSize).toBe('Letter')
-    expect(o.landscape).toBe(false)
+    expect(o.landscape).toBe('auto')
     expect(o.headerFooter).toBe(false)
   })
 
@@ -1008,12 +1008,12 @@ describe('normalizePdfOptions', () => {
     },
   )
 
-  it('landscape is a strict boolean', () => {
+  it('landscape is a strict boolean, anything else Automatic', () => {
     expect(normalizePdfOptions({ landscape: true }).landscape).toBe(true)
     expect(normalizePdfOptions({ landscape: false }).landscape).toBe(false)
-    expect(normalizePdfOptions({ landscape: 'true' }).landscape).toBe(false)
-    expect(normalizePdfOptions({ landscape: 1 }).landscape).toBe(false)
-    expect(normalizePdfOptions({ landscape: 'false' }).landscape).toBe(false)
+    expect(normalizePdfOptions({ landscape: 'true' }).landscape).toBe('auto')
+    expect(normalizePdfOptions({ landscape: 1 }).landscape).toBe('auto')
+    expect(normalizePdfOptions({ landscape: 'false' }).landscape).toBe('auto')
   })
 
   it('headerFooter is a strict boolean, default false', () => {

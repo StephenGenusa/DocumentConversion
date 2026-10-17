@@ -63,7 +63,7 @@ const api = {
     filename?: string
     source: SourceFormat
     target: TargetFormat
-    pdf?: { scale?: number; pageSize?: string; landscape?: boolean }
+    pdf?: { scale?: number; pageSize?: string; landscape?: 'auto' | boolean }
     renderedFormat?: 'svg' | 'png'
     ocr?: boolean
     jobId?: string
@@ -97,7 +97,7 @@ const api = {
     filename?: string
     source: SourceFormat
     target: TargetFormat
-    pdf?: { scale?: number; pageSize?: string; landscape?: boolean }
+    pdf?: { scale?: number; pageSize?: string; landscape?: 'auto' | boolean }
     renderedFormat?: 'svg' | 'png'
     ocr?: boolean
     jobId?: string

@@ -19,7 +19,7 @@ describe('conversionOptions (settings + request)', () => {
 
   it('takes every option from the settings when the request carries none', () => {
     expect(conversionOptions(saved, {})).toEqual({
-      pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: false },
+      pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: 'auto' },
       slides: { splitOn: 'auto' },
       renderedFormat: 'png',
       pictureFormat: 'png',
@@ -72,7 +72,7 @@ describe('conversionOptions (settings + request)', () => {
 
   it('a bad value in a request is ignored and the setting used', () => {
     const opts = conversionOptions(saved, { pdf: { pageSize: 'Huge', scale: 'big' }, renderedFormat: 'gif', ocr: 'yes', read: 7 })
-    expect(opts.pdf).toEqual({ pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: false })
+    expect(opts.pdf).toEqual({ pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: 'auto' })
     expect(opts.renderedFormat).toBe('png')
     expect(opts.ocr).toBe(false)
     expect(opts.read).toEqual({ transcriptTimestamps: false, sqliteViews: true })

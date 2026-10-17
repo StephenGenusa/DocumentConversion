@@ -91,7 +91,9 @@ export async function runCli(argv: string[]): Promise<number> {
   const noteFor =
     (name: string) =>
     (_kind: string, message: string, suggestion?: { pageSize: string; landscape: boolean }): void => {
-      const flags = suggestion ? ` Try: --page ${suggestion.pageSize}${suggestion.landscape ? ' --landscape' : ''}` : ''
+      const flags = suggestion
+        ? ` Try: --page ${suggestion.pageSize} --orientation ${suggestion.landscape ? 'landscape' : 'portrait'}`
+        : ''
       // Some advice already ends its sentence; don't print "..".
       console.error(`NOTE ${name}: ${message}${/[.!?]$/.test(message) ? '' : '.'}${flags}`)
     }

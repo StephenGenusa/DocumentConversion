@@ -1235,6 +1235,10 @@ try {
   check('the page size is not offered for Word', (await choice('Page')) === null, 'shown for Word')
   await click('PDF')
   check('a hidden toolbar control keeps its session value', (await choice('Page'))?.value === 'Tabloid', JSON.stringify(await choice('Page')))
+  // Orientation starts at Automatic (orientation.ts) and has no setting: a toolbar change is this session's.
+  check('the orientation starts at Automatic', (await choice('Orientation'))?.text === 'Automatic', JSON.stringify(await choice('Orientation')))
+  await choose('Orientation', 'landscape')
+  check('an orientation change is not saved', saved().pdf?.landscape === undefined && saved().pdf?.orientation === undefined, JSON.stringify(saved()))
 
   // Settings → OCR. A downloaded pack stands in as an empty file in this run's
   // profile (never the real one): Remove only deletes it, nothing reads it.
@@ -1327,6 +1331,7 @@ try {
   await dropFile(join(ROOT, 'tests', 'corpus', 'diagram-notes.md'), 'diagram-notes.md')
   await click('PDF')
   check('after a restart the toolbar starts from the setting, not the last session', (await choice('Page'))?.value === 'Legal', JSON.stringify(await choice('Page')))
+  check('after a restart the orientation is Automatic again', (await choice('Orientation'))?.value === 'auto', JSON.stringify(await choice('Orientation')))
 
   // Reset all, in the dialog, after its confirm: the file holds no choices,
   // the dialog shows the defaults and the toolbar, left alone, follows.

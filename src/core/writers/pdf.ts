@@ -1,6 +1,8 @@
 import { renderDocumentShell, escapeHtml, markTaskLists, type ShellOptions } from '../shell'
 import { colorizeStatusEmoji } from '../emoji'
 import { picturePages } from '../lone-picture'
+import { chooseOrientation } from '../orientation'
+import { HEADER_FOOTER_MARGIN_INCHES, PRINT_MARGIN_INCHES, normalizePdfOptions } from '../pdf-options'
 import {
   chunkHtmlForPrinting,
   countRows,
@@ -10,7 +12,7 @@ import {
 } from '../html-chunk'
 import { mergePdfs } from '../pdf-merge'
 import { ConversionError } from '../errors'
-import type { ConvertOptions, HubDocument, PdfRenderOptions, RenderHtmlToPdf } from '../types'
+import type { ConvertOptions, HubDocument, PdfPrintOptions, PdfRenderOptions, RenderHtmlToPdf } from '../types'
 
 /**
  * How many times a refused piece may be halved before we admit defeat. Each
@@ -35,16 +37,25 @@ function isPrintingRefusal(err: unknown): boolean {
 
 export function createPdfWriter(render: RenderHtmlToPdf, shellOpts?: Pick<ShellOptions, 'codePalette'>) {
   return async (doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> => {
-    let pdfOpts: PdfRenderOptions | undefined = opts?.pdf
-    if (pdfOpts?.headerFooter) {
-      pdfOpts = { ...pdfOpts, headerText: escapeHtml(doc.title ?? doc.sourceName ?? '') }
-    }
+    const asked: PdfRenderOptions = opts?.pdf ?? normalizePdfOptions(undefined)
+    // Automatic is settled here, from the document; Portrait and Landscape are kept as they are.
+    const orientation = chooseOrientation(doc.html, asked.landscape, asked.pageSize)
+    const pdfOpts: PdfPrintOptions = { ...asked, landscape: orientation.landscape }
+    if (pdfOpts.headerFooter) pdfOpts.headerText = escapeHtml(doc.title ?? doc.sourceName ?? '')
     // Task lists are found by their ballot boxes, before ☑ becomes a green check.
     const html = colorizeStatusEmoji(markTaskLists(doc.html))
     // A document that is pictures alone is printed each filling its page (shell.ts).
     const fillPage = picturePages(doc.html) !== null
+    // Pictures a page both ways: the landscape pages are turned on their own (shell.ts turnedPages).
+    const turnedPages = orientation.pages && {
+      landscape: orientation.pages,
+      marginShift: (2 * ((pdfOpts.headerFooter ? HEADER_FOOTER_MARGIN_INCHES : PRINT_MARGIN_INCHES) - PRINT_MARGIN_INCHES)) / pdfOpts.scale,
+    }
     const shell = (body: string): string =>
-      renderDocumentShell({ ...doc, html: body }, { ...shellOpts, target: 'pdf', codeColor: opts?.codeColor, fillPage })
+      renderDocumentShell(
+        { ...doc, html: body },
+        { ...shellOpts, target: 'pdf', codeColor: opts?.codeColor, fillPage, turnedPages },
+      )
 
     /** Render one piece, splitting it further if the renderer refuses it. */
     const renderPiece = async (body: string, maxRows: number, maxCells: number, depth: number): Promise<Buffer[]> => {

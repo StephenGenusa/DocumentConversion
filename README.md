@@ -66,6 +66,15 @@ The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
   which outputs it affects. Settings are remembered from one start to the next; a
   change on the conversion screen lasts only until you quit. See
   [Settings](#settings).
+- **PDF orientation is Automatic.** The toolbar's Orientation starts at
+  *Automatic*, which picks the page for the document: a wide picture or
+  drawing opened on its own prints on a landscape page, a fax or TIFF of
+  portrait and landscape pages keeps each page's own orientation, and a
+  document that is mostly tables too wide for a portrait page (a wide
+  spreadsheet) prints landscape. Everything else stays portrait. *Portrait*
+  and *Landscape* print every page that way, exactly as before. On the
+  command line it is `--orientation auto|portrait|landscape` (`auto` by
+  default); `--landscape` still works and means `--orientation landscape`.
 - **Pictures an output can't hold are converted to the right kind.** A TIFF
   in a PDF or a WebP in a Kindle book becomes PNG when it is a screenshot,
   line art, a diagram, a scan or a GIF (few colors or large flat areas), so
@@ -266,7 +275,10 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
 - **pdf** — rendered by Chromium. Zoom 50–200% (90% by default), page size
   (Letter, A4, Legal, A3, Tabloid), orientation, and an optional header and
   footer with the title, date and page numbers. A horizontal rule (`---` in
-  Markdown) starts a new page.
+  Markdown) starts a new page. Orientation is Automatic unless you choose
+  Portrait or Landscape: landscape pages for a wide picture on its own (each
+  page of a TIFF by its own shape) and for a document that is mostly wide
+  tables, portrait for the rest.
 - **html** — one standalone file.
 - **epub** — an e-book. Chapters split on the document's own headings, images
   stored once each, markup written as XHTML because e-book readers require
@@ -388,9 +400,11 @@ warning and no error. Large tables are split across several print calls and the 
 joined, repeating the header row on each part.
 
 **Page fit advice.** Before printing, the app estimates how wide the widest
-table needs to be, and suggests the smallest page setup that fits. It suggests rather than
-changes the setting, because changing your page setup without telling you would
-be a second defect rather than a fix for the first.
+table needs to be, and suggests the smallest page setup that fits. It never
+changes the paper size. Orientation it changes only in Automatic, the default,
+and only for a document that is mostly tables too wide for a portrait page; a
+report with one wide table among its text stays portrait and gets the tip
+instead. Portrait and Landscape are kept exactly as chosen.
 
 **Merging.** Several inputs into one document. When the output is PDF and the
 inputs are PDFs, pages are copied straight across rather than re-rendered, so
@@ -498,7 +512,7 @@ says which outputs it affects.
 | Web | Allow pictures from your local network | on | Off, intranet addresses are refused too (pictures, and web pages opened from an address). Shown only while fetching is on |
 | Formulas & diagrams | Draw diagrams and formulas as | Sharp (SVG) | Or Image (PNG). Word and Kindle (AZW3) always get images |
 | Code | Color code by language | on | Off, code blocks are written plain black, for example for printing. The editor's colors stay either way |
-| PDF | Page size; zoom; header and footer | Letter; 90%; off | What a new PDF starts with. On first run, unless the system's region uses Letter paper (US, CA, MX or PH), the page size is saved as A4 |
+| PDF | Page size; zoom; header and footer | Letter; 90%; off | What a new PDF starts with. On first run, unless the system's region uses Letter paper (US, CA, MX or PH), the page size is saved as A4. Orientation has no setting: it starts at Automatic every time, and Portrait or Landscape is chosen on the conversion screen for the document at hand |
 | Reading | Transcripts: show times | on | Subtitle and transcript paragraphs start with their time |
 | Reading | SQLite: include view results | off | Adds the rows each view returns; views are always listed in the schema |
 | OCR | Default language | English | The language OCR reads in. One that isn't installed is downloaded first, after showing its size |
@@ -532,7 +546,8 @@ format (see [Command line](#command-line)). Every setting also has a flag.
 docconv convert <inputs...> --to <txt|md|docx|pdf|html|epub|revealjs|azw3|azw4|csv|json|xlsx>
   [--out <fileOrDir>] [--from <format>] [--merge] [--no-headings] [--table N]
   [--split <auto|hr|h1|h2>] [--diagrams <svg|png>] [--scale 1.25] [--page A4]
-  [--landscape] [--header-footer] [--no-header-footer] [--ocr] [--ocr-lang <code>]
+  [--orientation <auto|portrait|landscape>] [--landscape] [--header-footer]
+  [--no-header-footer] [--ocr] [--ocr-lang <code>]
   [--pictures <auto|jpg|png>] [--fetch] [--no-fetch] [--local-network]
   [--no-local-network] [--code-color] [--no-code-color]
   [--json-as <table|text>] [--no-timestamps] [--sqlite-views]
@@ -548,6 +563,13 @@ checkout, run `npm run cli -- <args>`.
   `--no-clobber` refuses instead.
 - `--scale` must be between 0.1 and 2.0; a value outside that is rejected rather
   than clamped. The default is 0.9.
+- `--orientation` sets the PDF page's orientation. `auto`, the default,
+  chooses as the app's Automatic does: landscape for a wide picture on its
+  own (page by page for a TIFF) and for a document that is mostly wide
+  tables, otherwise portrait. `portrait` and `landscape` are every page.
+  `--landscape` is the older spelling of `--orientation landscape`; the two
+  together are a usage error (exit 2), and `--orientation` with any output
+  but pdf is too (a Kindle AZW4 page is always chosen automatically).
 - `--table N` picks one table, for csv and json output only.
 - `--split` chooses where a new slide starts, for the `revealjs` target.
 - `--merge` cannot be combined with csv, json or xlsx.

@@ -7,12 +7,13 @@ import { rasterSize, type PictureSize } from './picture-headers'
  * on its own (readers/svg.ts, readers/image.ts write a bare <img>), or a
  * Markdown or HTML page whose only block is a picture. On a fixed page such a
  * document is the picture, so the page is given to it: the PDF writer prints
- * it filling the page, and the AZW4 writer, whose page the target dictates,
- * turns that page landscape for a wide one.
+ * it filling the page, and in Automatic orientation (orientation.ts, also
+ * the Kindle page's) on a landscape page for a wide one.
  *
  * A document of pictures and nothing else, a rule between each two (a TIFF
  * of several pages opened on its own: readers/image.ts), is a picture a
- * page (picturePages): each is printed filling a page of its own.
+ * page (picturePages): each is printed filling a page of its own, and in
+ * Automatic each page takes its own picture's orientation.
  */
 
 /**
@@ -89,8 +90,3 @@ export function picturePages(html: string): { sizes: (PictureSize | null)[] } | 
   return { sizes }
 }
 
-/** Whether the document is pictures alone (picturePages), each wider than tall. */
-export function isWideLonePicture(html: string): boolean {
-  const sizes = picturePages(html)?.sizes
-  return !!sizes && sizes.every((size) => !!size && size.width > size.height)
-}

@@ -61,6 +61,50 @@ function describe(setup: { pageSize: PdfPageSize; landscape: boolean }): string 
   return `${setup.pageSize} ${setup.landscape ? 'landscape' : 'portrait'}`
 }
 
+/** One table's natural width (characters across, at the shell's body font), its columns, and how much text it holds. */
+export interface TableMeasure {
+  needed: number
+  columns: number
+  text: number
+}
+
+/**
+ * Each table's natural width: per column the longest word (a column is never
+ * taken narrower than its own unbreakable content), plus padding and a
+ * border. Checked against the shell's content-sized columns (shell.ts
+ * autoTables) in Chromium: a table this calls wider than the page ran past
+ * it, one it calls narrower fit, or needed up to a fifth less than said.
+ */
+export function measureTables(html: string): TableMeasure[] {
+  const out: TableMeasure[] = []
+  for (const grid of tableGrid(html)) {
+    const width = grid.reduce((max, row) => Math.max(max, row.length), 0)
+    if (width === 0) continue
+    // Per column, the longest single word: below this, text breaks mid-word.
+    const perColumn: number[] = []
+    let text = 0
+    for (let c = 0; c < width; c++) {
+      let longestWord = 3
+      for (const row of grid) {
+        const cell = row[c] ?? ''
+        text += cell.replace(/\s+/g, '').length
+        for (const word of cell.split(/\s+/)) {
+          longestWord = Math.max(longestWord, Math.min(word.length, 24))
+        }
+      }
+      perColumn.push(longestWord)
+    }
+    // Two characters of padding and a border per column.
+    out.push({ needed: perColumn.reduce((sum, w) => sum + w + 3, 0), columns: width, text })
+  }
+  return out
+}
+
+/** Characters across a page of this size, in either orientation (at the shell's body font). */
+export function pageColumns(pageSize: PdfPageSize, landscape: boolean): number {
+  return widthOf({ pageSize, landscape })
+}
+
 /**
  * Estimate whether a document's widest table fits the page in portrait.
  *
@@ -72,28 +116,12 @@ function describe(setup: { pageSize: PdfPageSize; landscape: boolean }): string 
  */
 export function advisePageFit(html: string, pageSize: PdfPageSize = 'Letter', landscape = false): PageFitAdvice {
   const portraitFits = PORTRAIT_COLUMNS[pageSize]
-  const tables = tableGrid(html)
   let widest = 0
   let columns = 0
-  for (const grid of tables) {
-    const width = grid.reduce((max, row) => Math.max(max, row.length), 0)
-    if (width === 0) continue
-    // Per column, the longest single word: below this, text breaks mid-word.
-    const perColumn: number[] = []
-    for (let c = 0; c < width; c++) {
-      let longestWord = 3
-      for (const row of grid) {
-        for (const word of (row[c] ?? '').split(/\s+/)) {
-          longestWord = Math.max(longestWord, Math.min(word.length, 24))
-        }
-      }
-      perColumn.push(longestWord)
-    }
-    // Two characters of padding and a border per column.
-    const needed = perColumn.reduce((sum, w) => sum + w + 3, 0)
-    if (needed > widest) {
-      widest = needed
-      columns = width
+  for (const table of measureTables(html)) {
+    if (table.needed > widest) {
+      widest = table.needed
+      columns = table.columns
     }
   }
   if (widest === 0) {
@@ -124,7 +152,8 @@ export function advisePageFit(html: string, pageSize: PdfPageSize = 'Letter', la
   }
 
   // Nothing fits. Name the roomiest setup so the choice is still the user's —
-  // the page is never changed for them — but say plainly that no page will hold
+  // the paper is never changed for them (Automatic may turn it: orientation.ts)
+  // — but say plainly that no page will hold
   // this table, and name the targets that have no page width to run out of.
   // Without that last part the user gets a thousand-page PDF of two-character
   // columns and no explanation of what to do instead.

@@ -10,13 +10,13 @@ describe('normalizePdfOptions', () => {
     expect(normalizePdfOptions(undefined)).toEqual({
       scale: DEFAULT_PDF_SCALE,
       pageSize: 'Letter',
-      landscape: false,
+      landscape: 'auto',
       headerFooter: false,
     })
   })
 
   it('returns defaults for an empty object', () => {
-    expect(normalizePdfOptions({})).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false, headerFooter: false })
+    expect(normalizePdfOptions({})).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: 'auto', headerFooter: false })
   })
 
   it('passes through valid values', () => {
@@ -63,13 +63,16 @@ describe('normalizePdfOptions', () => {
     }
   })
 
-  it('treats non-boolean landscape as false', () => {
-    expect(normalizePdfOptions({ landscape: 'yes' }).landscape).toBe(false)
-    expect(normalizePdfOptions({ landscape: 1 }).landscape).toBe(false)
+  it('keeps Portrait (false) and Landscape (true), and makes anything else Automatic', () => {
+    expect(normalizePdfOptions({ landscape: false }).landscape).toBe(false)
+    expect(normalizePdfOptions({ landscape: true }).landscape).toBe(true)
+    expect(normalizePdfOptions({ landscape: 'auto' }).landscape).toBe('auto')
+    expect(normalizePdfOptions({ landscape: 'yes' }).landscape).toBe('auto')
+    expect(normalizePdfOptions({ landscape: 1 }).landscape).toBe('auto')
   })
 
   it('returns defaults for non-object input', () => {
-    expect(normalizePdfOptions('junk')).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false, headerFooter: false })
-    expect(normalizePdfOptions(null)).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false, headerFooter: false })
+    expect(normalizePdfOptions('junk')).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: 'auto', headerFooter: false })
+    expect(normalizePdfOptions(null)).toEqual({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: 'auto', headerFooter: false })
   })
 })

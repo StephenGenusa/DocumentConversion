@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { createAzw4Writer, extractAzw4Pdf } from '../../src/core/writers/azw4'
 import { createPdfWriter } from '../../src/core/writers/pdf'
 import { EREADER_HLJS_CSS, HLJS_CSS } from '../../src/core/hljs'
-import { KINDLE_PAGE_INCHES, type PdfRenderOptions } from '../../src/core/types'
+import { KINDLE_PAGE_INCHES, type PdfPrintOptions } from '../../src/core/types'
 
 /**
  * There is no JS AZW4 reader, so unlike AZW3 this cannot be round-tripped
@@ -17,7 +17,7 @@ import { KINDLE_PAGE_INCHES, type PdfRenderOptions } from '../../src/core/types'
  */
 const FAKE_PDF = Buffer.from('%PDF-1.7\nfake pdf body\n%%EOF', 'latin1')
 
-function writerCapturing(seen: { opts?: PdfRenderOptions }) {
+function writerCapturing(seen: { opts?: PdfPrintOptions }) {
   return createAzw4Writer(async (_html, opts) => {
     seen.opts = opts
     return FAKE_PDF
@@ -26,7 +26,7 @@ function writerCapturing(seen: { opts?: PdfRenderOptions }) {
 
 describe('the AZW4 writer', () => {
   it('forces the Kindle page, whatever the user chose', async () => {
-    const seen: { opts?: PdfRenderOptions } = {}
+    const seen: { opts?: PdfPrintOptions } = {}
     await writerCapturing(seen)(
       { html: '<p>a</p>', title: 'T' },
       { pdf: { scale: 2, pageSize: 'A3', landscape: true, headerFooter: true } },
@@ -43,7 +43,7 @@ describe('the AZW4 writer', () => {
    * across the top. A book that is one wide picture gets the page turned:
    * the picture fills it, and the reader rotates to read it.
    */
-  it('turns the Kindle page landscape for a book that is one wide picture, and only then', async () => {
+  it('turns the Kindle page landscape for a book that is one wide picture, and only then (Automatic)', async () => {
     const wide = '<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="d" width="1200" height="800">'
     const tall = '<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="d" width="600" height="800">'
     for (const [html, landscape] of [
@@ -51,8 +51,10 @@ describe('the AZW4 writer', () => {
       [`<p>${wide}</p>`, true],
       [tall, false],
       [`<h1>Plan</h1><p>${wide}</p>`, false],
+      // A book of tables is portrait: the wide-table rule is for named paper.
+      [`<table>${`<tr>${'<td>abcdefgh</td>'.repeat(20)}</tr>`.repeat(5)}</table>`, false],
     ] as const) {
-      const seen: { opts?: PdfRenderOptions } = {}
+      const seen: { opts?: PdfPrintOptions } = {}
       await writerCapturing(seen)({ html, title: 'T' })
       expect(seen.opts?.pageSize).toEqual(KINDLE_PAGE_INCHES)
       expect(seen.opts?.landscape).toBe(landscape)

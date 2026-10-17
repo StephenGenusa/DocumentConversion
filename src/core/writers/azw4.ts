@@ -1,5 +1,4 @@
 import { createPdfWriter } from './pdf'
-import { isWideLonePicture } from '../lone-picture'
 import { buildPalmDb } from './palmdb'
 import { EXTH, buildRecord0, exthString } from './mobi-header'
 import { KINDLE_PAGE_INCHES, type ConvertOptions, type HubDocument, type RenderHtmlToPdf } from '../types'
@@ -44,17 +43,19 @@ export function createAzw4Writer(render: RenderHtmlToPdf) {
     /*
      * Everything about the page is overridden, not merged: scale and
      * orientation are as meaningless here as paper size, because the target
-     * dictates all three. The page is the Kindle's, portrait, except for a
-     * book that is one wide picture (lone-picture.ts): on a portrait page
-     * that was a strip across the top, so its page is turned landscape and
-     * the picture fills it; the reader rotates to read it.
+     * dictates all three. The page is the Kindle's, and its orientation is
+     * always Automatic (orientation.ts): portrait, except for a book of
+     * pictures alone, whose wide pages are turned landscape (on a portrait
+     * page a wide diagram was a strip across the top) and filled; the reader
+     * rotates to read them. The wide-table rule is for named paper only, so a
+     * Kindle book of tables stays portrait.
      */
     const pdf = await writePdf(doc, {
       ...opts,
       pdf: {
         scale: 1,
         pageSize: KINDLE_PAGE_INCHES,
-        landscape: isWideLonePicture(doc.html),
+        landscape: 'auto',
         headerFooter: false,
       },
     })

@@ -16,6 +16,13 @@ export interface ShellOptions {
   codeColor?: boolean
   /** The document is pictures alone, one a page (lone-picture.ts), each printed filling its page: the PDF writer says. */
   fillPage?: boolean
+  /**
+   * Pictures a page in both orientations (orientation.ts): per page whether
+   * it is landscape, on a portrait default page, and how much more the top
+   * and bottom margins take than the sides, in CSS inches (the header and
+   * footer's room, over the zoom). The PDF writer says.
+   */
+  turnedPages?: { landscape: boolean[]; marginShift: number }
 }
 
 /**
@@ -233,6 +240,35 @@ const FILL_PAGE_CSS = `
 `
 
 /**
+ * Pictures a page, some landscape and some portrait (a fax): each page is
+ * printed its own way, the landscape ones on a named page turned sideways
+ * (Chromium prints each page at its own size: checked, also with the header
+ * and footer and on the Kindle's inch page). Viewport units stay the default
+ * (portrait) page's on every page, so a turned page's picture is sized from
+ * them: its box is as wide as the default page's is tall and as tall as it
+ * is wide, give or take the difference between the top and bottom margins
+ * and the sides (marginShift). On a landscape default page Chromium drew the
+ * portrait pages small and off center, which is why the default is portrait.
+ */
+function turnedPagesCss(marginShift: number): string {
+  const shift = `${marginShift.toFixed(4)}in`
+  return `
+  @page picture-landscape { size: landscape; }
+  .picture-landscape { page: picture-landscape; }
+  .picture-landscape img { width: calc(100vh + ${shift}); height: calc(100vw - ${shift}); }
+`
+}
+
+/** Each page of pictures a page (split at its rules) in a box naming its page, when it is a landscape one. */
+function wrapTurnedPages(body: string, landscape: boolean[]): string {
+  const parts = body.split(/(<hr\b[^>]*>)/i)
+  // Pages are at the even places, the rules between them at the odd ones.
+  return parts
+    .map((part, i) => (i % 2 === 0 && landscape[i / 2] ? `<div class="picture-landscape">${part}</div>` : part))
+    .join('')
+}
+
+/**
  * A task list (GitHub's `- [ ] item`) reaches the hub as items opening with a
  * ballot box, ☐ or ☑ (md.ts). Printed under its bullets as well, each item
  * read "• ☐ Call the movers": the box is the marker. A list whose every item
@@ -291,6 +327,10 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
   if (/class="nb-|alt="output image"/.test(body)) css += NB_CSS + notebookPromptCss(body) + '\n'
   if (opts?.target === 'pdf' && body.includes('<hr')) css += PDF_PRINT_CSS
   if (opts?.target === 'pdf' && opts.fillPage) css += FILL_PAGE_CSS
+  if (opts?.target === 'pdf' && opts.fillPage && opts.turnedPages) {
+    css += turnedPagesCss(opts.turnedPages.marginShift)
+    body = wrapTurnedPages(body, opts.turnedPages.landscape)
+  }
   body = markTaskLists(body)
   if (body.includes('<ul class="task-list">')) css += TASK_LIST_CSS
   if (opts?.target === 'pdf' || opts?.target === 'html') {

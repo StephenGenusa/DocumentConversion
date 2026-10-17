@@ -103,7 +103,8 @@ export interface PdfOptions {
   /** Zoom factor, 0.1–2.0 (clamped in the main process). */
   scale?: number
   pageSize?: PdfPageSize
-  landscape?: boolean
+  /** Automatic ('auto', the default: the page chosen from the document), Landscape (true) or Portrait (false). */
+  landscape?: 'auto' | boolean
   headerFooter?: boolean
 }
 

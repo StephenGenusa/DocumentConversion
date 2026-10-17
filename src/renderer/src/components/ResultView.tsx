@@ -18,7 +18,7 @@ export function ResultView({
         </p>
         {result.advice && (
           <p className="result__advice">
-            💡 Tip: {result.advice}. Try Landscape orientation and convert again.
+            💡 Tip: {result.advice}. Choose that page and orientation and convert again.
           </p>
         )}
         {result.notes?.map((note) => (

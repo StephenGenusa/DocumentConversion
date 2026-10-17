@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { lonePicture, isWideLonePicture, picturePages } from '../../src/core/lone-picture'
+import { lonePicture, picturePages } from '../../src/core/lone-picture'
+import { chooseOrientation } from '../../src/core/orientation'
 import { rasterSize } from '../../src/core/picture-headers'
 import { svgDataUri } from '../../src/core/svg-images'
 import { encodePng } from '../../src/core/metafile/png'
 import { createPdfWriter } from '../../src/core/writers/pdf'
-import type { PdfRenderOptions } from '../../src/core/types'
+import { KINDLE_PAGE_INCHES, type PdfPrintOptions, type PdfRenderOptions } from '../../src/core/types'
 
 /*
  * A document that is one picture and nothing else (lone-picture.ts): an .svg
@@ -12,6 +13,9 @@ import type { PdfRenderOptions } from '../../src/core/types'
  * is a picture. Such a page prints the picture filling the page, and the
  * Kindle page turns landscape for a wide one.
  */
+
+/** Whether Automatic prints the document on landscape pages (orientation.ts). */
+const isWideLonePicture = (html: string): boolean => chooseOrientation(html, 'auto', 'Letter').landscape
 
 const svg = (w: number, h: number, viewBox = true) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"${viewBox ? ` viewBox="0 0 ${w} ${h}"` : ''}><rect width="${w}" height="${h}"/></svg>`
@@ -214,9 +218,13 @@ describe('picturePages', () => {
     }
   })
 
-  it('turns the Kindle page landscape only when every page is wide', () => {
-    expect(isWideLonePicture(`${img(800, 600)}<hr>${img(900, 600)}`)).toBe(true)
-    expect(isWideLonePicture(`${img(800, 600)}<hr>${img(600, 900)}`)).toBe(false)
+  it('prints every page landscape when every page is wide, else each page its own way', () => {
+    expect(chooseOrientation(`${img(800, 600)}<hr>${img(900, 600)}`, 'auto', 'Letter')).toEqual({ landscape: true })
+    expect(chooseOrientation(`${img(600, 800)}<hr>${img(600, 900)}`, 'auto', 'Letter')).toEqual({ landscape: false })
+    expect(chooseOrientation(`${img(800, 600)}<hr>${img(600, 900)}<hr>${img(800, 600)}`, 'auto', KINDLE_PAGE_INCHES)).toEqual({
+      landscape: false,
+      pages: [true, false, true],
+    })
   })
 })
 
@@ -227,15 +235,18 @@ describe('picturePages', () => {
  */
 describe('the PDF writer prints a lone picture filling the page', () => {
   const wide = `<p><img src="${svgDataUri(svg(1200, 800))}" alt="d" width="1200" height="800"></p>`
-  async function printed(html: string, opts?: PdfRenderOptions): Promise<{ css: string; opts?: PdfRenderOptions }> {
+  async function printed(
+    html: string,
+    opts?: PdfRenderOptions,
+  ): Promise<{ css: string; body: string; opts?: PdfPrintOptions }> {
     let page = ''
-    let seen: PdfRenderOptions | undefined
+    let seen: PdfPrintOptions | undefined
     await createPdfWriter(async (h, o) => {
       page = h
       seen = o
       return Buffer.from('%PDF-1.7\n%%EOF', 'latin1')
     })({ html, title: 'T' }, opts ? { pdf: opts } : undefined)
-    return { css: page.split('<style>')[1].split('</style>')[0], opts: seen }
+    return { css: page.split('<style>')[1].split('</style>')[0], body: page.split('<body')[1] ?? '', opts: seen }
   }
 
   it('sizes the picture to the whole page box, whole (contain) and centered', async () => {
@@ -255,8 +266,42 @@ describe('the PDF writer prints a lone picture filling the page', () => {
     expect((await printed('<h1>Plan</h1>' + wide)).css).not.toContain('object-fit: contain')
   })
 
-  it("keeps the page the user chose: orientation is the toolbar's, never changed behind their back", async () => {
-    const chosen: PdfRenderOptions = { scale: 0.9, pageSize: 'Letter', landscape: false, headerFooter: false }
-    expect((await printed(wide, chosen)).opts?.landscape).toBe(false)
+  it('prints a wide picture on a landscape page in Automatic, the default', async () => {
+    expect((await printed(wide)).opts?.landscape).toBe(true)
+    const auto: PdfRenderOptions = { scale: 0.9, pageSize: 'A4', landscape: 'auto', headerFooter: false }
+    expect((await printed(wide, auto)).opts?.landscape).toBe(true)
+    expect((await printed(wide.replace(/1200/g, '600'), auto)).opts?.landscape).toBe(false)
+  })
+
+  it('keeps Portrait and Landscape exactly as chosen', async () => {
+    const portrait: PdfRenderOptions = { scale: 0.9, pageSize: 'Letter', landscape: false, headerFooter: false }
+    expect((await printed(wide, portrait)).opts?.landscape).toBe(false)
+    const tall = wide.replace(/1200/g, '600')
+    expect((await printed(tall, { ...portrait, landscape: true })).opts?.landscape).toBe(true)
+    expect((await printed(`${wide}<hr>${tall}`, portrait)).css).not.toContain('@page picture-landscape')
+  })
+
+  /*
+   * A fax of portrait and landscape pages: each page is printed its own way,
+   * the landscape ones on a named page turned sideways, its picture sized
+   * from the (portrait) default page's viewport.
+   */
+  it('turns each wide page of pictures a page on its own, the rest portrait', async () => {
+    const tall = wide.replace(/1200/g, '600')
+    const { css, body, opts } = await printed(`${tall}\n<hr>\n${wide}\n<hr>\n${tall}`)
+    expect(opts?.landscape).toBe(false)
+    expect(css).toContain('@page picture-landscape { size: landscape; }')
+    expect(css).toContain('.picture-landscape { page: picture-landscape; }')
+    expect(css).toMatch(/\.picture-landscape img \{ width: calc\(100vh \+ 0\.0000in\); height: calc\(100vw - 0\.0000in\); \}/)
+    expect(body.match(/<div class="picture-landscape">/g)).toHaveLength(1)
+    expect(body).toMatch(/<hr><div class="picture-landscape">\s*<p><img[^>]*width="1200"[^>]*><\/p>\s*<\/div><hr>/)
+  })
+
+  it('makes room for the header and footer on a turned page, over the zoom', async () => {
+    const tall = wide.replace(/1200/g, '600')
+    const opts: PdfRenderOptions = { scale: 0.5, pageSize: 'Letter', landscape: 'auto', headerFooter: true }
+    const { css } = await printed(`${tall}<hr>${wide}`, opts)
+    // Top and bottom 0.67 in, sides 1 cm: 2 x (0.67 - 0.3937) / 0.5.
+    expect(css).toContain('width: calc(100vh + 1.1052in); height: calc(100vw - 1.1052in);')
   })
 })
