@@ -31,8 +31,8 @@ describe('conversionOptions (settings + request)', () => {
     })
   })
 
-  it('pictures are JPG by default (owner decision 1)', () => {
-    expect(conversionOptions(DEFAULT_SETTINGS, {}).pictureFormat).toBe('jpeg')
+  it('pictures are Automatic by default (owner decision, 2026-10-17)', () => {
+    expect(conversionOptions(DEFAULT_SETTINGS, {}).pictureFormat).toBe('auto')
   })
 
   it("a shown control's value wins for this conversion", () => {

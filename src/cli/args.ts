@@ -68,7 +68,8 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--no-header-footer]  pdf without a header/footer, even if --settings turns it on
   [--ocr]               OCR scanned PDFs and images (English unless --ocr-lang)
   [--ocr-lang <code>]   with --ocr: the OCR language, e.g. deu (its pack must be installed in the app)
-  [--pictures <jpg|png>]  pictures the output can't hold become JPG (default; see-through ones stay PNG) or PNG
+  [--pictures <auto|jpg|png>]  pictures the output can't hold: auto (default) keeps PNG for screenshots,
+                        line art, scans and GIFs and makes photographs JPG; jpg or png for all (see-through ones stay PNG)
   [--no-fetch]          don't download web pictures; each is replaced by its description
   [--fetch]             download web pictures, even if --settings turns fetching off
   [--no-local-network]  don't download web pictures from intranet addresses (10.x, 192.168.x, http://intranet/)
@@ -248,9 +249,9 @@ export function parseArgs(argv: string[]): ParseResult {
       }
       case '--pictures': {
         const v = takeValue(arg, i++)
-        const formats: Record<string, PictureFormat> = { jpg: 'jpeg', jpeg: 'jpeg', png: 'png' }
+        const formats: Record<string, PictureFormat> = { auto: 'auto', jpg: 'jpeg', jpeg: 'jpeg', png: 'png' }
         const format = v ? formats[v.toLowerCase()] : undefined
-        if (!format) return usage('--pictures needs jpg or png')
+        if (!format) return usage('--pictures needs auto, jpg or png')
         req.pictures = format
         break
       }

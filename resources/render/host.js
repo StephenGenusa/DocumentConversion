@@ -290,8 +290,9 @@
 
   /**
    * A raster picture (the document's bytes, sent as `id`) decoded here, in
-   * the sandbox, and re-encoded to fit `maxBytes`: PNG when asked for (`as`)
-   * or when it has transparency (scaled down until it fits), JPEG otherwise
+   * the sandbox, and re-encoded to fit `maxBytes`: PNG when it has
+   * transparency or when asked for (`as` 'png', or 'auto' and its pixels
+   * say so: picture-kind.js), scaled down until it fits; JPEG otherwise
    * (quality lowered, then scaled down). `page` is a TIFF's page. Answers
    * the length of the base64 (kept for `take`), its type and its size in
    * pixels.
@@ -321,11 +322,8 @@
     full.height = Math.max(1, Math.round(height * s0))
     var fctx = full.getContext('2d', { willReadFrequently: true })
     fctx.drawImage(img, 0, 0, full.width, full.height)
-    var data = fctx.getImageData(0, 0, full.width, full.height).data
-    var asPng = as === 'png'
-    for (var i = 3; !asPng && i < data.length; i += 4) {
-      if (data[i] !== 255) asPng = true
-    }
+    var kind = window.pictureKind(fctx.getImageData(0, 0, full.width, full.height).data, full.width, full.height, src.type)
+    var asPng = kind.reason === 'transparent' || as === 'png' || (as === 'auto' && kind.format === 'png')
     function encode(scale, quality) {
       var c = full
       if (scale < 1 || !asPng) {

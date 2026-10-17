@@ -202,7 +202,9 @@ describe('--diagrams', () => {
 
 /** Settings spec 5.7: a flag for each setting, all strict. */
 describe('settings flags', () => {
-  it('--pictures takes jpg or png (jpeg too), as the picture format', () => {
+  it('--pictures takes auto, jpg or png (jpeg too), as the picture format', () => {
+    expect(ok(['a.md', '--to', 'pdf', '--pictures', 'auto']).pictures).toBe('auto')
+    expect(ok(['a.md', '--to', 'pdf', '--pictures', 'Auto']).pictures).toBe('auto')
     expect(ok(['a.md', '--to', 'pdf', '--pictures', 'jpg']).pictures).toBe('jpeg')
     expect(ok(['a.md', '--to', 'pdf', '--pictures', 'jpeg']).pictures).toBe('jpeg')
     expect(ok(['a.md', '--to', 'pdf', '--pictures', 'png']).pictures).toBe('png')
@@ -378,7 +380,7 @@ describe('settings flags', () => {
       expect(FLAG_SCOPES.find((s) => s.flag === flag)?.strict, flag).toBe(true)
     }
     for (const text of [
-      '--pictures <jpg|png>', '[--fetch]', '[--no-fetch]', '[--local-network]', '[--no-local-network]', '[--code-color]',
+      '--pictures <auto|jpg|png>', '[--fetch]', '[--no-fetch]', '[--local-network]', '[--no-local-network]', '[--code-color]',
       '[--no-code-color]', '[--no-header-footer]', '--ocr-lang <code>', '--settings <file|app>',
     ]) {
       expect(USAGE, text).toContain(text)

@@ -24,10 +24,10 @@ import {
 const defaults = () => structuredClone(DEFAULT_SETTINGS)
 
 describe('defaults', () => {
-  it('are the owner decisions: JPG pictures, Letter, SVG drawings, fetching on', () => {
+  it('are the owner decisions: Automatic pictures, Letter, SVG drawings, fetching on', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       version: 1,
-      pictures: { format: 'jpeg' },
+      pictures: { format: 'auto' },
       web: { fetchPictures: true, allowLocalNetwork: true },
       rendered: { format: 'svg' },
       code: { color: true },
@@ -165,7 +165,7 @@ describe('parseSettings', () => {
     expect(version).toBe(7)
     expect(settings.version).toBe(SETTINGS_VERSION)
     expect(settings.pdf.pageSize).toBe('A4')
-    expect(settings.pictures.format).toBe('jpeg')
+    expect(settings.pictures.format).toBe('auto')
     expect(problems.map((p) => p.key)).toEqual(['pictures.format'])
   })
 
@@ -248,6 +248,8 @@ describe('migrate', () => {
 describe('checkSetting (what settings:set accepts)', () => {
   it('accepts every key with a good value', () => {
     expect(checkSetting({ key: 'pictures.format', value: 'png' })).toEqual({ key: 'pictures.format', value: 'png' })
+    expect(checkSetting({ key: 'pictures.format', value: 'auto' })).toEqual({ key: 'pictures.format', value: 'auto' })
+    expect(checkSetting({ key: 'pictures.format', value: 'jpeg' })).toEqual({ key: 'pictures.format', value: 'jpeg' })
     expect(checkSetting({ key: 'pdf.scale', value: 1.1 })).toEqual({ key: 'pdf.scale', value: 1.1 })
     expect(checkSetting({ key: 'ocr.language', value: 'deu' })).toEqual({ key: 'ocr.language', value: 'deu' })
   })
@@ -400,9 +402,9 @@ describe('mergeSettings (settings + request)', () => {
     })
   })
 
-  it('with the defaults and an empty request gives what conversions use today, but JPG pictures', () => {
+  it('with the defaults and an empty request gives what conversions use today, but Automatic pictures', () => {
     expect(mergeSettings(defaults(), {})).toEqual({
-      pictureFormat: 'jpeg',
+      pictureFormat: 'auto',
       fetchPictures: true,
       allowLocalNetwork: true,
       renderedFormat: 'svg',

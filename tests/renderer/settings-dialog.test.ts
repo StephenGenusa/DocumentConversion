@@ -147,6 +147,7 @@ describe('the Settings dialog', () => {
   it('says what stays PNG or SVG whatever the picture format, and that email never loads web pictures', async () => {
     await mount()
     expect(panel().textContent).toMatch(/see-through parts always stay PNG/)
+    expect(panel().textContent).toMatch(/Automatic keeps PNG for screenshots, line art, diagrams and scans/)
     expect(panel().textContent).toMatch(/Drawings \(EMF, WMF, SVG\) stay sharp: SVG where the output allows it, otherwise PNG/)
     act(() => tab('Web').click())
     expect(panel().textContent).toMatch(/Email and calendar invitations never load web pictures/)
@@ -154,8 +155,10 @@ describe('the Settings dialog', () => {
 
   it('saves each change at once and says so', async () => {
     await mount()
-    const jpg = labeled('JPG') as HTMLInputElement
-    expect(jpg.checked).toBe(true)
+    const auto = labeled('Automatic (recommended)') as HTMLInputElement
+    expect(auto.checked).toBe(true)
+    const choices = [...panel().querySelectorAll('input[name]')].filter((i) => (i as HTMLInputElement).type === 'radio')
+    expect(choices.slice(0, 3).map((i) => (i as HTMLInputElement).value)).toEqual(['auto', 'jpeg', 'png'])
     act(() => (labeled('PNG') as HTMLInputElement).click())
     await flush()
     expect(api.setSetting).toHaveBeenLastCalledWith('pictures.format', 'png')

@@ -213,6 +213,25 @@ async function main() {
     out.pictureTiffBilevelPng = await picture(uri('image/tiff', tiff({ width: 97, height: 31, pixel: shade, kind: 'bilevel', compression: 'packbits', bigEndian: true })), 5 * 1024 * 1024, 'png')
     out.pictureWebpPng = await picture(uri('image/webp', opaque.toBuffer('image/webp')), 5 * 1024 * 1024, 'png')
     out.pictureAlphaJpeg = await picture(uri('image/png', canvas(200, 200, true).toBuffer('image/png')), 5 * 1024 * 1024, 'jpeg')
+    // Automatic (picture-kind.js): a photograph JPEG, a drawing and a see-through picture PNG.
+    const drawing = (() => {
+      const c = createCanvas(400, 300)
+      const g = c.getContext('2d')
+      g.fillStyle = '#ffffff'
+      g.fillRect(0, 0, 400, 300)
+      g.fillStyle = '#ffe699'
+      g.fillRect(40, 40, 140, 80)
+      g.strokeStyle = '#000000'
+      g.lineWidth = 2
+      g.strokeRect(40, 40, 140, 80)
+      g.beginPath()
+      g.arc(280, 200, 60, 0, Math.PI * 2)
+      g.stroke()
+      return c
+    })()
+    out.pictureAutoPhoto = await picture(uri('image/webp', opaque.toBuffer('image/webp')), 5 * 1024 * 1024, 'auto')
+    out.pictureAutoDrawing = await picture(uri('image/webp', drawing.toBuffer('image/webp', 100)), 5 * 1024 * 1024, 'auto')
+    out.pictureAutoAlpha = await picture(uri('image/png', canvas(200, 200, true).toBuffer('image/png')), 5 * 1024 * 1024, 'auto')
     // A page of a multi-page TIFF, by its place in the file's chain (core asks so when it cannot take the page out alone).
     {
       const fax = tiff({ pages: [{ width: 30, height: 20, pixel: shade, compression: 'lzw' }, { width: 17, height: 11, pixel: shade, kind: 'bilevel', compression: 'packbits' }] })

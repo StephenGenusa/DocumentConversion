@@ -106,6 +106,12 @@ describe('targetPictures: what each target holds', () => {
     expect(types(out)).toEqual(['image/jpeg'])
   })
 
+  it('leaves the choice to the render host, by the pixels, when the picture format is Automatic', async () => {
+    const { render, calls } = host()
+    await targetPictures(`<p>${img('image/tiff', TIFF)}</p>`, 'pdf', { renderBlocks: render, pictureFormat: 'auto' })
+    expect(calls.map((c) => c.fit)).toEqual([{ maxBytes: expect.any(Number), as: 'auto' }])
+  })
+
   it('the format is passed from the conversion options', async () => {
     const { render, calls } = host()
     const conv = createConverter(async () => Buffer.from('%PDF-1.4'), { renderBlocks: render })

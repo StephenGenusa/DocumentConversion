@@ -21,10 +21,10 @@ const options = (settings: Readonly<Settings>, argv: string[], installed: (code:
 const file = (raw: unknown): Settings => parseSettings(raw).settings
 
 describe('cliConvertOptions: built-in defaults (settings spec 5.7)', () => {
-  it('are DEFAULT_SETTINGS: JPG pictures, fetching on, intranet allowed, code colored', () => {
+  it('are DEFAULT_SETTINGS: Automatic pictures, fetching on, intranet allowed, code colored', () => {
     const { options: o, notes } = options(DEFAULT_SETTINGS, ['a.md', '--to', 'pdf'])
     expect(notes).toEqual([])
-    expect(o.pictureFormat).toBe('jpeg')
+    expect(o.pictureFormat).toBe('auto')
     expect(o.web).toEqual({ fetchPictures: true, allowLocalNetwork: true })
     expect(o.codeColor).toBe(true)
     expect(o.renderedFormat).toBe('svg')

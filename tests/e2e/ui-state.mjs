@@ -1317,7 +1317,7 @@ try {
   const shownAfter = await inDialog(`d.querySelector('input[type=radio]:checked')?.value`)
   check(
     'Reset all puts every setting back to its default',
-    JSON.stringify(afterReset) === '{"version":1}' && shownAfter === 'jpeg',
+    JSON.stringify(afterReset) === '{"version":1}' && shownAfter === 'auto',
     JSON.stringify({ afterReset, shownAfter }),
   )
   await closeDialog()

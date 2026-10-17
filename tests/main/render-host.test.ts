@@ -90,6 +90,9 @@ interface HarnessResult {
   pictureTiffBilevelPng: Picture
   pictureWebpPng: Picture
   pictureAlphaJpeg: Picture
+  pictureAutoPhoto: Picture
+  pictureAutoDrawing: Picture
+  pictureAutoAlpha: Picture
   pictureTiffLoop: Picture
   pictureTiffPage2: Picture
   pictureTiffPage3: Picture
@@ -137,7 +140,7 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     const files = result.requests.map((r) => decodeURIComponent(new URL(r.url).pathname).split('/').pop())
     expect(result.requests.every((r) => r.allowed && r.url.startsWith('file://'))).toBe(true)
     expect(new Set(files)).toEqual(
-      new Set(['host.html', 'host.js', 'mermaid.min.js', 'viz-global.js', 'tex-svg-full.js', 'pako-inflate.min.js', 'utif.js']),
+      new Set(['host.html', 'picture-kind.js', 'host.js', 'mermaid.min.js', 'viz-global.js', 'tex-svg-full.js', 'pako-inflate.min.js', 'utif.js']),
     )
     // The TIFF decoder, once, with the inflate it needs loaded first.
     expect(files.filter((f) => f === 'utif.js').length).toBe(1)
@@ -359,6 +362,12 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     expect(result.pictureAlpha).toMatchObject({ type: 'png', magicOk: true })
     expect(result.pictureAlpha.bytes).toBeLessThanOrEqual(30000)
     expect(result.pictureAlpha.width).toBeLessThan(200)
+  })
+
+  it('chooses by the pixels when asked for Automatic: a photograph JPEG, a drawing and a see-through picture PNG', () => {
+    expect(result.pictureAutoPhoto).toEqual({ type: 'jpeg', bytes: expect.any(Number), width: 300, height: 200, magicOk: true })
+    expect(result.pictureAutoDrawing).toEqual({ type: 'png', bytes: expect.any(Number), width: 400, height: 300, magicOk: true })
+    expect(result.pictureAutoAlpha).toMatchObject({ type: 'png', width: 200, height: 200, magicOk: true })
   })
 
   it('decodes TIFF in the page (Chromium has no decoder for it): JPEG, or PNG where it has transparency', () => {

@@ -222,7 +222,8 @@ if (existsSync(join(work, 'plan.azw3'))) {
 }
 
 // Settings (settings spec 5.7). A picture an EPUB can't hold (BMP) is
-// converted: to JPG by default, as in the app; PNG when asked.
+// converted: by Automatic by default, as in the app (a photograph to JPG, a
+// drawing to PNG); to JPG or PNG when asked.
 const bmp = (() => {
   const w = 4, h = 4, row = w * 3, size = 54 + row * h
   const b = Buffer.alloc(size)
@@ -233,6 +234,20 @@ const bmp = (() => {
 })()
 const photo = join(work, 'photo.html')
 writeFileSync(photo, `<h1>Photo</h1><p><img alt="a photo" src="data:image/bmp;base64,${bmp.toString('base64')}"></p>`)
+// A drawing: white with a black frame, two colors. Automatic (the default) keeps it PNG.
+const lineArt = (() => {
+  const w = 64, h = 64, row = w * 3, size = 54 + row * h
+  const b = Buffer.alloc(size)
+  b.fill(255, 54)
+  b.write('BM', 0); b.writeUInt32LE(size, 2); b.writeUInt32LE(54, 10); b.writeUInt32LE(40, 14)
+  b.writeInt32LE(w, 18); b.writeInt32LE(h, 22); b.writeUInt16LE(1, 26); b.writeUInt16LE(24, 28); b.writeUInt32LE(row * h, 34)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (x === 8 || x === 55 || y === 8 || y === 55) b.fill(0, 54 + y * row + x * 3, 54 + y * row + x * 3 + 3)
+  }
+  return b
+})()
+const drawing = join(work, 'drawing.html')
+writeFileSync(drawing, `<h1>Drawing</h1><p><img alt="a drawing" src="data:image/bmp;base64,${lineArt.toString('base64')}"></p>`)
 /** The converted picture's file name inside an EPUB, from the zip's (uncompressed) directory. */
 const epubPicture = (file) => (existsSync(file) ? /OEBPS\/images\/img001\.(jpg|png)/.exec(readFileSync(file).toString('latin1'))?.[1] : undefined)
 function wantPicture(name, file, ext) {
@@ -251,6 +266,12 @@ const pngSettings = settingsFile('png-settings.json', { version: 1, pictures: { 
 
 run('default pictures are JPG', [photo, '--to', 'epub', '--out', join(work, 'photo-default.epub')], { expectCode: 0 })
 wantPicture('default pictures are JPG', join(work, 'photo-default.epub'), 'jpg')
+run('default drawings are PNG', [drawing, '--to', 'epub', '--out', join(work, 'drawing-default.epub')], { expectCode: 0 })
+wantPicture('default drawings are PNG', join(work, 'drawing-default.epub'), 'png')
+run('--pictures auto', [drawing, '--to', 'epub', '--pictures', 'auto', '--out', join(work, 'drawing-auto.epub')], { expectCode: 0 })
+wantPicture('--pictures auto', join(work, 'drawing-auto.epub'), 'png')
+run('--pictures jpg for a drawing', [drawing, '--to', 'epub', '--pictures', 'jpg', '--out', join(work, 'drawing-jpg.epub')], { expectCode: 0 })
+wantPicture('--pictures jpg for a drawing', join(work, 'drawing-jpg.epub'), 'jpg')
 run('--pictures png', [photo, '--to', 'epub', '--pictures', 'png', '--out', join(work, 'photo-png.epub')], { expectCode: 0 })
 wantPicture('--pictures png', join(work, 'photo-png.epub'), 'png')
 run('--settings file applies', [photo, '--to', 'epub', '--settings', pngSettings, '--out', join(work, 'photo-file.epub')], { expectCode: 0 })
@@ -301,7 +322,7 @@ run('--pictures for txt exit 2', [photo, '--to', 'txt', '--pictures', 'png'], {
   expectCode: 2,
   expectStderr: '--pictures applies only to html, revealjs, pdf, azw4, epub, azw3, md, docx output, not txt',
 })
-run('--pictures needs jpg or png', [photo, '--to', 'epub', '--pictures', 'gif'], { expectCode: 2, expectStderr: '--pictures needs jpg or png' })
+run('--pictures needs auto, jpg or png', [photo, '--to', 'epub', '--pictures', 'gif'], { expectCode: 2, expectStderr: '--pictures needs auto, jpg or png' })
 
 // Web: --no-fetch leaves web pictures as their description, with a note.
 const remote = join(work, 'remote.md')

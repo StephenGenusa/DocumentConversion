@@ -56,7 +56,8 @@ export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
   svg: 'raster-1',
   // 2: TIFF is decoded (UTIF.js 4.1.0, pako 1.0.11), where it was refused.
   // 3: the answer's type is asked for (fit.as), and a TIFF's page (page).
-  picture: 'reencode-3',
+  // 4: 'auto' (picture-kind.js).
+  picture: 'reencode-4',
 }
 
 /**
@@ -99,6 +100,9 @@ const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.mi
 
 /** The TIFF decoder and the inflate it uses, which the page loads for a TIFF picture. */
 const DECODER_FILES = ['pako-inflate.min.js', 'utif.js']
+
+/** The page's own scripts: the Automatic picture format's rule, then its functions. */
+const PAGE_FILES = ['picture-kind.js', 'host.js']
 
 /** Who is waiting: visible editor blocks first, conversions next, editor prefetch last. */
 export type RenderPriority = 'visible' | 'convert' | 'prefetch'
@@ -228,7 +232,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
   const cache = new Lru(opts.cacheEntries ?? 2000, opts.cacheBytes ?? 64 * 1024 * 1024)
   const fold = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
   const allowedFiles = new Set(
-    [pagePath, join(pageDir, 'host.js'), ...[...Object.values(ENGINE_FILES), ...DECODER_FILES].map((f) => join(pageDir, f!))].map(fold),
+    [pagePath, ...[...PAGE_FILES, ...Object.values(ENGINE_FILES), ...DECODER_FILES].map((f) => join(pageDir, f!))].map(fold),
   )
 
   const queue: Job[] = []
@@ -409,7 +413,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
       if (req.kind === 'picture') {
         draws++
         const maxBytes = req.fit?.maxBytes
-        const as = req.fit?.as === 'png' || req.fit?.as === 'jpeg' ? req.fit.as : 'jpeg'
+        const as = req.fit?.as === 'png' || req.fit?.as === 'jpeg' || req.fit?.as === 'auto' ? req.fit.as : 'jpeg'
         const page = req.page ?? 0
         if (!PICTURE_SOURCE.test(req.source)) return { result: { error: 'it is not a picture this app reads' }, cacheable: true }
         if (typeof maxBytes !== 'number' || !(maxBytes > 0)) return { result: { error: 'no size to fit' }, cacheable: true }

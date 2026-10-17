@@ -66,11 +66,13 @@ The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
   which outputs it affects. Settings are remembered from one start to the next; a
   change on the conversion screen lasts only until you quit. See
   [Settings](#settings).
-- **JPG for pictures an output can't hold.** A TIFF in a PDF or a WebP in a
-  Kindle book is converted to JPG by default, much smaller for photographs.
+- **Pictures an output can't hold are converted to the right kind.** A TIFF
+  in a PDF or a WebP in a Kindle book becomes PNG when it is a screenshot,
+  line art, a diagram, a scan or a GIF (few colors or large flat areas), so
+  lines and text stay sharp, and JPG when it is a photograph, much smaller.
   Pictures with see-through parts stay PNG, and drawings stay SVG where the
-  output allows it, otherwise PNG. Settings → Pictures switches to PNG, which
-  keeps every pixel.
+  output allows it, otherwise PNG. Settings → Pictures (or `--pictures`) can
+  make them all JPG or all PNG instead.
 - **Web pictures, intranet pictures and code color can be turned off.**
   Settings → Web stops the app downloading the pictures a document refers to by
   web address (each becomes its description, and the result says how many), or
@@ -84,7 +86,7 @@ The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
 - **The command line takes the same settings.** `--settings <file>` starts from
   a settings file and `--settings app` from the app's own; without either, the
   built-in defaults are used and nothing on disk is read. New flags:
-  `--pictures <jpg|png>` and `--ocr-lang <code>`, and the pairs
+  `--pictures <auto|jpg|png>` and `--ocr-lang <code>`, and the pairs
   `--fetch`/`--no-fetch`, `--local-network`/`--no-local-network`,
   `--code-color`/`--no-code-color` and `--header-footer`/`--no-header-footer`,
   so a flag can turn back on what a settings file turns off. See
@@ -459,7 +461,7 @@ says which outputs it affects.
 
 | Section | Setting | Default | What it does |
 | --- | --- | --- | --- |
-| Pictures | Pictures the output can't hold | JPG | A picture the output can't hold as it is (a TIFF in a PDF, a WebP in a Kindle book) is converted to JPG, much smaller for photographs, or PNG, which keeps every pixel. Pictures with see-through parts always stay PNG; drawings (EMF, WMF, SVG) stay SVG where the output allows it, otherwise PNG |
+| Pictures | Pictures the output can't hold | Automatic | A picture the output can't hold as it is (a TIFF in a PDF, a WebP in a Kindle book) is converted. Automatic makes it PNG, which keeps every pixel, when it is a screenshot, line art, a diagram, a scan or a GIF (few colors or large flat areas), and JPG, much smaller, when it is a photograph; JPG or PNG makes every one that kind. Pictures with see-through parts always stay PNG; drawings (EMF, WMF, SVG) stay SVG where the output allows it, otherwise PNG |
 | Web | Fetch pictures from the web | on | Off, web pictures in documents, pastes and web pages are not downloaded; each becomes its description, and the result says how many. A web page opened from an address is still fetched. Email and calendar never load web pictures, whatever this says |
 | Web | Allow pictures from your local network | on | Off, intranet addresses are refused too (pictures, and web pages opened from an address). Shown only while fetching is on |
 | Formulas & diagrams | Draw diagrams and formulas as | Sharp (SVG) | Or Image (PNG). Word and Kindle (AZW3) always get images |
@@ -499,7 +501,7 @@ docconv convert <inputs...> --to <txt|md|docx|pdf|html|epub|revealjs|azw3|azw4|c
   [--out <fileOrDir>] [--from <format>] [--merge] [--no-headings] [--table N]
   [--split <auto|hr|h1|h2>] [--diagrams <svg|png>] [--scale 1.25] [--page A4]
   [--landscape] [--header-footer] [--no-header-footer] [--ocr] [--ocr-lang <code>]
-  [--pictures <jpg|png>] [--fetch] [--no-fetch] [--local-network]
+  [--pictures <auto|jpg|png>] [--fetch] [--no-fetch] [--local-network]
   [--no-local-network] [--code-color] [--no-code-color]
   [--json-as <table|text>] [--no-timestamps] [--sqlite-views]
   [--settings <file|app>] [--no-clobber] [--help] [--version]
@@ -518,7 +520,9 @@ checkout, run `npm run cli -- <args>`.
 - `--split` chooses where a new slide starts, for the `revealjs` target.
 - `--merge` cannot be combined with csv, json or xlsx.
 - A picture the output can't hold (a TIFF in a PDF, a BMP in an EPUB) is
-  converted to JPG, as in the app; `--pictures png` keeps every pixel instead.
+  converted as in the app: by default (`--pictures auto`) to PNG when it is a
+  screenshot, line art, a diagram, a scan or a GIF, and to JPG when it is a
+  photograph; `--pictures jpg` or `--pictures png` makes them all one kind.
   Pictures with see-through parts stay PNG, and drawings stay SVG or PNG,
   either way.
 - `--no-fetch` converts without downloading web pictures; each becomes its

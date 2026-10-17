@@ -102,9 +102,13 @@ export type BlockKind = 'mermaid' | 'dot' | 'math'
 export type RenderFormat = 'png' | 'svg'
 /**
  * What a converted picture becomes (ConvertOptions.pictureFormat): PNG, or
- * JPEG - which has no transparency, so a picture with any stays PNG.
+ * JPEG - which has no transparency, so a picture with any stays PNG - or
+ * 'auto', chosen by the render host from the picture's pixels: PNG for one
+ * with see-through parts, few colors or mostly flat areas (line art,
+ * screenshots, diagrams, scans) or from a GIF, JPEG otherwise
+ * (resources/render/picture-kind.js).
  */
-export type PictureFormat = 'png' | 'jpeg'
+export type PictureFormat = 'auto' | 'png' | 'jpeg'
 
 /**
  * The targets that take an SVG picture (spec B3): the choice applies there,
@@ -130,9 +134,10 @@ export interface RenderRequest {
   format: RenderFormat
   /**
    * `picture` only: the largest the answer may be, in bytes, and what it is
-   * to be (`as`): PNG, scaled down until it fits; or JPEG, quality lowered
+   * to be (`as`): PNG, scaled down until it fits; JPEG, quality lowered
    * and then the size, except for a picture with transparency, which stays
-   * PNG. Without `as`, JPEG's rule. `format` is ignored.
+   * PNG; or 'auto', whichever of the two its pixels call for. Without `as`,
+   * JPEG's rule. `format` is ignored.
    */
   fit?: { maxBytes: number; as?: PictureFormat }
   /** `picture` only: which page of a TIFF, by its place in the file's chain of pages (IFDs). The first when not given. */

@@ -70,15 +70,17 @@ function deepFreeze<T>(value: T): T {
 }
 
 /**
- * The built-in defaults (owner decisions, 2026-10-16). Pictures default to JPG:
- * the render host still keeps PNG for any picture with transparency, and
- * drawings stay SVG or PNG, so JPG only ever replaces an opaque photo. Letter
+ * The built-in defaults (owner decisions, 2026-10-16). Pictures default to
+ * Automatic (owner, 2026-10-17; was JPG): the render host keeps PNG for a
+ * picture with see-through parts, few colors or mostly flat areas, or from a
+ * GIF, and makes the rest JPG (resources/render/picture-kind.js); drawings
+ * stay SVG or PNG whatever this says. A file saying 'jpeg' or 'png' keeps it. Letter
  * is the built-in page size; the main process saves A4 on first run outside
  * the Letter countries.
  */
 export const DEFAULT_SETTINGS: Readonly<Settings> = deepFreeze({
   version: SETTINGS_VERSION,
-  pictures: { format: 'jpeg' },
+  pictures: { format: 'auto' },
   web: { fetchPictures: true, allowLocalNetwork: true },
   rendered: { format: 'svg' },
   code: { color: true },
@@ -100,7 +102,7 @@ const oneOf = (values: readonly string[]): Rule => ({
 })
 
 const RULES: { [S in SettingsSection]: Record<keyof Settings[S], Rule> } = {
-  pictures: { format: oneOf(['png', 'jpeg']) },
+  pictures: { format: oneOf(['auto', 'jpeg', 'png']) },
   web: { fetchPictures: isBoolean, allowLocalNetwork: isBoolean },
   rendered: { format: oneOf(['svg', 'png']) },
   code: { color: isBoolean },

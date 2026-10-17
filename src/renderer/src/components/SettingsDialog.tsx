@@ -114,12 +114,15 @@ export const SETTINGS_PAGES: SettingsPage[] = [
         title: "Pictures the output can't hold",
         kind: 'radio',
         choices: () => [
+          { value: 'auto', label: 'Automatic (recommended)' },
           { value: 'jpeg', label: 'JPG (smaller)' },
           { value: 'png', label: 'PNG (exact)' },
         ],
         help:
           "Some outputs can't hold every kind of picture, for example a TIFF in a PDF or a WebP in a Kindle book. " +
           'Those pictures are converted to this. JPG files are much smaller for photographs; PNG keeps every pixel. ' +
+          'Automatic keeps PNG for screenshots, line art, diagrams and scans (pictures of few colors or large flat ' +
+          'areas) and for GIFs, and makes photographs JPG. ' +
           'Pictures with see-through parts always stay PNG. Drawings (EMF, WMF, SVG) stay sharp: SVG where the ' +
           'output allows it, otherwise PNG.',
         affects: targetList(PICTURE_TARGETS),
