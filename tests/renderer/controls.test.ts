@@ -6,9 +6,11 @@ import {
   appliedOptions,
   appliedReadOptions,
   editedCopyNote,
-  SESSION_DEFAULTS,
+  followSetting,
+  sessionStart,
   type ControlInput,
 } from '../../src/renderer/src/lib/controls'
+import { DEFAULT_SETTINGS, parseSettings } from '../../src/core/settings'
 
 /**
  * Spec 2a: a control that is visible must change the result, and one that
@@ -67,8 +69,35 @@ describe('the Diagrams choice (spec B4)', () => {
     expect(appliedOptions('epub', [drawn], values)).toEqual({ renderedFormat: 'png' })
   })
 
-  it('starts as Sharp (SVG) in every session: it is never saved, so a restart resets it', () => {
-    expect(SESSION_DEFAULTS.renderedFormat).toBe('svg')
+  it('starts from the setting: Sharp (SVG) unless Settings says otherwise', () => {
+    expect(sessionStart(DEFAULT_SETTINGS).renderedFormat).toBe('svg')
+    expect(sessionStart(parseSettings({ rendered: { format: 'png' } }).settings).renderedFormat).toBe('png')
+  })
+})
+
+describe('where the session starts (settings spec 6)', () => {
+  it('every screen value that has a setting starts from it', () => {
+    const saved = parseSettings({
+      rendered: { format: 'png' },
+      pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true },
+      read: { transcriptTimestamps: false, sqliteViews: true },
+      ocr: { language: 'deu' },
+    }).settings
+    expect(sessionStart(saved)).toEqual({
+      pdf: { pageSize: 'A4', scale: 1.1, headerFooter: true },
+      renderedFormat: 'png',
+      ocrLanguage: 'deu',
+      read: { transcriptTimestamps: false, sqliteViews: true },
+    })
+  })
+
+  it('a value left alone follows a changed setting; one changed this session stays', () => {
+    // Left at the old setting: follows.
+    expect(followSetting('svg', 'svg', 'png')).toBe('png')
+    // Changed on the screen this session: the user's choice stays.
+    expect(followSetting('png', 'svg', 'svg')).toBe('png')
+    expect(followSetting(1.25, 0.9, 1)).toBe(1.25)
+    expect(followSetting(false, true, false)).toBe(false)
   })
 })
 

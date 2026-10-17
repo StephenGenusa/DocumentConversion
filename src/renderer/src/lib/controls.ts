@@ -1,4 +1,5 @@
-import type { ReadOptions, SourceFormat, TargetFormat } from '../../../core/types'
+import type { PdfPageSize, ReadOptions, SourceFormat, TargetFormat } from '../../../core/types'
+import type { Settings } from '../../../core/settings'
 import { drawsSomething, SVG_TARGETS, type HubFeatures, type RenderFormat } from '../../../core/rendered-blocks'
 
 /**
@@ -15,8 +16,9 @@ import { drawsSomething, SVG_TARGETS, type HubFeatures, type RenderFormat } from
  * The rules live here and nowhere else, so the screen, the options sent with a
  * conversion, and every later control agree. Values live in App state: they
  * last for the session and survive being hidden, so switching the target away
- * and back does not reset them. Nothing is saved, so a restart starts again
- * from SESSION_DEFAULTS.
+ * and back does not reset them. A control that has a setting starts from it
+ * (sessionStart, settings spec 6); a change on the screen is never written
+ * back, so a restart starts again from the settings.
  */
 
 export interface ControlInput {
@@ -40,8 +42,32 @@ const OUTPUT_RULES: Record<OutputControl, (target: TargetFormat, inputs: Control
   renderedFormat: (target, inputs) => SVG_TARGETS.has(target) && inputs.some((i) => drawsSomething(i.features)),
 }
 
-/** Where each session's choices start. */
-export const SESSION_DEFAULTS: { renderedFormat: RenderFormat } = { renderedFormat: 'svg' }
+/** The screen's values that start from a setting (settings spec 6). Orientation and slide split have none. */
+export interface SessionStart {
+  pdf: { pageSize: PdfPageSize; scale: number; headerFooter: boolean }
+  renderedFormat: RenderFormat
+  ocrLanguage: string
+  read: { transcriptTimestamps: boolean; sqliteViews: boolean }
+}
+
+/** Where a session's choices start: the saved settings. */
+export function sessionStart(settings: Readonly<Settings>): SessionStart {
+  return {
+    pdf: { pageSize: settings.pdf.pageSize, scale: settings.pdf.scale, headerFooter: settings.pdf.headerFooter },
+    renderedFormat: settings.rendered.format,
+    ocrLanguage: settings.ocr.language,
+    read: { transcriptTimestamps: settings.read.transcriptTimestamps, sqliteViews: settings.read.sqliteViews },
+  }
+}
+
+/**
+ * A screen value once its setting changes from `before` to `after`. A value
+ * still at the old setting was never changed this session, so it follows; one
+ * the user changed is this session's choice and stays.
+ */
+export function followSetting<T>(current: T, before: T, after: T): T {
+  return Object.is(current, before) ? after : current
+}
 
 const INPUT_RULES: Record<InputControl, (input: ControlInput) => boolean> = {
   imageMode: (input) => input.source === 'image',

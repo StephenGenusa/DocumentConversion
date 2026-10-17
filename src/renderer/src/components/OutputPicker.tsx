@@ -35,6 +35,11 @@ const FORMATS: TargetFormat[] = [
 ]
 
 const ZOOM_LEVELS = [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2]
+
+/** The zoom steps, with `current` among them in order when it is not one. */
+function zoomLevels(current: number): number[] {
+  return ZOOM_LEVELS.includes(current) ? ZOOM_LEVELS : [...ZOOM_LEVELS, current].sort((a, b) => a - b)
+}
 const PAGE_SIZES: PdfPageSize[] = ['Letter', 'A4', 'Legal', 'A3', 'Tabloid']
 
 export function OutputPicker({
@@ -125,7 +130,8 @@ export function OutputPicker({
               value={String(pdfOptions.scale ?? DEFAULT_PDF_SCALE)}
               onChange={(e) => onPdfOptionsChange({ ...pdfOptions, scale: Number(e.target.value) })}
             >
-              {ZOOM_LEVELS.map((z) => (
+              {/* A saved zoom off these steps (settings allow any from 10% to 200%) is shown too. */}
+              {zoomLevels(pdfOptions.scale ?? DEFAULT_PDF_SCALE).map((z) => (
                 <option key={z} value={z}>
                   {Math.round(z * 100)}%
                 </option>

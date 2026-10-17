@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { appliedOptions, appliedReadOptions, SESSION_DEFAULTS, type ControlInput } from './lib/controls'
+import {
+  appliedOptions,
+  appliedReadOptions,
+  followSetting,
+  sessionStart,
+  type ControlInput,
+  type SessionStart,
+} from './lib/controls'
 import { DropZone } from './components/DropZone'
 import { createIntake, type LoadedPayload, type PaneSource } from './lib/intake'
 import type { Intake } from './lib/intake-types'
@@ -11,7 +18,7 @@ import { ResultView } from './components/ResultView'
 import { BatchResults } from './components/BatchResults'
 import { applyLiveEdit, keepEdits, markDiskState, toRequest, type LiveEdit } from './lib/items'
 import { allowedMergeTargets, allowedTargets } from '../../core/target-validity'
-import { DEFAULT_PDF_SCALE } from '../../core/pdf-options'
+import { DEFAULT_SETTINGS } from '../../core/settings'
 import { hubFeatures } from '../../core/rendered-blocks'
 import type {
   BatchRow,
@@ -19,12 +26,16 @@ import type {
   ReadOptions,
   RenderedFormat,
   SaveResult,
+  Settings,
   SlideOptions,
   SourceFormat,
   TargetFormat,
 } from '../../preload/types'
 
 const PANE_HEIGHT = 860
+
+/** Until the saved settings arrive (a moment after the first render), the built-in ones. */
+const BUILT_IN_START = sessionStart(DEFAULT_SETTINGS)
 
 function App(): React.JSX.Element {
   const [items, setItems] = useState<ListItem[]>([])
@@ -35,14 +46,18 @@ function App(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<SaveResult | null>(null)
   const [batch, setBatch] = useState<{ outDir: string; rows: BatchRow[] } | null>(null)
+  // The conversion screen's values start from the settings and last this
+  // session; a change here is never written back (settings spec 6).
   // Session-persistent so repeated conversions keep the chosen page setup.
-  const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ scale: DEFAULT_PDF_SCALE, pageSize: 'Letter', landscape: false })
+  const [pdfOptions, setPdfOptions] = useState<PdfOptions>({ ...BUILT_IN_START.pdf, landscape: false })
   const [slideOptions, setSlideOptions] = useState<SlideOptions>({ splitOn: 'auto' })
-  // Diagrams as SVG or PNG (spec B4): for this session only, never saved.
-  const [renderedFormat, setRenderedFormat] = useState<RenderedFormat>(SESSION_DEFAULTS.renderedFormat)
-  const [ocrLanguage, setOcrLanguage] = useState('eng')
+  // Diagrams as SVG or PNG (spec B4).
+  const [renderedFormat, setRenderedFormat] = useState<RenderedFormat>(BUILT_IN_START.renderedFormat)
+  const [ocrLanguage, setOcrLanguage] = useState(BUILT_IN_START.ocrLanguage)
   // The last reading choices made this session: the defaults for inputs added later.
-  const [readDefaults, setReadDefaults] = useState<ReadOptions>({})
+  const [readDefaults, setReadDefaults] = useState<ReadOptions>(BUILT_IN_START.read)
+  /** The settings the screen's values were last started from. */
+  const startRef = useRef<SessionStart>(BUILT_IN_START)
   const [progress, setProgress] = useState<{ stage: string; percent?: number } | null>(null)
   /** What stopping the current job means: a paste keeps what it has fetched. */
   const [cancelLabel, setCancelLabel] = useState('Cancel')
@@ -60,6 +75,37 @@ function App(): React.JSX.Element {
     return window.api.onProgress((p) => {
       if (p.jobId === jobRef.current) setProgress({ stage: p.stage, percent: p.percent })
     })
+  }, [])
+
+  // The saved settings, now and whenever they change: each screen value still
+  // at the old setting follows; one changed this session stays as it is.
+  useEffect(() => {
+    let live = true
+    const adopt = (settings: Settings): void => {
+      if (!live) return
+      const before = startRef.current
+      const after = sessionStart(settings)
+      startRef.current = after
+      setPdfOptions((p) => ({
+        ...p,
+        pageSize: followSetting(p.pageSize, before.pdf.pageSize, after.pdf.pageSize),
+        scale: followSetting(p.scale, before.pdf.scale, after.pdf.scale),
+        headerFooter: followSetting(p.headerFooter ?? false, before.pdf.headerFooter, after.pdf.headerFooter),
+      }))
+      setRenderedFormat((f) => followSetting(f, before.renderedFormat, after.renderedFormat))
+      setOcrLanguage((l) => followSetting(l, before.ocrLanguage, after.ocrLanguage))
+      setReadDefaults((d) => ({
+        ...d,
+        transcriptTimestamps: followSetting(d.transcriptTimestamps, before.read.transcriptTimestamps, after.read.transcriptTimestamps),
+        sqliteViews: followSetting(d.sqliteViews, before.read.sqliteViews, after.read.sqliteViews),
+      }))
+    }
+    void window.api.getSettings().then(adopt, () => {})
+    const stop = window.api.onSettingsChanged(adopt)
+    return () => {
+      live = false
+      stop()
+    }
   }, [])
 
   const editingItem = editingId !== null ? (items.find((i) => i.id === editingId) ?? null) : null

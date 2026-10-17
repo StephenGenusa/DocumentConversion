@@ -8,9 +8,7 @@ import { allFileUrisToPaths } from '../core/uri'
 import { EXTENSIONS, TABLE_TARGETS, type SourceFormat, type TargetFormat } from '../core/types'
 import type { DetectResult } from '../core/detect'
 import { featuresHint } from '../core/features-hint'
-import type { RenderFormat } from '../core/rendered-blocks'
 import { jsonIsTable } from '../core/readers/json'
-import { normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
 import { createJob, cancelJob, finishJob, runBatch, throwIfCancelled, type BatchRow } from './jobs'
 import {
@@ -40,13 +38,13 @@ interface BatchItemPayload {
 }
 import { downloadPack, installedCodes, listPacks, removePack } from './ocr-packs'
 import { openSettings, regionOf, settingsIpcHandlers, SETTINGS_IPC_CHANNELS, type SettingsStore } from './settings'
-import { normalizeSlideOptions } from '../core/slides'
+import { conversionOptions } from './conversion-options'
 import { renderEditableText } from '../core/text-intake'
 import { defaultSavePath, defaultSaveDir, rememberDir, rememberSaveDir } from './save-location'
 import { shouldUseHtmlFlavor } from '../core/paste-flavors'
 import { pastedHtmlToHub } from '../core/remote-images'
 import { loadUrl } from '../core/readers/url'
-import type { ReadContext, ReadOptions } from '../core/types'
+import type { ReadContext } from '../core/types'
 import { urlFetchDeps } from './net'
 import { appTitle } from './app-identity'
 import { installAppMenu } from './menu'
@@ -105,25 +103,6 @@ async function detectWithHints(bytes: Buffer, filename?: string): Promise<Detect
     if (features) return { ...d, features }
   }
   return d
-}
-
-/** A request's Diagrams choice (spec B4), when it is one the writers know. */
-function renderedFormatOf(value: unknown): RenderFormat | undefined {
-  return value === 'svg' || value === 'png' ? value : undefined
-}
-
-/**
- * A request's reading choices, keeping only values the readers know. The
- * renderer is not trusted to send well-formed ones.
- */
-function readOptionsOf(value: unknown): ReadOptions {
-  if (typeof value !== 'object' || value === null) return {}
-  const v = value as Record<string, unknown>
-  const out: ReadOptions = {}
-  if (v.jsonAs === 'table' || v.jsonAs === 'text') out.jsonAs = v.jsonAs
-  if (typeof v.transcriptTimestamps === 'boolean') out.transcriptTimestamps = v.transcriptTimestamps
-  if (typeof v.sqliteViews === 'boolean') out.sqliteViews = v.sqliteViews
-  return out
 }
 
 function baseName(filename?: string): string {
@@ -365,7 +344,10 @@ function registerIpc(settings: SettingsStore): void {
             },
           }
         : {}
-      Object.assign(ctx, readOptionsOf(read))
+      // The same read the conversion would do, so the same settings: the
+      // card's choices where it shows them, the saved defaults otherwise.
+      const opts = conversionOptions(settings.get(), { read, ocrLanguage })
+      Object.assign(ctx, opts.read)
       try {
         // The stamp goes back with the html: it is what the pane was loaded
         // from, and what a later change on disk is measured against.
@@ -376,7 +358,7 @@ function registerIpc(settings: SettingsStore): void {
           source,
           ocr === true,
           ctx,
-          typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
+          opts.ocrLanguage,
         )
         // `limited`: a record source cut to the print limit, so an edited copy
         // holds only those records; the card says so.
@@ -495,15 +477,9 @@ function registerIpc(settings: SettingsStore): void {
           }
         : {}
       try {
+        // The settings as they are now; a change during the job is for the next one.
+        const opts = conversionOptions(settings.get(), { pdf, slides, renderedFormat, ocr, ocrLanguage, read })
         const bytes = await inputBytes({ base64, handle })
-        const opts = {
-          pdf: normalizePdfOptions(pdf),
-          slides: normalizeSlideOptions(slides),
-          renderedFormat: renderedFormatOf(renderedFormat),
-          ocr: ocr === true,
-          ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
-          read: readOptionsOf(read),
-        }
         if (target === 'html') {
           // Rich flavor for Word/Teams/Outlook paste targets + plain-text flavor for editors.
           // Diagrams and SVG images go as PNG whatever is chosen (clipboardFlavors).
@@ -580,15 +556,9 @@ function registerIpc(settings: SettingsStore): void {
           : {}),
       }
       try {
+        const opts = conversionOptions(settings.get(), { pdf, slides, renderedFormat, ocr, ocrLanguage, read })
         const bytes = await inputBytes({ base64, handle })
-        const out = await runConversion(bytes, filename, source, target, {
-          pdf: normalizePdfOptions(pdf),
-          slides: normalizeSlideOptions(slides),
-          renderedFormat: renderedFormatOf(renderedFormat),
-          ocr: ocr === true,
-          ocrLanguage: typeof ocrLanguage === 'string' ? ocrLanguage : undefined,
-          read: readOptionsOf(read),
-        }, ctx)
+        const out = await runConversion(bytes, filename, source, target, opts, ctx)
         const defaultPath = defaultSavePath(sourceDir, baseName(filename) + EXTENSIONS[target])
         const save = await dialog.showSaveDialog({ defaultPath, filters: [FILTERS[target]] })
         if (save.canceled || !save.filePath) return { status: 'cancelled' as const }
@@ -629,6 +599,9 @@ function registerIpc(settings: SettingsStore): void {
       }: { items: BatchItemPayload[]; target: TargetFormat; pdf?: unknown
         slides?: unknown; renderedFormat?: unknown; jobId?: string; outDir?: string },
     ) => {
+      // One copy of the settings for the whole batch, taken before the folder
+      // is picked: every row runs with the settings the job started with.
+      const snapshot = settings.get()
       let outDir = givenOutDir
       if (!outDir) {
         const pick = await dialog.showOpenDialog({
@@ -642,9 +615,6 @@ function registerIpc(settings: SettingsStore): void {
       const onProgress = (stage: string, percent?: number): void => {
         if (jobId && !e.sender.isDestroyed()) e.sender.send('app:progress', { jobId, stage, percent })
       }
-      const pdfOpts = normalizePdfOptions(pdf)
-      const slideOpts = normalizeSlideOptions(slides)
-      const formatOpt = renderedFormatOf(renderedFormat)
       let rows: BatchRow[]
       try {
         // Read inside the loop: a file that has gone costs its own row, with a
@@ -655,7 +625,7 @@ function registerIpc(settings: SettingsStore): void {
             item.filename,
             item.source,
             target,
-            { pdf: pdfOpts, slides: slideOpts, renderedFormat: formatOpt, ocr: item.ocr === true, ocrLanguage: item.ocrLanguage, read: readOptionsOf(item.read) },
+            conversionOptions(snapshot, { pdf, slides, renderedFormat, ocr: item.ocr, ocrLanguage: item.ocrLanguage, read: item.read }),
             ctx,
           ),
         )
@@ -689,6 +659,7 @@ function registerIpc(settings: SettingsStore): void {
           message: `Merge cannot target ${target.toUpperCase()} — use batch for table extraction`,
         }
       }
+      const snapshot = settings.get()
       const notes: string[] = []
       const onAdvice: ReadContext['onAdvice'] = (_kind, message) => {
         if (!notes.includes(message)) notes.push(message)
@@ -705,16 +676,20 @@ function registerIpc(settings: SettingsStore): void {
       try {
         const out = await mergeToTarget(
           await Promise.all(
-            items.map(async (item) => ({
-              bytes: await inputBytes(item),
-              filename: item.filename,
-              source: item.source,
-              ocr: item.ocr === true,
-              read: readOptionsOf(item.read),
-            })),
+            items.map(async (item) => {
+              const own = conversionOptions(snapshot, { ocr: item.ocr, ocrLanguage: item.ocrLanguage, read: item.read })
+              return {
+                bytes: await inputBytes(item),
+                filename: item.filename,
+                source: item.source,
+                ocr: own.ocr === true,
+                ocrLanguage: own.ocrLanguage,
+                read: own.read,
+              }
+            }),
           ),
           target,
-          { pdf: normalizePdfOptions(pdf), slides: normalizeSlideOptions(slides), renderedFormat: renderedFormatOf(renderedFormat) },
+          conversionOptions(snapshot, { pdf, slides, renderedFormat }),
           headings === true,
           ctx,
         )
@@ -739,7 +714,7 @@ function registerIpc(settings: SettingsStore): void {
   ipcMain.handle('app:open-about', () => openAboutWindow())
 
   // Settings (spec 5.6): every request checked against the schema in settings.ts.
-  // Conversions do not read them yet (settings rollout step 3).
+  // Each conversion above takes a copy when it starts (conversionOptions).
   for (const [channel, handler] of Object.entries(settingsIpcHandlers(settings))) ipcMain.handle(channel, handler)
   settings.onChange((now) => {
     for (const win of BrowserWindow.getAllWindows()) {

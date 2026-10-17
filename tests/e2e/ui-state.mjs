@@ -18,7 +18,7 @@
  * runs on the real desktop and WILL overwrite the clipboard.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync, utimesSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -272,6 +272,11 @@ function check(name, ok, detail) {
 
 try {
   await waitFor(`!!document.querySelector('.dropzone')`, 'the app to load')
+
+  // The settings file is in this run's own profile (--user-data-dir), never
+  // the real userData: a first run writes it there at start.
+  const settingsFile = join(profile, 'settings.json')
+  check('the settings file is written to the temp profile', existsSync(settingsFile), settingsFile)
 
   // The window title carries the version; the page's own <title> must not replace it.
   const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
@@ -759,16 +764,36 @@ try {
   check('a batch converts a changed file as it is now', first.status === 'saved' && readFileSync(first.path, 'utf8').includes('batch NEW'), JSON.stringify(first))
   check('a batch reports a deleted file on its own row', second.status === 'error' && /gone\.md/.test(second.message), JSON.stringify(second))
 
-  // The Diagrams choice is for the session only: a fresh start is Sharp (SVG)
-  // again, though it was left on PNG above. A reload starts the page afresh, as
-  // a restart does; nothing is saved to bring it back.
-  await js('location.reload()')
-  await sleep(500)
-  await waitFor(`!!document.querySelector('.dropzone')`, 'the app to load again')
-  await dropFile(join(ROOT, 'tests', 'corpus', 'diagram-notes.md'), 'diagram-notes.md')
-  await click('PDF')
-  diagramsChoice = await choice('Diagrams and formulas')
-  check('after a restart it is Sharp (SVG) again', diagramsChoice?.value === 'svg', JSON.stringify(diagramsChoice))
+  // The Diagrams choice starts from the setting at every start, and a change
+  // on the screen is for the session only (settings spec 6, replacing 2a's
+  // "resets on restart"). It was left on PNG above; a reload starts the page
+  // afresh, as a restart does, and it is back to the setting, Sharp (SVG).
+  const reopenDiagrams = async () => {
+    await js('location.reload()')
+    await sleep(500)
+    await waitFor(`!!document.querySelector('.dropzone')`, 'the app to load again')
+    await dropFile(join(ROOT, 'tests', 'corpus', 'diagram-notes.md'), 'diagram-notes.md')
+    await click('PDF')
+    return choice('Diagrams and formulas')
+  }
+  diagramsChoice = await reopenDiagrams()
+  check('after a restart it is the setting, Sharp (SVG), again', diagramsChoice?.value === 'svg', JSON.stringify(diagramsChoice))
+  const savedRendered = () => JSON.parse(readFileSync(settingsFile, 'utf8')).rendered?.format ?? 'svg'
+  check('a choice on the screen is not written to the settings', savedRendered() === 'svg', readFileSync(settingsFile, 'utf8'))
+
+  // A changed setting reaches a screen value left alone, at once.
+  const set = await js(`window.api.setSetting('rendered.format', 'png')`)
+  check('a setting can be changed', set?.ok === true && savedRendered() === 'png', JSON.stringify(set))
+  for (let i = 0; i < 20 && (await choice('Diagrams and formulas'))?.value !== 'png'; i++) await sleep(100)
+  check('the screen follows a changed setting it was left at', (await choice('Diagrams and formulas'))?.value === 'png', JSON.stringify(await choice('Diagrams and formulas')))
+
+  // Changed on the screen, then restarted: back to the setting, which is unchanged.
+  await choose('Diagrams and formulas', 'svg')
+  diagramsChoice = await reopenDiagrams()
+  check('the toolbar starts from the setting after a restart', diagramsChoice?.value === 'png', JSON.stringify(diagramsChoice))
+  check('the screen change was never saved', savedRendered() === 'png', readFileSync(settingsFile, 'utf8'))
+  const reset = await js(`window.api.resetSettings()`)
+  check('Reset all puts the defaults back', reset?.ok === true && reset.settings.rendered.format === 'svg', JSON.stringify(reset))
 } catch (err) {
   failures++
   console.log(`FAIL  ${err.message}`)
