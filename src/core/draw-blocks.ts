@@ -211,7 +211,8 @@ type Placement = 'inline' | 'block' | 'in-paragraph'
 
 /**
  * Marks, for the docx writer, a picture of display math that stood inside a
- * paragraph: it is put in a centered paragraph of its own there.
+ * paragraph (or its TeX, when it could not be drawn): it is put in a centered
+ * paragraph of its own there.
  */
 export const DOCX_OWN_LINE = 'data-docx-own-line'
 
@@ -285,7 +286,7 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
     } catch (err) {
       if (ctx.signal?.aborted) throw err
       ctx.onAdvice?.('render-failed', `Formulas could not be drawn: ${oneLine((err as Error)?.message ?? String(err))}`)
-      return html
+      return undrawn(html, formulas, target)
     }
     part.forEach((f, k) => byKey.set(keyOf(f), results[k]))
   }
@@ -295,15 +296,44 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
   for (const f of formulas) {
     const result = byKey.get(keyOf(f))
     const data = result && !('error' in result) && result.width > 0 && result.height > 0 ? pictureData(result, format) : undefined
+    const markup = html.slice(f.start, f.end)
     if (data === undefined || !result || 'error' in result) {
       const why = result && 'error' in result ? oneLine(result.error) : 'the engine gave no picture'
       ctx.onAdvice?.('render-failed', `Formula ${f.number} could not be drawn: ${why}`)
-      continue
-    }
-    out += html.slice(at, f.start) + formulaHtml(data, format, result, f.placement, f.source, target)
+      out += html.slice(at, f.start) + undrawnHtml(markup, f.placement, target)
+    } else out += html.slice(at, f.start) + formulaHtml(data, format, result, f.placement, f.source, target)
     at = f.end
   }
   return out + html.slice(at)
+}
+
+/** Every formula left undrawn (the renderer itself failed), each standing as undrawnHtml puts it. */
+function undrawn(html: string, formulas: { start: number; end: number; placement: Placement }[], target: TargetFormat): string {
+  let out = ''
+  let at = 0
+  for (const f of formulas) {
+    out += html.slice(at, f.start) + undrawnHtml(html.slice(f.start, f.end), f.placement, target)
+    at = f.end
+  }
+  return out + html.slice(at)
+}
+
+/**
+ * A formula that could not be drawn keeps its TeX, in the code font, and
+ * stands where its picture would have: inline math in the line, display
+ * math on a centered line of its own (inside its paragraph for the
+ * `math-display` form, laid out as formulaHtml lays the picture). Its hub
+ * class stays, so the output read back gives the formula again.
+ */
+function undrawnHtml(markup: string, placement: Placement, target: TargetFormat): string {
+  if (placement === 'inline') return markup
+  // The TeX's own blank first and last lines (`$$` on lines of their own) would show in the block.
+  if (placement === 'block') {
+    const tex = markup.replace(/^(<pre><code[^>]*>)\s*\n/, '$1').replace(/\n\s*(<\/code><\/pre>)$/, '$1')
+    return tex.replace(/^<pre>/, '<pre style="text-align:center">')
+  }
+  if (target === 'docx') return `<br>${markup.replace(/^<code /, `<code ${DOCX_OWN_LINE} `)}<br>`
+  return `<span style="display:block;text-align:center;margin:0.5em 0">${markup}</span>`
 }
 
 function formulaHtml(

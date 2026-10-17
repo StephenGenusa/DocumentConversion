@@ -633,7 +633,9 @@ export function flattenForDocx(source: string): string {
 function centerOwnLineFormulas(source: string): string {
   if (!source.includes(DOCX_OWN_LINE)) return source
   const dom = parseDocument(source)
-  const ownLine = (n: AnyNode | undefined): n is Element => !!n && isElement(n) && n.name === 'img' && n.attribs[DOCX_OWN_LINE] !== undefined
+  // The picture, or the TeX of one that could not be drawn (draw-blocks.ts undrawnHtml).
+  const ownLine = (n: AnyNode | undefined): n is Element =>
+    !!n && isElement(n) && (n.name === 'img' || n.name === 'code') && n.attribs[DOCX_OWN_LINE] !== undefined
   const isBr = (n: AnyNode | undefined): boolean => !!n && isElement(n) && n.name === 'br'
   let changed = false
   for (const p of elementsOf(dom.children, 'p')) {
