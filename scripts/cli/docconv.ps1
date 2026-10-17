@@ -11,5 +11,10 @@ if (-not (Test-Path $exe)) {
   Write-Error "DocumentConverter.exe not found at $exe"
   exit 1
 }
-& $exe convert @args 2>&1 | ForEach-Object { "$_" }
+# `docconv convert a.md --to pdf` (as the README writes it) and
+# `docconv a.md --to pdf` both work: the app takes one leading `convert`, so a
+# second one would be read as an input named "convert".
+$rest = @($args)
+if ($rest.Count -gt 0 -and $rest[0] -eq 'convert') { $rest = @($rest | Select-Object -Skip 1) }
+& $exe convert @rest 2>&1 | ForEach-Object { "$_" }
 exit $LASTEXITCODE
