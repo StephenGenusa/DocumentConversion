@@ -12,8 +12,11 @@
  * does not know is never dropped: it becomes its linear text (its `m:t` runs in
  * order) and is reported, so the reader can raise one notice per document.
  *
- * Elements are matched by their prefixed names (`m:f`, `w:rPr`), the prefixes
- * Word, LibreOffice and Google Docs all write.
+ * Elements are matched by their names under the prefixes Word, LibreOffice and
+ * Google Docs all write (`m:f`, `w:rPr`). A file that binds the math (or
+ * WordprocessingML) namespace to another prefix, or makes it the default
+ * namespace, is read the same: names are first rewritten to those prefixes by
+ * their namespace URI (`canonicalNames`).
  */
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode } from 'domhandler'
@@ -39,17 +42,76 @@ interface Ctx {
  * equation stands on a line of its own, which only changes where n-ary limits
  * go (Word's inline equations keep them at the side, as TeX's do).
  */
-export function ommlToTex(xml: string, opts: { display?: boolean } = {}): OmmlTex {
+export function ommlToTex(xml: string, opts: { display?: boolean; namespaces?: Record<string, string> } = {}): OmmlTex {
   const root = parseDocument(xml, { xmlMode: true, decodeEntities: true })
+  canonicalNames(root.children, new Map(Object.entries(opts.namespaces ?? {})))
   const ctx: Ctx = { display: opts.display ?? false, unknown: [], align: false, fname: false }
   const tex = seq(root.children, ctx).trim()
   return { tex, unknown: ctx.unknown }
 }
 
 /** All `m:t` (and `w:t`) text of an OMML fragment, in order: an equation's linear text. */
-export function ommlLinearText(xml: string): string {
+export function ommlLinearText(xml: string, namespaces: Record<string, string> = {}): string {
   const root = parseDocument(xml, { xmlMode: true, decodeEntities: true })
+  canonicalNames(root.children, new Map(Object.entries(namespaces)))
   return linearText(root.children)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Namespaces                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** The math namespace: transitional Office Open XML (what Word writes) and strict. */
+export const MATH_NAMESPACES = new Set([
+  'http://schemas.openxmlformats.org/officeDocument/2006/math',
+  'http://purl.oclc.org/ooxml/officeDocument/math',
+])
+const WORD_NAMESPACES = new Set([
+  'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
+  'http://purl.oclc.org/ooxml/wordprocessingml/main',
+])
+
+/** The prefix this file matches a namespace under, for the two it reads. */
+const canonicalPrefix = (uri: string): string | undefined =>
+  MATH_NAMESPACES.has(uri) ? 'm' : WORD_NAMESPACES.has(uri) ? 'w' : undefined
+
+/** `name` under its canonical prefix, given the prefixes in scope ('' for the default namespace). */
+function canonicalName(name: string, scope: Map<string, string>, attribute: boolean): string {
+  const colon = name.indexOf(':')
+  const prefix = colon < 0 ? '' : name.slice(0, colon)
+  // An attribute without a prefix is in no namespace, whatever the default is.
+  if (attribute && colon < 0) return name
+  const uri = scope.get(prefix)
+  // Undeclared (a fragment cut from its part with no declarations passed): as written.
+  if (uri === undefined) return name
+  const local = colon < 0 ? name : name.slice(colon + 1)
+  const canonical = canonicalPrefix(uri)
+  if (canonical) return `${canonical}:${local}`
+  // Another namespace that happens to use m: or w: is never taken for math or Word.
+  return prefix === 'm' || prefix === 'w' ? `_${prefix}:${local}` : name
+}
+
+/**
+ * Rewrite element and attribute names in place to the canonical `m:` and
+ * `w:` prefixes, following each element's `xmlns` declarations down the tree
+ * (`scope` holds those of the part's root, which a fragment does not carry).
+ */
+function canonicalNames(nodes: AnyNode[], scope: Map<string, string>): void {
+  for (const el of elements(nodes)) {
+    let inner = scope
+    for (const [k, v] of Object.entries(el.attribs)) {
+      if (k !== 'xmlns' && !k.startsWith('xmlns:')) continue
+      if (inner === scope) inner = new Map(scope)
+      inner.set(k === 'xmlns' ? '' : k.slice(6), v)
+    }
+    el.name = canonicalName(el.name, inner, false)
+    const attribs: Record<string, string> = {}
+    for (const [k, v] of Object.entries(el.attribs)) {
+      attribs[k === 'xmlns' || k.startsWith('xmlns:') ? k : canonicalName(k, inner, true)] = v
+    }
+    el.attribs = attribs
+    canonicalNames(el.children, inner)
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -125,7 +187,6 @@ const IGNORED = /^w:(bookmarkStart|bookmarkEnd|proofErr|permStart|permEnd|commen
 
 /** Elements whose content is simply their children in order. */
 const CONTAINERS = new Set([
-  'm:oMath',
   'm:e',
   'm:num',
   'm:den',
@@ -161,6 +222,8 @@ function conv(el: Element, ctx: Ctx): string {
   switch (name) {
     case 'm:oMathPara':
       return oMathPara(el, ctx)
+    case 'm:oMath':
+      return oMath(el, ctx)
     case 'm:r':
       return run(el, ctx)
     case 'w:r':
@@ -184,7 +247,7 @@ function conv(el: Element, ctx: Ctx): string {
     case 'm:d':
       return delimiter(el, ctx)
     case 'm:m':
-      return `\\begin{matrix}${matrixRows(el, ctx)}\\end{matrix}`
+      return matrix(el, ctx)
     case 'm:eqArr':
       return eqArr(el, ctx)
     case 'm:func':
@@ -211,7 +274,7 @@ function conv(el: Element, ctx: Ctx): string {
 }
 
 function oMathPara(el: Element, ctx: Ctx): string {
-  const lines = childrenNamed(el, 'm:oMath').map((m) => seq(m.children, ctx).trim()).filter(Boolean)
+  const lines = childrenNamed(el, 'm:oMath').map((m) => oMath(m, ctx).trim()).filter(Boolean)
   // Anything else directly inside (rare) is kept rather than dropped.
   const rest = elements(el.children).filter((c) => c.name !== 'm:oMath')
   const extra = seq(rest, ctx)
@@ -219,6 +282,60 @@ function oMathPara(el: Element, ctx: Ctx): string {
   if (lines.length <= 1) return lines[0] ?? ''
   // Word puts each m:oMath of a math paragraph on a line of its own.
   return `\\begin{gathered}${lines.join('\\\\')}\\end{gathered}`
+}
+
+/**
+ * One equation. In display, a run marked with `m:brk` starts a new line (a
+ * manual break, which Word honors only at the equation's top level and only
+ * in display; inline it draws one line, as here). The lines are `multlined`
+ * (first line left, last right, the middle centered), unless the first break
+ * names the operator to line up on (`m:alnAt`, counting the first line's
+ * operators from 1): then they are `aligned`, the first line on that operator
+ * and every later line starting there. Word lets each break name its own
+ * operator; the first one's is used for all.
+ */
+function oMath(el: Element, ctx: Ctx): string {
+  if (!ctx.display) return seq(el.children, ctx)
+  const lines: Element[][] = [[]]
+  let alnAt: number | undefined
+  for (const c of elements(el.children)) {
+    const brk = c.name === 'm:r' ? child(child(c, 'm:rPr'), 'm:brk') : undefined
+    if (brk && lines[lines.length - 1].length > 0) {
+      if (lines.length === 1) {
+        const n = Number(brk.attribs['m:alnAt'])
+        if (Number.isInteger(n) && n >= 1) alnAt = n
+      }
+      lines.push([])
+    }
+    lines[lines.length - 1].push(c)
+  }
+  const texts = lines.map((line) => seq(line, ctx)).filter(Boolean)
+  if (texts.length <= 1) return texts[0] ?? ''
+  const first = alnAt === undefined ? undefined : markOperator(texts[0], alnAt)
+  if (first !== undefined) {
+    const rest = texts.slice(1).map((t) => `&{}${t}`)
+    return `\\begin{aligned}${[first, ...rest].join('\\\\')}\\end{aligned}`
+  }
+  // `{}` keeps a line's leading + or = binary, as it was in the unbroken equation.
+  const rest = texts.slice(1).map((t) => `{}${t}`)
+  return `\\begin{multlined}${[texts[0], ...rest].join('\\\\')}\\end{multlined}`
+}
+
+/** Binary operators and relations Word counts for `m:alnAt`, as this file writes them. */
+const OPERATOR =
+  /^(?:[=+\-<>]|\\(?:pm|mp|times|div|cdot|circ|ast|star|bullet|oplus|ominus|otimes|odot|setminus|wedge|vee|cup|cap|le|ge|leqq|geqq|ne|approx|equiv|sim|simeq|cong|propto|ll|gg|prec|succ|preceq|succeq|doteq|triangleq|coloneqq|lesssim|gtrsim|in|notin|ni|subset|supset|subseteq|supseteq|rightarrow|leftarrow|leftrightarrow|Rightarrow|Leftarrow|Leftrightarrow|mapsto|longrightarrow|longleftarrow|Longrightarrow|Longleftarrow|Longleftrightarrow))$/
+
+/** `tex` with `&` before its `n`th operator outside any group, or undefined when it has fewer. */
+function markOperator(tex: string, n: number): string | undefined {
+  let depth = 0
+  let count = 0
+  for (const m of tex.matchAll(/\\(?:[A-Za-z]+|[\s\S])|[\s\S]/g)) {
+    const t = m[0]
+    if (t === '{' || t === '\\left' || t === '\\begin') depth++
+    else if (t === '}' || t === '\\right' || t === '\\end') depth--
+    else if (depth === 0 && OPERATOR.test(t) && ++count === n) return `${tex.slice(0, m.index)}&${tex.slice(m.index)}`
+  }
+  return undefined
 }
 
 /* -- runs ------------------------------------------------------------------- */
@@ -555,9 +672,10 @@ function delimiter(el: Element, ctx: Ctx): string {
   const sep = prop(el, 'm:dPr', 'm:sepChr') ?? '|'
   const args = childrenNamed(el, 'm:e')
   if (args.length === 1) {
-    const matrix = only(args[0], 'm:m')
-    const env = matrix ? MATRIX_ENV[beg + end] : undefined
-    if (matrix && env) return `\\begin{${env}}${matrixRows(matrix, ctx)}\\end{${env}}`
+    const m = only(args[0], 'm:m')
+    const env = m ? MATRIX_ENV[beg + end] : undefined
+    // Columns aligned differently are an array, inside \left…\right below.
+    if (m && env && !mixed(columnSpec(m))) return matrix(m, ctx, env)
     // A brace on the left alone round an equation array is a case split.
     const arr = only(args[0], 'm:eqArr')
     if (arr && beg === '{' && end === '') {
@@ -567,7 +685,55 @@ function delimiter(el: Element, ctx: Ctx): string {
   }
   const middle = sep === '' ? '' : `\\middle${delim(sep)}`
   const inner = args.map((a) => seq(a.children, ctx)).join(middle)
+  // ⟦ ⟧ (stmaryrd's \llbracket, which MathJax 3 lacks) are two brackets drawn
+  // close, each pair growing with the content. The side that is not double
+  // gets an invisible partner, so the \left/\right pairs stay balanced.
+  if (DOUBLE.has(beg) || DOUBLE.has(end)) {
+    const open = DOUBLE.has(beg) ? `\\left${delim(beg)}\\!\\left${delim(beg)}` : `\\left${delim(beg)}\\left.`
+    const close = DOUBLE.has(end) ? `\\right${delim(end)}\\!\\right${delim(end)}` : `\\right.\\right${delim(end)}`
+    return join([open, inner, close])
+  }
   return join([`\\left${delim(beg)}`, inner, `\\right${delim(end)}`])
+}
+
+const DOUBLE = new Set(['⟦', '⟧'])
+
+/** OMML's column alignments (`m:mcJc`) as array column letters; inside/outside are centered. */
+const COLUMN_ALIGN: Record<string, string> = { left: 'l', right: 'r' }
+
+/**
+ * A matrix's column letters (`lcr…`, one per cell of its widest row) from its
+ * `m:mcs`, or undefined when every column is centered, TeX's own default.
+ */
+function columnSpec(el: Element): string | undefined {
+  const width = Math.max(0, ...childrenNamed(el, 'm:mr').map((row) => childrenNamed(row, 'm:e').length))
+  const cols: string[] = []
+  const mcs = child(child(el, 'm:mPr'), 'm:mcs')
+  for (const mc of mcs ? childrenNamed(mcs, 'm:mc') : []) {
+    const count = Number(prop(mc, 'm:mcPr', 'm:count') ?? '1')
+    const letter = COLUMN_ALIGN[prop(mc, 'm:mcPr', 'm:mcJc') ?? ''] ?? 'c'
+    // A count beyond the widest row describes nothing (and is never looped over).
+    const n = Math.min(Number.isFinite(count) ? count : 1, width - cols.length)
+    for (let i = 0; i < n; i++) cols.push(letter)
+  }
+  while (cols.length < width) cols.push('c')
+  return cols.some((c) => c !== 'c') ? cols.join('') : undefined
+}
+
+/** Columns aligned more than one way. */
+const mixed = (spec: string | undefined): boolean => spec !== undefined && !/^(.)\1*$/.test(spec)
+
+/**
+ * A matrix as TeX: `matrix` (or the delimiter's `pmatrix`…) with its columns
+ * centered; mathtools' starred form when every column is aligned the same
+ * other way; an `array` with a column spec when they differ.
+ */
+function matrix(el: Element, ctx: Ctx, env = 'matrix'): string {
+  const rows = matrixRows(el, ctx)
+  const spec = columnSpec(el)
+  if (spec === undefined) return `\\begin{${env}}${rows}\\end{${env}}`
+  if (!mixed(spec)) return `\\begin{${env}*}[${spec[0]}]${rows}\\end{${env}*}`
+  return `\\begin{array}{${spec}}${rows}\\end{array}`
 }
 
 function matrixRows(el: Element, ctx: Ctx): string {
@@ -663,20 +829,36 @@ function groupChr(el: Element, ctx: Ctx): string {
   }
 }
 
+/** A border box's sides and strikes, as MathML `menclose` notations. */
+const BOX_SIDES: Array<[string, string]> = [
+  ['m:hideTop', 'top'], ['m:hideBot', 'bottom'], ['m:hideLeft', 'left'], ['m:hideRight', 'right'],
+]
+const BOX_STRIKES: Array<[string, string]> = [
+  ['m:strikeH', 'horizontalstrike'], ['m:strikeV', 'verticalstrike'],
+  ['m:strikeBLTR', 'updiagonalstrike'], ['m:strikeTLBR', 'downdiagonalstrike'],
+]
+
+/**
+ * A border box: `\boxed` when whole, nothing when every side is hidden.
+ * Diagonal strikes alone (how Word draws a struck-out term) are the cancel
+ * package's; anything else, some sides hidden or a horizontal or vertical
+ * strike, is MathJax's `\enclose` with exactly the sides and strikes shown.
+ */
 function borderBox(el: Element, ctx: Ctx): string {
   const body = arg(el, 'm:e', ctx)
   const on = (name: string): boolean => flag(el, 'm:borderBoxPr', name)
-  const up = on('m:strikeBLTR')
-  const down = on('m:strikeTLBR')
-  const hidden = on('m:hideTop') && on('m:hideBot') && on('m:hideLeft') && on('m:hideRight')
-  // A box with every side hidden is how Word draws a struck-out term alone.
-  if (hidden) {
-    if (up && down) return `\\xcancel{${body}}`
-    if (up) return `\\cancel{${body}}`
-    if (down) return `\\bcancel{${body}}`
-    return body
+  const sides = BOX_SIDES.filter(([hide]) => !on(hide)).map(([, side]) => side)
+  const strikes = BOX_STRIKES.filter(([strike]) => on(strike)).map(([, notation]) => notation)
+  if (strikes.length === 0) {
+    if (sides.length === 4) return `\\boxed{${body}}`
+    if (sides.length === 0) return body
   }
-  return `\\boxed{${body}}`
+  if (sides.length === 0 && strikes.every((s) => s.endsWith('diagonalstrike'))) {
+    if (strikes.length === 2) return `\\xcancel{${body}}`
+    return `${strikes[0] === 'updiagonalstrike' ? '\\cancel' : '\\bcancel'}{${body}}`
+  }
+  const notation = [...(sides.length === 4 ? ['box'] : sides), ...strikes]
+  return `\\enclose{${notation.join(' ')}}{${body}}`
 }
 
 function phantom(el: Element, ctx: Ctx): string {

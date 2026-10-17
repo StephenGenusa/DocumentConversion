@@ -681,11 +681,15 @@ export const OMML_NOTES = {
   endnote: 'The monthly total is',
   unknownLead: 'One equation holds an element no version of Word writes; its characters come through as they are:',
   closing: 'Treasurers check every equation against the printed report.',
+  broken: 'A long total broken over three lines, and one broken at its equals sign:',
+  columns: 'A grid with its first column on the left and its second on the right, and one with every column on the right:',
+  sides: 'A term boxed on its left and right only, one underlined by a box, one struck through, and a value in double brackets:',
+  otherPrefix: 'An equation written with another prefix for its namespace:',
   texWords:
     'mathbb mathcal mathfrak mathrm mathbf mathsf boldsymbol text frac genfrac sqrt sum prod bigcup int iint oint ' +
     'limits nolimits left right middle langle rangle begin end matrix pmatrix bmatrix vmatrix aligned gathered cases ' +
     'sin log operatorname sgn lim rightarrow infty max underset overset hat tilde dot ddot vec bar overline underline ' +
     'widehat overrightarrow underbrace overbrace boxed cancel phantom alpha beta gamma delta varepsilon theta lambda ' +
     'sigma omega Delta Sigma Omega forall exists le ge ne approx pm times cdot Rightarrow in subseteq cup cap partial ' +
-    'nabla backslash def cos cdots quad bbb c-b x-a',
+    'nabla backslash def cos cdots quad bbb c-b x-a multlined array enclose top bottom horizontalstrike lr rr',
 }

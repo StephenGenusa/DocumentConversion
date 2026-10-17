@@ -9,6 +9,8 @@
  * two equations, inline equations in running text, an equation alone in its
  * paragraph, an equation in a footnote and in an endnote, and one element no
  * Word version writes (it comes through as its characters, with a notice).
+ * Then manual line breaks, matrix column alignment, partly hidden border
+ * boxes, double brackets, and an equation under another namespace prefix.
  *
  * The OMML is written the way Word 365 writes it (m:rPr before w:rPr in each
  * run, properties in m:*Pr, m:ctrlPr omitted). Every word comes from
@@ -46,7 +48,11 @@ const sqrt = (x) => `<m:rad>${pr('radPr', val('degHide', '1'))}<m:deg/>${e(x)}</
 const root = (d, x) => `<m:rad><m:deg>${d}</m:deg>${e(x)}</m:rad>`
 const nary = (props, s, p, body) => `<m:nary>${pr('naryPr', ...props)}<m:sub>${s}</m:sub><m:sup>${p}</m:sup>${e(body)}</m:nary>`
 const d = (props, ...args) => `<m:d>${pr('dPr', ...props)}${args.map((a) => e(a)).join('')}</m:d>`
-const matrix = (rows) => `<m:m>${rows.map((row) => `<m:mr>${row.map((c) => e(c)).join('')}</m:mr>`).join('')}</m:m>`
+const matrix = (rows, cols = []) =>
+  `<m:m>${cols.length ? `<m:mPr><m:mcs>${cols.map(([count, jc]) => `<m:mc>${pr('mcPr', val('count', count), val('mcJc', jc))}</m:mc>`).join('')}</m:mcs></m:mPr>` : ''}${rows.map((row) => `<m:mr>${row.map((c) => e(c)).join('')}</m:mr>`).join('')}</m:m>`
+/** A run that starts a new line of a display equation (m:brk), lined up on operator `at` when given. */
+const brk = (t, at) => r(t, at ? `<m:brk m:alnAt="${at}"/>` : '<m:brk/>')
+const box = (hide, x) => `<m:borderBox>${pr('borderBoxPr', ...hide.map((h) => val(h, '1')))}${e(x)}</m:borderBox>`
 const eqArr = (...rows) => `<m:eqArr>${rows.map((x) => e(x)).join('')}</m:eqArr>`
 const func = (name, arg) => `<m:func><m:fName>${name}</m:fName>${e(arg)}</m:func>`
 const limLow = (b, l) => `<m:limLow>${e(b)}<m:lim>${l}</m:lim></m:limLow>`
@@ -200,6 +206,31 @@ const body = [
   // An element no Word version writes.
   lead(N.unknownLead),
   display(r('S='), '<m:futureScript><m:e>' + r('a') + r('+') + r('b') + '</m:e></m:futureScript>'),
+
+  // m:brk: manual line breaks, unaligned and lined up on the equals sign.
+  lead(N.broken),
+  display(r('T=') + sub(r('f'), r('1')) + r('+') + sub(r('f'), r('2')), brk('+'), sub(r('f'), r('3')) + r('+') + sub(r('f'), r('4')), brk('+'), sub(r('f'), r('5'))),
+  display(r('S=') + frac(r('a'), r('2')), brk('+b', 1), brk('+c', 1)),
+
+  // m:mcJc: column alignment, mixed and all one way.
+  lead(N.columns),
+  display(
+    d([val('begChr', '['), val('endChr', ']')], matrix([[r('1'), r('120')], [r('15'), r('8')]], [['1', 'left'], ['1', 'right']])), comma,
+    d([], matrix([[r('7'), r('30')], [r('120'), r('4')]], [['2', 'right']])),
+  ),
+
+  // borderBox with some sides hidden and a horizontal strike; ⟦⟧.
+  lead(N.sides),
+  display(
+    box(['hideTop', 'hideBot'], r('a+b')), comma,
+    box(['hideTop', 'hideLeft', 'hideRight'], r('c')), comma,
+    box(['hideTop', 'hideBot', 'hideLeft', 'hideRight', 'strikeH'], r('d')), comma,
+    d([val('begChr', '⟦'), val('endChr', '⟧')], r('x+1')),
+  ),
+
+  // The math namespace bound to another prefix (declared on the equation).
+  lead(N.otherPrefix),
+  `<w:p><q:oMathPara xmlns:q="http://schemas.openxmlformats.org/officeDocument/2006/math"><q:oMath><q:sSup><q:e><q:r><q:t>r</q:t></q:r></q:e><q:sup><q:r><q:t>2</q:t></q:r></q:sup></q:sSup><q:r><q:t>=4</q:t></q:r></q:oMath></q:oMathPara></w:p>`,
 
   lead(N.closing),
 ].join('')

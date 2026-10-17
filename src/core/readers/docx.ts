@@ -10,7 +10,7 @@ import {
   type ImageLedger,
 } from '../inline-images'
 import type { HubDocument, ReadContext, SourceInput } from '../types'
-import { ommlLinearText, ommlToTex } from '../omml-tex'
+import { MATH_NAMESPACES, ommlLinearText, ommlToTex } from '../omml-tex'
 import { codeBookmarkLanguage } from '../code-bookmark'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode, type ParentNode } from 'domhandler'
@@ -699,7 +699,7 @@ function asCodeParagraph(
 ): { text: string; byStyle: boolean } | undefined {
   const pPr = /^<w:p\b[^>]*>\s*(<w:pPr\b[\s\S]*?<\/w:pPr>)/.exec(paragraph)?.[1] ?? ''
   if (/<w:numPr\b|<w:outlineLvl\b/.test(pPr)) return undefined
-  if (/<w:(?:drawing|pict|object|txbxContent)\b|<m:oMath/.test(paragraph)) return undefined
+  if (/<w:(?:drawing|pict|object|txbxContent)\b|<(?:[\w-]+:)?oMath/.test(paragraph)) return undefined
   const pStyle = /<w:pStyle\b[^>]*\bw:val="([^"]*)"/.exec(pPr)?.[1]
   if (pStyle && /^heading|^title$/i.test(pStyle)) return undefined
   const text = codeParagraphText(paragraph)
@@ -877,8 +877,8 @@ function itemCodeParagraph(paragraph: string, styles: Map<string, WordStyle>, ma
   // other piece shows text and is all monospace.
   const pieces: { xml: string; isBreak: boolean; shown: boolean; mono: boolean }[] = []
   const piece = (x: string): void => {
-    const shown = codeParagraphText(x).trim() !== '' || /<w:(?:drawing|pict|object)\b|<m:oMath/.test(x)
-    const mono = !/<w:(?:drawing|pict|object)\b|<m:oMath/.test(x) && scanElements(x, ['w:r']).every((r) => codeParagraphText(r.inner).trim() === '' || monospaceRun(r.xml))
+    const shown = codeParagraphText(x).trim() !== '' || /<w:(?:drawing|pict|object)\b|<(?:[\w-]+:)?oMath/.test(x)
+    const mono = !/<w:(?:drawing|pict|object)\b|<(?:[\w-]+:)?oMath/.test(x) && scanElements(x, ['w:r']).every((r) => codeParagraphText(r.inner).trim() === '' || monospaceRun(r.xml))
     pieces.push({ xml: x, isBreak: false, shown, mono })
   }
   let from = 0
@@ -1116,6 +1116,33 @@ export interface WordEquation {
 /** The parts mammoth reads that can hold equations. */
 const MATH_PARTS = ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']
 
+/** Whether a part may hold an equation, under any prefix: a quick test before the real scan. */
+const mayHoldMath = (xml: string): boolean => /<(?:[\w-]+:)?oMath[\s/>P]/.test(xml)
+
+/**
+ * The namespaces a part declares, by prefix ('' for the default namespace):
+ * those on its root, which an equation cut out of it does not carry, then
+ * every other prefix bound to the math namespace anywhere in it. Equations
+ * are found by that namespace, whatever its prefix; a part that declares it
+ * nowhere (no valid file, but some writers) is read under `m:`, as Word writes it.
+ */
+function partNamespaces(xml: string): { namespaces: Record<string, string>; math: string[] } {
+  const declared = (tag: string): Array<[string, string]> =>
+    [...tag.matchAll(/\sxmlns(?::([A-Za-z_][\w-]*))?\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map((m) => [m[1] ?? '', m[2] ?? m[3] ?? ''])
+  const root = /<(?![?!])[^>]*>/.exec(xml)?.[0] ?? ''
+  const namespaces: Record<string, string> = Object.fromEntries(declared(root))
+  const math = new Set<string>()
+  const other = new Set<string>()
+  for (const [prefix, uri] of declared(xml)) {
+    if (MATH_NAMESPACES.has(uri)) {
+      math.add(prefix)
+      namespaces[prefix] ??= uri
+    } else other.add(prefix)
+  }
+  if (math.size === 0 && !other.has('m')) math.add('m')
+  return { namespaces, math: [...math] }
+}
+
 /** A marker prefix the text of none of the parts contains. */
 export function equationMarker(xmls: string[]): string {
   return uniqueMarker(xmls, 'eq')
@@ -1137,25 +1164,27 @@ function uniqueMarker(xmls: string[], base: string): string {
  * run, appending each equation's TeX to `equations` in document order.
  */
 export function takeEquations(xml: string, marker: string, equations: WordEquation[]): string {
-  if (!xml.includes('<m:oMath')) return xml
-  const found = scanElements(xml, ['m:oMathPara', 'm:oMath'])
+  if (!mayHoldMath(xml)) return xml
+  const { namespaces, math } = partNamespaces(xml)
+  const names = math.flatMap((p) => (p ? [`${p}:oMathPara`, `${p}:oMath`] : ['oMathPara', 'oMath']))
+  if (names.length === 0) return xml
+  const found = scanElements(xml, names)
   if (found.length === 0) return xml
   let out = ''
   let cursor = 0
   for (const el of found) {
     const at = xml.indexOf(el.xml, cursor)
     if (at < 0) continue
-    const display = el.name === 'm:oMathPara'
-    // Parsed as a fragment: the reader matches prefixed names, so the
-    // namespace declarations on the part's root are not needed.
+    const display = el.name.endsWith('oMathPara')
+    // Parsed as a fragment, with the part's declarations passed along.
     const fragment = el.xml
     let eq: WordEquation
     try {
-      const { tex, unknown } = ommlToTex(fragment, { display })
+      const { tex, unknown } = ommlToTex(fragment, { display, namespaces })
       eq = { tex, display, partial: unknown.length > 0 }
     } catch {
       // Never dropped: at worst, the equation's own characters.
-      eq = { tex: safeLinear(fragment), display, partial: true }
+      eq = { tex: safeLinear(fragment, namespaces), display, partial: true }
     }
     out += xml.slice(cursor, at) + `<w:r><w:t>${marker}${equations.length}\ue001</w:t></w:r>`
     equations.push(eq)
@@ -1164,9 +1193,9 @@ export function takeEquations(xml: string, marker: string, equations: WordEquati
   return out + xml.slice(cursor)
 }
 
-function safeLinear(fragment: string): string {
+function safeLinear(fragment: string, namespaces: Record<string, string>): string {
   try {
-    return ommlLinearText(fragment).replace(/[\\{}%#&_$^~]/g, (c) => (c === '\\' ? '\\backslash ' : c === '^' ? '\\hat{}' : c === '~' ? '\\sim ' : `\\${c}`))
+    return ommlLinearText(fragment, namespaces).replace(/[\\{}%#&_$^~]/g, (c) => (c === '\\' ? '\\backslash ' : c === '^' ? '\\hat{}' : c === '~' ? '\\sim ' : `\\${c}`))
   } catch {
     return ''
   }
@@ -1182,7 +1211,7 @@ export async function docxHasEquations(bytes: Buffer): Promise<boolean | undefin
   try {
     const zip = await JSZip.loadAsync(bytes)
     for (const name of MATH_PARTS) {
-      if (zip.files[name] && (await zip.files[name].async('string')).includes('<m:oMath')) return true
+      if (zip.files[name] && mayHoldMath(await zip.files[name].async('string'))) return true
     }
     return zip.files['word/document.xml'] ? false : undefined
   } catch {
@@ -1198,7 +1227,7 @@ async function extractEquations(
     const zip = await JSZip.loadAsync(bytes)
     const parts = MATH_PARTS.filter((name) => zip.files[name])
     const xmls = await Promise.all(parts.map((name) => zip.files[name].async('string')))
-    if (!xmls.some((x) => x.includes('<m:oMath'))) return undefined
+    if (!xmls.some(mayHoldMath)) return undefined
     const marker = equationMarker(xmls)
     const equations: WordEquation[] = []
     parts.forEach((name, i) => zip.file(name, takeEquations(xmls[i], marker, equations)))

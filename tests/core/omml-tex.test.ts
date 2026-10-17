@@ -279,6 +279,109 @@ describe('omml-tex: box, borderBox, phant', () => {
   })
 })
 
+describe('omml-tex: line breaks (m:brk)', () => {
+  const brk = (t: string, at?: number): string => r(t, at === undefined ? '<m:brk/>' : `<m:brk m:alnAt="${at}"/>`)
+  it('display: each break starts a new line, the lines set as multlined', () => {
+    expect(tex(r('a=b+c') + brk('+d') + brk('+e'), true)).toBe('\\begin{multlined}a=b+c\\\\{}+d\\\\{}+e\\end{multlined}')
+  })
+  it('display with m:alnAt: the lines line up on that operator of the first line', () => {
+    expect(tex(r('a+b=c') + brk('+d', 2), true)).toBe('\\begin{aligned}a+b&=c\\\\&{}+d\\end{aligned}')
+    expect(tex(r('y=') + `<m:f><m:num>${r('1')}</m:num><m:den>${r('2')}</m:den></m:f>` + brk('−x', 1), true)).toBe('\\begin{aligned}y&=\\frac{1}{2}\\\\&{}-x\\end{aligned}')
+  })
+  it('an operator alnAt does not find: multlined after all', () => {
+    expect(tex(r('ab') + brk('+c', 1), true)).toBe('\\begin{multlined}ab\\\\{}+c\\end{multlined}')
+  })
+  it('inline, Word does not break: one line', () => {
+    expect(tex(r('a=b') + brk('+c'))).toBe('a=b+c')
+  })
+  it('a break inside a structure is not a line break', () => {
+    expect(tex(`<m:f><m:num>${r('a')}${brk('+b')}</m:num><m:den>${r('2')}</m:den></m:f>`, true)).toBe('\\frac{a+b}{2}')
+  })
+  it('a math paragraph of a broken equation and another: gathered round both', () => {
+    const out = ommlToTex(`<m:oMathPara ${M} ${W}><m:oMath>${r('a=b')}${brk('+c')}</m:oMath><m:oMath>${r('d=e')}</m:oMath></m:oMathPara>`, { display: true }).tex
+    expect(out).toBe('\\begin{gathered}\\begin{multlined}a=b\\\\{}+c\\end{multlined}\\\\d=e\\end{gathered}')
+  })
+})
+
+describe('omml-tex: matrix column alignment (m:mcJc)', () => {
+  const mc = (count: number, jc?: string): string =>
+    `<m:mc><m:mcPr><m:count m:val="${count}"/>${jc ? `<m:mcJc m:val="${jc}"/>` : ''}</m:mcPr></m:mc>`
+  const m = (...cols: string[]): string =>
+    `<m:m><m:mPr><m:mcs>${cols.join('')}</m:mcs></m:mPr><m:mr>${e(r('1'))}${e(r('22'))}</m:mr><m:mr>${e(r('333'))}${e(r('4'))}</m:mr></m:m>`
+  it('every column centered (the default): matrix', () => {
+    expect(tex(m(mc(2)))).toBe('\\begin{matrix}1&22\\\\333&4\\end{matrix}')
+    expect(tex(m(mc(2, 'center')))).toBe('\\begin{matrix}1&22\\\\333&4\\end{matrix}')
+  })
+  it('every column aligned one way: matrix* with that alignment', () => {
+    expect(tex(m(mc(2, 'right')))).toBe('\\begin{matrix*}[r]1&22\\\\333&4\\end{matrix*}')
+    expect(tex(`<m:d>${e(m(mc(2, 'left')))}</m:d>`)).toBe('\\begin{pmatrix*}[l]1&22\\\\333&4\\end{pmatrix*}')
+  })
+  it('columns aligned differently: an array with a column spec, inside its delimiters', () => {
+    expect(tex(m(mc(1, 'left'), mc(1, 'right')))).toBe('\\begin{array}{lr}1&22\\\\333&4\\end{array}')
+    expect(tex(`<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val="]"/></m:dPr>${e(m(mc(1, 'left'), mc(1)))}</m:d>`)).toBe(
+      '\\left[\\begin{array}{lc}1&22\\\\333&4\\end{array}\\right]',
+    )
+  })
+  it('more cells than the columns described: the rest centered', () => {
+    expect(tex(m(mc(1, 'left')))).toBe('\\begin{array}{lc}1&22\\\\333&4\\end{array}')
+  })
+})
+
+describe('omml-tex: double brackets (⟦⟧)', () => {
+  const d = (beg: string, end: string, ...args: string[]): string =>
+    `<m:d><m:dPr><m:begChr m:val="${beg}"/><m:endChr m:val="${end}"/></m:dPr>${args.map((a) => e(a)).join('')}</m:d>`
+  it('two brackets drawn close together, growing with the content', () => {
+    expect(tex(d('⟦', '⟧', r('x')))).toBe('\\left[\\!\\left[x\\right]\\!\\right]')
+  })
+  it('one side double: the other side single, still balanced', () => {
+    expect(tex(d('⟦', ')', r('x')))).toBe('\\left[\\!\\left[x\\right.\\right)')
+    expect(tex(d('', '⟧', r('x')))).toBe('\\left.\\left.x\\right]\\!\\right]')
+  })
+})
+
+describe('omml-tex: borderBox sides and strikes', () => {
+  const box = (...props: string[]): string => `<m:borderBox><m:borderBoxPr>${props.map((p) => `<m:${p}/>`).join('')}</m:borderBoxPr>${e(r('x'))}</m:borderBox>`
+  it('hidden sides: only the sides shown are drawn', () => {
+    expect(tex(box('hideTop', 'hideBot'))).toBe('\\enclose{left right}{x}')
+    expect(tex(box('hideLeft', 'hideRight', 'hideTop'))).toBe('\\enclose{bottom}{x}')
+    expect(tex(box('hideBot'))).toBe('\\enclose{top left right}{x}')
+  })
+  it('strikes on a box, and horizontal and vertical strikes', () => {
+    expect(tex(box('strikeBLTR'))).toBe('\\enclose{box updiagonalstrike}{x}')
+    expect(tex(box('hideTop', 'hideBot', 'hideLeft', 'hideRight', 'strikeH'))).toBe('\\enclose{horizontalstrike}{x}')
+    expect(tex(box('hideTop', 'hideBot', 'hideLeft', 'hideRight', 'strikeV', 'strikeTLBR'))).toBe('\\enclose{verticalstrike downdiagonalstrike}{x}')
+  })
+  it('diagonal strikes alone stay cancels; both diagonals an \\xcancel', () => {
+    expect(tex(box('hideTop', 'hideBot', 'hideLeft', 'hideRight', 'strikeBLTR', 'strikeTLBR'))).toBe('\\xcancel{x}')
+    expect(tex(box('hideTop', 'hideBot', 'hideLeft', 'hideRight', 'strikeTLBR'))).toBe('\\bcancel{x}')
+  })
+})
+
+describe('omml-tex: namespaces', () => {
+  const MML = 'xmlns:mml="http://schemas.openxmlformats.org/officeDocument/2006/math"'
+  it('the math namespace under another prefix', () => {
+    const xml = `<mml:oMath ${MML} ${W}><mml:sSup><mml:e><mml:r><mml:t>x</mml:t></mml:r></mml:e><mml:sup><mml:r><mml:rPr><mml:sty mml:val="p"/></mml:rPr><mml:t>T</mml:t></mml:r></mml:sup></mml:sSup></mml:oMath>`
+    expect(ommlToTex(xml)).toEqual({ tex: 'x^{\\mathrm{T}}', unknown: [] })
+    expect(ommlLinearText(xml)).toBe('xT')
+  })
+  it('as the default namespace', () => {
+    const xml = `<oMath xmlns="http://schemas.openxmlformats.org/officeDocument/2006/math"><f><num><r><t>1</t></r></num><den><r><t>2</t></r></den></f></oMath>`
+    expect(ommlToTex(xml).tex).toBe('\\frac{1}{2}')
+  })
+  it('declared on the part’s root, outside the fragment', () => {
+    const xml = `<q:oMath><q:r><q:t>a</q:t></q:r></q:oMath>`
+    expect(ommlToTex(xml, { namespaces: { q: 'http://schemas.openxmlformats.org/officeDocument/2006/math' } }).tex).toBe('a')
+  })
+  it('the m: prefix bound to something else is not math', () => {
+    const xml = `<x:oMath xmlns:x="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:m="urn:other"><x:r><x:t>a</x:t></x:r><m:f><m:num><x:r><x:t>b</x:t></x:r></m:num></m:f></x:oMath>`
+    expect(ommlToTex(xml).unknown).toHaveLength(1)
+  })
+  it('strict Office Open XML’s math namespace', () => {
+    const xml = `<s:oMath xmlns:s="http://purl.oclc.org/ooxml/officeDocument/math"><s:r><s:t>z</s:t></s:r></s:oMath>`
+    expect(ommlToTex(xml).tex).toBe('z')
+  })
+})
+
 describe('omml-tex: math paragraphs and unknown elements', () => {
   it('an m:oMathPara of one equation is that equation; of two, gathered lines', () => {
     const para = (n: number): string =>

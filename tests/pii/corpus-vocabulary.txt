@@ -63,6 +63,7 @@ area
 areas
 arithmetic
 around
+array
 arrive
 arrived
 arrows
@@ -134,6 +135,7 @@ brandt
 breaks
 brightest
 broadband
+broken
 browse
 buckram
 budgeting
@@ -309,6 +311,7 @@ does
 doesn
 doesn't
 dot
+double
 down
 draw
 drawing
@@ -339,6 +342,7 @@ emphasised
 employee
 employment
 en
+enclose
 end
 endnote
 ends
@@ -450,6 +454,7 @@ graphviz
 gratuities
 greek
 grew
+grid
 grids
 grievance
 group
@@ -487,6 +492,7 @@ holiday
 home
 honestly
 hope
+horizontalstrike
 horseplay
 hours
 household
@@ -670,11 +676,13 @@ moves
 mquill
 much
 multiplier
+multlined
 must
 my
 nabla
 name
 named
+namespace
 narrow
 nashcombe
 navigate
@@ -820,6 +828,7 @@ practical
 practices
 pre-creased
 predictable
+prefix
 pressing
 prevention
 price
@@ -949,6 +958,7 @@ routine
 row
 rows
 royal
+rr
 rules
 run
 safety

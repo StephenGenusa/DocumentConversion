@@ -121,6 +121,26 @@ describe('equation markers', () => {
   })
 })
 
+describe('Word equations under another prefix', () => {
+  const NS = 'http://schemas.openxmlformats.org/officeDocument/2006/math'
+  const q = (t: string): string => `<mml:r><mml:t>${t}</mml:t></mml:r>`
+  it('found by the namespace declared on the part’s root, not by the prefix', () => {
+    const equations: WordEquation[] = []
+    const part = `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mml="${NS}"><w:body><w:p><mml:oMathPara><mml:oMath><mml:sSup><mml:e>${q('x')}</mml:e><mml:sup>${q('2')}</mml:sup></mml:sSup></mml:oMath></mml:oMathPara></w:p><w:p><mml:oMath>${q('y')}</mml:oMath></w:p></w:body></w:document>`
+    const xml = takeEquations(part, 'eq', equations)
+    expect(xml).not.toContain('mml:oMath')
+    expect(equations).toEqual([
+      { tex: 'x^{2}', display: true, partial: false },
+      { tex: 'y', display: false, partial: false },
+    ])
+  })
+  it('declared on the equation itself, through a whole read', async () => {
+    const { html, notes } = await read({ body: `<w:p>${t('So ')}<mml:oMath xmlns:mml="${NS}">${q('z')}</mml:oMath>${t('.')}</w:p>` })
+    expect(html).toBe(`<p>So ${inline('z')}.</p>`)
+    expect(notes).toEqual([])
+  })
+})
+
 describe('Word equations through a conversion', () => {
   const doc = (): Promise<Buffer> =>
     buildDocx({ body: `<w:p>${t('Inline ')}${xSquared}${t(' end.')}</w:p><w:p>${mathPara(`<m:oMath><m:f><m:num>${r('a')}</m:num><m:den>${r('b')}</m:den></m:f></m:oMath>`)}</w:p>` })
