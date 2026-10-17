@@ -5,6 +5,12 @@ const SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://ww
 const wrap = (inner: string): string => `${SVG_OPEN}${inner}</svg>`
 const clean = (inner: string): string => sanitizeSvg(wrap(inner)) ?? 'NOT SVG'
 
+/** The opening bytes of each picture type: enough for the sniff, which is all the sanitiser reads. */
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0])
+const GIF = Buffer.from('GIF89a\x01\0\x01\0\x80\0\0', 'latin1')
+const WEBP = Buffer.from('RIFF\x1a\0\0\0WEBPVP8L', 'latin1')
+
 describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
   it('keeps an ordinary drawing as it is', () => {
     const out = clean('<defs><marker id="m"><path d="M0 0L1 1"/></marker></defs><g class="node"><rect width="4" height="4" style="fill:#eee"/><text x="1" y="2">Start &amp; end</text><path d="M0 0" marker-end="url(#m)"/><use href="#m"/></g><style>.node rect{fill:url(#g);font-family:Arial}</style>')
@@ -164,10 +170,49 @@ describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
     // Deeper than that: the innermost picture is dropped, the rest kept.
     for (let i = 0; i < 4; i++) src = svgUri(level(src))
     expect(clean(`<image href="${src}"/>`)).toContain('<image href="data:image/svg+xml;base64,')
-    // Not an SVG, a remote SVG, or a raster: dropped, as before.
-    for (const href of [svgUri('<html><body>x</body></html>'), 'http://evil.invalid/a.svg', 'data:image/png;base64,iVBORw0KGgo=']) {
+    // Not an SVG, a remote SVG, or a raster that is not what it claims: dropped, as before.
+    for (const href of [svgUri('<html><body>x</body></html>'), 'http://evil.invalid/a.svg', `data:image/png;base64,${JPEG.toString('base64')}`]) {
       expect(clean(`<image href="${href}"/><rect width="1"/>`), href).not.toContain('<image')
     }
+  })
+
+  it('keeps a PNG, JPEG, GIF or WebP picture placed in an SVG as a data URI, written as base64 of its own type', () => {
+    for (const [claimed, bytes, mime] of [
+      ['png', PNG, 'image/png'],
+      ['jpeg', JPEG, 'image/jpeg'],
+      ['jpg', JPEG, 'image/jpeg'],
+      ['JPEG', JPEG, 'image/jpeg'],
+      ['gif', GIF, 'image/gif'],
+      ['webp', WEBP, 'image/webp'],
+    ] as const) {
+      const b64 = bytes.toString('base64')
+      for (const [attr, src] of [
+        ['href', `data:image/${claimed};base64,${b64}`],
+        ['xlink:href', `data:image/${claimed};name=a.bin;base64,${b64}`],
+        ['href', `data:image/${claimed},${[...bytes].map((b) => `%${b.toString(16).padStart(2, '0')}`).join('')}`],
+      ]) {
+        const out = clean(`<image x="1" y="1" width="4" height="4" onload="alert(1)" ${attr}="${src}"><script>alert(2)</script></image>`)
+        expect(out, `${claimed} ${src.slice(0, 30)}`).toContain(`<image x="1" y="1" width="4" height="4" ${attr}="data:${mime};base64,${b64}" />`)
+        expect(out).not.toContain('alert')
+      }
+    }
+  })
+
+  it('drops a picture in an SVG whose bytes are not the type it claims, or not a picture it keeps', () => {
+    for (const href of [
+      `data:image/png;base64,${JPEG.toString('base64')}`,
+      `data:image/gif;base64,${PNG.toString('base64')}`,
+      `data:image/webp;base64,${Buffer.from('RIFF\0\0\0\0WAVEfmt ').toString('base64')}`,
+      `data:image/jpeg;base64,${Buffer.from('<html><script>alert(1)</script></html>').toString('base64')}`,
+      `data:image/bmp;base64,${Buffer.from('BM\0\0\0\0\0\0').toString('base64')}`,
+      `data:text/html;base64,${PNG.toString('base64')}`,
+      'data:image/png;base64,',
+    ]) {
+      expect(clean(`<image href="${href}"/><rect width="1"/>`), href).not.toContain('<image')
+    }
+    // Two references could disagree on what is shown.
+    const png = `data:image/png;base64,${PNG.toString('base64')}`
+    expect(clean(`<image href="${png}" xlink:href="${png}"/>`)).not.toContain('<image')
   })
 
   it('refuses what is not an SVG', () => {

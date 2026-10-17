@@ -142,6 +142,31 @@ async function main() {
     const r = await host.render({ kind: 'svg', source: NESTED, display: true, format: 'png' })
     out.svgNested = r.png ? { left: pngPixel(r.png, 10, 20), right: pngPixel(r.png, 70, 20) } : { error: r.error }
   }
+  // PNG, JPEG, GIF and WebP pictures placed in an SVG image (data URIs): drawn, each in its own colour.
+  {
+    const { createCanvas } = require('@napi-rs/canvas')
+    const solid = (colour, format) => {
+      const c = createCanvas(4, 4)
+      const g = c.getContext('2d')
+      g.fillStyle = colour
+      g.fillRect(0, 0, 4, 4)
+      return c.encodeSync(format, 100)
+    }
+    // A 1x1 GIF whose one pixel is palette entry 0, blue.
+    const gif = Buffer.from('474946383961010001008000000000ff0000ff2c00000000010001000002024401003b', 'hex')
+    const pictures = [
+      ['png', solid('#ff0000', 'png')],
+      ['jpeg', solid('#00ff00', 'jpeg')],
+      ['gif', gif],
+      ['webp', solid('#ffff00', 'webp')],
+    ]
+    const RASTERS =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="20"><rect width="80" height="20" fill="#ffffff"/>' +
+      pictures.map(([type, bytes], i) => `<image x="${i * 20}" y="0" width="20" height="20" preserveAspectRatio="none" href="data:image/${type};base64,${bytes.toString('base64')}"/>`).join('') +
+      '</svg>'
+    const r = await host.render({ kind: 'svg', source: RASTERS, display: true, format: 'png' })
+    out.svgRasters = r.png ? pictures.map((_, i) => pngPixel(r.png, i * 40 + 20, 20)) : { error: r.error }
+  }
 
   // Pictures (kind `picture`, Kindle): decoded in the page, re-encoded to fit.
   {

@@ -15,6 +15,11 @@
  *                              (<image href="data:image/svg+xml;base64,…">),
  *                              one of them carrying a script: B6 keeps the
  *                              nested pictures and cleans them.
+ *   reading-room-photo-plan.svg
+ *                              the plan with four small pictures placed on it
+ *                              as data URIs, one of each type an SVG may hold:
+ *                              PNG, JPEG, GIF and WebP (one colour each, so a
+ *                              drawing shows at a glance which were kept).
  *   reading-room-page.html     a page showing the plan as an SVG <img> (a
  *                              base64 data URI) and a small marker as a
  *                              percent-encoded one: the shape that gave Word
@@ -33,6 +38,7 @@
 import { writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createCanvas } from '@napi-rs/canvas'
 import { READING_ROOM as R } from './vocabulary.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -114,6 +120,36 @@ const markedPlan = `<?xml version="1.0" encoding="UTF-8"?>\n${plan({
   ].join('\n'),
 })}\n`
 
+/** A 24 px square of one colour, encoded as `format` (png, jpeg, webp). */
+function swatch(colour, format) {
+  const c = createCanvas(24, 24)
+  const g = c.getContext('2d')
+  g.fillStyle = colour
+  g.fillRect(0, 0, 24, 24)
+  g.fillStyle = '#ffffff'
+  g.fillRect(8, 8, 8, 8)
+  return c.encodeSync(format, 90)
+}
+
+/** A 1x1 GIF of palette entry 0 (#2f8a5d), drawn 24 px across by the <image>. */
+const GIF = Buffer.from('474946383961010001008000002f8a5d0000002c00000000010001000002024401003b', 'hex')
+
+const photoPlan = `<?xml version="1.0" encoding="UTF-8"?>\n${plan({
+  root: '',
+  inside: [
+    `  <desc>${R.iconAlt}</desc>`,
+    ...[
+      ['png', swatch('#c0392b', 'png')],
+      ['jpeg', swatch('#2f5d8a', 'jpeg')],
+      ['gif', GIF],
+      ['webp', swatch('#8a5d2f', 'webp')],
+    ].map(
+      ([type, bytes], i) =>
+        `  <image x="${210 + i * 30}" y="120" width="24" height="24" preserveAspectRatio="none" href="data:image/${type};base64,${bytes.toString('base64')}"/>`,
+    ),
+  ].join('\n'),
+})}\n`
+
 const page = [
   '<!doctype html>',
   '<html lang="en">',
@@ -154,6 +190,7 @@ for (const [name, text] of [
   ['reading-room-hostile.svg', hostile],
   ['reading-room-page.html', page],
   ['reading-room-marked-plan.svg', markedPlan],
+  ['reading-room-photo-plan.svg', photoPlan],
   ['reading-room-seating.html', seating],
 ]) {
   writeFileSync(corpus(name), text)

@@ -222,6 +222,13 @@ async function main() {
         /<image\b[^>]*href="data:image\/svg\+xml/.test(Buffer.from(m[1], 'base64').toString('utf8')),
       ).length
     const hasNestedSvgImages = nestedIn(hubText) > 0
+    // PNG, JPEG, GIF and WebP pictures placed in an SVG image (<image href="data:image/png…">), which B6 keeps.
+    const rastersIn = (text) =>
+      [...text.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)].reduce(
+        (n, m) => n + (Buffer.from(m[1], 'base64').toString('utf8').match(/<image\b[^>]*href="data:image\/(?:png|jpeg|gif|webp);base64,/g) ?? []).length,
+        0,
+      )
+    const nestedRasters = rastersIn(hubText)
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
     const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp|tiff)[;,]/i.test(hubText)
     // TIFF pictures, which a Kindle book gets as JPEG or PNG (decoded in the render host).
@@ -377,6 +384,18 @@ async function main() {
           }
           if (found === 0) throw new Error(`${target} lost the SVG images nested in an SVG image`)
           rec.note = `${rec.note ? rec.note + ', ' : ''}nested SVG images kept`
+        }
+        if (nestedRasters > 0 && (target === 'html' || target === 'epub')) {
+          let found = 0
+          if (target === 'html') found = rastersIn(out.toString('utf8'))
+          else {
+            const zip = await JSZip.loadAsync(out)
+            for (const n of Object.keys(zip.files).filter((n) => n.endsWith('.svg'))) {
+              found += ((await zip.file(n).async('string')).match(/<image\b[^>]*href="data:image\/(?:png|jpeg|gif|webp);base64,/g) ?? []).length
+            }
+          }
+          if (found < nestedRasters) throw new Error(`${target} kept ${found} of the ${nestedRasters} pictures placed in an SVG image`)
+          rec.note = `${rec.note ? rec.note + ', ' : ''}${found} pictures in SVG kept`
         }
         const reader = readerFor(target)
         if (reader || azw3Html !== undefined) {

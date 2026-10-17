@@ -77,6 +77,7 @@ interface HarnessResult {
   svgHostile: { width?: number; height?: number; error?: string; magic?: string }
   svgNotOne: string | null
   svgNested: { left?: string; right?: string; error?: string }
+  svgRasters: string[] | { error?: string }
   pictureWebp: Picture
   pictureShrunk: Picture
   pictureAlpha: Picture
@@ -343,6 +344,17 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
   it('draws an SVG image nested in an SVG image, without the request its script would make', () => {
     expect(result.svgNested).toEqual({ left: '#0000ff', right: '#ff0000' })
     expect(result.requests.some((r) => r.url.includes('/nested'))).toBe(false)
+  })
+
+  it('draws PNG, JPEG, GIF and WebP pictures placed in an SVG image', () => {
+    expect(Array.isArray(result.svgRasters), JSON.stringify(result.svgRasters)).toBe(true)
+    const rgb = (hex: string): number[] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+    const near = (hex: string, want: string): boolean => rgb(hex).every((v, i) => Math.abs(v - rgb(want)[i]) <= 8)
+    const [png, jpeg, gif, webp] = result.svgRasters as string[]
+    expect(png).toBe('#ff0000')
+    expect(near(jpeg, '#00ff00'), jpeg).toBe(true)
+    expect(gif).toBe('#0000ff')
+    expect(near(webp, '#ffff00'), webp).toBe(true)
   })
 
   it('re-encodes a picture a Kindle cannot store: WebP to JPEG, PNG with transparency kept as PNG, each under its size', () => {
