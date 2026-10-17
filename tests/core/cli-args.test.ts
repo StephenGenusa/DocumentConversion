@@ -194,10 +194,11 @@ describe('--orientation', () => {
     }
   })
 
-  it('exits 2 for any output but pdf (the Kindle page is always Automatic); --landscape is still ignored there', () => {
+  it('exits 2 for any output but pdf and docx (the Kindle page is always Automatic); --landscape is still ignored there', () => {
     expect(checkFlagScope(['--orientation'], 'pdf', ['md'])).toBeNull()
-    for (const t of ['azw4', 'docx', 'html'] as const) {
-      expect(checkFlagScope(['--orientation'], t, ['md']), t).toMatch(/^--orientation applies only to pdf output/)
+    expect(checkFlagScope(['--orientation'], 'docx', ['md'])).toBeNull()
+    for (const t of ['azw4', 'html'] as const) {
+      expect(checkFlagScope(['--orientation'], t, ['md']), t).toMatch(/^--orientation applies only to pdf, docx output/)
       expect(checkFlagScope(['--landscape'], t, ['md']), t).toBeNull()
     }
   })

@@ -24,7 +24,7 @@ export interface CliRequest {
   split?: 'auto' | 'hr' | 'h1' | 'h2'
   /** Diagrams as SVG or PNG, for the outputs that take SVG (spec B4). */
   diagrams?: 'svg' | 'png'
-  /** The pdf page's orientation; Automatic when not given. `--landscape` is `landscape`. */
+  /** The pdf or docx page's orientation; Automatic when not given. `--landscape` is `landscape`. */
   orientation?: 'auto' | 'portrait' | 'landscape'
   headerFooter: boolean
   /** No PDF header and footer, even if the settings file has them on. */
@@ -64,8 +64,8 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--table N]           csv/json target: extract only table N
   [--scale X]           pdf zoom factor 0.1-2.0 (default 0.9)
   [--page <size>]       pdf page size (Letter, A4, Legal, A3, Tabloid)
-  [--orientation <auto|portrait|landscape>]  pdf page orientation: auto (default) turns the page for
-                        wide pictures and mostly-wide tables; portrait or landscape for every page
+  [--orientation <auto|portrait|landscape>]  pdf and docx page orientation: auto (default) turns the
+                        page for wide pictures and mostly-wide tables; portrait or landscape for every page
   [--landscape]         the same as --orientation landscape
   [--header-footer]     pdf header/footer with title, date, page numbers
   [--no-header-footer]  pdf without a header/footer, even if --settings turns it on
@@ -118,10 +118,11 @@ export const FLAG_SCOPES: FlagScope[] = [
   { flag: '--split', targets: ['revealjs'], strict: false },
   { flag: '--scale', targets: ['pdf'], strict: false },
   { flag: '--page', targets: ['pdf'], strict: false },
-  { flag: '--landscape', targets: ['pdf'], strict: false },
+  { flag: '--landscape', targets: ['pdf', 'docx'], strict: false },
   { flag: '--header-footer', targets: ['pdf'], strict: false },
   // Flags from 1.4 on are strict.
-  { flag: '--orientation', targets: ['pdf'], strict: true },
+  // Word's page turns as the PDF's does (writers/docx.ts wordPages).
+  { flag: '--orientation', targets: ['pdf', 'docx'], strict: true },
   { flag: '--json-as', inputs: ['json'], strict: true },
   { flag: '--no-timestamps', inputs: ['subtitles'], strict: true },
   { flag: '--sqlite-views', inputs: ['sqlite'], strict: true },

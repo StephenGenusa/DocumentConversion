@@ -11,7 +11,9 @@ import { ownRows } from '../table-grid'
 import { footnotesForOutput } from '../footnotes'
 import hljs, { highlightedRuns } from '../hljs'
 import { highlightMarkup } from '../code-markup'
-import type { ConvertOptions, HubDocument } from '../types'
+import type { ConvertOptions, HubDocument, PdfLandscape } from '../types'
+import { chooseOrientation } from '../orientation'
+import { picturePages } from '../lone-picture'
 import { DOCX_OWN_LINE } from '../draw-blocks'
 import { pictureType, wordTakes } from '../pictures'
 import { originalSize } from '../picture-headers'
@@ -799,6 +801,107 @@ function contentWidths(inner: string, textWidth: number): string {
 }
 
 /**
+ * Word's own page margins, in twips: 1 inch all round, the header and footer
+ * half an inch from the edge. html-to-docx's are 1.25 inches at the sides
+ * (1 at the top and bottom), which leaves 6 inches of text on a Letter page
+ * where Word's new document has 6.5; turned, they are 1.25 at the top and
+ * bottom. The PDF's are its own (1 cm: pdf-options.ts), set for reading on a
+ * screen; a Word file is a document to go on editing and printing, so it
+ * gets the page Word itself would start it on.
+ */
+export const WORD_MARGINS = { top: 1440, right: 1440, bottom: 1440, left: 1440, header: 720, footer: 720, gutter: 0 } as const
+
+/** The page html-to-docx writes, and Word's own in the US: Letter, portrait, in twips. */
+const LETTER_TWIPS = { width: 8.5 * 1440, height: 11 * 1440 } as const
+
+/** How a Word file's pages are turned: the document's orientation, and for pictures a page, each page's. */
+export interface WordPages {
+  /** The document's orientation (html-to-docx's section, the one every page has unless `pages` says otherwise). */
+  landscape: boolean
+  /** A document of pictures a page (a TIFF of several pages): each picture's page, landscape or not, in order. */
+  pages?: boolean[]
+}
+
+/**
+ * The PDF's Automatic orientation (orientation.ts), for Word: Portrait and
+ * Landscape exactly, Automatic from the document (a wide picture, a document
+ * mostly of wide tables), on Letter paper, Word's page. A document of
+ * several pictures, a picture a page as the PDF prints it, is given one
+ * section a picture (pictureSections), so each starts a page of its own,
+ * turned as its picture is.
+ */
+export function wordPages(html: string, landscape: PdfLandscape = 'auto'): WordPages {
+  const chosen = chooseOrientation(html, landscape, 'Letter')
+  const pictures = picturePages(html)
+  if (pictures && pictures.sizes.length > 1) {
+    return { landscape: chosen.landscape, pages: chosen.pages ?? pictures.sizes.map(() => chosen.landscape) }
+  }
+  return { landscape: chosen.landscape }
+}
+
+/** A section's properties (as the body's, `section`) with the page turned as asked. */
+function turnedSection(section: string, landscape: boolean): string {
+  const { width, height } = LETTER_TWIPS
+  const size = landscape ? `<w:pgSz w:w="${height}" w:h="${width}" w:orient="landscape"/>` : `<w:pgSz w:w="${width}" w:h="${height}" w:orient="portrait"/>`
+  return section.replace(/<w:pgSz\b[^>]*\/>/, size)
+}
+
+/**
+ * One section a picture, for a document of pictures a page: the paragraph
+ * that holds each picture but the last ends a section (its w:pPr holds that
+ * section's w:sectPr, page size and orientation), and the body's own
+ * section is the last picture's. A section starts a new page, so each
+ * picture is a page of its own. Left as it is when the pictures written
+ * are not the pictures counted.
+ */
+function pictureSections(xml: string, pages: boolean[] | undefined): string {
+  if (!pages) return xml
+  const body = /<w:sectPr\b(?:(?!<w:sectPr\b)[\s\S])*?<\/w:sectPr>(?=\s*<\/w:body>)/.exec(xml)
+  if (!body) return xml
+  const paragraphs = [...xml.slice(0, body.index).matchAll(/<w:p>(?:(?!<w:p>)[\s\S])*?<\/w:p>/g)].filter((m) => m[0].includes('<w:drawing>'))
+  if (paragraphs.length !== pages.length) return xml
+  let out = ''
+  let at = 0
+  paragraphs.slice(0, -1).forEach((m, i) => {
+    const section = turnedSection(body[0], pages[i])
+    const p = m[0].includes('</w:pPr>') ? m[0].replace('</w:pPr>', `${section}</w:pPr>`) : m[0].replace('<w:p>', `<w:p><w:pPr>${section}</w:pPr>`)
+    out += xml.slice(at, m.index) + p
+    at = m.index + m[0].length
+  })
+  out += xml.slice(at, body.index) + turnedSection(body[0], pages[pages.length - 1]) + xml.slice(body.index + body[0].length)
+  return out
+}
+
+/**
+ * Every picture made to fit the text area of its section's page, its shape
+ * kept. html-to-docx narrows a picture to the page's text width, but never
+ * a tall one to its height, and on a turned page the height is the short
+ * side: a picture taller than the page ran off its foot.
+ */
+function fitPictures(xml: string): string {
+  if (!xml.includes('<w:drawing>')) return xml
+  // Each section ends at a w:sectPr: in a paragraph's properties, or the body's.
+  return xml.replace(/((?:(?!<w:sectPr\b)[\s\S])*)(<w:sectPr\b(?:(?!<w:sectPr\b)[\s\S])*?<\/w:sectPr>)/g, (_whole, content: string, section: string) => {
+    if (!content.includes('<w:drawing>')) return content + section
+    const twips = (re: RegExp): number => Number(re.exec(section)?.[1] ?? NaN)
+    const width = (twips(/<w:pgSz\b[^>]*w:w="(\d+)"/) - twips(/<w:pgMar\b[^>]*w:left="(\d+)"/) - twips(/<w:pgMar\b[^>]*w:right="(\d+)"/) - (twips(/<w:pgMar\b[^>]*w:gutter="(\d+)"/) || 0)) * EMU_PER_TWIP
+    const height = (twips(/<w:pgSz\b[^>]*w:h="(\d+)"/) - twips(/<w:pgMar\b[^>]*w:top="(\d+)"/) - twips(/<w:pgMar\b[^>]*w:bottom="(\d+)"/)) * EMU_PER_TWIP
+    if (!(width > 0 && height > 0)) return content + section
+    const fitted = content.replace(/<w:drawing>[\s\S]*?<\/w:drawing>/g, (drawing) => {
+      const extent = /<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(drawing)
+      if (!extent) return drawing
+      const cx = Number(extent[1])
+      const cy = Number(extent[2])
+      const scale = Math.min(1, width / cx, height / cy)
+      if (!(scale < 1)) return drawing
+      const to = (n: number): number => Math.max(1, Math.floor(n * scale))
+      return drawing.replace(/(<wp:extent|<a:ext) cx="\d+" cy="\d+"\/>/g, (_m, tag: string) => `${tag} cx="${to(cx)}" cy="${to(cy)}"/>`)
+    })
+    return fitted + section
+  })
+}
+
+/**
  * html-to-docx's document template opens the body with its w:sectPr (page
  * size and margins), and the paragraphs follow it; the schema (CT_Body) has
  * the body's section properties last, after every paragraph and table.
@@ -825,6 +928,7 @@ async function recompress(
   languages: string[] = [],
   bordered: CellBorders[] = [],
   tables: { layouts: TableLayout[]; byContent: boolean } = { layouts: [], byContent: false },
+  pages: WordPages = { landscape: false },
 ): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
@@ -836,7 +940,7 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(sizeTables(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), tables.layouts, tables.byContent)), languages))
+    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(fitPictures(pictureSections(sizeTables(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), tables.layouts, tables.byContent), pages.pages))), languages))
     for (const name of ['word/styles.xml', 'word/numbering.xml']) {
       const part = zip.file(name)
       if (part) zip.file(name, schemaOrder(await part.async('string')))
@@ -1935,8 +2039,10 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
     },
     { target: 'docx' },
   )
-  const result = await HTMLtoDOCX(html)
+  // The page: Word's margins, turned as the PDF's would be (wordPages).
+  const pages = wordPages(doc.html, opts?.pdf?.landscape)
+  const result = await HTMLtoDOCX(html, null, { orientation: pages.landscape ? 'landscape' : 'portrait', margins: { ...WORD_MARGINS } })
   // Columns sized by content where the PDF sizes them so: decided on the hub's HTML, as there.
   const tables = { layouts: tableLayouts(html), byContent: doc.html.includes('<table') && autoTables(doc.html) }
-  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages, bordered, tables)
+  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages, bordered, tables, pages)
 }

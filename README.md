@@ -75,6 +75,9 @@ The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
   and *Landscape* print every page that way, exactly as before. On the
   command line it is `--orientation auto|portrait|landscape` (`auto` by
   default); `--landscape` still works and means `--orientation landscape`.
+  Word output has the same Orientation choice and rule: a fax of portrait and
+  landscape pages becomes a Word file with one section a page, each turned as
+  its picture is.
 - **Pictures an output can't hold are converted to the right kind.** A TIFF
   in a PDF or a WebP in a Kindle book becomes PNG when it is a screenshot,
   line art, a diagram, a scan or a GIF (few colors or large flat areas), so
@@ -279,7 +282,11 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
 
 - **txt** — plain text.
 - **md** — Markdown with GitHub-style pipe tables.
-- **docx** — a Word document.
+- **docx** — a Word document, on Word's own page: Letter with 1-inch margins.
+  Orientation is chosen as for pdf: Automatic unless you choose Portrait or
+  Landscape. A
+  document of pictures a page (a TIFF) gets a page, and a section, a picture,
+  each turned as its picture is. A picture larger than its page is made to fit.
 - **pdf** — rendered by Chromium. Zoom 50–200% (90% by default), page size
   (Letter, A4, Legal, A3, Tabloid), orientation, and an optional header and
   footer with the title, date and page numbers. A horizontal rule (`---` in
@@ -577,7 +584,8 @@ checkout, run `npm run cli -- <args>`.
   tables, otherwise portrait. `portrait` and `landscape` are every page.
   `--landscape` is the older spelling of `--orientation landscape`; the two
   together are a usage error (exit 2), and `--orientation` with any output
-  but pdf is too (a Kindle AZW4 page is always chosen automatically).
+  but pdf and docx is too (a Kindle AZW4 page is always chosen automatically).
+  For docx it turns Word's page the same way.
 - `--table N` picks one table, for csv and json output only.
 - `--split` chooses where a new slide starts, for the `revealjs` target.
 - `--merge` cannot be combined with csv, json or xlsx.

@@ -57,7 +57,7 @@ export const SVG_IMAGE_LIMITS = {
 
 /**
  * The tallest picture Word is given, in CSS px: the text height of the Letter
- * page with 1-inch margins html-to-docx writes (9 in at 96 px/in). With the
+ * page with the 1-inch margins the Word writer gives it (9 in at 96 px/in). With the
  * width cap (DOCX_MAX_WIDTH) a picture fits the page whatever its shape.
  */
 export const DOCX_MAX_HEIGHT = 864

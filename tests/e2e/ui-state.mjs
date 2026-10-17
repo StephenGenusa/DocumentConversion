@@ -1239,6 +1239,10 @@ try {
   check('the orientation starts at Automatic', (await choice('Orientation'))?.text === 'Automatic', JSON.stringify(await choice('Orientation')))
   await choose('Orientation', 'landscape')
   check('an orientation change is not saved', saved().pdf?.landscape === undefined && saved().pdf?.orientation === undefined, JSON.stringify(saved()))
+  // Word has the orientation too (its page turns as the PDF's), the same session choice, on its own.
+  await click('Word')
+  check('Word offers the orientation, the same choice as PDF', (await choice('Orientation'))?.value === 'landscape' && (await choice('Zoom')) === null, JSON.stringify(await choice('Orientation')))
+  await click('PDF')
 
   // Settings → OCR. A downloaded pack stands in as an empty file in this run's
   // profile (never the real one): Remove only deletes it, nothing reads it.

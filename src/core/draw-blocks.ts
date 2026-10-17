@@ -75,7 +75,9 @@ export const RENDERED_MARKER = 'data-rendered'
 
 /**
  * The widest picture Word is given, in CSS px: the text width of the Letter
- * page with 1-inch margins html-to-docx writes (6.5 in at 96 px/in).
+ * page with the 1-inch margins the Word writer gives it (WORD_MARGINS: 6.5 in
+ * at 96 px/in; a turned page is wider, and the writer fits every picture to
+ * its own page).
  * html-to-docx takes an image's width from its style as given, so without
  * this a wide diagram would run off the page; the other targets have CSS
  * max-width.

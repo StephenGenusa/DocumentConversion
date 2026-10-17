@@ -560,14 +560,35 @@ run('--landscape with --orientation is refused', [lease, '--to', 'pdf', '--lands
   expectCode: 2,
   expectStderr: '--landscape and --orientation both set the orientation',
 })
-run('--orientation is for pdf only', [lease, '--to', 'docx', '--orientation', 'landscape'], {
+run('--orientation is for pdf and docx only', [lease, '--to', 'html', '--orientation', 'landscape'], {
   expectCode: 2,
-  expectStderr: '--orientation applies only to pdf output, not docx',
+  expectStderr: '--orientation applies only to pdf, docx output, not html',
 })
 run('tiff->docx keeps each page a TIFF', [lease, '--to', 'docx', '--out', join(work, 'lease.docx')], { expectCode: 0, expectFiles: [join(work, 'lease.docx')] })
 if (existsSync(join(work, 'lease.docx')) && (readFileSync(join(work, 'lease.docx')).toString('latin1').match(/word\/media\/[^\0/]*?\.tif/g) ?? []).length < 3) {
   failures++
   console.log('FAIL  lease.docx does not keep its three TIFF pages')
+}
+// Word's pages turn as the PDF's: a section a fax page, each its own orientation; Portrait is every page.
+{
+  const { createRequire } = await import('node:module')
+  const JSZip = createRequire(join(root, 'package.json'))('jszip')
+  const wordShapes = async (file) => {
+    const xml = await (await JSZip.loadAsync(readFileSync(file))).file('word/document.xml').async('string')
+    return [...xml.matchAll(/<w:pgSz w:w="(\d+)" w:h="(\d+)"/g)].map((m) => (Number(m[1]) > Number(m[2]) ? 'L' : 'P')).join('')
+  }
+  if (existsSync(join(work, 'lease.docx')) && (await wordShapes(join(work, 'lease.docx'))) !== 'PLP') {
+    failures++
+    console.log(`FAIL  lease.docx pages are ${await wordShapes(join(work, 'lease.docx'))}, not PLP`)
+  }
+  run('tiff->docx --orientation portrait: every page portrait', [lease, '--to', 'docx', '--orientation', 'portrait', '--out', join(work, 'lease-portrait.docx')], {
+    expectCode: 0,
+    expectFiles: [join(work, 'lease-portrait.docx')],
+  })
+  if (existsSync(join(work, 'lease-portrait.docx')) && (await wordShapes(join(work, 'lease-portrait.docx'))) !== 'PPP') {
+    failures++
+    console.log(`FAIL  lease-portrait.docx pages are ${await wordShapes(join(work, 'lease-portrait.docx'))}, not PPP`)
+  }
 }
 // A picture named as text is read by its bytes, and the command line says so (owner, 2026-10-17).
 writeFileSync(join(work, 'lease-scan.txt'), readFileSync(lease))

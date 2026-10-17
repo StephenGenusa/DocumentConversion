@@ -32,11 +32,15 @@ export interface ControlInput {
   features?: HubFeatures
 }
 
-export type OutputControl = 'pdfOptions' | 'slideSplit' | 'renderedFormat'
+export type OutputControl = 'pdfOptions' | 'orientation' | 'slideSplit' | 'renderedFormat'
 export type InputControl = 'imageMode' | 'ocrLanguage' | 'jsonAs' | 'timestamps' | 'sqliteViews'
 
 const OUTPUT_RULES: Record<OutputControl, (target: TargetFormat, inputs: ControlInput[]) => boolean> = {
   pdfOptions: (target) => target === 'pdf',
+  // The page's orientation, with PDF's other page options or on its own for
+  // Word, whose page is Word's own (Letter, 1-inch margins): Automatic turns
+  // it as the PDF's (orientation.ts; writers/docx.ts wordPages).
+  orientation: (target) => target === 'pdf' || target === 'docx',
   slideSplit: (target) => target === 'revealjs',
   // Diagrams and formulas: Sharp (SVG) / Image (PNG), spec B4. Word is always PNG.
   renderedFormat: (target, inputs) => SVG_TARGETS.has(target) && inputs.some((i) => drawsSomething(i.features)),
@@ -88,13 +92,16 @@ export function showsInput(control: InputControl, input: ControlInput): boolean 
 }
 
 /** The options a conversion carries: only those of controls that are shown. */
-export function appliedOptions<P, S>(
+export function appliedOptions<P extends { landscape?: unknown }, S>(
   target: TargetFormat,
   inputs: ControlInput[],
   values: { pdf: P; slides: S; renderedFormat?: RenderFormat },
-): { pdf?: P; slides?: S; renderedFormat?: RenderFormat } {
+): { pdf?: P | Pick<P, 'landscape'>; slides?: S; renderedFormat?: RenderFormat } {
+  // Word shows the orientation alone, so only it is sent.
+  const orientationOnly = !showsOutput('pdfOptions', target, inputs) && showsOutput('orientation', target, inputs) && values.pdf.landscape !== undefined
   return {
     ...(showsOutput('pdfOptions', target, inputs) ? { pdf: values.pdf } : {}),
+    ...(orientationOnly ? { pdf: { landscape: values.pdf.landscape } as Pick<P, 'landscape'> } : {}),
     ...(showsOutput('slideSplit', target, inputs) ? { slides: values.slides } : {}),
     ...(showsOutput('renderedFormat', target, inputs) && values.renderedFormat
       ? { renderedFormat: values.renderedFormat }
