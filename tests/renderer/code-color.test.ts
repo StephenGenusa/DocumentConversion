@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeAll, beforeEach, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import { DecorationSet, type Decoration } from '@tiptap/pm/view'
@@ -8,6 +8,7 @@ import { EDITOR_EXTENSIONS } from '../../src/renderer/src/lib/editor-extensions'
 import { configureBlockViews } from '../../src/renderer/src/lib/block-views'
 import { COLOR_LINE_LIMIT, SYNC_COLOR_CHARS, COLOR_PAUSE_MS, codeLanguages, pickerValue } from '../../src/renderer/src/lib/code-color'
 import hljs from '../../src/core/hljs'
+import { hljs as editorHljs, loadGrammar } from '../../src/renderer/src/lib/code-grammars'
 
 /*
  * Code colored while it is edited: decorations only, never the document.
@@ -16,6 +17,11 @@ import hljs from '../../src/core/hljs'
 
 let editor: Editor | null = null
 let host: HTMLElement
+
+// The grammars load when first needed (code-grammars.ts); these tests start with them in.
+beforeAll(async () => {
+  for (const name of ['python', 'javascript', 'sql', 'rust', 'bash', 'typescript']) expect(await loadGrammar(name)).toBe(true)
+})
 
 beforeEach(() => {
   configureBlockViews({ watch: () => () => {} })
@@ -189,7 +195,7 @@ describe('coloring cost', () => {
   it('re-highlights only the block that changed in a document of many small blocks', () => {
     const many = Array.from({ length: 200 }, (_, i) => `<pre><code class="language-python">n${i} = ${i}</code></pre><p>Text ${i}.</p>`).join('')
     const e = make(many)
-    const spy = vi.spyOn(hljs, 'highlight')
+    const spy = vi.spyOn(editorHljs, 'highlight')
     typeInto(e, 57, ' + 1')
     typeInto(e, 57, ' + 2')
     expect(spy).toHaveBeenCalledTimes(2)
@@ -214,7 +220,7 @@ describe('coloring cost', () => {
     vi.advanceTimersByTime(COLOR_PAUSE_MS + 1)
     expect(spans(blocks()[0])).toContain('hljs-keyword:def')
 
-    const spy = vi.spyOn(hljs, 'highlight')
+    const spy = vi.spyOn(editorHljs, 'highlight')
     // The coloring's own share of a keystroke (the plugin's transaction work)
     // and the whole dispatch. The dispatch is mostly happy-dom, which walks
     // every node of the block each time ProseMirror pauses and resumes its

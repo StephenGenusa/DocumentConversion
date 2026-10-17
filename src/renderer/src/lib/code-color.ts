@@ -4,7 +4,8 @@ import { AttrStep } from '@tiptap/pm/transform'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import { closeHistory } from '@tiptap/pm/history'
 import type { Node as PMNode } from '@tiptap/pm/model'
-import hljs, { HLJS_CSS } from '../../../core/hljs'
+import { HLJS_CSS } from '../../../core/hljs-palette'
+import { GRAMMARS, grammarName, grammarReady, hljs, loadGrammar } from './code-grammars'
 
 /**
  * Code blocks colored while they are edited, by the same highlight.js and the
@@ -14,6 +15,8 @@ import hljs, { HLJS_CSS } from '../../../core/hljs'
  *
  * Only a block with a language highlight.js knows is colored; no language or
  * `plaintext` stays plain, as in the outputs (the guess is made at intake).
+ * A grammar is loaded the first time a block needs it (code-grammars.ts), and
+ * the blocks in that language are colored once it is in.
  *
  * Cost: one keystroke re-highlights only the block it touched, and every other
  * block's colors are mapped through the change. A block too big to
@@ -43,14 +46,9 @@ declare module '@tiptap/core' {
 
 /** The highlight.js language for a block's `language` attr, or null when it is not colored. */
 function grammarOf(language: unknown): string | null {
-  if (typeof language !== 'string' || !language) return null
-  const lang = hljs.getLanguage(language)
-  if (!lang) return null
-  const name = canonical.get(lang)
+  const name = grammarName(language)
   return name && name !== 'plaintext' ? name : null
 }
-
-const canonical = new Map(hljs.listLanguages().map((name) => [hljs.getLanguage(name)!, name] as const))
 
 const ENTITY = /&(?:amp|lt|gt|quot|#x27);/g
 
@@ -86,7 +84,7 @@ function lineCountReaches(text: string, limit: number): boolean {
 /** What coloring a block gets now: none, on the keystroke, or after the pause. */
 function plan(node: PMNode): { language: string; now: boolean } | null {
   const language = grammarOf(node.attrs.language)
-  if (!language) return null
+  if (!language || !grammarReady(language)) return null
   const text = node.textContent
   if (lineCountReaches(text, COLOR_LINE_LIMIT)) return null
   return { language, now: text.length <= SYNC_COLOR_CHARS }
@@ -96,6 +94,8 @@ interface ColorState {
   decorations: DecorationSet
   /** Start positions of big blocks waiting for the pause. */
   waiting: number[]
+  /** Languages the blocks name whose grammars are not loaded yet. */
+  wanted: string[]
 }
 
 const key = new PluginKey<ColorState>('codeColor')
@@ -125,8 +125,10 @@ function color(from: number, to: number, cls: string, first: boolean): Decoratio
 /** Re-color the code block at `pos`, or queue it, replacing what it had. */
 function recolor(state: ColorState, doc: PMNode, pos: number, node: PMNode, force: boolean): ColorState {
   const p = plan(node)
-  let { decorations, waiting } = state
+  let { decorations, waiting, wanted } = state
   waiting = waiting.filter((w) => w !== pos)
+  const language = grammarOf(node.attrs.language)
+  if (language && !p && !grammarReady(language) && !wanted.includes(language)) wanted = [...wanted, language]
   const end = pos + node.nodeSize
   // The picker always shows the language as it is now; kept while it does.
   const pickerKey = `lang:${pickerValue(node.attrs.language)}`
@@ -137,7 +139,7 @@ function recolor(state: ColorState, doc: PMNode, pos: number, node: PMNode, forc
   }
   if (p && !p.now && !force) {
     // Keep the mapped colors up until the pause.
-    return { decorations, waiting: [...waiting, pos] }
+    return { decorations, waiting: [...waiting, pos], wanted }
   }
   // Only the colors that changed are replaced. The rest, mapped through the
   // edit, are kept as they are: the same objects, so the view leaves their
@@ -165,7 +167,7 @@ function recolor(state: ColorState, doc: PMNode, pos: number, node: PMNode, forc
     if (stale.length) decorations = decorations.remove(stale)
     if (added.length) decorations = decorations.add(doc, added)
   }
-  return { decorations, waiting }
+  return { decorations, waiting, wanted }
 }
 
 /** Set the language of the code block at `pos` ('' for plain text), as one undo step. */
@@ -269,7 +271,7 @@ function touched(tr: Transaction): number[] {
 }
 
 function initial(doc: PMNode): ColorState {
-  let state: ColorState = { decorations: DecorationSet.empty, waiting: [] }
+  let state: ColorState = { decorations: DecorationSet.empty, waiting: [], wanted: [] }
   doc.descendants((node, pos) => {
     if (isCodeBlock(node)) state = recolor(state, doc, pos, node, false)
     return !node.isTextblock
@@ -278,8 +280,10 @@ function initial(doc: PMNode): ColorState {
 }
 
 function apply(tr: Transaction, value: ColorState): ColorState {
-  const flush = tr.getMeta(key) === 'flush'
-  if (!tr.docChanged && !flush) return value
+  const meta = tr.getMeta(key) as 'flush' | { loaded: string } | undefined
+  const flush = meta === 'flush'
+  const loaded = typeof meta === 'object' ? meta.loaded : null
+  if (!tr.docChanged && !flush && !loaded) return value
   let state: ColorState = value
   if (tr.docChanged) {
     const waiting: number[] = []
@@ -287,8 +291,16 @@ function apply(tr: Transaction, value: ColorState): ColorState {
       const r = tr.mapping.mapResult(w, 1)
       if (!r.deleted) waiting.push(r.pos)
     }
-    state = { decorations: value.decorations.map(tr.mapping, tr.doc), waiting }
+    state = { ...value, decorations: value.decorations.map(tr.mapping, tr.doc), waiting }
     for (const pos of touched(tr)) state = recolor(state, tr.doc, pos, tr.doc.nodeAt(pos)!, false)
+  }
+  if (loaded) {
+    // A grammar came in: color the blocks that were waiting for it.
+    state = { ...state, wanted: state.wanted.filter((l) => l !== loaded) }
+    tr.doc.descendants((node, pos) => {
+      if (isCodeBlock(node) && grammarOf(node.attrs.language) === loaded) state = recolor(state, tr.doc, pos, node, false)
+      return !node.isTextblock
+    })
   }
   if (flush) {
     for (const pos of state.waiting) {
@@ -371,9 +383,24 @@ export const CodeColor = Extension.create({
             if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(key, 'flush').setMeta('addToHistory', false))
           }, COLOR_PAUSE_MS)
         }
+        // Each wanted grammar is asked for once; when it is in, its blocks are colored.
+        const asked = new Set<string>()
+        const load = (state: EditorState): void => {
+          for (const language of key.getState(state)?.wanted ?? []) {
+            if (asked.has(language)) continue
+            asked.add(language)
+            void loadGrammar(language).then((ok) => {
+              if (ok && !view.isDestroyed) view.dispatch(view.state.tr.setMeta(key, { loaded: language }).setMeta('addToHistory', false))
+            })
+          }
+        }
         schedule(view.state)
+        load(view.state)
         return {
-          update: (v) => schedule(v.state),
+          update: (v) => {
+            schedule(v.state)
+            load(v.state)
+          },
           destroy: () => clearTimeout(timer),
         }
       },
@@ -396,12 +423,10 @@ let languages: CodeLanguage[] | undefined
 /** The picker's list: Plain text, the common languages, then the rest by name. */
 export function codeLanguages(): CodeLanguage[] {
   if (languages) return languages
-  const label = (name: string): string => {
-    const friendly = hljs.getLanguage(name)!.name ?? name
-    // hljs names HTML/XML "HTML, XML"; one name reads better in a list.
-    return friendly.split(',')[0].trim()
-  }
-  const all = hljs.listLanguages().filter((n) => n !== 'plaintext')
+  const titles = new Map(GRAMMARS.map(([name, title]) => [name, title]))
+  // hljs names HTML/XML "HTML, XML"; one name reads better in a list.
+  const label = (name: string): string => titles.get(name)!.split(',')[0].trim()
+  const all = GRAMMARS.map(([name]) => name).filter((n) => n !== 'plaintext')
   const common = COMMON.filter((n) => all.includes(n))
   const rest = all.filter((n) => !common.includes(n)).sort((a, b) => label(a).localeCompare(label(b)))
   languages = [
@@ -415,8 +440,6 @@ export function codeLanguages(): CodeLanguage[] {
 /** The picker entry for a block's `language` attr: an alias as its language, an unknown name as itself. */
 export function pickerValue(language: unknown): string {
   if (typeof language !== 'string' || !language) return ''
-  const lang = hljs.getLanguage(language)
-  if (!lang) return language
-  const name = canonical.get(lang) ?? language
+  const name = grammarName(language) ?? language
   return name === 'plaintext' ? '' : name
 }
