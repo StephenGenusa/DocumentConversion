@@ -184,6 +184,29 @@ describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
     expect(inked('rtl', 20, 120, 104, 145)).toBe(0)
   })
 
+  it('shading: the corner colors of the shaded square and their mix at its middle; the flood-filled rectangle and ellipse inside their outlines', () => {
+    expectAt('shading', 13, 13, '#3a6ea5', 32)
+    expectAt('shading', 107, 13, '#e8a33d', 32)
+    expectAt('shading', 107, 107, '#4f9a52', 32)
+    expectAt('shading', 13, 107, '#ffffff', 32)
+    // The diagonal: blue and green mixed.
+    expectAt('shading', 60, 60, '#4a8470', 32)
+    expectAt('shading', 180, 40, '#4f9a52')
+    expectAt('shading', 130, 40, '#c0392b', 60)
+    expectAt('shading', 180, 120, '#e8a33d')
+    expectAt('shading', 134, 94, WHITE)
+  })
+
+  it('EMF+ fills: the glow white at its center and blue at its edge, the pennant orange at its center, the rug striped by its tile', () => {
+    expectAt('plusfills', 60, 50, WHITE, 16)
+    expectAt('plusfills', 13, 50, '#3a6ea5', 40)
+    expectAt('plusfills', 180, 40, '#e8a33d', 32)
+    expectAt('plusfills', 133, 12, '#c0392b', 48)
+    expectAt('plusfills', 236, 125, WHITE)
+    expectAt('plusfills', 20, 125, '#3a6ea5')
+    expectAt('plusfills', 28, 125, '#e8a33d')
+  })
+
   it('masks: the marker round over the bar, black where the second mask is clear, the slanted photograph cut by its mask, two labels', () => {
     expectAt('masks', 60, 60, '#3a6ea5')
     expectAt('masks', 12, 12, WHITE)

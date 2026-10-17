@@ -365,10 +365,14 @@ export class WmfPlayer {
         this.create({ type: 'brush', brush: { style: 5, color: 0x808080, hatch: 0, dib: { info: dib.sub(0, bitsAt), bits: dib.rest(bitsAt), usage } } })
         return
       }
-      case META.CREATEPATTERNBRUSH:
-        g.lost.add('old-style pattern brushes')
-        this.create({ type: 'brush', brush: { style: 0, color: 0x808080, hatch: 0 } })
+      case META.CREATEPATTERNBRUSH: {
+        // A Bitmap16 (14 bytes), 18 reserved, then its rows. One of a kind that means the same on every device, or gray.
+        const ddb = r.rest(6)
+        const known = ddb.has(0, 10) && ddb.u8(8) === 1 && [1, 24, 32].includes(ddb.u8(9))
+        if (!known) g.lost.add('old-style pattern brushes in device colors')
+        this.create({ type: 'brush', brush: known ? { style: 3, color: 0x808080, hatch: 0, ddb } : { style: 0, color: 0x808080, hatch: 0 } })
         return
+      }
       case META.CREATEFONTINDIRECT: {
         const faceBytes = r.has(24, 1) ? r.bytes(24, Math.min(32, r.length - 24)) : Buffer.alloc(0)
         const end = faceBytes.indexOf(0)
@@ -447,8 +451,10 @@ export class WmfPlayer {
         return
       }
       case META.FLOODFILL:
+        g.floodFill(w(3), w(2), r.u32(6), false)
+        return
       case META.EXTFLOODFILL:
-        g.lost.add('flood fill')
+        g.floodFill(w(4), w(3), r.u32(8), u(0) === 1)
         return
       default:
         return

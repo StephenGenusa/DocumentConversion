@@ -77,7 +77,7 @@ describe('metafile corpus: each drawing as SVG', () => {
       const clean = sanitizeSvg(r.svg)
       expect(clean, p.name).not.toBeNull()
       // Nothing the drawing code writes is something the sanitizer takes out.
-      const count = (s: string) => (s.match(/<(path|text|use|image|clipPath|pattern|linearGradient)\b/g) ?? []).length
+      const count = (s: string) => (s.match(/<(path|text|use|image|clipPath|pattern|linearGradient|radialGradient|stop)\b/g) ?? []).length
       expect(count(clean!), p.name).toBe(count(r.svg))
     }
   })
@@ -155,6 +155,22 @@ describe('metafile corpus: each drawing as SVG', () => {
     expect(patterns[0].querySelector('path')!.getAttribute('d')).toBe('M0 4H8')
     expect(patterns[1].querySelector('path')!.getAttribute('d')!.startsWith('M0 0L8 8')).toBe(true)
     expect(patterns[4].querySelector('image')!.getAttribute('xlink:href')).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('shading: one bitmap for the triangle mesh, cut out by its triangles; the outline and the ellipse flood filled', () => {
+    const { r, root } = svgOf(corpus.shadingEmf())
+    expect(r.lost).toEqual([])
+    expect(all(root, 'use').filter((u) => !u.closest('defs'))).toHaveLength(1)
+    expect(fills(root)).toEqual(['none', '#4f9a52', '#ffffff', '#e8a33d'])
+  })
+
+  it('EMF+ fills: a radial gradient on the ellipse, the triangle shaded into a bitmap, the rug a pattern of its texture', () => {
+    const { r, root } = svgOf(corpus.plusFillsEmf())
+    expect(r.lost).toEqual([])
+    expect(all(root, 'radialGradient')).toHaveLength(1)
+    expect(all(root, 'use').filter((u) => !u.closest('defs'))).toHaveLength(1)
+    expect(all(root, 'pattern')).toHaveLength(1)
+    expect(fills(root).map((f) => /^url\(#\w+\)$/.test(f))).toEqual([true, true])
   })
 
   it('EMF+ dual: drawn from its EMF records', () => {

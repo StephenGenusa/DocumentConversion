@@ -317,6 +317,13 @@ export class EmfWriter {
     const v = (x, y, rgb) => Buffer.concat([u32s(x, y), Buffer.from(new Uint16Array([((rgb >> 16) & 0xff) << 8, ((rgb >> 8) & 0xff) << 8, (rgb & 0xff) << 8, 0]).buffer)])
     return this.rec(0x76, this.bounds(), u32s(2, 1, vertical ? 1 : 0), v(x0, y0, rgb0), v(x1, y1, rgb1), u32s(0, 1))
   }
+  /** GRADIENTFILL with triangles: vertices [x, y, rgb], triangles [i, j, k] (GRADIENT_FILL_TRIANGLE). */
+  gradientTriangles(vertices, triangles) {
+    const v = ([x, y, rgb]) => Buffer.concat([u32s(x, y), Buffer.from(new Uint16Array([((rgb >> 16) & 0xff) << 8, ((rgb >> 8) & 0xff) << 8, (rgb & 0xff) << 8, 0]).buffer)])
+    return this.rec(0x76, this.bounds(), u32s(vertices.length, triangles.length, 2), ...vertices.map(v), u32s(...triangles.flat()))
+  }
+  /** EXTFLOODFILL at (x, y): mode 0 out to the border of `rgb`, 1 the surface of `rgb`. */
+  floodFill(x, y, rgb, mode) { return this.rec(0x35, u32s(x, y, colorref(rgb), mode)) }
   /** EMR_COMMENT holding EMF+ records. */
   comment(plus) {
     return this.rec(0x46, u32s(plus.length + 4, 0x2b464d45), plus)
@@ -350,6 +357,21 @@ export class EmfWriter {
   }
 }
 
+/** An EMF+ path object: the ellipse in (x, y, w, h) as GDI+ adds one, four curves from its right-hand point. */
+function ellipsePath(x, y, w, h) {
+  const k = (4 * (Math.SQRT2 - 1)) / 3
+  const [cx, cy, rx, ry] = [x + w / 2, y + h / 2, w / 2, h / 2]
+  const pts = [
+    [cx + rx, cy],
+    [cx + rx, cy + ry * k], [cx + rx * k, cy + ry], [cx, cy + ry],
+    [cx - rx * k, cy + ry], [cx - rx, cy + ry * k], [cx - rx, cy],
+    [cx - rx, cy - ry * k], [cx - rx * k, cy - ry], [cx, cy - ry],
+    [cx + rx * k, cy - ry], [cx + rx, cy - ry * k], [cx + rx, cy],
+  ]
+  const types = Buffer.from([0, ...Array.from({ length: 11 }, () => 3), 0x83])
+  return Buffer.concat([u32s(0xdbc01002, pts.length, 0), f32s(...pts.flat()), pad4(types)])
+}
+
 /** EMF+ records, to be carried in an EMR_COMMENT. Coordinates are world units (pixels unless a page transform says). */
 export class PlusWriter {
   constructor() {
@@ -380,6 +402,45 @@ export class PlusWriter {
   font(id, emSize, family, style = 0) {
     return this.rec(0x4008, 0x600 | id, u32s(0xdbc01002), f32s(emSize), u32s(2, style, 0, family.length), utf16(family))
   }
+  /** A texture brush object: a compressed bitmap (PNG) tiled by `wrap` (0 tile, 1 flip across, 2 down, 3 both, 4 once), through `transform` when given. */
+  textureBrush(id, bytes, width, height, wrap = 0, transform = null) {
+    const image = Buffer.concat([u32s(0xdbc01002, 1, width, height, 0, 0, 1), bytes])
+    return this.rec(0x4008, 0x100 | id, u32s(0xdbc01002, 2, transform ? 0x02 : 0, wrap), transform ? f32s(...transform) : Buffer.alloc(0), image)
+  }
+  /**
+   * A path gradient brush object: `center` [x, y] in `centerArgb`, out to
+   * `boundary` (a list of points, flat; or { ellipse: [x, y, w, h] }, a path
+   * of four curves) in `surround` colors; `factors` [[position, factor]] or
+   * `preset` [[position, argb]] (0 the boundary, 1 the center), `focus` [sx, sy].
+   */
+  pathGradientBrush(id, { center, centerArgb, surround, boundary, factors = null, preset = null, focus = null }) {
+    let flags = 0
+    let bound
+    if (boundary.ellipse) {
+      flags |= 0x01
+      const path = ellipsePath(...boundary.ellipse)
+      bound = Buffer.concat([u32s(path.length), path])
+    } else bound = Buffer.concat([u32s(boundary.length / 2), f32s(...boundary)])
+    const extra = []
+    if (preset) {
+      flags |= 0x04
+      extra.push(u32s(preset.length), f32s(...preset.map((p) => p[0])), u32s(...preset.map((p) => p[1] >>> 0)))
+    } else if (factors) {
+      flags |= 0x08
+      extra.push(u32s(factors.length), f32s(...factors.map((p) => p[0])), f32s(...factors.map((p) => p[1])))
+    }
+    if (focus) {
+      flags |= 0x40
+      extra.push(u32s(2), f32s(...focus))
+    }
+    return this.rec(0x4008, 0x100 | id, u32s(0xdbc01002, 3, flags, 0, centerArgb >>> 0), f32s(...center), u32s(surround.length, ...surround.map((c) => c >>> 0)), bound, ...extra)
+  }
+  /** FILLRECTS with a brush object. */
+  fillRectsWith(brushId, rects) { return this.rec(0x400a, 0, u32s(brushId, rects.length), f32s(...rects.flat())) }
+  /** FILLELLIPSE with a brush object. */
+  fillEllipseWith(brushId, rect) { return this.rec(0x400e, 0, u32s(brushId), f32s(...rect)) }
+  /** FILLPOLYGON with a brush object; points flat. */
+  fillPolygonWith(brushId, pts) { return this.rec(0x400c, 0, u32s(brushId, pts.length / 2), f32s(...pts)) }
   fillRects(argb, rects) { return this.rec(0x400a, 0x8000, u32s(argb >>> 0, rects.length), f32s(...rects.flat())) }
   fillEllipse(argb, rect) { return this.rec(0x400e, 0x8000, u32s(argb >>> 0), f32s(...rect)) }
   drawLines(penId, pts, closed = false) { return this.rec(0x400d, penId | (closed ? 0x2000 : 0), u32s(pts.length / 2), f32s(...pts)) }
@@ -454,6 +515,22 @@ export class WmfWriter {
   textOut(x, y, s) {
     const str = Buffer.from(s, 'latin1')
     return this.rec(0x0521, str.length, str.length % 2 ? Buffer.concat([str, Buffer.alloc(1)]) : str, y, x)
+  }
+  /** FLOODFILL (out to the border of `rgb`), or EXTFLOODFILL with `mode` (0 border, 1 surface). */
+  floodFill(x, y, rgb, mode = null) {
+    return mode === null ? this.rec(0x0419, this.color(rgb), y, x) : this.rec(0x0548, mode, this.color(rgb), y, x)
+  }
+  /** CREATEPATTERNBRUSH: an old device-dependent bitmap (Bitmap16) `rows` (top first, bytes, each row a whole number of words) as the brush. */
+  oldPatternBrush(width, height, bpp, rows) {
+    const stride = rows[0].length
+    const head = Buffer.alloc(14)
+    head.writeInt16LE(0, 0)
+    head.writeInt16LE(width, 2)
+    head.writeInt16LE(height, 4)
+    head.writeInt16LE(stride, 6)
+    head[8] = 1
+    head[9] = bpp
+    return this.rec(0x01f9, head, Buffer.alloc(18), ...rows)
   }
   /** STRETCHDIB: a packed DIB drawn into (x, y, w, h). */
   stretchDIB(x, y, w, h, { info, bits }, rop = 0x00cc0020) {

@@ -102,6 +102,14 @@ export class PathData {
   last: [number, number] | null = null
   length = 0
 
+  /** A path written before (SvgOut.recent), drawn again as it was. */
+  static of(d: string, bounds: Rect): PathData {
+    const p = new PathData()
+    p.push(d)
+    p.bounds = bounds
+    return p
+  }
+
   private see(x: number, y: number): void {
     this.bounds = union(this.bounds, { l: x, t: y, r: x, b: y })
   }
@@ -244,7 +252,17 @@ function clipBox(c: Clip): Rect | null {
   return c.rects.reduce<Rect | null>((u, r) => union(u, r), null)
 }
 
-export type Paint = { kind: 'color'; rgb: number; alpha?: number } | { kind: 'url'; id: string }
+/**
+ * How a shape is filled: a color, a definition (pattern, gradient), or a
+ * bitmap the shape cuts out (a shaded gradient, shade.ts; a texture that
+ * does not repeat): `m` maps its pixels to device space, and `rgb` is the
+ * color a stroke or text in that brush is drawn in, since SVG cannot cut
+ * those out of a picture simply.
+ */
+export type Paint =
+  | { kind: 'color'; rgb: number; alpha?: number }
+  | { kind: 'url'; id: string }
+  | { kind: 'image'; picture: ImageData; m: Matrix; rgb: number; alpha?: number }
 
 export interface Stroke {
   paint: Paint
@@ -289,6 +307,98 @@ export interface ImageData {
   opaque?: boolean
 }
 
+/** A closed shape as drawn: its outline in device space, how it was filled and stroked, its clip. */
+export interface RecentShape {
+  d: string
+  bounds: Rect
+  fill: Paint | null
+  stroke: Stroke | null
+  rule: 'nonzero' | 'evenodd'
+  clip: Clip
+}
+
+const RECENT_SHAPES = 64
+const RECENT_CHARS = 100_000
+
+/**
+ * Whether device point (x, y) is inside a path written here (M, L, H, V,
+ * C, Z; each figure closed as a fill closes it) under its fill rule. Curves
+ * are followed as 8 straight pieces each.
+ */
+export function pathContains(d: string, rule: 'nonzero' | 'evenodd', x: number, y: number): boolean {
+  const tokens = d.match(/[MLHVCZ]|-?\d+(?:\.\d+)?(?:e[-+]?\d+)?/gi) ?? []
+  let winding = 0
+  let crossings = 0
+  let sx = 0
+  let sy = 0
+  let cx = 0
+  let cy = 0
+  const edge = (x0: number, y0: number, x1: number, y1: number): void => {
+    if (y0 <= y ? y1 > y : y1 <= y) {
+      const at = x0 + ((y - y0) * (x1 - x0)) / (y1 - y0)
+      if (at > x) {
+        crossings++
+        winding += y1 > y0 ? 1 : -1
+      }
+    }
+  }
+  let i = 0
+  let cmd = 'M'
+  const n = (): number => Number(tokens[i++])
+  while (i < tokens.length) {
+    if (/^[a-z]$/i.test(tokens[i])) cmd = tokens[i++].toUpperCase()
+    switch (cmd) {
+      case 'M':
+        edge(cx, cy, sx, sy)
+        cx = sx = n()
+        cy = sy = n()
+        cmd = 'L'
+        break
+      case 'L': {
+        const [nx, ny] = [n(), n()]
+        edge(cx, cy, nx, ny)
+        ;[cx, cy] = [nx, ny]
+        break
+      }
+      case 'H': {
+        const nx = n()
+        edge(cx, cy, nx, cy)
+        cx = nx
+        break
+      }
+      case 'V': {
+        const ny = n()
+        edge(cx, cy, cx, ny)
+        cy = ny
+        break
+      }
+      case 'C': {
+        const [x1, y1, x2, y2, x3, y3] = [n(), n(), n(), n(), n(), n()]
+        let [px, py] = [cx, cy]
+        for (let k = 1; k <= 8; k++) {
+          const t = k / 8
+          const u = 1 - t
+          const qx = u * u * u * cx + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3
+          const qy = u * u * u * cy + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3
+          edge(px, py, qx, qy)
+          ;[px, py] = [qx, qy]
+        }
+        ;[cx, cy] = [x3, y3]
+        break
+      }
+      case 'Z':
+        edge(cx, cy, sx, sy)
+        ;[cx, cy] = [sx, sy]
+        break
+      default:
+        i++
+    }
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return false
+  }
+  edge(cx, cy, sx, sy)
+  return rule === 'evenodd' ? crossings % 2 === 1 : winding !== 0
+}
+
 export class TooLarge extends Error {
   constructor() {
     super('the drawing is too large')
@@ -305,6 +415,8 @@ export class SvgOut {
   private clipIds = new Map<ClipNode, string>()
   private keyed = new Map<string, string>()
   readonly drawn: Drawn[] = []
+  /** The last closed shapes drawn, newest last, for flood fill (gdi.ts): at most RECENT_SHAPES, each at most RECENT_CHARS of path. */
+  readonly recent: RecentShape[] = []
   /** Where something visible was drawn, in device space. */
   bounds: Rect | null = null
   /** One CSS px in device units: the thinnest line drawn, and what a hairline is. */
@@ -383,6 +495,7 @@ export class SvgOut {
   paint(name: 'fill' | 'stroke', p: Paint | null): string {
     if (!p) return ` ${name}="none"`
     if (p.kind === 'url') return ` ${name}="url(#${p.id})"`
+    // A color; a bitmap brush on a stroke or text: its color.
     const a = p.alpha ?? 1
     return ` ${name}="${hex(p.rgb)}"${a < 1 ? ` ${name}-opacity="${Math.round(Math.max(0, a) * 1000) / 1000}"` : ''}`
   }
@@ -406,6 +519,20 @@ export class SvgOut {
   shape(path: PathData, fill: Paint | null, stroke: Stroke | null, rule: 'nonzero' | 'evenodd', clip: Clip, blend?: Blend): void {
     if (path.empty || (!fill && !stroke)) return
     const d = path.d
+    if (path.bounds && d.length <= RECENT_CHARS && d.includes('Z')) {
+      if (this.recent.length >= RECENT_SHAPES) this.recent.shift()
+      this.recent.push({ d, bounds: path.bounds, fill, stroke, rule, clip })
+    }
+    if (fill?.kind === 'image') {
+      // A bitmap the shape cuts out: the bitmap under the shape as a clip, then the stroke on its own.
+      const cut = clipIntersectPath(clip, d, rule)
+      if (cut === clip) fill = { kind: 'color', rgb: fill.rgb, alpha: fill.alpha }
+      else {
+        this.image(fill.picture, fill.m, cut, { blend, made: true })
+        if (stroke) this.shape(path, null, stroke, rule, clip, blend)
+        return
+      }
+    }
     const markup = `<path d="${d}"${this.paint('fill', fill)}${fill && rule === 'evenodd' ? ' fill-rule="evenodd"' : ''}${this.strokeAttrs(stroke)}${SvgOut.blendAttr(blend)}/>`
     const grow = stroke ? Math.max(stroke.width, this.hairline) / 2 : 0
     const b = path.bounds
@@ -416,13 +543,13 @@ export class SvgOut {
    * A picture, its pixels mapped to device space by `m`; with `crop`, only
    * that part of it (in its pixels), `m` mapping the part's own top-left.
    */
-  image(picture: ImageData, m: Matrix, clip: Clip, opts: { opacity?: number; blend?: Blend; crop?: Rect; pixelated?: boolean } = {}): void {
-    const key = `img:${createHash('sha1').update(picture.bytes).digest('hex')}`
-    const id = this.def(
-      `${key}${opts.pixelated ? ':sharp' : ''}`,
-      (id) =>
-        `<image id="${id}" width="${picture.width}" height="${picture.height}" preserveAspectRatio="none"${opts.pixelated ? ' style="image-rendering:pixelated"' : ''} xlink:href="data:${picture.mime};base64,${picture.bytes.toString('base64')}"/>`,
-    )
+  image(
+    picture: ImageData,
+    m: Matrix,
+    clip: Clip,
+    opts: { opacity?: number; blend?: Blend; crop?: Rect; pixelated?: boolean; made?: boolean } = {},
+  ): void {
+    const id = this.imageDef(picture, opts.pixelated)
     const opacity = opts.opacity !== undefined && opts.opacity < 1 ? ` opacity="${Math.round(Math.max(0, opts.opacity) * 1000) / 1000}"` : ''
     const c = opts.crop
     const whole = !c || (c.l <= 0 && c.t <= 0 && c.r >= picture.width && c.b >= picture.height)
@@ -434,8 +561,19 @@ export class SvgOut {
       : `<g transform="${matrixAttr(m)}"${opacity}${SvgOut.blendAttr(opts.blend)}><svg width="${num(w)}" height="${num(h)}" viewBox="${num(c.l)} ${num(c.t)} ${num(w)} ${num(h)}" preserveAspectRatio="none" overflow="hidden"><use xlink:href="#${id}"/></svg></g>`
     const corners = [apply(m, 0, 0), apply(m, w, 0), apply(m, 0, h), apply(m, w, h)]
     const bounds = corners.reduce<Rect | null>((u, [x, y]) => union(u, { l: x, t: y, r: x, b: y }), null)
-    const plain = whole && !opts.blend && (opts.opacity ?? 1) >= 1 && /^image\/(png|jpeg|gif)$/.test(picture.mime)
+    // `made`: a bitmap drawn here (a shaded gradient), never the picture's own.
+    const plain = whole && !opts.made && !opts.blend && (opts.opacity ?? 1) >= 1 && /^image\/(png|jpeg|gif)$/.test(picture.mime)
     this.add(markup, clip, { kind: 'image', bounds, picture: plain ? (picture as Picture) : undefined, matrix: m, plain, opaque: plain && picture.opaque === true })
+  }
+
+  /** A picture defined once (its pixels at the origin, a pixel a unit); its id. */
+  imageDef(picture: ImageData, pixelated = false): string {
+    const key = `img:${createHash('sha1').update(picture.bytes).digest('hex')}`
+    return this.def(
+      `${key}${pixelated ? ':sharp' : ''}`,
+      (id) =>
+        `<image id="${id}" width="${picture.width}" height="${picture.height}" preserveAspectRatio="none"${pixelated ? ' style="image-rendering:pixelated"' : ''} xlink:href="data:${picture.mime};base64,${picture.bytes.toString('base64')}"/>`,
+    )
   }
 
   /** Whether anything at all was drawn. */

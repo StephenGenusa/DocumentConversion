@@ -157,6 +157,64 @@ describe('hostile metafiles', () => {
     expect(Date.now() - t0).toBeLessThan(1_000)
   })
 
+  it('GradientFill claiming four billion triangles shades the ones it holds; claiming four billion vertices is skipped', () => {
+    const vertex = (x: number, y: number) => Buffer.concat([u32(x, y), Buffer.from([0, 0xff, 0, 0, 0, 0, 0, 0])])
+    const bounds = u32(0, 0, 99, 99)
+    const many = new EmfWriter().raw(record(0x76, Buffer.concat([bounds, u32(3, 0xffffffff, 2), vertex(0, 0), vertex(100, 0), vertex(0, 100), u32(0, 1, 2)])))
+    const r = drawMetafile(many.bytes())
+    expect('error' in r ? r.error : r.svg).toContain('<use')
+    const huge = new EmfWriter().raw(record(0x76, Buffer.concat([bounds, u32(0xffffffff, 1, 2), vertex(0, 0)]))).stock(4).rectangle(0, 0, 10, 10)
+    expect(answers(huge.bytes())).toBe('picture')
+  })
+
+  it('path gradients: counts that lie are skipped, a boundary past its cap is one color, a texture past the bitmap budget is gray', () => {
+    const t0 = Date.now()
+    const plus = (build: (p: typeof PlusWriter.prototype) => void): Buffer => {
+      const e = new EmfWriter()
+      const p = new PlusWriter().header(false)
+      build(p)
+      e.comment(p.eof().bytes())
+      return e.bytes()
+    }
+    const head = (flags: number, count: number) => u32(0xdbc01002, 3, flags, 0, 0xffffffff, 0, 0, count)
+    for (const body of [
+      // Four billion boundary colors; four billion boundary points; a million blend positions.
+      head(0, 0xffffffff),
+      Buffer.concat([head(0, 0), u32(0xffffffff)]),
+      Buffer.concat([head(0x08, 0), u32(3, 0, 0, 0, 0, 0, 0, 0), u32(1_000_000)]),
+      // A path boundary whose size runs past the record.
+      Buffer.concat([head(0x01, 0), u32(0x7fffffff, 0xdbc01002, 4, 0)]),
+    ]) {
+      const bytes = plus((p) => p.rec(0x4008, 0x101, body).fillRectsWith(1, [[0, 0, 50, 50]]))
+      expect(['picture', 'error']).toContain(answers(bytes))
+    }
+    const ring = Array.from({ length: 5000 }, (_, i) => [50 + 40 * Math.cos((i / 5000) * 2 * Math.PI), 50 + 40 * Math.sin((i / 5000) * 2 * Math.PI)]).flat()
+    const wide = drawMetafile(plus((p) => p.pathGradientBrush(1, { center: [50, 50], centerArgb: 0xff12ab34, surround: [0xffff0000], boundary: ring }).fillRectsWith(1, [[0, 0, 100, 100]])))
+    if ('error' in wide) throw new Error(wide.error)
+    expect(wide.lost.some((l) => l.startsWith('path gradients too detailed to shade'))).toBe(true)
+    expect(wide.svg).toContain('fill="#12ab34"')
+    // A texture image claiming 30,000 px a side is not decoded.
+    const big = drawMetafile(plus((p) => p.rec(0x4008, 0x101, u32(0xdbc01002, 2, 0, 0), u32(0xdbc01002, 1, 30000, 30000, 120000, 0x26200a, 0)).fillRectsWith(1, [[0, 0, 50, 50]])))
+    if ('error' in big) throw new Error(big.error)
+    expect(big.lost).toContain('texture brushes whose image could not be read')
+    expect(Date.now() - t0).toBeLessThan(5_000)
+  })
+
+  it('WMF: an old pattern brush claiming 30,000 px a side is not decoded; flood fill after many shapes looks only at the last few', () => {
+    const w = new WmfWriter({ width: 100, height: 100 })
+    w.setWindowOrg(0, 0).setWindowExt(100, 100).oldPatternBrush(30000, 30000, 1, [Buffer.alloc(3750)]).select(0).rectangle(0, 0, 50, 50)
+    expect(answers(w.bytes())).toBe('picture')
+    const e = new EmfWriter()
+    e.stock(8).brush(1, 0, 0xffffff).select(1)
+    for (let i = 0; i < 5000; i++) e.rectangle(0, 0, 100, 100)
+    for (let i = 0; i < 2000; i++) e.floodFill(50, 50, 0xffffff, 1)
+    const t0 = Date.now()
+    const r = drawMetafile(e.bytes())
+    expect(Date.now() - t0).toBeLessThan(5_000)
+    if ('error' in r) throw new Error(r.error)
+    expect(r.lost).toEqual([])
+  })
+
   it('saved states, clip chains and region rectangles stay within their caps', () => {
     const e = new EmfWriter({ width: 100, height: 100 }).stock(4)
     for (let i = 0; i < 20_000; i++) e.saveDC()

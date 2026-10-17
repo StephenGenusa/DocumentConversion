@@ -3,6 +3,7 @@ import { ShortRecord, View } from './bytes'
 import { readPackedDib, toPicture, type Budget, type Picture, type Raster } from './dib'
 import { MAX_RECORDS, type PlusHook } from './emf'
 import type { GlyphFonts } from './fonts'
+import { fan, shade } from './shade'
 import { fontFamily, readGlyphs, type Font } from './gdi'
 import {
   apply,
@@ -57,6 +58,29 @@ type Brush =
   | { kind: 'solid'; argb: number }
   | { kind: 'hatch'; style: number; fore: number; back: number }
   | { kind: 'linear'; rect: [number, number, number, number]; stops: [number, number][]; transform: Matrix; wrap: number }
+  | { kind: 'texture'; picture: Picture; transform: Matrix; wrap: number }
+  | PathGradient
+
+/**
+ * A path gradient: the center color at the center point, blended out to
+ * the boundary's colors (each boundary point's own, the last repeated);
+ * positions 0 at the boundary, 1 at the center. `preset`: colors at
+ * positions instead; `factors`: the share of the center color at
+ * positions; `focus`: the part of the way out that is all center color.
+ */
+interface PathGradient {
+  kind: 'path'
+  center: [number, number]
+  centerColor: number
+  surround: number[]
+  boundary: Path
+  /** Whether the boundary is a path (curves and figures) rather than a plain list of points. */
+  isPath: boolean
+  transform: Matrix
+  preset?: [number, number][]
+  factors?: [number, number][]
+  focus: number
+}
 
 interface Pen {
   width: number
@@ -122,6 +146,8 @@ export class EmfPlusPlayer implements PlusHook {
   records = 0
   failed = 0
   private objects = new Map<number, PlusObject>()
+  /** Each path gradient's paint, made once for the transform it was last used under. */
+  private shaded = new WeakMap<PathGradient, { key: string; paint: Paint | null }>()
   private partial: { id: number; type: number; total: number; chunks: Buffer[]; got: number } | null = null
   private state: State = { world: IDENTITY, clip: null, pageUnit: 2, pageScale: 1 }
   private saved = new Map<number, State>()
@@ -270,13 +296,76 @@ export class EmfPlusPlayer implements PlusHook {
         }
         return { kind: 'linear', rect, stops, transform, wrap }
       }
+      case 2: {
+        // A texture: an image tiled (WrapMode: 0 tile, 1-3 flipped every other tile, 4 once), a pixel a world unit.
+        const flags = v.u32(8)
+        const wrap = v.i32(12)
+        let at = 16
+        let transform: Matrix = IDENTITY
+        if (flags & 0x02) {
+          transform = [v.f32(at), v.f32(at + 4), v.f32(at + 8), v.f32(at + 12), v.f32(at + 16), v.f32(at + 20)]
+          at += 24
+        }
+        const image = this.readImage(v.rest(at))
+        if (image?.kind === 'bitmap') return { kind: 'texture', picture: image.picture, transform, wrap }
+        this.lost.add(image ? 'texture brushes of metafiles' : 'texture brushes whose image could not be read')
+        return { kind: 'solid', argb: 0xff808080 }
+      }
       case 3:
-        // A path gradient: its center color.
-        return { kind: 'solid', argb: v.u32(16) }
+        return this.readPathGradient(v)
       default:
-        this.lost.add('texture brushes')
+        this.lost.add('brushes of an unknown kind')
         return { kind: 'solid', argb: 0xff808080 }
     }
+  }
+
+  private readPathGradient(v: View): Brush {
+    const flags = v.u32(8)
+    const centerColor = v.u32(16)
+    const center: [number, number] = [v.f32(20), v.f32(24)]
+    const count = v.u32(28)
+    if (!v.has(32, count * 4)) throw new ShortRecord()
+    const surround: number[] = []
+    for (let i = 0; i < count; i++) surround.push(v.u32(32 + i * 4))
+    let at = 32 + count * 4
+    let boundary: Path
+    const isPath = (flags & 0x01) !== 0
+    if (isPath) {
+      const size = v.i32(at)
+      boundary = this.readPath(v.sub(at + 4, size))
+      at += 4 + size
+    } else {
+      const n = v.u32(at)
+      const { pts, end } = this.points(v, at + 4, n, false, false)
+      boundary = { points: pts, types: Array.from({ length: n }, (_, i) => (i ? 1 : 0)) }
+      at = end
+    }
+    let transform: Matrix = IDENTITY
+    if (flags & 0x02) {
+      transform = [v.f32(at), v.f32(at + 4), v.f32(at + 8), v.f32(at + 12), v.f32(at + 16), v.f32(at + 20)]
+      at += 24
+    }
+    let preset: [number, number][] | undefined
+    let factors: [number, number][] | undefined
+    if (flags & 0x0c) {
+      // Preset colors (0x04) or blend factors (0x08): a count, the positions, then the colors or factors.
+      const n = v.u32(at)
+      if (!(n >= 1 && n <= 256) || !v.has(at + 4, n * 8)) throw new ShortRecord()
+      const list: [number, number][] = []
+      for (let i = 0; i < n; i++) list.push([v.f32(at + 4 + i * 4), flags & 0x04 ? v.u32(at + 4 + n * 4 + i * 4) : v.f32(at + 4 + n * 4 + i * 4)])
+      list.sort((a, b) => a[0] - b[0])
+      if (flags & 0x04) preset = list
+      else factors = list
+      at += 4 + n * 8
+    }
+    let focus = 0
+    if (flags & 0x40 && v.has(at, 12)) {
+      // The focus scales, across and down: as one, their mean.
+      const f = (v.f32(at + 4) + v.f32(at + 8)) / 2
+      focus = Math.max(0, Math.min(0.999, f))
+    }
+    if (surround.length === 0) surround.push(centerColor)
+    return { kind: 'path', center, centerColor, surround, boundary, isPath, transform, preset, factors, focus }
   }
 
   private readPen(v: View): Pen {
@@ -585,7 +674,122 @@ export class EmfPlusPlayer implements PlusHook {
         )
         return { kind: 'url', id }
       }
+      case 'texture':
+        return this.texture(brush)
+      case 'path':
+        return this.pathGradient(brush)
     }
+  }
+
+  /**
+   * A texture brush: its image as a pattern tile, through the brush's and
+   * the world's transforms; flipped every other tile (the tile two images
+   * wide or high, the second mirrored); once (clamp), the image the shape
+   * cuts out.
+   */
+  private texture(brush: Extract<Brush, { kind: 'texture' }>): Paint {
+    const m = compose(brush.transform, this.matrix())
+    const pic = brush.picture
+    if (brush.wrap === 4) return { kind: 'image', picture: pic, m, rgb: 0x808080 }
+    const fx = brush.wrap === 1 || brush.wrap === 3
+    const fy = brush.wrap === 2 || brush.wrap === 3
+    const w = pic.width
+    const h = pic.height
+    const img = this.out.imageDef(pic)
+    const copies = [`<use xlink:href="#${img}"/>`]
+    if (fx) copies.push(`<use xlink:href="#${img}" transform="matrix(-1 0 0 1 ${2 * w} 0)"/>`)
+    if (fy) copies.push(`<use xlink:href="#${img}" transform="matrix(1 0 0 -1 0 ${2 * h})"/>`)
+    if (fx && fy) copies.push(`<use xlink:href="#${img}" transform="matrix(-1 0 0 -1 ${2 * w} ${2 * h})"/>`)
+    const key = `ptex:${img}:${brush.wrap}:${matrixAttr(m)}`
+    const id = this.out.def(key, (id) =>
+      `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${fx ? 2 * w : w}" height="${fy ? 2 * h : h}" patternTransform="${matrixAttr(m)}">${copies.join('')}</pattern>`,
+    )
+    return { kind: 'url', id }
+  }
+
+  /**
+   * A path gradient. On an ellipse with one boundary color (what GDI+'s
+   * ellipse gradients are), SVG's radial gradient, its focal point the
+   * center point: both mix along the ray from the center out to the edge.
+   * On any other boundary, shaded into a bitmap (shade.ts), the brush's
+   * area cut out by the shape filled. Too large to shade: the center color.
+   */
+  private pathGradient(brush: PathGradient): Paint | null {
+    const m = compose(brush.transform, this.matrix())
+    const key = matrixAttr(m)
+    const known = this.shaded.get(brush)
+    if (known?.key === key) return known.paint
+    const paint = this.radial(brush, m) ?? this.shadedPath(brush, m)
+    this.shaded.set(brush, { key, paint })
+    return paint
+  }
+
+  private radial(brush: PathGradient, m: Matrix): Paint | null {
+    const pts = brush.boundary.points
+    if (!brush.isPath || pts.length !== 26 || new Set(brush.surround).size !== 1) return null
+    let l = Infinity
+    let t = Infinity
+    let r = -Infinity
+    let b = -Infinity
+    for (let i = 0; i < pts.length; i += 2) {
+      l = Math.min(l, pts[i])
+      r = Math.max(r, pts[i])
+      t = Math.min(t, pts[i + 1])
+      b = Math.max(b, pts[i + 1])
+    }
+    const rx = (r - l) / 2
+    const ry = (b - t) / 2
+    if (!(rx > 0 && ry > 0)) return null
+    const ex = l + rx
+    const ey = t + ry
+    // An ellipse as four curves: the points on it at radius 1, the control points (0.5523 of a radius along) a little further out.
+    for (let i = 0; i < 13; i++) {
+      const d = Math.hypot((pts[2 * i] - ex) / rx, (pts[2 * i + 1] - ey) / ry)
+      if (Math.abs(d - (i % 3 === 0 ? 1 : Math.hypot(1, 0.5523))) > 0.03) return null
+    }
+    let fx = (brush.center[0] - ex) / rx
+    let fy = (brush.center[1] - ey) / ry
+    const off = Math.hypot(fx, fy)
+    if (off > 0.99) {
+      fx *= 0.99 / off
+      fy *= 0.99 / off
+    }
+    const edge = brush.surround[0]
+    const list: [number, number][] = brush.preset ?? (brush.factors ? brush.factors.map(([p, f]) => [p, mix(edge, brush.centerColor, f)]) : [[0, edge], [1, brush.centerColor]])
+    // Offset 0 is the focal point (the center), 1 the edge; a position p (1 the center) is 1 - p of the way, past the focus.
+    const stops = list
+      .map(([p, c]) => [1 - Math.max(0, Math.min(1, p)) * (1 - brush.focus), c] as const)
+      .sort((a, z) => a[0] - z[0])
+      .map(([o, c]) => `<stop offset="${num(o)}" stop-color="${hex(c & 0xffffff)}"${c >>> 24 < 255 ? ` stop-opacity="${num((c >>> 24) / 255)}"` : ''}/>`)
+      .join('')
+    const g = compose([rx, 0, 0, ry, ex, ey], m)
+    const key = `prad:${matrixAttr(g)}:${num(fx)},${num(fy)}:${stops}`
+    const id = this.out.def(key, (id) =>
+      `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1" fx="${num(fx)}" fy="${num(fy)}" gradientTransform="${matrixAttr(g)}">${stops}</radialGradient>`,
+    )
+    return { kind: 'url', id }
+  }
+
+  private shadedPath(brush: PathGradient, m: Matrix): Paint | null {
+    const center = brush.centerColor
+    const flat = argbPaint(center) as { kind: 'color'; rgb: number; alpha?: number }
+    const ring = boundaryRing(brush.boundary, brush.surround, m)
+    if (!ring) {
+      this.lost.add('path gradients too detailed to shade (drawn in their center color)')
+      return center >>> 24 === 0 ? null : flat
+    }
+    const color = (edge: number, share: number): number => {
+      const s = brush.focus < 1 ? Math.min(1, share / (1 - brush.focus)) : 1
+      if (brush.preset) return along(brush.preset, s)
+      const k = brush.factors ? alongNumber(brush.factors, s) : s
+      return mix(edge, center, k)
+    }
+    const shaded = shade(fan(apply(m, ...brush.center), ring.points, ring.colors, color), this.out.hairline, this.budget)
+    if (!shaded) {
+      this.lost.add('path gradients too large to shade (drawn in their center color)')
+      return center >>> 24 === 0 ? null : flat
+    }
+    return { kind: 'image', picture: shaded.picture, m: shaded.m, rgb: flat.rgb, alpha: flat.alpha }
   }
 
   private stroke(id: number): Stroke | null {
@@ -1162,6 +1366,66 @@ function plusGdiFont(f: PlusFont, em: number): Font {
 }
 
 /** Two ARGB colors mixed, `t` of the way from the first to the second. */
+/** The most points a path gradient's boundary is followed by (curves as 8 straight pieces each). */
+const MAX_BOUNDARY_POINTS = 4096
+
+/**
+ * A path gradient's boundary in device space, its first figure (curves
+ * followed as straight pieces), and each point's boundary color (a curve's
+ * pieces mixed between the colors of its ends); null past MAX_BOUNDARY_POINTS.
+ */
+function boundaryRing(path: Path, surround: number[], m: Matrix): { points: [number, number][]; colors: number[] } | null {
+  const { points, types } = path
+  const n = Math.min(types.length, Math.floor(points.length / 2))
+  const colorAt = (i: number): number => surround[Math.min(i, surround.length - 1)]
+  const out: [number, number][] = []
+  const colors: number[] = []
+  const at = (i: number): [number, number] => [points[2 * i], points[2 * i + 1]]
+  for (let i = 0; i < n; i++) {
+    if (i > 0 && (types[i] & 0x07) === 0) break
+    if ((types[i] & 0x07) === 3 && i + 2 < n && i > 0) {
+      const [x0, y0] = at(i - 1)
+      const [x1, y1] = at(i)
+      const [x2, y2] = at(i + 1)
+      const [x3, y3] = at(i + 2)
+      for (let k = 1; k <= 8; k++) {
+        const t = k / 8
+        const u = 1 - t
+        out.push(apply(m, u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3, u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3))
+        colors.push(mix(colorAt(i - 1), colorAt(i + 2), t))
+      }
+      i += 2
+    } else {
+      out.push(apply(m, ...at(i)))
+      colors.push(colorAt(i))
+    }
+    if (out.length > MAX_BOUNDARY_POINTS) return null
+  }
+  return out.length >= 3 ? { points: out, colors } : null
+}
+
+/** A color along a list of [position, ARGB] (sorted), at position `s`. */
+function along(list: [number, number][], s: number): number {
+  if (s <= list[0][0]) return list[0][1]
+  for (let i = 1; i < list.length; i++) {
+    const [p1, c1] = list[i]
+    const [p0, c0] = list[i - 1]
+    if (s <= p1) return p1 > p0 ? mix(c0, c1, (s - p0) / (p1 - p0)) : c1
+  }
+  return list[list.length - 1][1]
+}
+
+/** A number along a list of [position, value] (sorted), at position `s`. */
+function alongNumber(list: [number, number][], s: number): number {
+  if (s <= list[0][0]) return list[0][1]
+  for (let i = 1; i < list.length; i++) {
+    const [p1, v1] = list[i]
+    const [p0, v0] = list[i - 1]
+    if (s <= p1) return p1 > p0 ? v0 + ((v1 - v0) * (s - p0)) / (p1 - p0) : v1
+  }
+  return list[list.length - 1][1]
+}
+
 function mix(a: number, b: number, t: number): number {
   t = Math.max(0, Math.min(1, t))
   const ch = (sh: number): number => Math.round(((a >>> sh) & 0xff) * (1 - t) + ((b >>> sh) & 0xff) * t)

@@ -312,6 +312,46 @@ export function readPackedDib(dib: View, opts: DibOptions): Raster | Picture | n
   return readDib(dib.sub(0, at), dib.rest(at), opts)
 }
 
+/**
+ * A device-dependent bitmap of the oldest WMFs (a Bitmap16 object: type,
+ * width, height, bytes a row, planes, bits a pixel, then its rows, top row
+ * first, each a whole number of 16-bit words), its rows `bitsAt` bytes in.
+ * Only the kinds that mean the same on every device: one plane of one bit
+ * a pixel (0 black or `mono[0]`, 1 white or `mono[1]`), or 24 or 32 bits a
+ * pixel (blue, green, red); anything else is null.
+ */
+export function readBitmap16(v: View, bitsAt: number, opts: DibOptions): Raster | null {
+  const width = v.i16(2)
+  const height = v.i16(4)
+  const stride = v.i16(6)
+  const planes = v.u8(8)
+  const bpp = v.u8(9)
+  if (planes !== 1 || ![1, 24, 32].includes(bpp)) return null
+  if (!(width > 0 && height > 0 && stride >= Math.ceil((width * bpp) / 8) && v.has(bitsAt, stride * height))) return null
+  if (!opts.budget.take(width, height)) return null
+  const [zero, one] = opts.mono ?? [0x000000, 0xffffff]
+  const rgba = new Uint8Array(width * height * 4)
+  for (let y = 0; y < height; y++) {
+    const row = bitsAt + y * stride
+    for (let x = 0; x < width; x++) {
+      const o = (y * width + x) * 4
+      if (bpp === 1) {
+        const rgb = (v.u8(row + (x >> 3)) >> (7 - (x & 7))) & 1 ? one : zero
+        rgba[o] = (rgb >> 16) & 0xff
+        rgba[o + 1] = (rgb >> 8) & 0xff
+        rgba[o + 2] = rgb & 0xff
+      } else {
+        const p = row + (x * bpp) / 8
+        rgba[o] = v.u8(p + 2)
+        rgba[o + 1] = v.u8(p + 1)
+        rgba[o + 2] = v.u8(p)
+      }
+      rgba[o + 3] = 255
+    }
+  }
+  return { width, height, rgba, alpha: false }
+}
+
 /** The part of `r` from (x, y), `w` by `h` pixels, or `r` itself when that is all of it (or nothing sensible). */
 export function crop(r: Raster, x: number, y: number, w: number, h: number): Raster {
   x = Math.max(0, Math.round(x))

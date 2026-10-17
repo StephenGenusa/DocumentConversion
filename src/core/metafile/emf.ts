@@ -747,7 +747,8 @@ export class EmfPlayer {
         return
       }
       case EMR.EXTFLOODFILL:
-        g.lost.add('flood fill')
+        // Mode 1 FLOODFILLSURFACE, 0 FLOODFILLBORDER.
+        g.floodFill(r.i32(8), r.i32(12), r.u32(16), r.u32(20) === 1)
         return
       case EMR.POLYTEXTOUTA:
       case EMR.POLYTEXTOUTW: {

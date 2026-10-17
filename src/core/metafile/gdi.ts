@@ -1,6 +1,6 @@
 import { View } from './bytes'
 import type { GlyphFonts } from './fonts'
-import { Budget, crop, isPicture, keyOut, readDib, toPicture, unpremultiply, type Picture, type Raster } from './dib'
+import { Budget, crop, isPicture, keyOut, readBitmap16, readDib, toPicture, unpremultiply, type Picture, type Raster } from './dib'
 import {
   apply,
   axisAligned,
@@ -18,6 +18,7 @@ import {
   matrixAttr,
   num,
   PathData,
+  pathContains,
   rect,
   scaleOf,
   compose,
@@ -26,10 +27,12 @@ import {
   type Clip,
   type Matrix,
   type Paint,
+  type RecentShape,
   type Rect,
   type Stroke,
   type SvgOut,
 } from './svg'
+import { gouraud, shade, type Corners, type ShadeTriangle } from './shade'
 
 /*
  * GDI's device context, as EMF and WMF records drive it (emf.ts, wmf.ts):
@@ -84,6 +87,8 @@ export interface Brush {
   color: number
   hatch: number
   dib?: DibSource
+  /** An old WMF pattern brush's device-dependent bitmap (a Bitmap16 object, its rows 32 bytes in). */
+  ddb?: View
   mono?: boolean
 }
 
@@ -596,12 +601,13 @@ export class Gdi {
   /** A bitmap brush as an SVG pattern of its bitmap, a device pixel a pixel. */
   private dibPattern(brush: Brush): Paint | null {
     const src = brush.dib
-    if (!src) return null
-    const mono: [number, number] | undefined = brush.mono ? [this.color(this.dc.textColor), this.color(this.dc.bkColor)] : undefined
-    const key = `dib:${src.info.start}:${src.bits.start}:${mono?.join(',') ?? ''}`
+    if (!src && !brush.ddb) return null
+    const mono: [number, number] | undefined = brush.mono || brush.ddb ? [this.color(this.dc.textColor), this.color(this.dc.bkColor)] : undefined
+    const key = src ? `dib:${src.info.start}:${src.bits.start}:${mono?.join(',') ?? ''}` : `ddb:${brush.ddb!.start}:${mono?.join(',')}`
     let id = this.patterns.get(key)
     if (!id) {
-      const bmp = readDib(src.info, src.bits, { budget: this.setup.budget, usage: src.usage, palette: this.dc.palette ?? undefined, mono })
+      const opts = { budget: this.setup.budget, usage: src?.usage, palette: this.dc.palette ?? undefined, mono }
+      const bmp = src ? readDib(src.info, src.bits, opts) : readBitmap16(brush.ddb!, 32, opts)
       if (!bmp) return null
       const pic = toPicture(bmp)
       const w = num(pic.width * this.out.hairline)
@@ -1022,22 +1028,19 @@ export class Gdi {
   /**
    * GradientFill: rectangles shaded left to right (mode 0) or top to bottom
    * (1) between two vertices' colors, as linear gradients; triangles (2)
-   * filled with their vertices' mean color.
+   * Gouraud shaded, all of the record's in one bitmap (shade.ts) the
+   * triangles cut out. Triangles too many or too fine to shade are filled
+   * with their vertices' mean color.
    */
   gradient(vertices: { x: number; y: number; rgb: number }[], mode: number, shapes: number[][]): void {
+    if (mode === 2) {
+      this.triangles(vertices, shapes)
+      return
+    }
     for (const s of shapes) {
       const v = s.map((i) => vertices[i])
       if (v.some((x) => !x)) continue
       const p = new PathData()
-      if (mode === 2) {
-        p.moveTo(...this.pt(v[0].x, v[0].y))
-        p.lineTo(...this.pt(v[1].x, v[1].y))
-        p.lineTo(...this.pt(v[2].x, v[2].y))
-        p.close()
-        const mean = [16, 8, 0].map((sh) => Math.round(v.reduce((n, x) => n + ((x.rgb >> sh) & 0xff), 0) / 3))
-        this.out.shape(p, { kind: 'color', rgb: (mean[0] << 16) | (mean[1] << 8) | mean[2] }, null, 'nonzero', this.dc.clip)
-        continue
-      }
       const [a, b] = v
       p.moveTo(...this.pt(a.x, a.y))
       p.lineTo(...this.pt(b.x, a.y))
@@ -1052,6 +1055,65 @@ export class Gdi {
       )
       this.out.shape(p, { kind: 'url', id }, null, 'nonzero', this.dc.clip)
     }
+  }
+
+  private triangles(vertices: { x: number; y: number; rgb: number }[], shapes: number[][]): void {
+    const tris: ShadeTriangle[] = []
+    const p = new PathData()
+    const flat: { path: PathData; rgb: number }[] = []
+    for (const s of shapes) {
+      const v = s.map((i) => vertices[i])
+      if (v.length !== 3 || v.some((x) => !x)) continue
+      const pts: Corners = [this.pt(v[0].x, v[0].y), this.pt(v[1].x, v[1].y), this.pt(v[2].x, v[2].y)]
+      const one = new PathData()
+      one.moveTo(...pts[0])
+      one.lineTo(...pts[1])
+      one.lineTo(...pts[2])
+      one.close()
+      p.append(one)
+      tris.push({ p: pts, color: gouraud(...(v.map((x) => (0xff000000 | x.rgb) >>> 0) as [number, number, number])) })
+      const mean = [16, 8, 0].map((sh) => Math.round(v.reduce((n, x) => n + ((x.rgb >> sh) & 0xff), 0) / 3))
+      flat.push({ path: one, rgb: (mean[0] << 16) | (mean[1] << 8) | mean[2] })
+    }
+    if (tris.length === 0) return
+    const shaded = shade(tris, this.out.hairline, this.setup.budget)
+    if (shaded) {
+      this.out.shape(p, { kind: 'image', picture: shaded.picture, m: shaded.m, rgb: flat[0].rgb }, null, 'nonzero', this.dc.clip)
+      return
+    }
+    this.lost.add('triangle gradients too large to shade (drawn in their mean colors)')
+    for (const f of flat) this.out.shape(f.path, { kind: 'color', rgb: f.rgb }, null, 'nonzero', this.dc.clip)
+  }
+
+  /**
+   * ExtFloodFill and FloodFill: GDI fills pixels already drawn, and this
+   * drawing has shapes, not pixels, so the fill is the shape the point is
+   * in (SvgOut.recent, the last closed shapes drawn), filled again with the
+   * brush. Surface (FLOODFILLSURFACE): the area of `rgb` around the point:
+   * the shape on top at the point, when it is filled with that color.
+   * Border (FLOODFILLBORDER): out to the border of `rgb`: the smallest shape
+   * around the point outlined or filled in that color (nothing when the
+   * point is that color already). Its outline is drawn again over the
+   * fill, as GDI's fill stops at it. A point in no such shape (on the
+   * paper, or in a shape drawn too long before) is named in lost.
+   */
+  floodFill(x: number, y: number, color: number, surface: boolean): void {
+    const [px, py] = this.pt(x, y)
+    const rgb = this.color(color)
+    const at = this.out.recent.filter((s) => px >= s.bounds.l && px <= s.bounds.r && py >= s.bounds.t && py <= s.bounds.b && pathContains(s.d, s.rule, px, py))
+    const top = at[at.length - 1]
+    const colorOf = (p: Paint | null): number | null => (p?.kind === 'color' && (p.alpha ?? 1) > 0 ? p.rgb & 0xffffff : null)
+    let target: RecentShape | undefined
+    if (surface) target = top && colorOf(top.fill) === rgb ? top : undefined
+    else if (!top || colorOf(top.fill) !== rgb) {
+      const size = (s: RecentShape): number => (s.bounds.r - s.bounds.l) * (s.bounds.b - s.bounds.t)
+      for (const s of at) if ((colorOf(s.stroke?.paint ?? null) === rgb || colorOf(s.fill) === rgb) && (!target || size(s) < size(target))) target = s
+    } else return
+    if (!target) {
+      this.lost.add('flood fill outside the shapes drawn before it')
+      return
+    }
+    this.out.shape(PathData.of(target.d, target.bounds), this.fill(), target.stroke, target.rule, this.dc.clip ?? target.clip, this.blend())
   }
 
   /* ---- bitmaps -------------------------------------------------------- */

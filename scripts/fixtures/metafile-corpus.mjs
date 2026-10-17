@@ -208,6 +208,47 @@ export function masksEmf() {
   return e.bytes()
 }
 
+/**
+ * GDI fills worked out from what is drawn: a square of two Gouraud-shaded
+ * triangles (GradientFill, a color at each corner), a red outline flood
+ * filled green out to its border, and a white ellipse whose surface is
+ * flood filled orange.
+ */
+export function shadingEmf() {
+  const e = new EmfWriter({ width: 240, height: 160 })
+  e.gradientTriangles(
+    [[10, 10, BLUE], [110, 10, ORANGE], [110, 110, GREEN], [10, 110, 0xffffff]],
+    [[0, 1, 2], [0, 2, 3]],
+  )
+  e.pen(1, 0, 2, RED).select(1).stock(5).rectangle(130, 10, 230, 70)
+  e.brush(2, 0, GREEN).select(2).floodFill(180, 40, RED, 0)
+  e.pen(3, 0, 1, 0x000000).select(3).stock(0).ellipse(130, 90, 230, 150)
+  e.brush(4, 0, ORANGE).select(4).floodFill(180, 120, 0xffffff, 1)
+  return e.bytes()
+}
+
+/**
+ * EMF+ brushes drawn as gradients and patterns: a lamp's glow (a path
+ * gradient on an ellipse, white in the middle), a pennant (a path gradient
+ * on a triangle, a color at each corner, orange at its center) and a rug
+ * tiled with a texture.
+ */
+export function plusFillsEmf() {
+  const tile = png(16, 16, (x) => (x < 8 ? [58, 110, 165] : [232, 163, 61]))
+  const e = new EmfWriter({ width: 240, height: 160 })
+  const p = new PlusWriter()
+    .header(false)
+    .pathGradientBrush(1, { center: [60, 50], centerArgb: 0xffffffff, surround: [0xff3a6ea5], boundary: { ellipse: [10, 10, 100, 80] } })
+    .fillEllipseWith(1, [10, 10, 100, 80])
+    .pathGradientBrush(2, { center: [180, 40], centerArgb: 0xffe8a33d, surround: [0xffc0392b, 0xff4f9a52, 0xff3a6ea5], boundary: [130, 10, 230, 10, 180, 90] })
+    .fillPolygonWith(2, [130, 10, 230, 10, 180, 90])
+    .textureBrush(3, tile, 16, 16)
+    .fillRectsWith(3, [[10, 100, 220, 50]])
+    .eof()
+  e.comment(p.bytes())
+  return e.bytes()
+}
+
 /** Every picture, with its alt text and size (CSS px), in the order the document shows them. */
 export function metafileCorpus() {
   return [
@@ -224,5 +265,7 @@ export function metafileCorpus() {
     { name: 'wmfscan', ext: 'wmf', bytes: scanWmf(), alt: R.wmfScanAlt, width: 160, height: 100 },
     { name: 'rtl', ext: 'emf', bytes: rtlEmf(), alt: R.rtlAlt, width: 240, height: 160 },
     { name: 'masks', ext: 'emf', bytes: masksEmf(), alt: R.masksAlt, width: 240, height: 160 },
+    { name: 'shading', ext: 'emf', bytes: shadingEmf(), alt: R.shadingAlt, width: 240, height: 160 },
+    { name: 'plusfills', ext: 'emf', bytes: plusFillsEmf(), alt: R.plusFillsAlt, width: 240, height: 160 },
   ]
 }

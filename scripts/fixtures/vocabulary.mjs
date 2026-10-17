@@ -638,6 +638,8 @@ export const READING_ROOM = {
   signs: ['Quiet please', 'Entrance', 'Returns', 'Media', 'Fiction'],
   rtlAlt: 'The entrance sign as a right-to-left program draws it',
   masksAlt: 'Shelf markers cut out by masks, a slanted photograph and two labels',
+  shadingAlt: 'Shaded floor tiles beside two rooms filled in after they were drawn',
+  plusFillsAlt: 'A lamp glow, a shaded pennant and a tiled rug',
   // "Library" in Hebrew, for text read right to left.
   rtlSign: 'ספרייה',
   metafilesAfter: 'Volunteers can print every drawing from any of these formats.',
