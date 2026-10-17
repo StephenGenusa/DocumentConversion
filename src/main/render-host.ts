@@ -52,8 +52,8 @@ import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderReques
 export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
   // The vendored release, then the colors it is drawn in (host.js, mermaid-colors.js):
   // colors-1: section, branch, journey, quadrant, Gantt and XY colors over 'neutral';
-  // a mind map circle's label centered.
-  mermaid: '11.12.0 colors-1',
+  // a mind map circle's label centered. 2: a Gantt label beside its bar set 11 px off it, not 5.
+  mermaid: '11.12.0 colors-2',
   dot: '3.31.0',
   math: '3.2.2',
   svg: 'raster-1',

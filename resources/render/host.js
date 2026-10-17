@@ -101,6 +101,9 @@
 
   var counter = 0
 
+  /** How much further from its bar a Gantt label outside the bar is set than Mermaid's 5 px. */
+  var GANTT_LABEL_GAP = 6
+
   /** Mermaid's HTML-serialised SVG as standalone XML, sized by its viewBox. */
   function normalise(markup) {
     var holder = document.createElement('div')
@@ -123,6 +126,15 @@
       Array.prototype.forEach.call(label.querySelectorAll('text'), function (text) {
         text.setAttribute('text-anchor', 'middle')
       })
+    })
+    // A Gantt label too long for its bar is written beside it, 5 px off the
+    // bar's end (Mermaid 11.12): printed, it read as touching the bar. Moved
+    // out to 11 px, away from the bar on either side.
+    Array.prototype.forEach.call(svg.querySelectorAll('text.taskTextOutsideRight, text.taskTextOutsideLeft'), function (text) {
+      var x = parseFloat(text.getAttribute('x'))
+      if (!isFinite(x)) return
+      var away = text.classList.contains('taskTextOutsideRight') ? GANTT_LABEL_GAP : -GANTT_LABEL_GAP
+      text.setAttribute('x', String(Math.round((x + away) * 100) / 100))
     })
     svg.style.removeProperty('max-width')
     if (!svg.getAttribute('style')) svg.removeAttribute('style')

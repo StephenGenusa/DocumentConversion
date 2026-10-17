@@ -112,6 +112,7 @@ interface HarnessResult {
   mermaidHues: Record<string, number | string>
   mindmapPairs: Array<{ section: string; fill?: string; text?: string }>
   mindmapRootText: string | null
+  ganttLabelGaps: Array<{ side: 'left' | 'right'; gap: number }>
 }
 
 /** WCAG contrast of two colors given as #rgb, #rrggbb, white or black. */
@@ -210,6 +211,11 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
 
   it("centers a mind map circle's label on it (Mermaid starts an SVG label at the center)", () => {
     expect(result.mindmapRootText).toContain('text-anchor="middle"')
+  })
+
+  it('sets a Gantt label beside its bar 11 px off it, on either side', () => {
+    expect(result.ganttLabelGaps.map((g) => g.side).sort()).toEqual(['left', 'right'])
+    for (const g of result.ganttLabelGaps) expect(g.gap, g.side).toBe(11)
   })
 
   it('answers a broken diagram with the engine message', () => {

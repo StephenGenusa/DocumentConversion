@@ -173,6 +173,27 @@ async function main() {
     out.mindmapRootText = root ? root[1] : null
   }
 
+  // A Gantt label too long for its bar is set beside it: how far from the bar,
+  // by side (host.js moves Mermaid's 5 px out to 11).
+  const gantt = await host.render({
+    kind: 'mermaid',
+    source: 'gantt\n  dateFormat YYYY-MM-DD\n  todayMarker off\n  section A\n  A label far too long for its bar :a1, 2026-01-01, 1d\n  Filler :a2, 2026-01-01, 30d\n  Another label far too long :a3, 2026-01-30, 1d',
+    display: true,
+    format: 'svg',
+  })
+  out.ganttLabelGaps = []
+  if (gantt.svg) {
+    const attr = (tag, name) => Number((new RegExp('\\s' + name + '="([^"]*)"').exec(tag) || [])[1])
+    for (const [tag] of gantt.svg.matchAll(/<text[^>]*taskTextOutside(?:Right|Left)[^>]*>/g)) {
+      const id = (/\sid="([^"]*)-text"/.exec(tag) || [])[1]
+      const rect = id && (new RegExp('<rect[^>]*\\sid="' + id + '"[^>]*>').exec(gantt.svg) || [])[0]
+      if (!rect) continue
+      const right = /taskTextOutsideRight/.test(tag)
+      const x = attr(tag, 'x'), rx = attr(rect, 'x'), rw = attr(rect, 'width')
+      out.ganttLabelGaps.push({ side: right ? 'right' : 'left', gap: Math.round(right ? x - (rx + rw) : rx - x) })
+    }
+  }
+
   // SVG images (spec D10): rasterized at twice their size; a hostile one sanitized before the page sees it.
   const pngSize = (r) => {
     if (!r.png) return { error: r.error }
