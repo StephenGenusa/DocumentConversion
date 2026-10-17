@@ -308,3 +308,106 @@ describe('pictures an SVG names by address (<image href="https://…">)', () => 
     expect(svgsIn(printed)[0]).toContain('[image: Desk photo]')
   })
 })
+
+describe('Settings → Web (spec 4.2, 8.1)', () => {
+  const OFF = { fetchPictures: false, allowLocalNetwork: true }
+  const NO_LAN = { fetchPictures: true, allowLocalNetwork: false }
+  const two = '<p>a</p><img src="https://example.com/a.png" alt="chart"><img src="https://example.com/b.png" alt="logo">'
+  /** A notice collector, as ctx.onAdvice. */
+  const notices = () => {
+    const seen: { kind: string; message: string }[] = []
+    return { seen, onAdvice: (kind: string, message: string) => void seen.push({ kind, message }) }
+  }
+
+  it('fetch off: nothing is fetched, each picture is its description, and one notice says how many', async () => {
+    const d = deps({ 'https://example.com/a.png': PNG, 'https://example.com/b.png': PNG })
+    const n = notices()
+    const out = await resolveRemoteImages(two, 'html', d, { web: OFF, onAdvice: n.onAdvice })
+    expect(d.lookup).not.toHaveBeenCalled()
+    expect(d.fetch).not.toHaveBeenCalled()
+    expect(out).toContain('[image: chart]')
+    expect(out).toContain('[image: logo]')
+    expect(out).not.toContain('https://example.com/')
+    expect(n.seen).toEqual([{ kind: 'pictures-not-fetched', message: '2 web pictures were not fetched (Settings → Web)' }])
+  })
+
+  it('fetch off: one picture is "1 web picture was"', async () => {
+    const n = notices()
+    await resolveRemoteImages('<img src="https://example.com/a.png" alt="a">', 'md', deps({}), { web: OFF, onAdvice: n.onAdvice })
+    expect(n.seen.map((s) => s.message)).toEqual(['1 web picture was not fetched (Settings → Web)'])
+  })
+
+  it('fetch off: no notice for a document with no web pictures', async () => {
+    const n = notices()
+    await resolveRemoteImages('<p>no pictures</p>', 'html', deps({}), { web: OFF, onAdvice: n.onAdvice })
+    expect(n.seen).toEqual([])
+  })
+
+  it.each(['eml', 'msg', 'mbox', 'ics'] as const)('mail and invitations are unchanged: never fetched, no notice (%s)', async (source) => {
+    for (const web of [OFF, NO_LAN, undefined]) {
+      const d = deps({ 'https://example.com/a.png': PNG })
+      const n = notices()
+      const out = await resolveRemoteImages(two, source, d, { web, onAdvice: n.onAdvice })
+      expect(d.fetch).not.toHaveBeenCalled()
+      expect(out).toContain('[image: chart]')
+      expect(n.seen).toEqual([])
+    }
+  })
+
+  it('local network off: an intranet picture is its description, a public one still arrives', async () => {
+    const d: GuardedFetchDeps = {
+      ...deps({ 'https://example.com/a.png': PNG, 'http://wiki.corp/b.png': PNG }),
+      lookup: vi.fn(async (host: string) => (host === 'wiki.corp' ? ['10.1.1.1'] : ['93.184.216.34'])),
+    }
+    const html = '<img src="https://example.com/a.png" alt="public"><img src="http://wiki.corp/b.png" alt="intranet">'
+    const out = await resolveRemoteImages(html, 'html', d, { web: NO_LAN })
+    expect(out).toContain('data:image/png;base64,')
+    expect(out).toContain('[image: intranet]')
+    // With the setting on (the default) the intranet picture arrives too.
+    const on = await resolveRemoteImages(html, 'html', d)
+    expect(on).not.toContain('[image:')
+  })
+
+  it('a paste with fetch off: descriptions and the notice', async () => {
+    const d = deps({ 'https://example.com/a.png': PNG })
+    const n = notices()
+    const out = await pastedHtmlToHub(two, d, { web: OFF, onAdvice: n.onAdvice })
+    expect(d.fetch).not.toHaveBeenCalled()
+    expect(out).toContain('[image: chart]')
+    expect(n.seen.map((s) => s.message)).toEqual(['2 web pictures were not fetched (Settings → Web)'])
+  })
+
+  it('a paste with the local network off refuses an intranet picture', async () => {
+    const d = deps({ 'http://intranet/logo.png': PNG }, '10.0.0.5')
+    const out = await pastedHtmlToHub('<img src="http://intranet/logo.png" alt="logo">', d, { web: NO_LAN })
+    expect(d.fetch).not.toHaveBeenCalled()
+    expect(out).toContain('[image: logo]')
+  })
+
+  it('a web page with fetch off: the page is opened (the user asked for it), its pictures are not', async () => {
+    const d = bigDeps(3, 64)
+    const n = notices()
+    const res = await loadUrl('https://e.example/page', d, { web: OFF, onAdvice: n.onAdvice })
+    expect(res.kind).toBe('html')
+    expect(d.fetch).toHaveBeenCalledTimes(1)
+    expect(res.kind === 'html' && res.html).toContain('[image: p0]')
+    expect(n.seen.map((s) => s.message)).toEqual(['3 web pictures were not fetched (Settings → Web)'])
+  })
+
+  it('a web page on the intranet is refused with the local network off', async () => {
+    const d = deps({}, '192.168.1.5')
+    await expect(loadUrl('http://wiki/page', d, { web: NO_LAN })).rejects.toMatchObject({ code: 'fetch-blocked' })
+    await expect(loadUrl('https://wiki.corp.example/page', d, { web: NO_LAN })).rejects.toMatchObject({ code: 'fetch-blocked' })
+    expect(d.fetch).not.toHaveBeenCalled()
+  })
+
+  it('a conversion with fetch off gives the notice through the converter', async () => {
+    const d = deps({ 'https://example.com/fig.png': PNG })
+    const conv = createConverter(vi.fn(async () => Buffer.from('%PDF')), { fetchImages: d })
+    const n = notices()
+    const out = await conv.convert({ bytes: Buffer.from('![fig](https://example.com/fig.png)') }, 'md', 'html', { web: OFF }, { onAdvice: n.onAdvice })
+    expect(d.fetch).not.toHaveBeenCalled()
+    expect(out.parts[0].bytes.toString('utf8')).toContain('[image: fig]')
+    expect(n.seen).toEqual([{ kind: 'pictures-not-fetched', message: '1 web picture was not fetched (Settings → Web)' }])
+  })
+})

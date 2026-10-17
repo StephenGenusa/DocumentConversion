@@ -28,11 +28,48 @@ const IMAGE_TIMEOUT_MS = 10_000
  */
 const NO_FETCH_SOURCES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['eml', 'msg', 'mbox', 'ics'])
 
-function guardedImageFetcher(deps: GuardedFetchDeps, signal: AbortSignal | undefined, timeoutMs: number): ImageFetcher {
+/** What fetching a document's pictures is given: cancellation, progress, the notice, and Settings → Web. */
+export type PictureFetchContext = Pick<ReadContext, 'signal' | 'onProgress' | 'onAdvice' | 'web'>
+
+function guardedImageFetcher(deps: GuardedFetchDeps, ctx: PictureFetchContext | undefined, timeoutMs?: number): ImageFetcher {
+  const allowPrivate = ctx?.web?.allowLocalNetwork !== false
   return async (url) => {
-    const res = await guardedFetch(url, deps, { signal, timeoutMs, maxBytes: MAX_FETCHED_IMAGE_BYTES })
+    const res = await guardedFetch(url, deps, { signal: ctx?.signal, timeoutMs, maxBytes: MAX_FETCHED_IMAGE_BYTES, allowPrivate })
     return { bytes: res.bytes, contentType: res.contentType }
   }
+}
+
+/** Whether Settings → Web leaves web pictures unfetched for this read. */
+export function fetchingOff(ctx: PictureFetchContext | undefined): boolean {
+  return ctx?.web?.fetchPictures === false
+}
+
+/** The one notice a read with fetching off gives (spec principle 3: nothing is dropped silently). */
+export function notFetchedNotice(count: number): string {
+  return `${count} web picture${count === 1 ? ' was' : 's were'} not fetched (Settings → Web)`
+}
+
+/**
+ * Every picture `inlineImages` would have fetched, left unfetched: each <img>
+ * becomes its description, as a picture that failed to arrive does, and a
+ * picture an SVG names by address is written as its description by the SVG
+ * sanitiser. Nothing touches the network. The count, if any, goes out as one
+ * notice.
+ */
+export async function withoutFetching(
+  html: string,
+  baseUrl: string,
+  ctx: PictureFetchContext | undefined,
+  select?: (src: string) => boolean,
+): Promise<string> {
+  let count = 0
+  const refuse: ImageFetcher = async () => {
+    count++
+    throw new Error('not fetched')
+  }
+  const out = await inlineImages(html, baseUrl, refuse, MAX_FETCHED_IMAGE_BYTES, undefined, select)
+  if (count > 0) ctx?.onAdvice?.('pictures-not-fetched', notFetchedNotice(count))
+  return out
 }
 
 /**
@@ -52,16 +89,17 @@ function guardedImageFetcher(deps: GuardedFetchDeps, signal: AbortSignal | undef
 export async function pastedHtmlToHub(
   html: string,
   deps: GuardedFetchDeps,
-  ctx?: Pick<ReadContext, 'signal' | 'onProgress'>,
+  ctx?: PictureFetchContext,
   imageTimeoutMs: number = IMAGE_TIMEOUT_MS,
 ): Promise<string> {
   // A copied code block keeps (or is given) its language here, so the edit
   // pane holds it and every writer highlights it (code-language.ts).
   const clean = guessCodeLanguages(sanitizeToHub(tagPastedCodeBlocks(html)))
   if (!/<img\b[^>]*\bsrc="(?!data:)/i.test(clean)) return clean
+  if (fetchingOff(ctx)) return sanitizeToHub(await withoutFetching(clean, 'about:blank', ctx))
   // Aborting `signal` is "skip the rest", not "cancel the paste": the images
   // not yet fetched fail at once, become placeholders, and the paste opens.
-  const fetcher = guardedImageFetcher(deps, ctx?.signal, imageTimeoutMs)
+  const fetcher = guardedImageFetcher(deps, ctx, imageTimeoutMs)
   return sanitizeToHub(await inlineImages(clean, 'about:blank', fetcher, MAX_FETCHED_IMAGE_BYTES, ctx?.onProgress))
 }
 
@@ -75,19 +113,24 @@ export async function pastedHtmlToHub(
  * html, slide and e-book outputs depended on a third-party site staying up.
  *
  * Without `deps` nothing is fetched and remote images become placeholders, the
- * same outcome a write would give them anyway.
+ * same outcome a write would give them anyway. With fetching off in Settings
+ * (`ctx.web`) they become placeholders too, with one notice saying how many;
+ * mail and invitations never fetch and give no notice, as before.
  */
 export async function resolveRemoteImages(
   html: string,
   source: SourceFormat,
   deps: GuardedFetchDeps | undefined,
-  ctx?: Pick<ReadContext, 'signal' | 'onProgress'>,
+  ctx?: PictureFetchContext,
   imageTimeoutMs: number = IMAGE_TIMEOUT_MS,
 ): Promise<string> {
   if (!hasRemoteImages(html)) return html
-  if (!deps || NO_FETCH_SOURCES.has(source)) return dropRemoteImages(html)
-  const fetcher = guardedImageFetcher(deps, ctx?.signal, imageTimeoutMs)
+  if (NO_FETCH_SOURCES.has(source)) return dropRemoteImages(html)
   // Only remote sources are selected, so the base only ever supplies a scheme
   // for a protocol-relative one; relative paths are left for the writers.
-  return inlineImages(html, 'https://unresolved.invalid/', fetcher, MAX_FETCHED_IMAGE_BYTES, ctx?.onProgress, isRemoteImageSrc)
+  const base = 'https://unresolved.invalid/'
+  if (fetchingOff(ctx)) return withoutFetching(html, base, ctx, isRemoteImageSrc)
+  if (!deps) return dropRemoteImages(html)
+  const fetcher = guardedImageFetcher(deps, ctx, imageTimeoutMs)
+  return inlineImages(html, base, fetcher, MAX_FETCHED_IMAGE_BYTES, ctx?.onProgress, isRemoteImageSrc)
 }

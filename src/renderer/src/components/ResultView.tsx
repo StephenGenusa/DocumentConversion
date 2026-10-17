@@ -50,6 +50,12 @@ export function ResultView({
             ? ` (table 1 of ${result.totalParts} — save to get all tables)`
             : ''}
         </p>
+        {result.notes?.map((note) => (
+          <p key={note} className="result__note">
+            {note}
+            {/[.!?]$/.test(note) ? '' : '.'}
+          </p>
+        ))}
         <button className="btn btn--ghost" onClick={onDone}>
           Done
         </button>

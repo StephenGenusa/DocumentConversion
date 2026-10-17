@@ -48,6 +48,22 @@ function txt(name: string, body: string): { bytes: Buffer; filename: string; sou
 }
 
 describe('runBatch', () => {
+  it("gives each row its own notices: a row's web pictures not fetched (Settings → Web) are said on it", async () => {
+    const { jobs, conversion } = await mods()
+    const md = (name: string, body: string) => ({ bytes: Buffer.from(body, 'utf8'), filename: name, source: 'md' as const, ocr: false })
+    const rows = await jobs.runBatch(
+      [md('pics.md', '![a](https://example.com/a.png) ![b](https://example.com/b.png)'), md('plain.md', 'No pictures')],
+      'html',
+      outDir,
+      {},
+      (input, ctx) =>
+        conversion.runConversion(input.bytes, input.filename, input.source, 'html', { web: { fetchPictures: false, allowLocalNetwork: true } }, ctx),
+    )
+    expect(rows[0]).toMatchObject({ status: 'saved', notes: ['2 web pictures were not fetched (Settings → Web)'] })
+    expect(rows[1].notes).toBeUndefined()
+    expect(await readFile(join(outDir, 'pics.html'), 'utf8')).toContain('[image: a]')
+  })
+
   it('converts every input in sequence and writes one output file each', async () => {
     const { jobs, conversion } = await mods()
     const rows = await jobs.runBatch(

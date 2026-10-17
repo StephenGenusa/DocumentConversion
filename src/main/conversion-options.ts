@@ -1,6 +1,11 @@
 import { mergeSettings, type Settings } from '../core/settings'
 import { normalizeSlideOptions } from '../core/slides'
-import type { ConvertOptions } from '../core/types'
+import type { ConvertOptions, WebPolicy } from '../core/types'
+
+/** Settings → Web, for a read that is not a conversion: a paste, a web page opened as an input. */
+export function webPolicy(settings: Readonly<Settings>): WebPolicy {
+  return { fetchPictures: settings.web.fetchPictures, allowLocalNetwork: settings.web.allowLocalNetwork }
+}
 
 /**
  * The options a conversion started from the window runs with (settings spec
@@ -8,8 +13,8 @@ import type { ConvertOptions } from '../core/types'
  *
  * The renderer sends only the controls it shows (`appliedOptions`), so a value
  * in `request` is one the user can see and it wins for this conversion; the
- * rest come from `settings`. Picture format and code colour have no control
- * on the screen and are never read from a request. Each handler takes
+ * rest come from `settings`. Picture format, code colour and the web settings
+ * have no control on the screen and are never read from a request. Each handler takes
  * `settings` once, when its job starts, so a change made during a conversion
  * applies to the next one.
  *
@@ -28,5 +33,6 @@ export function conversionOptions(settings: Readonly<Settings>, request: unknown
     ocrLanguage: merged.ocrLanguage,
     read: merged.read,
     codeColour: merged.codeColour,
+    web: webPolicy(settings),
   }
 }

@@ -23,6 +23,13 @@ export interface GuardedFetchOptions {
   timeoutMs?: number
   maxRedirects?: number
   signal?: AbortSignal
+  /**
+   * Whether the local network may be fetched from: the private ranges and
+   * single-label names (Settings → Web, "Allow pictures from your local
+   * network"). On when not given. Loopback, link-local and the other blocked
+   * addresses are refused either way.
+   */
+  allowPrivate?: boolean
 }
 
 export interface GuardedFetchResult {
@@ -172,6 +179,34 @@ export function isBlockedAddress(ip: string): boolean {
   return octets ? isBlockedIpv4(octets) : true
 }
 
+/** 10/8, 172.16/12, 192.168/16: the IPv4 ranges an intranet lives on. */
+function isPrivateIpv4(octets: number[]): boolean {
+  const [a, b] = octets
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+}
+
+/**
+ * An address on a local network: the private IPv4 ranges, IPv6 unique local
+ * (fc00::/7), and a private IPv4 address carried inside IPv6 (mapped,
+ * translated, NAT64, 6to4), judged as the IPv4 address it is. These are
+ * allowed unless the local-network setting is off (`allowPrivate`).
+ */
+export function isPrivateAddress(ip: string): boolean {
+  const text = ip.trim()
+  if (!text.includes(':')) {
+    const octets = parseIpv4(text)
+    return octets ? isPrivateIpv4(octets) : false
+  }
+  const b = parseIpv6(text)
+  if (!b) return false
+  const zeros = (from: number, to: number): boolean => b.slice(from, to).every((x) => x === 0)
+  if (zeros(0, 10) && b[10] === 0xff && b[11] === 0xff) return isPrivateIpv4(b.slice(12))
+  if (zeros(0, 8) && b[8] === 0xff && b[9] === 0xff && zeros(10, 12)) return isPrivateIpv4(b.slice(12))
+  if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && zeros(4, 12)) return isPrivateIpv4(b.slice(12))
+  if (b[0] === 0x20 && b[1] === 0x02) return isPrivateIpv4(b.slice(2, 6))
+  return (b[0] & 0xfe) === 0xfc
+}
+
 /**
  * Names that mean this machine whatever DNS says (RFC 6761): refused before
  * any lookup, so a resolver that answers `localhost` with something else
@@ -186,12 +221,26 @@ function isIpLiteral(host: string): boolean {
   return /^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':')
 }
 
+/**
+ * A name with no dot ("intranet"): it can only mean a host on the local
+ * network, found through the system's search domains, so with the local
+ * network off it is refused by name, before any lookup.
+ */
+function isSingleLabelName(host: string): boolean {
+  return !isIpLiteral(host) && !host.replace(/\.$/, '').includes('.')
+}
+
+const LOCAL_NETWORK_OFF = 'the local network is turned off in Settings → Web'
+
 /** The host's addresses, every one of them checked; the fetch is pinned to these. */
-async function allowedAddresses(url: URL, lookup: GuardedFetchDeps['lookup']): Promise<string[]> {
+async function allowedAddresses(url: URL, lookup: GuardedFetchDeps['lookup'], allowPrivate: boolean): Promise<string[]> {
   // URL brackets IPv6 hosts as [::1]
   const host = url.hostname.replace(/^\[|\]$/g, '')
   if (isBlockedName(host)) {
     throw new ConversionError('fetch-blocked', `Refusing to fetch from this computer (${host})`)
+  }
+  if (!allowPrivate && isSingleLabelName(host)) {
+    throw new ConversionError('fetch-blocked', `Refusing to fetch from ${host}: ${LOCAL_NETWORK_OFF}`)
   }
   const ips = isIpLiteral(host) ? [host] : await lookup(host)
   if (ips.length === 0) throw new ConversionError('fetch-failed', `Could not resolve ${host}`)
@@ -201,6 +250,9 @@ async function allowedAddresses(url: URL, lookup: GuardedFetchDeps['lookup']): P
         'fetch-blocked',
         `Refusing to fetch from a loopback, link-local or reserved address (${host} -> ${ip})`,
       )
+    }
+    if (!allowPrivate && isPrivateAddress(ip)) {
+      throw new ConversionError('fetch-blocked', `Refusing to fetch from ${host} (${ip}): ${LOCAL_NETWORK_OFF}`)
     }
   }
   return ips
@@ -230,6 +282,7 @@ export async function guardedFetch(
   opts?: GuardedFetchOptions,
 ): Promise<GuardedFetchResult> {
   const { maxBytes, timeoutMs, maxRedirects } = { ...DEFAULTS, ...opts }
+  const allowPrivate = opts?.allowPrivate !== false
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const onOuterAbort = (): void => controller.abort()
@@ -250,7 +303,7 @@ export async function guardedFetch(
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         throw new ConversionError('fetch-failed', `Only http(s) URLs are supported (got ${url.protocol})`)
       }
-      const addresses = await allowedAddresses(url, deps.lookup)
+      const addresses = await allowedAddresses(url, deps.lookup, allowPrivate)
 
       let res: Response
       try {

@@ -192,9 +192,22 @@ export interface ReadOptions {
   sqliteViews?: boolean
 }
 
+/**
+ * Settings → Web for one conversion (settings spec 4.2): whether a
+ * document's web pictures are fetched, and whether they may come from the
+ * local network. Both on when not given. Email and calendar invitations never
+ * fetch, whatever this says.
+ */
+export interface WebPolicy {
+  fetchPictures: boolean
+  allowLocalNetwork: boolean
+}
+
 /** Options, cancellation, and progress threaded into readers. */
 export interface ReadContext extends ReadOptions {
   ocr?: boolean
+  /** Fetching web pictures at read time (Settings → Web). Fetch on, local network allowed, when not given. */
+  web?: WebPolicy
   signal?: AbortSignal
   onProgress?: (stage: string, percent?: number) => void
   /** Non-fatal suggestions surfaced to the user (e.g. "this would fit landscape"). */
@@ -217,6 +230,8 @@ export type AdviceKind =
   | 'equation-partial'
   /** A diagram or formula kept as source (spec B7). Given by write(). */
   | 'render-failed'
+  /** Web pictures left as their description because Settings → Web turns fetching off. */
+  | 'pictures-not-fetched'
 
 export type AdviceHandler = (
   kind: AdviceKind,
@@ -304,6 +319,8 @@ export interface ConvertOptions {
    * code plain, with no highlight.js spans and no token colours.
    */
   codeColour?: boolean
+  /** Settings → Web, copied into the read context (ReadContext.web). */
+  web?: WebPolicy
 }
 
 export type RenderHtmlToPdf = (html: string, opts?: PdfRenderOptions) => Promise<Buffer>

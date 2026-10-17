@@ -14,6 +14,7 @@ describe('conversionOptions (settings + request)', () => {
     read: { transcriptTimestamps: false, sqliteViews: true },
     ocr: { language: 'deu' },
     code: { colour: false },
+    web: { fetchPictures: false, allowLocalNetwork: false },
   }).settings
 
   it('takes every option from the settings when the request carries none', () => {
@@ -26,6 +27,7 @@ describe('conversionOptions (settings + request)', () => {
       ocrLanguage: 'deu',
       read: { transcriptTimestamps: false, sqliteViews: true },
       codeColour: false,
+      web: { fetchPictures: false, allowLocalNetwork: false },
     })
   })
 
@@ -56,8 +58,16 @@ describe('conversionOptions (settings + request)', () => {
     expect(opts.codeColour).toBe(false)
   })
 
-  it('code is coloured by default', () => {
-    expect(conversionOptions(DEFAULT_SETTINGS, {}).codeColour).toBe(true)
+  it('code is coloured and web pictures fetched, the intranet included, by default', () => {
+    expect(conversionOptions(DEFAULT_SETTINGS, {})).toMatchObject({
+      codeColour: true,
+      web: { fetchPictures: true, allowLocalNetwork: true },
+    })
+  })
+
+  it('the web settings are never taken from a request', () => {
+    const opts = conversionOptions(saved, { web: { fetchPictures: true, allowLocalNetwork: true }, fetchPictures: true })
+    expect(opts.web).toEqual({ fetchPictures: false, allowLocalNetwork: false })
   })
 
   it('a bad value in a request is ignored and the setting used', () => {

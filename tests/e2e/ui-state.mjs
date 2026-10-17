@@ -792,6 +792,15 @@ try {
   diagramsChoice = await reopenDiagrams()
   check('the toolbar starts from the setting after a restart', diagramsChoice?.value === 'png', JSON.stringify(diagramsChoice))
   check('the screen change was never saved', savedRendered() === 'png', readFileSync(settingsFile, 'utf8'))
+  // Settings → Web, fetching off: a pasted web picture is its description, with
+  // one notice, and nothing is fetched (the address could not be anyway).
+  await js(`window.api.setSetting('web.fetchPictures', false)`)
+  const pasted = await js(`window.api.sanitizeHtml('<p>Sales</p><p><img src="https://example.invalid/chart.png" alt="chart"></p>')`)
+  check(
+    'with fetching off, a pasted web picture is its description, with a notice',
+    pasted?.html?.includes('[image: chart]') && pasted.notice === '1 web picture was not fetched (Settings → Web)',
+    JSON.stringify(pasted),
+  )
   const reset = await js(`window.api.resetSettings()`)
   check('Reset all puts the defaults back', reset?.ok === true && reset.settings.rendered.format === 'svg', JSON.stringify(reset))
 } catch (err) {

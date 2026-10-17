@@ -38,7 +38,7 @@ interface BatchItemPayload {
 }
 import { downloadPack, installedCodes, listPacks, removePack } from './ocr-packs'
 import { openSettings, regionOf, settingsIpcHandlers, SETTINGS_IPC_CHANNELS, type SettingsStore } from './settings'
-import { conversionOptions } from './conversion-options'
+import { conversionOptions, webPolicy } from './conversion-options'
 import { renderEditableText } from '../core/text-intake'
 import { defaultSavePath, defaultSaveDir, rememberDir, rememberSaveDir } from './save-location'
 import { shouldUseHtmlFlavor } from '../core/paste-flavors'
@@ -256,16 +256,29 @@ function registerIpc(settings: SettingsStore): void {
   ipcMain.handle('app:cancel', (_e, { jobId }: { jobId: string }) => cancelJob(jobId))
 
   // Clipboard intake: HTML is sanitized HERE, before the renderer ever parses it.
-  /** Progress and Skip for a paste whose images are being fetched. */
-  const pasteContext = (e: Electron.IpcMainInvokeEvent, jobId?: string): ReadContext =>
-    jobId
-      ? {
-          signal: createJob(jobId),
-          onProgress: (stage, percent) => {
-            if (!e.sender.isDestroyed()) e.sender.send('app:progress', { jobId, stage, percent })
-          },
-        }
-      : {}
+  /**
+   * Progress and Skip for a paste or a web page whose images are being
+   * fetched, Settings → Web as they are now, and the notice when fetching is
+   * off (read with `notice()` once the read is done).
+   */
+  const fetchContext = (e: Electron.IpcMainInvokeEvent, jobId?: string): { ctx: ReadContext; notice: () => string | undefined } => {
+    let notice: string | undefined
+    const ctx: ReadContext = {
+      web: webPolicy(settings.get()),
+      onAdvice: (_kind, message) => {
+        notice = message
+      },
+      ...(jobId
+        ? {
+            signal: createJob(jobId),
+            onProgress: (stage: string, percent?: number) => {
+              if (!e.sender.isDestroyed()) e.sender.send('app:progress', { jobId, stage, percent })
+            },
+          }
+        : {}),
+    }
+    return { ctx, notice: () => notice }
+  }
 
   ipcMain.handle('app:read-clipboard', async (e, { jobId }: { jobId?: string } = {}) => {
     const html = clipboard.readHTML()
@@ -273,7 +286,9 @@ function registerIpc(settings: SettingsStore): void {
     // Same rule as a Ctrl+V paste, so the button and the keystroke agree.
     if (shouldUseHtmlFlavor(html ?? '', text ?? '')) {
       try {
-        return { kind: 'html' as const, html: await pastedHtmlToHub(html, urlFetchDeps, pasteContext(e, jobId)) }
+        const { ctx, notice } = fetchContext(e, jobId)
+        const hub = await pastedHtmlToHub(html, urlFetchDeps, ctx)
+        return { kind: 'html' as const, html: hub, ...(notice() ? { notice: notice() } : {}) }
       } finally {
         if (jobId) finishJob(jobId)
       }
@@ -288,7 +303,9 @@ function registerIpc(settings: SettingsStore): void {
   // they are fetched and embedded here; see pastedHtmlToHub.
   ipcMain.handle('app:sanitize-html', async (e, { html, jobId }: { html: string; jobId?: string }) => {
     try {
-      return await pastedHtmlToHub(html, urlFetchDeps, pasteContext(e, jobId))
+      const { ctx, notice } = fetchContext(e, jobId)
+      const hub = await pastedHtmlToHub(html, urlFetchDeps, ctx)
+      return { html: hub, ...(notice() ? { notice: notice() } : {}) }
     } finally {
       if (jobId) finishJob(jobId)
     }
@@ -347,7 +364,13 @@ function registerIpc(settings: SettingsStore): void {
       // The same read the conversion would do, so the same settings: the
       // card's choices where it shows them, the saved defaults otherwise.
       const opts = conversionOptions(settings.get(), { read, ocrLanguage })
-      Object.assign(ctx, opts.read)
+      let notice: string | undefined
+      Object.assign(ctx, opts.read, {
+        web: opts.web,
+        onAdvice: (_kind: string, message: string) => {
+          notice ??= message
+        },
+      })
       try {
         // The stamp goes back with the html: it is what the pane was loaded
         // from, and what a later change on disk is measured against.
@@ -362,7 +385,16 @@ function registerIpc(settings: SettingsStore): void {
         )
         // `limited`: a record source cut to the print limit, so an edited copy
         // holds only those records; the card says so.
-        return { kind: 'ok' as const, html: hub.html, title: hub.title, stamp: input.stamp, limited: hub.limited === true, features: hub.features }
+        return {
+          kind: 'ok' as const,
+          html: hub.html,
+          title: hub.title,
+          stamp: input.stamp,
+          limited: hub.limited === true,
+          features: hub.features,
+          // Web pictures left unfetched (Settings → Web), said when the pane opens.
+          ...(notice ? { notice } : {}),
+        }
       } catch (err) {
         const code = err instanceof ConversionError ? err.code : 'read-failed'
         return { kind: 'error' as const, code, message: (err as Error).message }
@@ -373,18 +405,13 @@ function registerIpc(settings: SettingsStore): void {
   )
 
   ipcMain.handle('app:load-url', async (e, { url, jobId }: { url: string; jobId?: string }) => {
-    const ctx: ReadContext = jobId
-      ? {
-          signal: createJob(jobId),
-          onProgress: (stage, percent) => {
-            if (!e.sender.isDestroyed()) e.sender.send('app:progress', { jobId, stage, percent })
-          },
-        }
-      : {}
+    // The local-network setting applies to the page too; fetching off, only to its pictures.
+    const { ctx, notice } = fetchContext(e, jobId)
     try {
       const res = await loadUrl(url, urlFetchDeps, ctx)
       if (res.kind === 'html') {
-        return { kind: 'html' as const, html: res.html, title: res.title, sourceName: res.sourceName }
+        const said = notice()
+        return { kind: 'html' as const, html: res.html, title: res.title, sourceName: res.sourceName, ...(said ? { notice: said } : {}) }
       }
       // Non-HTML URL: hand back as a normal file load (a URL to a PDF/CSV/image just works).
       return {
@@ -468,14 +495,22 @@ function registerIpc(settings: SettingsStore): void {
           message: 'Binary formats cannot be copied to the clipboard',
         }
       }
-      const ctx: ReadContext = jobId
-        ? {
-            signal: createJob(jobId),
-            onProgress: (stage, percent) => {
-              if (!e.sender.isDestroyed()) e.sender.send('app:progress', { jobId, stage, percent })
-            },
-          }
-        : {}
+      // Notices (a diagram kept as source, web pictures not fetched…) go with
+      // the result, as a save's do; page-fit advice is for a PDF, never copied.
+      const notes: string[] = []
+      const ctx: ReadContext = {
+        onAdvice: (kind, message) => {
+          if (kind !== 'landscape' && !notes.includes(message)) notes.push(message)
+        },
+        ...(jobId
+          ? {
+              signal: createJob(jobId),
+              onProgress: (stage: string, percent?: number) => {
+                if (!e.sender.isDestroyed()) e.sender.send('app:progress', { jobId, stage, percent })
+              },
+            }
+          : {}),
+      }
       try {
         // The settings as they are now; a change during the job is for the next one.
         const opts = conversionOptions(settings.get(), { pdf, slides, renderedFormat, ocr, ocrLanguage, read })
@@ -485,7 +520,7 @@ function registerIpc(settings: SettingsStore): void {
           // Diagrams and SVG images go as PNG whatever is chosen (clipboardFlavors).
           const flavors = await clipboardFlavors(bytes, filename, source, opts, ctx)
           clipboard.write(flavors)
-          return { status: 'copied' as const }
+          return { status: 'copied' as const, ...(notes.length ? { notes } : {}) }
         }
         // csv with multiple tables: the clipboard carries table 1 of N.
         const out = await runConversion(bytes, filename, source, target, opts, ctx)
@@ -493,7 +528,7 @@ function registerIpc(settings: SettingsStore): void {
         // the clipboard is the side effect they were cancelling.
         throwIfCancelled(ctx.signal)
         clipboard.writeText(out.parts[0].bytes.toString('utf8'))
-        return { status: 'copied' as const, totalParts: out.parts.length }
+        return { status: 'copied' as const, totalParts: out.parts.length, ...(notes.length ? { notes } : {}) }
       } catch (err) {
         const code = err instanceof ConversionError ? err.code : 'unexpected'
         return { status: 'error' as const, code, message: (err as Error).message }

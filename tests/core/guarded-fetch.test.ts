@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { guardedFetch, isBlockedAddress, type GuardedFetchDeps } from '../../src/core/net/guarded-fetch'
+import { guardedFetch, isBlockedAddress, isPrivateAddress, type GuardedFetchDeps } from '../../src/core/net/guarded-fetch'
 
 function page(body: string, contentType = 'text/html'): Response {
   return new Response(body, { status: 200, headers: { 'content-type': contentType } })
@@ -341,5 +341,57 @@ describe('guardedFetch', () => {
   it('rejects non-2xx statuses as fetch-failed', async () => {
     const d = deps({ 'https://example.com/404': () => new Response('nope', { status: 404 }) })
     await expect(guardedFetch('https://example.com/404', d)).rejects.toMatchObject({ code: 'fetch-failed' })
+  })
+})
+
+describe('local network off (Settings → Web, spec 4.2)', () => {
+  const off = { allowPrivate: false }
+  const png = (): Response => page('img', 'image/png')
+
+  it('isPrivateAddress names the intranet ranges, however they are spelled', () => {
+    for (const ip of ['10.0.0.5', '172.16.0.9', '172.31.255.1', '192.168.0.1', 'fc00::1', 'fd12:3456:789a::1', '::ffff:10.0.0.1', '::ffff:c0a8:101', '64:ff9b::a00:1', '2002:0a00:0001::1']) {
+      expect(isPrivateAddress(ip), ip).toBe(true)
+    }
+    for (const ip of ['93.184.216.34', '172.32.0.1', '172.15.255.255', '192.169.0.1', '11.0.0.1', '2606:4700::1111', 'fe00::1']) {
+      expect(isPrivateAddress(ip), ip).toBe(false)
+    }
+  })
+
+  it('blocks the private ranges, by address and by a name that resolves into them', async () => {
+    const d = deps({}, { 'wiki.corp.example': ['192.168.7.7'], 'mixed.example.com': ['93.184.216.34', '10.0.0.1'] })
+    for (const u of ['http://10.1.2.3/logo.png', 'http://192.168.1.20/logo.png', 'http://172.16.4.4/logo.png', 'http://[fd12::7]/logo.png', 'http://[::ffff:10.0.0.1]/x', 'https://wiki.corp.example/logo.png', 'https://mixed.example.com/x']) {
+      await expect(guardedFetch(u, d, off), u).rejects.toMatchObject({ code: 'fetch-blocked' })
+    }
+    expect(d.fetch).not.toHaveBeenCalled()
+  })
+
+  it('blocks a single-label name before any lookup, whatever it would resolve to', async () => {
+    const d = deps({ 'http://intranet/logo.png': png }, { intranet: ['93.184.216.34'] })
+    for (const u of ['http://intranet/logo.png', 'http://INTRANET./logo.png']) {
+      await expect(guardedFetch(u, d, off), u).rejects.toMatchObject({ code: 'fetch-blocked', message: expect.stringMatching(/local network/) })
+    }
+    expect(d.lookup).not.toHaveBeenCalled()
+  })
+
+  it('blocks a redirect hop into the intranet', async () => {
+    const d = deps(
+      { 'https://example.com/a': () => redirect('https://intranet.corp/x'), 'https://intranet.corp/x': () => page('wiki') },
+      { 'intranet.corp': ['192.168.10.10'] },
+    )
+    await expect(guardedFetch('https://example.com/a', d, off)).rejects.toMatchObject({ code: 'fetch-blocked' })
+  })
+
+  it('still fetches from the public internet', async () => {
+    const d = deps({ 'https://example.com/logo.png': png })
+    expect((await guardedFetch('https://example.com/logo.png', d, off)).bytes.toString()).toBe('img')
+  })
+
+  it('loopback and link-local stay blocked either way', async () => {
+    const d = deps({})
+    for (const opts of [off, { allowPrivate: true }, undefined]) {
+      for (const u of ['http://127.0.0.1/', 'http://localhost/', 'http://169.254.169.254/', 'http://[fe80::1]/']) {
+        await expect(guardedFetch(u, d, opts), u).rejects.toMatchObject({ code: 'fetch-blocked' })
+      }
+    }
   })
 })

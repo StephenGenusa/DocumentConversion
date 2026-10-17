@@ -71,7 +71,7 @@ beforeEach(() => {
     loadUriList: vi.fn(async () => null),
     openFile: vi.fn(async () => null),
     readClipboard: vi.fn(async () => ({ kind: 'empty' }) as ClipboardContent),
-    sanitizeHtml: vi.fn(async (html: string) => `sanitized:${html}`),
+    sanitizeHtml: vi.fn(async (html: string) => ({ html: `sanitized:${html}` })),
     textToHtml: vi.fn(async (text: string, format: string) => `rendered(${format}):${text}`),
     dirForFile: vi.fn(() => '/home/me/docs'),
     fileHandle: vi.fn(async () => 'handle-1'),
@@ -266,6 +266,20 @@ describe('intake: pasting', () => {
     expect(api.sanitizeHtml).toHaveBeenCalledWith('<p>rich</p>', undefined)
     expect(clipboardHtml).toEqual(['sanitized:<p>rich</p>'])
     expect(loaded).toHaveLength(0)
+  })
+
+  it("says when a paste's web pictures were not fetched (Settings → Web)", async () => {
+    api.sanitizeHtml.mockResolvedValueOnce({ html: '<p>[image: a]</p>', notice: '1 web picture was not fetched (Settings → Web)' })
+    await intake().onPaste(pasteEvent({ 'text/html': '<p><img src="https://e.example/a.png" alt="a"></p>', 'text/plain': 'a' }))
+    expect(clipboardHtml).toEqual(['<p>[image: a]</p>'])
+    expect(notices).toEqual(['1 web picture was not fetched (Settings → Web)'])
+  })
+
+  it('the paste button says so too', async () => {
+    api.readClipboard.mockResolvedValueOnce({ kind: 'html', html: '<p>x</p>', notice: '2 web pictures were not fetched (Settings → Web)' })
+    await intake().pasteFromClipboard()
+    expect(clipboardHtml).toEqual(['<p>x</p>'])
+    expect(notices).toEqual(['2 web pictures were not fetched (Settings → Web)'])
   })
 
   it('runs a rich paste as a job, so its image fetching has progress and Skip', async () => {

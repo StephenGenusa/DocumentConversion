@@ -203,6 +203,8 @@ function App(): React.JSX.Element {
       if (res.kind === 'html') {
         const filename = res.title?.trim() || new URL(url).hostname
         addItem({ label: url, filename, source: 'html', imageMode: 'embed', html: res.html }, true)
+        // Its web pictures left as their description (Settings → Web turns fetching off).
+        if (res.notice) setNotice(res.notice)
       } else if (res.kind === 'file') {
         if (res.detected.kind === 'ok') {
           onLoaded({ filename: res.filename, base64: res.base64, detected: res.detected.format })
@@ -307,6 +309,7 @@ function App(): React.JSX.Element {
           : i,
       ),
     )
+    if (result.notice) setNotice(result.notice)
   }
 
   async function withJob<T>(fn: (jobId: string) => Promise<T>, label = 'Cancel'): Promise<T> {
@@ -453,6 +456,7 @@ function App(): React.JSX.Element {
       setItems((prev) =>
         prev.map((i) => (i.id === id ? { ...i, html: result.html, diskStamp: result.stamp, limited: result.limited, features: result.features } : i)),
       )
+      if (result.notice) setNotice(result.notice)
     }
     setEditingId(id)
     window.api.resizeContent({ height: PANE_HEIGHT })

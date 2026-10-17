@@ -91,6 +91,8 @@ export interface BatchRow {
   status: 'saved' | 'error' | 'cancelled'
   path?: string
   message?: string
+  /** This input's notices (a diagram kept as source, web pictures not fetched…). Page-fit tips are for a single PDF and are left out. */
+  notes?: string[]
 }
 
 /** The conversion to run per input — normally `runConversion` bound to a target. */
@@ -140,8 +142,16 @@ export async function runBatch<T extends { filename?: string }>(
       continue
     }
     ctx.onProgress?.(`Converting ${name} (${i + 1} of ${inputs.length})`, (i / inputs.length) * 100)
+    const notes: string[] = []
+    const rowCtx: ReadContext = {
+      ...ctx,
+      onAdvice: (kind, message, suggestion) => {
+        if (kind !== 'landscape' && !notes.includes(message)) notes.push(message)
+        ctx.onAdvice?.(kind, message, suggestion)
+      },
+    }
     try {
-      const out = await convert(input, ctx)
+      const out = await convert(input, rowCtx)
       // Re-check before writing: cancelling during a conversion must not leave
       // its output behind, and a converter that ignores the signal would.
       throwIfCancelled(ctx.signal)
@@ -154,7 +164,7 @@ export async function runBatch<T extends { filename?: string }>(
         await writeFile(path, part.bytes)
         first ??= path
       }
-      rows.push({ filename: name, status: 'saved', path: first })
+      rows.push({ filename: name, status: 'saved', path: first, ...(notes.length ? { notes } : {}) })
     } catch (err) {
       if (ctx.signal?.aborted) rows.push({ filename: name, status: 'cancelled' })
       else rows.push({ filename: name, status: 'error', message: (err as Error).message })

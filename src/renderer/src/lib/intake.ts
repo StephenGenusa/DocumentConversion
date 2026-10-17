@@ -168,7 +168,10 @@ export function createIntake(handlers: IntakeHandlers) {
     const html = e.clipboardData.getData('text/html')
     const plain = e.clipboardData.getData('text/plain')
     if (shouldUseHtmlFlavor(html, plain)) {
-      onClipboard(await runPasteJob((jobId) => window.api.sanitizeHtml(html, jobId)))
+      const pasted = await runPasteJob((jobId) => window.api.sanitizeHtml(html, jobId))
+      onClipboard(pasted.html)
+      // Web pictures left as their description because Settings → Web turns fetching off.
+      if (pasted.notice) onNotice(pasted.notice)
       return
     }
     await handleText(plain)
@@ -182,7 +185,9 @@ export function createIntake(handlers: IntakeHandlers) {
     const content = await runPasteJob((jobId) => window.api.readClipboard(jobId))
     switch (content.kind) {
       case 'html':
-        return onClipboard(content.html)
+        onClipboard(content.html)
+        if (content.notice) onNotice(content.notice)
+        return
       case 'text':
         return handleText(content.text)
       case 'image':

@@ -75,6 +75,12 @@ export interface ConverterDeps {
   renderBlocks?: RenderBlocks
 }
 
+/** The read context for a conversion: the caller's, with the options' reading choices and web policy in it. */
+export function readContextOf(ctx: ReadContext | undefined, opts: ConvertOptions | undefined): ReadContext | undefined {
+  if (!opts?.read && !opts?.web) return ctx
+  return { ...ctx, ...opts.read, ...(opts.web ? { web: opts.web } : {}) }
+}
+
 export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {}): Converter {
   const writers: Record<TargetFormat, Writer> = createWriters(render)
 
@@ -169,7 +175,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
     read,
     write,
     async convert(src, source, target, opts, ctx) {
-      const readCtx = opts?.read ? { ...ctx, ...opts.read } : ctx
+      const readCtx = readContextOf(ctx, opts)
       if (TABLE_TARGETS.includes(target)) {
         const rows = await this.readRows(src, source, readCtx)
         if (rows) return writeRows(rows, target, { signal: ctx?.signal, onProgress: ctx?.onProgress })

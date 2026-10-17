@@ -3,7 +3,7 @@ import { join, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
 import { mkdtemp, writeFile, rm } from 'fs/promises'
-import { createConverter } from '../core/convert'
+import { createConverter, readContextOf } from '../core/convert'
 import { FOR_PASTING } from '../core/draw-blocks'
 import { getReader } from '../core/readers'
 import { normalizePdfOptions } from '../core/pdf-options'
@@ -256,7 +256,7 @@ export async function runConversion(
     const copied = await untilCancelled(mergePdfs([{ bytes, name: filename }]), ctx.signal)
     return { parts: [{ suffix: '', bytes: copied }] }
   }
-  const readCtx: ReadContext = opts.read ? { ...ctx, ...opts.read } : ctx
+  const readCtx: ReadContext = readContextOf(ctx, opts) ?? ctx
   // A record source exported to a table format goes row by row, every row,
   // and never through the hub (see core/records.ts).
   if (TABLE_TARGETS.includes(target)) {
@@ -297,7 +297,8 @@ export async function clipboardFlavors(
   ctx: ReadContext,
 ): Promise<{ html: string; text: string }> {
   throwIfCancelled(ctx.signal)
-  const hub = await readForConversion(bytes, filename, source, opts.ocr === true, ctx, opts.ocrLanguage)
+  const readCtx: ReadContext = readContextOf(ctx, opts) ?? ctx
+  const hub = await readForConversion(bytes, filename, source, opts.ocr === true, readCtx, opts.ocrLanguage)
   throwIfCancelled(ctx.signal)
   // PNG diagrams and PNG copies of SVG images, whatever was chosen: Word and
   // Outlook do not show SVG from pasted HTML (FOR_PASTING).
@@ -346,7 +347,7 @@ export async function mergeToTarget(
         continue
       }
       ctx.onProgress?.(`Rendering ${name} (${i + 1} of ${items.length})`)
-      const hub = await readForConversion(item.bytes, item.filename, item.source, item.ocr, item.read ? { ...ctx, ...item.read } : ctx, item.ocrLanguage)
+      const hub = await readForConversion(item.bytes, item.filename, item.source, item.ocr, readContextOf(ctx, { read: item.read, web: opts.web }) ?? ctx, item.ocrLanguage)
       const withHeading = headings
         ? { ...hub, html: `<h1 class="doc-title">${escapeHtml(hub.sourceName ?? name)}</h1>\n${hub.html}` }
         : hub
@@ -361,7 +362,7 @@ export async function mergeToTarget(
     throwIfCancelled(ctx.signal)
     const item = items[i]
     ctx.onProgress?.(`Reading ${item.filename ?? `document ${i + 1}`} (${i + 1} of ${items.length})`)
-    hubs.push(await readForConversion(item.bytes, item.filename, item.source, item.ocr, item.read ? { ...ctx, ...item.read } : ctx, item.ocrLanguage))
+    hubs.push(await readForConversion(item.bytes, item.filename, item.source, item.ocr, readContextOf(ctx, { read: item.read, web: opts.web }) ?? ctx, item.ocrLanguage))
   }
   throwIfCancelled(ctx.signal)
   return untilCancelled(converter.write(mergeHubDocuments(hubs, { headings }), target, opts, ctx), ctx.signal)

@@ -2,6 +2,7 @@ import { Readability } from '@mozilla/readability'
 import { parseHTML } from 'linkedom'
 import { guardedFetch, type GuardedFetchDeps } from '../net/guarded-fetch'
 import { inlineImages, MAX_FETCHED_IMAGE_BYTES } from '../inline-images'
+import { fetchingOff, withoutFetching } from '../remote-images'
 import { sanitizeToHub } from '../allowlist'
 import { MAX_SPAN } from '../table-grid'
 import type { ReadContext } from '../types'
@@ -253,13 +254,19 @@ function filenameFromUrl(url: string): string {
  */
 export async function loadUrl(url: string, deps: GuardedFetchDeps, ctx?: ReadContext): Promise<UrlLoadResult> {
   ctx?.onProgress?.('Fetching page')
-  const page = await guardedFetch(url, deps, { signal: ctx?.signal })
+  // Settings → Web: the local-network switch applies to the page itself too.
+  // Fetching off does not stop the page (the user asked for it), only its pictures.
+  const allowPrivate = ctx?.web?.allowLocalNetwork !== false
+  const page = await guardedFetch(url, deps, { signal: ctx?.signal, allowPrivate })
   const type = page.contentType.split(';')[0].trim().toLowerCase()
   if (type !== 'text/html' && type !== 'application/xhtml+xml') {
     return { kind: 'file', bytes: page.bytes, contentType: type, filename: filenameFromUrl(page.finalUrl) }
   }
   ctx?.onProgress?.('Extracting article')
   const { html, title } = extractArticle(page.bytes.toString('utf8'), page.finalUrl)
+  if (fetchingOff(ctx)) {
+    return { kind: 'html', html: sanitizeToHub(await withoutFetching(html, page.finalUrl, ctx)), title, sourceName: url }
+  }
   const inlined = await inlineImages(
     html,
     page.finalUrl,
@@ -267,6 +274,7 @@ export async function loadUrl(url: string, deps: GuardedFetchDeps, ctx?: ReadCon
       const res = await guardedFetch(imgUrl, deps, {
         signal: ctx?.signal,
         maxBytes: MAX_FETCHED_IMAGE_BYTES,
+        allowPrivate,
       })
       return { bytes: res.bytes, contentType: res.contentType }
     },

@@ -29,6 +29,7 @@ export function BatchResults({
             <span className="batch-rows__name" title={r.message ?? r.path}>
               {r.filename}
               {r.message ? ` — ${r.message}` : ''}
+              {r.notes?.map((note) => ` — ${note}`).join('')}
             </span>
             {r.status === 'error' && (
               <button className="btn btn--mini" onClick={() => onRetry(i)}>

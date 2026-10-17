@@ -128,7 +128,7 @@ export type SaveResult =
       /** Other notices, shown as they are (e.g. "Diagram 2 could not be drawn: …"). */
       notes?: string[]
     }
-  | { status: 'copied'; totalParts?: number }
+  | { status: 'copied'; totalParts?: number; notes?: string[] }
   | { status: 'cancelled' }
   | { status: 'error'; code: string; message: string }
 
@@ -163,17 +163,25 @@ export interface BatchRow {
   status: 'saved' | 'error' | 'cancelled'
   path?: string
   message?: string
+  /** This input's notices, shown on its row. */
+  notes?: string[]
 }
 
 export type BatchResult = { status: 'batch'; outDir: string; rows: BatchRow[] } | { status: 'cancelled' }
 
 export type UrlLoadResponse =
-  | { kind: 'html'; html: string; title?: string; sourceName: string }
+  | { kind: 'html'; html: string; title?: string; sourceName: string; notice?: string }
   | { kind: 'file'; base64: string; filename: string; detected: DetectResult }
   | { kind: 'error'; code: string; message: string }
 
+/** Pasted HTML as the editor gets it, and the notice when Settings → Web left its web pictures unfetched. */
+export interface PastedHtml {
+  html: string
+  notice?: string
+}
+
 export type ClipboardContent =
-  | { kind: 'html'; html: string }
+  | { kind: 'html'; html: string; notice?: string }
   | { kind: 'text'; text: string }
   | { kind: 'image' }
   | { kind: 'empty' }
@@ -232,7 +240,7 @@ export interface Api {
   onProgress(cb: (p: ProgressEvent) => void): () => void
   /** `jobId` gives a paste with web images progress and Skip (via `cancel`). */
   readClipboard(jobId?: string): Promise<ClipboardContent>
-  sanitizeHtml(html: string, jobId?: string): Promise<string>
+  sanitizeHtml(html: string, jobId?: string): Promise<PastedHtml>
   /** Render pasted md/txt to sanitized hub HTML for the edit pane. */
   textToHtml(text: string, format: string): Promise<string>
   loadUrl(req: { url: string; jobId?: string }): Promise<UrlLoadResponse>
@@ -257,6 +265,8 @@ export interface Api {
         limited?: boolean
         /** Diagrams and formulas the document holds (spec B1). */
         features?: { diagrams: boolean; math: boolean }
+        /** Web pictures left unfetched (Settings → Web). */
+        notice?: string
       }
     | { kind: 'error'; code: string; message: string }
   >
