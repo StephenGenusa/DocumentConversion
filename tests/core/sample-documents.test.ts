@@ -5,6 +5,8 @@ import { buildSamples, SAMPLES_DIR } from '../../scripts/samples/build-samples.m
 import * as TEXT from '../../scripts/samples/sample-text.mjs'
 import { readMarkdown } from '../../src/core/readers/md'
 import { hubFeatures } from '../../src/core/rendered-blocks'
+import { splitSlides } from '../../src/core/slides'
+import { sectionHeadingsCss } from '../../src/core/writers/revealjs'
 
 vi.mock('electron', () => ({}))
 const { SAMPLES, readSample } = await import('../../src/main/samples')
@@ -79,5 +81,15 @@ describe('the sample documents', () => {
     for (const [i, label] of (TEXT.SAMPLE_MEETING.plan.callouts as string[]).entries()) expect(meeting).toContain(`${i + 1}. ${label}.`)
     // No place the generator was to fill is left.
     for (const html of [eng, sw, lab, meeting]) expect(html).not.toMatch(/\{\{[A-Z]/)
+  })
+
+  // One section heading longer than a line of capitals sets every heading of
+  // its deck as written (revealjs.ts): the samples' headings are kept short
+  // enough that all four decks look alike, in the theme's capitals.
+  it('make decks whose section headings all keep the theme\'s capitals', async () => {
+    for (const s of [TEXT.SAMPLE_ENGINEERING, TEXT.SAMPLE_SOFTWARE, TEXT.SAMPLE_LAB, TEXT.SAMPLE_MEETING]) {
+      const { html } = await readMarkdown({ bytes: readFileSync(join(SAMPLES_DIR, s.file)), filename: s.file })
+      expect(sectionHeadingsCss(splitSlides(html).map((slide) => slide.html)), s.file).toBe('')
+    }
   })
 })

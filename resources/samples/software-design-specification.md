@@ -103,7 +103,7 @@ sequenceDiagram
     N-)App: push to the user's other devices
 ~~~
 
-## Document states on a device
+## States on a device
 
 The client library tracks each open document through these states; the service only ever sees the pushes.
 

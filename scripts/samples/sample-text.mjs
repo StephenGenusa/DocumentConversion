@@ -142,11 +142,11 @@ Demands are from the frame model with the new live load, for a timber deck repla
 > [!IMPORTANT]
 > The end diagonals pass **only** with the FRP deck. A timber deck must not be reinstated on this bridge without strengthening them first.
 
-## 5. Bearings and the L2 gusset
+## 5. Bearings and gusset
 
 The new bearings are plain elastomeric pads, 250 by 200 by 42 mm, on new stainless sole plates. Each truss keeps one fixed and one expansion end per span, as built. The gusset repair adds a 10 mm plate on the outside face, fastened with the existing bolt pattern plus four new holes, so the truss never has to be jacked.
 
-## Terms used in this note
+## Terms used
 
 Load path
 : The chain of members a load travels through, from where it is applied to the ground.
@@ -282,7 +282,7 @@ sequenceDiagram
     N-)App: push to the user's other devices
 ~~~
 
-## Document states on a device
+## States on a device
 
 The client library tracks each open document through these states; the service only ever sees the pushes.
 
