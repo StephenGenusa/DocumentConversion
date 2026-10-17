@@ -8,13 +8,13 @@ const { menuTemplate } = await import('../../src/main/menu')
 const flatten = (items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] =>
   items.flatMap((i) => [i, ...(Array.isArray(i.submenu) ? flatten(i.submenu) : [])])
 
-const none = { openAbout: () => {}, openSettings: () => {} }
+const none = { openAbout: () => {}, openSettings: () => {}, openSample: () => {} }
 
 describe('application menu', () => {
   for (const platform of ['darwin', 'win32', 'linux'] as const) {
     it(`has About and the Edit roles on ${platform}`, () => {
       const openAbout = vi.fn()
-      const items = flatten(menuTemplate(platform, { openAbout, openSettings: () => {} }))
+      const items = flatten(menuTemplate(platform, { ...none, openAbout }))
       const about = items.find((i) => i.label === 'About Document Converter')
       expect(about).toBeDefined()
       ;(about!.click as () => void)()
@@ -31,13 +31,13 @@ describe('application menu', () => {
     expect((mac[0].submenu as MenuItemConstructorOptions[])[0].label).toBe('About Document Converter')
     const win = menuTemplate('win32', none)
     const help = win.find((i) => i.label === '&Help')
-    expect((help?.submenu as MenuItemConstructorOptions[])[0].label).toBe('About Document Converter')
+    expect((help?.submenu as MenuItemConstructorOptions[]).at(-1)?.label).toBe('About Document Converter')
   })
 
   for (const platform of ['darwin', 'win32', 'linux'] as const) {
     it(`has Settings… on ${platform}, at Cmd/Ctrl+,`, () => {
       const openSettings = vi.fn()
-      const settings = flatten(menuTemplate(platform, { openAbout: () => {}, openSettings })).find((i) => i.label === 'Settings…')
+      const settings = flatten(menuTemplate(platform, { ...none, openSettings })).find((i) => i.label === 'Settings…')
       expect(settings?.accelerator).toBe('CmdOrCtrl+,')
       ;(settings!.click as () => void)()
       expect(openSettings).toHaveBeenCalledOnce()
@@ -50,4 +50,24 @@ describe('application menu', () => {
     const file = menuTemplate('linux', none).find((i) => i.label === '&File')
     expect((file?.submenu as MenuItemConstructorOptions[]).map((i) => i.label ?? i.role ?? i.type)).toEqual(['Settings…', 'separator', 'quit'])
   })
+
+  for (const platform of ['darwin', 'win32', 'linux'] as const) {
+    it(`has Help → Sample Documents with every sample on ${platform}`, () => {
+      const openSample = vi.fn()
+      const template = menuTemplate(platform, { ...none, openSample })
+      const help = template.find((i) => i.role === 'help' || i.label === '&Help')
+      const samples = (help?.submenu as MenuItemConstructorOptions[]).find((i) => i.label === 'Sample Documents')
+      const items = samples?.submenu as MenuItemConstructorOptions[]
+      expect(items.map((i) => i.label)).toEqual([
+        'Engineering Design Note',
+        'Software Design Specification',
+        'Lab Report',
+        'Meeting Summary',
+        'Architecture Diagram (SVG)',
+      ])
+      ;(items[2].click as () => void)()
+      expect(openSample).toHaveBeenCalledWith('lab')
+      expect(items.every((i) => typeof i.id === 'string' && i.id.startsWith('sample-'))).toBe(true)
+    })
+  }
 })

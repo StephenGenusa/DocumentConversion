@@ -24,6 +24,19 @@
  * one place that needs reading.
  */
 
+/*
+ * The sample documents the app ships (Help -> Sample Documents) are written in
+ * scripts/samples/sample-text.mjs and enter the vocabulary here, like every
+ * other fixture's words.
+ */
+export {
+  SAMPLE_ENGINEERING,
+  SAMPLE_SOFTWARE,
+  SAMPLE_LAB,
+  SAMPLE_MEETING,
+  SAMPLE_ARCHITECTURE,
+} from '../samples/sample-text.mjs'
+
 /* -- organization, sites, people -------------------------------------------- */
 
 export const ORG = 'Elmwood Libraries'

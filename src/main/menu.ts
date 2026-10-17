@@ -1,11 +1,14 @@
 import { Menu, type MenuItemConstructorOptions } from 'electron'
 import { PRODUCT_NAME } from './app-identity'
+import { SAMPLES, type SampleId } from './samples'
 
 /** What the menu's own items do. */
 export interface MenuActions {
   openAbout: () => void
   /** The Settings dialog, in the main window (settings spec 7.1). */
   openSettings: () => void
+  /** Help → Sample Documents → one of them, opened as an untitled copy. */
+  openSample: (id: SampleId) => void
 }
 
 /**
@@ -20,7 +23,8 @@ export interface MenuActions {
  * Windows and Linux keep `autoHideMenuBar`, so this bar appears only on Alt;
  * the start screen carries its own About and Settings links for that reason.
  * Settings is Cmd+, on macOS and Ctrl+, elsewhere; as an accelerator it works
- * from the editor too.
+ * from the editor too. Help → Sample Documents is on every platform (on macOS
+ * in the Help menu the system names, beside its own search field).
  */
 export function menuTemplate(platform: NodeJS.Platform, actions: MenuActions): MenuItemConstructorOptions[] {
   const about: MenuItemConstructorOptions = { label: `About ${PRODUCT_NAME}`, click: actions.openAbout }
@@ -29,6 +33,11 @@ export function menuTemplate(platform: NodeJS.Platform, actions: MenuActions): M
     label: 'Settings…',
     accelerator: 'CmdOrCtrl+,',
     click: actions.openSettings,
+  }
+  const samples: MenuItemConstructorOptions = {
+    id: 'samples',
+    label: 'Sample Documents',
+    submenu: SAMPLES.map((s) => ({ id: `sample-${s.id}`, label: s.menu, click: () => actions.openSample(s.id) })),
   }
   if (platform === 'darwin') {
     return [
@@ -48,12 +57,13 @@ export function menuTemplate(platform: NodeJS.Platform, actions: MenuActions): M
       },
       { role: 'editMenu' },
       { role: 'windowMenu' },
+      { role: 'help', submenu: [samples] },
     ]
   }
   return [
     { label: '&File', submenu: [settings, { type: 'separator' }, { role: 'quit' }] },
     { role: 'editMenu' },
-    { label: '&Help', submenu: [about] },
+    { label: '&Help', submenu: [samples, { type: 'separator' }, about] },
   ]
 }
 

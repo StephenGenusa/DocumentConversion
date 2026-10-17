@@ -14,6 +14,8 @@ import { detect } from '../../src/core/detect'
 import { getReader } from '../../src/core/readers'
 
 export const CORPUS_DIR = 'tests/corpus'
+/** The sample documents the app ships (Help → Sample Documents), read like the corpus. */
+export const SAMPLES_DIR = 'resources/samples'
 
 /** Files whose content is vendored or generated and is not ours to re-theme. */
 const SKIP_PATHS = new Set([
@@ -135,8 +137,9 @@ export function trackedTextFiles(): { path: string; text: string }[] {
  */
 export async function corpusText(): Promise<{ path: string; text: string }[]> {
   const out: { path: string; text: string }[] = []
-  for (const name of readdirSync(CORPUS_DIR).sort()) {
-    const bytes = readFileSync(join(CORPUS_DIR, name))
+  const files = [CORPUS_DIR, SAMPLES_DIR].flatMap((dir) => readdirSync(dir).sort().map((name) => ({ dir, name })))
+  for (const { dir, name } of files) {
+    const bytes = readFileSync(join(dir, name))
     const d = detect(bytes, name)
     if (d.kind !== 'ok') continue
     let html: string
@@ -146,10 +149,11 @@ export async function corpusText(): Promise<{ path: string; text: string }[]> {
       continue // e.g. picture-only-figure.doc, which has no extractable text
     }
     out.push({
-      path: `${CORPUS_DIR}/${name}`,
+      path: `${dir}/${name}`,
       text: html
         .replace(/<[^>]+>/g, ' ')
         .replace(/&nbsp;/g, ' ')
+        .replace(/&quot;/g, '"')
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')

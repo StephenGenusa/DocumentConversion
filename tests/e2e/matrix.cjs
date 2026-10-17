@@ -280,6 +280,10 @@ async function main() {
     // Code highlight.js finds tokens in (a shell prompt line may hold none).
     const hasColoredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
+    // The sample documents the app ships (resources/samples): every target
+    // converts them without a single notice: every diagram, formula and
+    // picture drawn, nothing left out.
+    const isSample = /(?:^|[\\/])resources[\\/]samples[\\/]/.test(input)
 
     /**
      * Expected-outcome contract (spec §6.3): each cell is
@@ -324,6 +328,7 @@ async function main() {
         await writeFile(outPath, out)
         rec.path = outPath
         if (!sniffOk(target, out)) throw new Error('output does not look like ' + target)
+        if (isSample && notices.length > 0) throw new Error(`a sample gave ${notices.length} notices: ${notices.join(' | ')}`)
         if (hasDiagrams && DRAWING_TARGETS.includes(target)) {
           // A diagram is drawn as SVG where the output takes it (the default),
           // and as PNG for Word: PNG media and no SVG there, an SVG data URI
@@ -344,7 +349,8 @@ async function main() {
             const opf = await zip.file('OEBPS/content.opf').async('string')
             const svgItems = opf.match(/<item [^>]*media-type="image\/svg\+xml"[^>]*>/g) ?? []
             if (svgItems.length === 0) throw new Error('epub has no SVG item for its diagrams')
-            if (svgItems.some((i) => i.includes('cover-image'))) throw new Error('a diagram is the epub cover')
+            // The document's own picture may be the cover (epub.ts ownPicture); a drawn diagram never is.
+            if (svgItems.some((i) => i.includes('cover-image')) && !hasSvgImages && !hasRasterImages) throw new Error('a diagram is the epub cover')
             rec.note = `${svgItems.length} SVG items`
           }
         }

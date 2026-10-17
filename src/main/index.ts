@@ -48,6 +48,7 @@ import type { ReadContext } from '../core/types'
 import { urlFetchDeps } from './net'
 import { appTitle, PACKAGE_NAME } from './app-identity'
 import { installAppMenu } from './menu'
+import { readSample, type SampleId } from './samples'
 import { openAboutWindow } from './about-window'
 import { renderForEditor } from './render-ipc'
 
@@ -133,6 +134,26 @@ function openSettingsDialog(): void {
   win.focus()
   if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => win.webContents.send('app:open-settings'))
   else win.webContents.send('app:open-settings')
+}
+
+/**
+ * Help → Sample Documents → one of them: read here and sent to the window as
+ * an untitled copy (no file handle, no folder), detected as a dropped file
+ * is, so it opens the way that file would.
+ */
+async function openSample(id: SampleId): Promise<void> {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  if (win.isMinimized()) win.restore()
+  win.focus()
+  let payload
+  try {
+    const sample = await readSample(id)
+    payload = { ...sample, detected: await detectWithHints(Buffer.from(sample.base64, 'base64'), sample.filename) }
+  } catch (err) {
+    payload = { error: `The sample could not be opened: ${(err as Error).message}` }
+  }
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => win.webContents.send('app:open-sample', payload))
+  else win.webContents.send('app:open-sample', payload)
 }
 
 function createWindow(): BrowserWindow {
@@ -828,7 +849,7 @@ app.whenReady().then(() => {
     ocrInstalled: (code) => installedCodes().some((c) => c.code === code),
   })
   registerIpc(settings)
-  installAppMenu({ openAbout: () => void openAboutWindow(), openSettings: openSettingsDialog })
+  installAppMenu({ openAbout: () => void openAboutWindow(), openSettings: openSettingsDialog, openSample: (id) => void openSample(id) })
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

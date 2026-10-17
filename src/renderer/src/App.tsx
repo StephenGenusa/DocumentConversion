@@ -24,6 +24,7 @@ import { DEFAULT_SETTINGS } from '../../core/settings'
 import { hubFeatures } from '../../core/rendered-blocks'
 import type {
   BatchRow,
+  OpenedSample,
   PdfOptions,
   ReadOptions,
   RenderedFormat,
@@ -116,6 +117,10 @@ function App(): React.JSX.Element {
   // Settings… in the menu and Cmd/Ctrl+, (an accelerator, so it works from the
   // editor too); the start screen's link and the header's gear call the same.
   useEffect(() => window.api.onOpenSettings(() => setSettingsOpen(true)), [])
+  // Help → Sample Documents. Through a ref: the listener outlives every render.
+  const openSampleRef = useRef(openSample)
+  openSampleRef.current = openSample
+  useEffect(() => window.api.onOpenSample((s) => void openSampleRef.current(s)), [])
   // Main gives the notice once; it stays on screen until the dialog is closed.
   useEffect(() => {
     void window.api.settingsNotice().then((n) => n && setSettingsNotice(n), () => {})
@@ -199,6 +204,34 @@ function App(): React.JSX.Element {
       features: p.features,
       read: readDefaults,
     })
+  }
+
+  /**
+   * A sample document, as an untitled copy: no handle and no folder, so it is
+   * never re-read from, watched on or saved beside the shipped file. A text
+   * document (the Markdown samples) opens in the editor; anything else is
+   * added the way the same file dropped here would be (the SVG sample).
+   */
+  async function openSample(s: OpenedSample): Promise<void> {
+    if (busy) return
+    if ('error' in s) {
+      setNotice(s.error)
+      return
+    }
+    if (s.detected.kind !== 'ok') return
+    const label = `${s.name} (sample, untitled)`
+    const source = s.detected.format
+    if (source === 'image' || source === 'svg') {
+      addItem({ label, filename: s.filename, source, imageMode: 'embed', base64: s.base64, features: s.detected.features, read: readDefaults })
+      return
+    }
+    const result = await withJob((jobId) => window.api.fileToHtml({ base64: s.base64, filename: s.filename, source, read: appliedReadOptions(source, readDefaults), jobId }))
+    if (result.kind !== 'ok') {
+      setNotice(result.message)
+      return
+    }
+    addItem({ label, filename: s.filename, source, imageMode: 'embed', html: result.html, features: result.features, read: readDefaults }, true)
+    if (result.notice) setNotice(result.notice)
   }
 
   /** A reading choice for one input; remembered as the session's default. */

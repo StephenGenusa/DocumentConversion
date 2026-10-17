@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" font-family="Helvetica,Arial,sans-serif">
+<title>Heron sync service: system architecture</title>
+<defs>
+  <linearGradient id="header" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#173f73"/><stop offset="1" stop-color="#127a85"/></linearGradient>
+  <linearGradient id="service" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e3eefb"/></linearGradient>
+  <linearGradient id="core" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f86d6"/><stop offset="1" stop-color="#1f5fb0"/></linearGradient>
+  <linearGradient id="queue" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff4e0"/><stop offset="1" stop-color="#ffe0b0"/></linearGradient>
+  <linearGradient id="store" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#d9e8d4"/><stop offset="0.5" stop-color="#f3f8f1"/><stop offset="1" stop-color="#c9ddc2"/></linearGradient>
+  <radialGradient id="glow" cx="0.5" cy="0.5" r="0.6"><stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+  <filter id="shadow" x="-10%" y="-10%" width="130%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#1b2a3a" flood-opacity="0.18"/></filter>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#2c3e50"/></marker>
+  <marker id="arrow-event" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4.5" markerHeight="4.5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#d97706"/></marker>
+  <marker id="arrow-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#6b7d5c"/></marker>
+</defs>
+<rect width="1200" height="800" fill="#f7f9fc"/>
+<g id="header"><rect width="1200" height="92" fill="url(#header)"/><rect width="1200" height="92" fill="url(#glow)"/>
+<image x="28" y="14" width="64" height="64" href="data:image/png;base64,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"><title>Heron logo</title></image>
+<text x="110" y="46" font-size="26" font-weight="bold" fill="#ffffff" text-anchor="start">Heron sync service: system architecture</text>
+<text x="110" y="72" font-size="15" font-weight="normal" fill="#d6ecf3" text-anchor="start">How an edit travels from one device to the others</text>
+</g>
+<g id="lanes">
+<rect x="24" y="112" width="196" height="560" rx="12" fill="#ffffff" stroke="#dbe3ec"/>
+<text x="122" y="138" font-size="12" font-weight="bold" fill="#7b8a99" text-anchor="middle">CLIENTS</text>
+<rect x="232" y="112" width="170" height="560" rx="12" fill="#ffffff" stroke="#dbe3ec"/>
+<text x="317" y="138" font-size="12" font-weight="bold" fill="#7b8a99" text-anchor="middle">EDGE</text>
+<rect x="414" y="112" width="236" height="560" rx="12" fill="#ffffff" stroke="#dbe3ec"/>
+<text x="532" y="138" font-size="12" font-weight="bold" fill="#7b8a99" text-anchor="middle">SERVICES</text>
+<rect x="662" y="112" width="250" height="560" rx="12" fill="#ffffff" stroke="#dbe3ec"/>
+<text x="787" y="138" font-size="12" font-weight="bold" fill="#7b8a99" text-anchor="middle">EVENTS</text>
+<rect x="924" y="112" width="252" height="560" rx="12" fill="#ffffff" stroke="#dbe3ec"/>
+<text x="1050" y="138" font-size="12" font-weight="bold" fill="#7b8a99" text-anchor="middle">DATA</text>
+</g>
+<g id="client1" filter="url(#shadow)"><rect x="44" y="176" width="156" height="72" rx="10" fill="url(#service)" stroke="#3f6fa8" stroke-width="1.5"/>
+<svg x="56" y="196" width="32" height="32" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="13" rx="1.5" fill="#dbe8f7" stroke="#2c4a6e" stroke-width="1.5"/><path d="M8 20 H16 M12 16 V20" stroke="#2c4a6e" stroke-width="1.5"/></svg>
+<text x="96" y="218" font-size="14" font-weight="bold" fill="#1f2933" text-anchor="start">Desktop app</text>
+</g>
+<g id="client2" filter="url(#shadow)"><rect x="44" y="296" width="156" height="72" rx="10" fill="url(#service)" stroke="#3f6fa8" stroke-width="1.5"/>
+<svg x="56" y="316" width="32" height="32" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5" fill="#dbe8f7" stroke="#2c4a6e" stroke-width="1.5"/><circle cx="12" cy="18.5" r="1" fill="#2c4a6e"/></svg>
+<text x="96" y="338" font-size="14" font-weight="bold" fill="#1f2933" text-anchor="start">Mobile app</text>
+</g>
+<g id="client3" filter="url(#shadow)"><rect x="44" y="416" width="156" height="72" rx="10" fill="url(#service)" stroke="#3f6fa8" stroke-width="1.5"/>
+<svg x="56" y="436" width="32" height="32" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2" fill="#dbe8f7" stroke="#2c4a6e" stroke-width="1.5"/><path d="M2 8 H22" stroke="#2c4a6e" stroke-width="1.5"/><circle cx="5" cy="6" r="0.9" fill="#2c4a6e"/><circle cx="8" cy="6" r="0.9" fill="#2c4a6e"/></svg>
+<text x="96" y="458" font-size="14" font-weight="bold" fill="#1f2933" text-anchor="start">Web app</text>
+</g>
+<text x="122" y="520" font-size="11" font-weight="normal" fill="#5b6773" text-anchor="middle" font-style="italic">Edits offline, pushes when online</text>
+<g id="gateway" filter="url(#shadow)"><rect x="248" y="278" width="138" height="108" rx="10" fill="url(#service)" stroke="#3f6fa8" stroke-width="1.5"/>
+<text x="317" y="328" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="middle">API gateway</text>
+<text x="317" y="347" font-size="11" font-weight="normal" fill="#5b6773" text-anchor="middle">Token check, rate limits</text>
+</g>
+<g id="auth" filter="url(#shadow)"><rect x="434" y="168" width="196" height="84" rx="10" fill="url(#service)" stroke="#3f6fa8" stroke-width="1.5"/>
+<text x="532" y="206" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="middle">Auth service</text>
+<text x="532" y="225" font-size="11" font-weight="normal" fill="#5b6773" text-anchor="middle">Issues device tokens</text>
+</g>
+<image x="444" y="176" width="26" height="26" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij4KPGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJib2R5IiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjZjdjOTQ4Ii8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjZTBhODAwIi8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+CjxwYXRoIGQ9Ik03IDExIFY3LjUgYTUgNSAwIDAgMSAxMCAwIFYxMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjN2E1YjAwIiBzdHJva2Utd2lkdGg9IjIuMiIvPgo8cmVjdCB4PSI0IiB5PSIxMC41IiB3aWR0aD0iMTYiIGhlaWdodD0iMTIiIHJ4PSIyLjUiIGZpbGw9InVybCgjYm9keSkiIHN0cm9rZT0iIzdhNWIwMCIgc3Ryb2tlLXdpZHRoPSIxLjIiLz4KPGNpcmNsZSBjeD0iMTIiIGN5PSIxNS42IiByPSIxLjgiIGZpbGw9IiM3YTViMDAiLz48cmVjdCB4PSIxMS4yIiB5PSIxNi40IiB3aWR0aD0iMS42IiBoZWlnaHQ9IjMuNCIgZmlsbD0iIzdhNWIwMCIvPgo8L3N2Zz4K"/>
+<g id="sync" filter="url(#shadow)"><rect x="434" y="290" width="196" height="96" rx="10" fill="url(#core)" stroke="#173f73" stroke-width="1.5"/>
+<text x="532" y="334" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">Sync service</text>
+<text x="532" y="353" font-size="11" font-weight="normal" fill="#dbe9fa" text-anchor="middle">Rebases and stores changes</text>
+</g>
+<g id="blob" filter="url(#shadow)"><rect x="434" y="428" width="196" height="84" rx="10" fill="url(#service)" stroke="#3f6fa8" stroke-width="1.5"/>
+<text x="532" y="466" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="middle">Attachment service</text>
+<text x="532" y="485" font-size="11" font-weight="normal" fill="#5b6773" text-anchor="middle">Files up to 25 MB</text>
+</g>
+<g id="queue" filter="url(#shadow)"><rect x="684" y="404" width="206" height="76" rx="10" fill="url(#queue)" stroke="#d97706" stroke-width="1.5"/>
+<rect x="698" y="418" width="10" height="20" rx="2" fill="#f59e0b" fill-opacity="0.4"/>
+<rect x="712" y="418" width="10" height="20" rx="2" fill="#f59e0b" fill-opacity="0.55"/>
+<rect x="726" y="418" width="10" height="20" rx="2" fill="#f59e0b" fill-opacity="0.7"/>
+<rect x="740" y="418" width="10" height="20" rx="2" fill="#f59e0b" fill-opacity="0.85"/>
+<text x="762" y="434" font-size="14" font-weight="bold" fill="#1f2933" text-anchor="start">Change queue</text>
+<text x="787" y="464" font-size="11" font-weight="normal" fill="#7c4a03" text-anchor="middle">Topic doc.changed, kept 72 h</text>
+</g>
+<g id="notifier" filter="url(#shadow)"><rect x="700" y="548" width="174" height="60" rx="10" fill="#fff8ec" stroke="#d97706" stroke-width="1.5"/>
+<text x="787" y="583" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="middle">Notifier</text>
+</g>
+<g id="indexer" filter="url(#shadow)"><rect x="700" y="168" width="174" height="64" rx="10" fill="#fff8ec" stroke="#d97706" stroke-width="1.5"/>
+<text x="787" y="205" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="middle">Search indexer</text>
+</g>
+<g id="search" filter="url(#shadow)"><svg x="944" y="164" width="212" height="96" viewBox="0 0 212 96">
+<path d="M2 14 V82 A104 12 0 0 0 210 82 V14" fill="url(#store)" stroke="#5f7d52" stroke-width="1.5"/><ellipse cx="106" cy="14" rx="104" ry="12" fill="#eef5eb" stroke="#5f7d52" stroke-width="1.5"/>
+<text x="106" y="52" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="middle">Search index</text>
+<text x="106" y="70" font-size="11" font-weight="normal" fill="#4d6142" text-anchor="middle">Note text</text>
+</svg></g>
+<g id="meta" filter="url(#shadow)"><svg x="944" y="292" width="212" height="96" viewBox="0 0 212 96">
+<path d="M2 14 V82 A104 12 0 0 0 210 82 V14" fill="url(#store)" stroke="#5f7d52" stroke-width="1.5"/><ellipse cx="106" cy="14" rx="104" ry="12" fill="#eef5eb" stroke="#5f7d52" stroke-width="1.5"/>
+<text x="106" y="52" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="middle">Metadata store</text>
+<text x="106" y="70" font-size="11" font-weight="normal" fill="#4d6142" text-anchor="middle">Documents and revisions</text>
+</svg></g>
+<g id="objects" filter="url(#shadow)"><svg x="944" y="420" width="212" height="96" viewBox="0 0 212 96">
+<path d="M2 14 V82 A104 12 0 0 0 210 82 V14" fill="url(#store)" stroke="#5f7d52" stroke-width="1.5"/><ellipse cx="106" cy="14" rx="104" ry="12" fill="#eef5eb" stroke="#5f7d52" stroke-width="1.5"/>
+<text x="106" y="52" font-size="15" font-weight="bold" fill="#1f2933" text-anchor="middle">Object store</text>
+<text x="106" y="70" font-size="11" font-weight="normal" fill="#4d6142" text-anchor="middle">Attachments</text>
+</svg></g>
+<g id="arrows">
+<path d="M200 212 C224 212 222 332 246 332" fill="none" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M200 332 C224 332 222 332 246 332" fill="none" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M200 452 C224 452 222 332 246 332" fill="none" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M386 316 C410 316 408 210 432 210" fill="none" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M386 332 L432 336" fill="none" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M386 350 C410 350 408 470 432 470" fill="none" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M632 338 L942 338" fill="none" stroke="#6b7d5c" stroke-width="2.4" marker-start="url(#arrow-data)" marker-end="url(#arrow-data)"/>
+<path d="M632 500 L942 500" fill="none" stroke="#6b7d5c" stroke-width="2.4" marker-start="url(#arrow-data)" marker-end="url(#arrow-data)"/>
+<path d="M632 372 C660 380 660 430 682 438" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow-event)"/>
+<path d="M786 402 L786 236" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow-event)"/>
+<path d="M786 482 L786 544" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow-event)"/>
+<path d="M876 200 L942 210" fill="none" stroke="#6b7d5c" stroke-width="2.4" marker-start="url(#arrow-data)" marker-end="url(#arrow-data)"/>
+<path d="M698 584 C620 650 300 646 140 640 C104 638 104 574 120 528" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow-event)"/>
+<rect x="300" y="632" width="160" height="22" rx="11" fill="#fff4e0" stroke="#d97706"/>
+<text x="380" y="647" font-size="11" font-weight="bold" fill="#7c4a03" text-anchor="middle">Push to other devices</text>
+</g>
+<g id="legend"><rect x="24" y="686" width="830" height="84" rx="10" fill="#ffffff" stroke="#dbe3ec"/>
+<text x="44" y="710" font-size="13" font-weight="bold" fill="#1f2933" text-anchor="start">Legend</text>
+<path d="M44 736 L92 736" stroke="#2c3e50" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="100" y="740" font-size="12" font-weight="normal" fill="#1f2933" text-anchor="start">Request and reply</text>
+<path d="M250 736 L298 736" stroke="#d97706" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#arrow-event)"/>
+<text x="306" y="740" font-size="12" font-weight="normal" fill="#1f2933" text-anchor="start">Event, sent and forgotten</text>
+<path d="M496 736 L544 736" stroke="#6b7d5c" stroke-width="2.4" marker-start="url(#arrow-data)" marker-end="url(#arrow-data)"/>
+<text x="552" y="740" font-size="12" font-weight="normal" fill="#1f2933" text-anchor="start">Reads and writes</text>
+<rect x="664" y="722" width="30" height="22" rx="5" fill="url(#service)" stroke="#3f6fa8"/>
+<text x="700" y="738" font-size="12" font-weight="normal" fill="#1f2933" text-anchor="start">Service we run</text>
+<svg x="664" y="750" width="30" height="18" viewBox="0 0 30 18"><path d="M1 4 V14 A14 3 0 0 0 29 14 V4" fill="url(#store)" stroke="#5f7d52"/><ellipse cx="15" cy="4" rx="14" ry="3" fill="#eef5eb" stroke="#5f7d52"/></svg>
+<text x="700" y="764" font-size="12" font-weight="normal" fill="#1f2933" text-anchor="start">Data store</text>
+</g>
+<text x="1176" y="776" font-size="12" font-weight="normal" fill="#7b8a99" text-anchor="end" font-style="italic">Draft for the design review, October 2026</text>
+</svg>

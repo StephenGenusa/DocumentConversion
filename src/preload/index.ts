@@ -132,6 +132,14 @@ const api = {
       ipcRenderer.removeListener('app:open-settings', listener)
     }
   },
+  /** Help → Sample Documents (main sends `app:open-sample` with the sample, or why it could not be read). */
+  onOpenSample: (cb: (sample: unknown) => void) => {
+    const listener = (_e: unknown, sample: unknown): void => cb(sample)
+    ipcRenderer.on('app:open-sample', listener)
+    return () => {
+      ipcRenderer.removeListener('app:open-sample', listener)
+    }
+  },
   onSettingsChanged: (cb: (settings: unknown) => void) => {
     const listener = (_e: unknown, settings: unknown): void => cb(settings)
     ipcRenderer.on('settings:changed', listener)

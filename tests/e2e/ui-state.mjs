@@ -94,7 +94,7 @@ async function finish(code) {
 const watchdog = setTimeout(() => {
   console.log('FAIL  timed out')
   void finish(1)
-}, 240_000)
+}, 420_000)
 
 /* ---------------------------- a minimal CDP client ---------------------------- */
 
@@ -1322,6 +1322,61 @@ try {
   )
   await closeDialog()
   check('the toolbar follows Reset all', (await choice('Page'))?.value === 'Letter', JSON.stringify(await choice('Page')))
+
+  // Help → Sample Documents: each opens as an untitled copy (named for the
+  // sample, no file behind it), a Markdown one in the editor with every
+  // diagram and formula drawn, the SVG one as an added picture.
+  await startOver()
+  const SAMPLES = [
+    ['engineering', 'Engineering Design Note', 'Ferrow Mill Footbridge'],
+    ['software', 'Software Design Specification', 'Heron Sync Service'],
+    ['lab', 'Lab Report', 'Crystal Violet Fading'],
+    ['meeting', 'Meeting Summary', 'Office Move Planning'],
+  ]
+  const openSample = (id) => mainEval(`process.mainModule.require('electron').Menu.getApplicationMenu().getMenuItemById('sample-${id}').click()`)
+  for (const [id, name, heading] of SAMPLES) {
+    await openSample(id)
+    await waitFor(`document.querySelector('.clip-pane .card__name')?.textContent === ${JSON.stringify(`${name} (sample, untitled)`)}`, `the ${name} sample to open in the editor`)
+    await waitFor(`!!${EDITOR}?.querySelector('h1')?.textContent.includes(${JSON.stringify(heading)})`, `the ${name} sample's heading`)
+    // For a person to look at (UI_SHOTS): the window at its opening size, 1040 x 700.
+    if (process.env.UI_SHOTS) {
+      await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).setContentSize(1040, 700)`)
+      await sleep(1500)
+    }
+    await shot(`sample-${id}`)
+    // Every drawn block, scrolled to so it is drawn, must come out a picture.
+    const blocks = await js(`document.querySelectorAll('.clip-pane__editor .rb').length`)
+    let drawn = 0
+    for (let i = 0; i < blocks; i++) {
+      await js(`document.querySelectorAll('.clip-pane__editor .rb')[${i}].scrollIntoView({ block: 'center' })`)
+      for (let k = 0; k < 100; k++) {
+        if (await js(`!!document.querySelectorAll('.clip-pane__editor .rb')[${i}].querySelector('.rb__picture img')`)) {
+          drawn++
+          if (i === 0) await shot(`sample-${id}-first-block`)
+          break
+        }
+        await sleep(100)
+      }
+    }
+    const errors = await js(`document.querySelectorAll('.clip-pane__editor .rb__error').length`)
+    check(`Help → Sample Documents → ${name} opens an untitled copy in the editor, every block drawn`, blocks > 0 && drawn === blocks && errors === 0, JSON.stringify({ blocks, drawn, errors }))
+    await startOver()
+  }
+  // A sample converts like any edited document; it was never a file, so nothing is reloaded or watched.
+  await openSample('engineering')
+  await waitFor(`!!${EDITOR}?.querySelector('h1')`, 'the engineering sample to open again')
+  await click('Markdown')
+  const sampleOut = await convert()
+  check('a sample converts from the editor', (sampleOut.text ?? '').includes('# Ferrow Mill Footbridge: Deck Retrofit'), JSON.stringify(sampleOut).slice(0, 200))
+  await dismiss()
+  await windowRegainsFocus()
+  await sleep(300)
+  check('a sample is never flagged as changed on disk', !(await noticeText()).includes('changed on disk'), await noticeText())
+  await startOver()
+  await openSample('architecture')
+  await waitFor(`[...document.querySelectorAll('.card__name')].some((e) => e.textContent === 'Architecture Diagram (sample, untitled)')`, 'the SVG sample to be added')
+  await shot('sample-architecture')
+  check('Help → Sample Documents → Architecture Diagram (SVG) adds the picture as an untitled copy', !(await js(`!!document.querySelector('.clip-pane')`)), 'the editor opened')
 } catch (err) {
   failures++
   console.log(`FAIL  ${err.message}`)

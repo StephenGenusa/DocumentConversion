@@ -308,9 +308,16 @@ export interface Api {
   settingsNotice(): Promise<string | undefined>
   /** Called when the menu's Settings… (or Cmd/Ctrl+,) asks for the dialog. Returns the way to stop. */
   onOpenSettings(cb: () => void): () => void
+  /** Called when Help → Sample Documents opens a sample: an untitled copy, or why it could not be read. Returns the way to stop. */
+  onOpenSample(cb: (sample: OpenedSample) => void): () => void
   /** Called with the new settings after each saved change. Returns the way to stop. */
   onSettingsChanged(cb: (settings: Settings) => void): () => void
 }
+
+/** A sample document sent by the menu (src/main/samples.ts): no handle, no folder. */
+export type OpenedSample =
+  | { name: string; filename: string; base64: string; detected: DetectResult }
+  | { error: string }
 
 export interface BlockRenderRequest {
   kind: 'mermaid' | 'dot' | 'math'

@@ -12,6 +12,7 @@ export type {
   PdfPageSize,
   Settings,
   SettingsResult,
+  OpenedSample,
 } from './types'
 
 declare global {
