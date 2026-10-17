@@ -118,7 +118,7 @@ export function OutputPicker({
             </select>
           </label>
           <span className="pdf-options__note">
-            Automatic splits on a rule if the document has one, otherwise on heading 1.
+            Automatic splits on a rule if the document has one, otherwise on heading 1 (on heading 2 when heading 1 is only the title).
           </span>
         </div>
       )}

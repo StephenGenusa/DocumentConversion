@@ -32,6 +32,19 @@ describe('the reveal.js writer', () => {
     expect(html.length).toBeGreaterThan(150_000)
   })
 
+  it('fits a long slide to the slide, and keeps formulas in their line', async () => {
+    const html = await deck('<p>Load <img src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" alt="x" data-rendered="formula"> here</p>')
+    expect(html).toContain("Reveal.on('slidechanged'")
+    expect(html).toContain('width: 960, height: 700')
+    expect(html).toContain('.reveal section img[data-rendered="formula"] { display: inline; margin: 0; }')
+  })
+
+  it('draws a task list without bullets', async () => {
+    const html = await deck('<ul><li>☐ Pack</li><li>☑ Label</li></ul>')
+    expect(html).toContain('<ul class="task-list">')
+    expect(html).toContain('.reveal ul.task-list { list-style: none; }')
+  })
+
   it('puts speaker notes where reveal expects them', async () => {
     const html = await deck('<p>a</p><aside><p>say this</p></aside>')
     expect(html).toContain('<aside class="notes"><p>say this</p></aside>')

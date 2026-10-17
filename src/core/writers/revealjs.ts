@@ -1,6 +1,6 @@
 import { splitSlides, type SplitOn } from '../slides'
 import { footnotesForOutput } from '../footnotes'
-import { escapeHtml, highlightCodeBlocks } from '../shell'
+import { escapeHtml, highlightCodeBlocks, markTaskLists } from '../shell'
 import { DARK_CODE_GROUND, DARK_CODE_TEXT, HLJS_CSS, HLJS_DARK_CSS } from '../hljs'
 import { relativeLuminance } from '../css-color'
 import { REVEAL_CSS, REVEAL_JS, REVEAL_NOTES_PLUGIN, REVEAL_VERSION } from '../assets/reveal.generated'
@@ -56,6 +56,53 @@ ${HLJS_DARK_CSS}`
 ${HLJS_CSS}`
 }
 
+/**
+ * A slide fitted to the slide: a document's section is cut into a slide as
+ * it is, and a long one ran off the bottom (and a wide table off the side)
+ * with no way to see the rest. When a slide is shown, its text is made
+ * smaller in steps until it fits, down to 40%, its pictures with it; one that
+ * still does not fit scrolls. A slide that fits is left as written. Pictures
+ * are decoded first, so their height is counted.
+ */
+export const FIT_SLIDES_JS = `(function () {
+  var W = 960, H = 700
+  function fit(slide) {
+    if (!slide || slide.getAttribute('data-fitted')) return
+    slide.setAttribute('data-fitted', '1')
+    var imgs = slide.querySelectorAll('img')
+    var size = 100
+    function apply() {
+      slide.style.fontSize = size === 100 ? '' : size + '%'
+      for (var i = 0; i < imgs.length; i++) if (!imgs[i].hasAttribute('data-rendered') || imgs[i].getAttribute('data-rendered') !== 'formula') imgs[i].style.maxHeight = Math.round(0.7 * H * size / 100) + 'px'
+    }
+    apply()
+    while ((slide.scrollHeight > H || slide.scrollWidth > W) && size > 40) { size -= 5; apply() }
+    if (slide.scrollHeight > H) { slide.style.height = H + 'px'; slide.style.overflowY = 'auto' }
+    Reveal.layout()
+  }
+  function when(slide) {
+    var imgs = slide ? slide.querySelectorAll('img') : []
+    var ready = []
+    for (var i = 0; i < imgs.length; i++) if (imgs[i].decode) ready.push(imgs[i].decode().catch(function () {}))
+    Promise.all(ready).then(function () { fit(slide) })
+  }
+  Reveal.on('ready', function (e) { when(e.currentSlide) })
+  Reveal.on('slidechanged', function (e) { when(e.currentSlide) })
+})();`
+
+/**
+ * The theme draws every picture in a slide as a framed block of its own. A
+ * formula in a sentence was torn out of its line, and the line broken around
+ * it; a drawn diagram got a frame it does not have anywhere else. Pictures
+ * sit centered without a frame; a formula stays in its line, a display one
+ * centered on its own.
+ */
+export const DECK_CSS = `
+  .reveal section img { border: 0; background: none; margin: 0.4em auto; }
+  .reveal section img[data-rendered="formula"] { display: inline; margin: 0; }
+  .reveal ul.task-list { list-style: none; }
+`
+
 /** reveal expects `<aside class="notes">`; the hub carries a bare `<aside>`. */
 function notesMarkup(notes: string[]): string {
   if (notes.length === 0) return ''
@@ -64,7 +111,7 @@ function notesMarkup(notes: string[]): string {
 
 export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
   // A deck has no notes pane of its own; the notes are the last slide's text.
-  const slides = splitSlides(footnotesForOutput(doc.html, 'plain'), { splitOn: (opts?.slides?.splitOn as SplitOn) ?? 'auto' })
+  const slides = splitSlides(markTaskLists(footnotesForOutput(doc.html, 'plain')), { splitOn: (opts?.slides?.splitOn as SplitOn) ?? 'auto' })
   const title = doc.title?.trim() || doc.sourceName?.trim() || 'Presentation'
 
   let colored = false
@@ -93,6 +140,7 @@ export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Pr
 <title>${escapeHtml(title)}</title>
 <!-- reveal.js ${REVEAL_VERSION}, MIT, (C) Hakim El Hattab and contributors -->
 <style>${REVEAL_CSS}</style>
+<style>${DECK_CSS}</style>
 ${colored ? `<style>${codeCss(REVEAL_CSS)}</style>\n` : ''}</head>
 <body>
 <div class="reveal"><div class="slides">
@@ -101,7 +149,8 @@ ${sections}
 <script>${REVEAL_JS}</script>
 <script>${REVEAL_NOTES_PLUGIN}</script>
 <script>
-Reveal.initialize({ hash: true, slideNumber: 'c/t', plugins: [ RevealNotes ] });
+Reveal.initialize({ hash: true, slideNumber: 'c/t', width: 960, height: 700, plugins: [ RevealNotes ] });
+${FIT_SLIDES_JS}
 </script>
 </body>
 </html>

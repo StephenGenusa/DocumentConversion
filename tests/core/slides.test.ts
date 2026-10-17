@@ -22,6 +22,16 @@ describe('splitSlides', () => {
     ])
   })
 
+  it('splits on h2 when there is one h1, the title, over h2 sections', () => {
+    expect(bodies('<h1>T</h1><p>0</p><h2>A</h2><p>1</p><h2>B</h2><p>2</p>')).toEqual([
+      '<h1>T</h1><p>0</p>',
+      '<h2>A</h2><p>1</p>',
+      '<h2>B</h2><p>2</p>',
+    ])
+    // Two h1s are the slides, whatever h2s they hold.
+    expect(bodies('<h1>A</h1><h2>a</h2><h2>b</h2><h1>B</h1>')).toEqual(['<h1>A</h1><h2>a</h2><h2>b</h2>', '<h1>B</h1>'])
+  })
+
   it('falls back to h1 when there is no rule', () => {
     expect(bodies('<h1>A</h1><p>1</p><h1>B</h1><p>2</p>')).toEqual([
       '<h1>A</h1><p>1</p>',

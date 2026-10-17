@@ -16,7 +16,8 @@ import { SPEAKER_NOTES_TAG } from './speaker-notes'
  *
  *   1. `<hr>` — an explicit `---` in the source. Unambiguous, and what every
  *      other markdown-slides tool uses, so it wins wherever it appears.
- *   2. Otherwise a heading level, `h1` by default.
+ *   2. Otherwise a heading level: `h1`, or `h2` when the document has at
+ *      most one `h1` (its title) and its sections are `h2`s.
  *
  * A document with neither is one slide. That is the right answer rather than an
  * error: a single-slide deck is a legitimate thing to ask for.
@@ -53,7 +54,11 @@ function hasSubstance(node: AnyNode): boolean {
  */
 function resolveRule(nodes: AnyNode[], requested: SplitOn): 'hr' | 'h1' | 'h2' {
   if (requested !== 'auto') return requested
-  return nodes.some((n) => isElement(n) && n.name === 'hr') ? 'hr' : 'h1'
+  if (nodes.some((n) => isElement(n) && n.name === 'hr')) return 'hr'
+  // A document with one title and its sections under it (one h1, or none, and
+  // h2s) is one long slide when split on h1: its sections are the slides.
+  const count = (name: string): number => nodes.filter((n) => isElement(n) && n.name === name).length
+  return count('h1') <= 1 && count('h2') >= 2 ? 'h2' : 'h1'
 }
 
 export function splitSlides(html: string, options: SlideOptions = {}): Slide[] {

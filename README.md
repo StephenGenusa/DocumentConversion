@@ -245,7 +245,8 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
 
 - **revealjs** — a [reveal.js](https://revealjs.com) deck as a single
   self-contained HTML file. Slides are separated by a horizontal rule (`---` in
-  Markdown) or by a heading level you choose. Speaker notes written as
+  Markdown) or by a heading level you choose; Automatic uses heading 1, or
+  heading 2 when heading 1 is only the title. Speaker notes written as
   `<!-- notes: ... -->` reach reveal's speaker view.
 
 **Kindle**
