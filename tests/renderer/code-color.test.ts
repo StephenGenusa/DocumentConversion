@@ -375,55 +375,118 @@ describe('the language picker', () => {
     expect(e.getHTML()).toBe('<pre><code>SELECT 1 FROM t;</code></pre><p>After.</p>')
   })
 
-  const picker = (i: number): HTMLSelectElement => blocks()[i].querySelector('select[aria-label="Code language"]')!
-  const choose = (sel: HTMLSelectElement, value: string): void => {
-    sel.dispatchEvent(new Event('focus'))
-    sel.value = value
-    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  const button = (i: number): HTMLButtonElement => blocks()[i].querySelector('button.code-lang__button')!
+  const combo = (): HTMLInputElement | null => document.querySelector('.code-lang-pop input[role=combobox]')
+  const options = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('.code-lang-pop [role=option]')]
+  const active = (): string | undefined => options().find((o) => o.getAttribute('aria-selected') === 'true')?.textContent ?? undefined
+  const typeFilter = (text: string): void => {
+    combo()!.value = text
+    combo()!.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  const key = (k: string): void => {
+    combo()!.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
   }
 
-  it('sits on every code block, showing its language, and on no diagram or formula', () => {
+  it('sits on every code block as a button showing its language, and on no diagram or formula', () => {
     make(PY + '<pre><code class="language-js">let n = 1</code></pre><pre><code>x</code></pre><pre><code class="language-mermaid">flowchart LR</code></pre><pre><code class="language-math">x</code></pre>')
-    expect(picker(0).value).toBe('python')
-    expect(picker(0).selectedOptions[0].textContent).toBe('Python')
-    expect(picker(1).value).toBe('javascript')
-    expect(picker(2).value).toBe('')
-    expect(picker(2).selectedOptions[0].textContent).toBe('Plain text')
-    expect(host.querySelectorAll('select[aria-label="Code language"]').length).toBe(3)
-    for (const rb of host.querySelectorAll('.rb')) expect(rb.querySelector('select')).toBeNull()
+    expect(button(0).textContent).toBe('Python')
+    expect(button(0).getAttribute('aria-label')).toBe('Code language: Python')
+    expect(button(1).textContent).toBe('JavaScript')
+    expect(button(2).textContent).toBe('Plain text')
+    expect(host.querySelectorAll('button.code-lang__button').length).toBe(3)
+    for (const rb of host.querySelectorAll('.rb')) expect(rb.querySelector('.code-lang')).toBeNull()
+    // No list is made until one is opened.
+    expect(document.querySelector('.code-lang-pop')).toBeNull()
   })
 
-  it('lists every language once it is used, and changing it re-colors at once and saves the class, one undo step', () => {
+  it('opens a list to filter, as an ARIA combobox: every language, common ones first, starting at its own', () => {
+    make(PY)
+    button(0).click()
+    const input = combo()!
+    expect(document.activeElement).toBe(input)
+    expect(input.getAttribute('aria-expanded')).toBe('true')
+    expect(button(0).getAttribute('aria-expanded')).toBe('true')
+    const list = document.getElementById(input.getAttribute('aria-controls')!)!
+    expect(list.getAttribute('role')).toBe('listbox')
+    expect(options().length).toBe(codeLanguages().length)
+    expect(options()[0].textContent).toBe('Plain text')
+    expect(list.querySelector('[role=group]')!.getAttribute('aria-label')).toBe('More languages')
+    expect(list.querySelector('[role=group] [role=option]')!.textContent).toBe(codeLanguages().find((l) => !l.common)!.label)
+    // The block's language is marked, and is where the arrows start.
+    expect(active()).toBe('Python')
+    expect(input.getAttribute('aria-activedescendant')).toBe(options().find((o) => o.textContent === 'Python')!.id)
+    expect(options().find((o) => o.textContent === 'Python')!.getAttribute('aria-current')).toBe('true')
+  })
+
+  it('filters by name or alias as it is typed; arrows move, Enter chooses: colored at once, saved, one undo step', () => {
     const e = make('<pre><code>SELECT 1 FROM t;</code></pre><p>After.</p>')
-    expect(picker(0).options.length).toBe(1)
-    picker(0).dispatchEvent(new Event('focus'))
-    expect(picker(0).options.length).toBe(codeLanguages().length)
-    choose(picker(0), 'sql')
+    button(0).click()
+    typeFilter('js')
+    expect(options()[0].textContent).toBe('JavaScript')
+    typeFilter('c+')
+    expect(options()[0].textContent).toBe('C++')
+    typeFilter('zzzz')
+    expect(options()).toEqual([])
+    expect(document.querySelector<HTMLElement>('.code-lang-pop__empty')!.hidden).toBe(false)
+    key('Enter')
+    expect(e.getHTML()).toBe('<pre><code>SELECT 1 FROM t;</code></pre><p>After.</p>')
+    typeFilter('sq')
+    expect(active()).toBe('SQL')
+    key('ArrowDown')
+    key('ArrowUp')
+    expect(active()).toBe('SQL')
+    key('Enter')
+    expect(document.querySelector('.code-lang-pop')).toBeNull()
+    expect(document.activeElement).toBe(e.view.dom)
     expect(e.getHTML()).toBe('<pre><code class="language-sql">SELECT 1 FROM t;</code></pre><p>After.</p>')
     expect(spans(blocks()[0]).some((s) => /hljs-keyword:SELECT/i.test(s))).toBe(true)
-    expect(picker(0).value).toBe('sql')
-    choose(picker(0), '')
+    expect(button(0).textContent).toBe('SQL')
+    // Back to plain text, through the list from the top.
+    button(0).click()
+    typeFilter('plain')
+    key('Enter')
     expect(e.getHTML()).toBe('<pre><code>SELECT 1 FROM t;</code></pre><p>After.</p>')
     expect(spans(blocks()[0])).toEqual([])
     e.commands.undo()
     expect(e.getHTML()).toBe('<pre><code class="language-sql">SELECT 1 FROM t;</code></pre><p>After.</p>')
-    expect(picker(0).value).toBe('sql')
+    expect(button(0).textContent).toBe('SQL')
+  })
+
+  it('chooses with a click; Escape, or a click elsewhere, closes it changing nothing', () => {
+    const e = make(PY + '<p>After.</p>')
+    const html = e.getHTML()
+    button(0).click()
+    key('Escape')
+    expect(document.querySelector('.code-lang-pop')).toBeNull()
+    expect(document.activeElement).toBe(e.view.dom)
+    expect(button(0).getAttribute('aria-expanded')).toBe('false')
+    button(0).click()
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(document.querySelector('.code-lang-pop')).toBeNull()
+    expect(e.getHTML()).toBe(html)
+    button(0).click()
+    typeFilter('rust')
+    options()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(e.getHTML()).toContain('<pre><code class="language-rust">')
   })
 
   it('shows a language the outputs do not know as itself', () => {
     make('<pre><code class="language-cobolx">x</code></pre>')
-    expect(picker(0).value).toBe('cobolx')
-    picker(0).dispatchEvent(new Event('focus'))
-    expect(picker(0).value).toBe('cobolx')
+    expect(button(0).textContent).toBe('cobolx')
+    button(0).click()
+    expect(options()[0].textContent).toBe('cobolx')
+    expect(active()).toBe('cobolx')
   })
 
-  it('is reached from the code with Mod-Alt-L, and Escape goes back to the code', () => {
+  it('is reached from the code with Mod-Alt-L, its filter focused, and Escape goes back to the code', () => {
     const e = make('<p>Intro.</p>' + PY + JS)
     e.commands.setTextSelection(e.state.doc.child(0).nodeSize + e.state.doc.child(1).nodeSize + 3)
     expect(e.commands.focusCodeLanguage()).toBe(true)
-    expect(document.activeElement).toBe(picker(1))
-    picker(1).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(document.activeElement).toBe(combo())
+    expect(active()).toBe('JavaScript')
+    key('Escape')
     expect(document.activeElement).toBe(e.view.dom)
+    expect(e.state.selection.from).toBe(e.state.doc.child(0).nodeSize + e.state.doc.child(1).nodeSize + 3)
     e.commands.setTextSelection(2)
     expect(e.commands.focusCodeLanguage()).toBe(false)
   })

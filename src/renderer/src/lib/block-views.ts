@@ -587,7 +587,7 @@ class InlineView extends DrawnView implements NodeView {
     const place = (): void => {
       frame = 0
       if (this.pop !== pop) return
-      const at = placeBeside(pop, this.face, { align: this.display() ? 'center' : 'start' })
+      const at = placeBeside(pop, this.face, this.view.dom, { align: this.display() ? 'center' : 'start' })
       pop.classList.toggle('rm-pop--above', at.side === 'above')
       pop.style.visibility = ''
     }

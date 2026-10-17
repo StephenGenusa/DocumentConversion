@@ -208,6 +208,22 @@ async function shot(name) {
   writeFileSync(join(process.env.UI_SHOTS, `${name}.png`), Buffer.from(res.result.data, 'base64'))
 }
 
+/** Real keys, through the input pipeline as a keyboard would send them. */
+const CTRL = 2
+const ALT = 1
+async function cdp(method, params) {
+  const id = ++seq
+  return new Promise((r) => {
+    pending.set(id, r)
+    ws.send(JSON.stringify({ id, method, params }))
+  })
+}
+async function pressKey(key, code, keyCode, modifiers = 0) {
+  await cdp('Input.dispatchKeyEvent', { type: 'rawKeyDown', key, code, windowsVirtualKeyCode: keyCode, modifiers })
+  await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode, modifiers })
+}
+const insertText = (text) => cdp('Input.insertText', { text })
+
 const EDITOR = `document.querySelector('.clip-pane__editor .ProseMirror')`
 /** How many colors are painted (CSS highlight ranges) in the pane's first code block. */
 const PAINTED_IN_PRE = `(() => { const pre = document.querySelector('.clip-pane__editor pre'); return pre ? [...CSS.highlights.values()].reduce((n, h) => n + [...h].filter((r) => pre.contains(r.startContainer)).length, 0) : 0 })()`
@@ -219,6 +235,9 @@ const PAINTED_IN_PRE = `(() => { const pre = document.querySelector('.clip-pane_
 async function inkOf(range, [r, g, b]) {
   const rect = await js(`(() => { const s = ${range}; if (!s) return null; const r = document.createRange(); r.setStart(s.startContainer, s.startOffset); r.setEnd(s.endContainer, s.endOffset); const b = r.getBoundingClientRect(); return { x: Math.floor(b.left), y: Math.floor(b.top), width: Math.ceil(b.width), height: Math.ceil(b.height) } })()`)
   if (!rect || rect.width < 1) return { match: 0, ink: 0, rect }
+  // Highlights added in this task are drawn on a later frame: let two go by first.
+  await js(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))`)
+  await sleep(100)
   return mainEval(`(async () => {
     const { BrowserWindow } = process.mainModule.require('electron')
     const w = BrowserWindow.getAllWindows().find((w) => w.getTitle().startsWith('Document Converter'))
@@ -686,20 +705,90 @@ try {
     await typeIntoEditor('<p>And in JavaScript:</p><pre><code class="language-javascript">// Invented totals\nconst rate = 0.2\nfunction total(items) {\n  return items.reduce((sum, item) => sum + item.amount * (1 + rate), 0)\n}\nconsole.log(`total: ${total([])}`)</code></pre>')
   }
   await js(`${EDITOR}.editor.commands.setTextSelection(5)`)
-  await waitFor(`!!document.querySelector('select[aria-label="Code language"]')`, 'the language picker')
+  await waitFor(`!!document.querySelector('.clip-pane__editor pre button.code-lang__button')`, 'the language picker')
   await shot('python-and-js')
-  // Ctrl+Alt+L from the code reaches the block's picker, as a keyboard user would.
-  await js(`(() => { ${EDITOR}.editor.commands.focus(); ${EDITOR}.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', ctrlKey: true, altKey: true, bubbles: true, cancelable: true })) })()`)
-  const focused = await js(`(() => { const s = document.activeElement; return s?.getAttribute('aria-label') === 'Code language' ? { value: s.value, options: s.options.length } : null })()`)
-  await shot('picker-focused')
-  check('Ctrl+Alt+L in a code block focuses its language picker, which lists the languages', focused?.value === 'python' && focused.options > 40, JSON.stringify(focused))
-  const pick = (value) => js(`(() => { const s = document.activeElement?.getAttribute('aria-label') === 'Code language' ? document.activeElement : document.querySelector('select[aria-label="Code language"]'); s.focus(); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change', { bubbles: true })) })()`)
-  await pick('')
-  const asPlain = { html: await js(`${EDITOR}.editor.getHTML()`), ...(await tokenColors()) }
-  check('choosing Plain text in the picker uncolors the block and drops its class', asPlain.spans === 0 && /^<pre><code># Totals/.test(asPlain.html), JSON.stringify(asPlain).slice(0, 200))
-  await pick('python')
-  const back = { html: await js(`${EDITOR}.editor.getHTML()`), ...(await tokenColors()) }
-  check('choosing Python again colors it and saves class="language-python"', back.spans > 0 && /^<pre><code class="language-python"># Totals/.test(back.html), JSON.stringify(back).slice(0, 200))
+  // Ctrl+Alt+L from the code opens the block's picker with its filter focused, as a keyboard user would.
+  await js(`${EDITOR}.editor.commands.focus()`)
+  await pressKey('l', 'KeyL', 76, CTRL | ALT)
+  await waitFor(`document.activeElement?.getAttribute('role') === 'combobox'`, 'the picker filter to take the focus')
+  const pickerState = () => js(`(() => {
+    const input = document.activeElement?.getAttribute('role') === 'combobox' ? document.activeElement : null
+    const pop = document.querySelector('.code-lang-pop')
+    const list = input && document.getElementById(input.getAttribute('aria-controls'))
+    const active = input && document.getElementById(input.getAttribute('aria-activedescendant'))
+    const pane = document.querySelector('.clip-pane__editor').getBoundingClientRect()
+    const a = pop?.getBoundingClientRect()
+    const b = document.querySelector('.clip-pane__editor pre button.code-lang__button')?.getBoundingClientRect()
+    const bounds = { left: Math.max(0, pane.left), top: Math.max(0, pane.top), right: Math.min(innerWidth, pane.right), bottom: Math.min(innerHeight, pane.bottom) }
+    return {
+      focused: !!input,
+      listbox: list?.getAttribute('role') ?? null,
+      options: list ? list.querySelectorAll('[role=option]').length : 0,
+      active: active?.getAttribute('aria-selected') === 'true' ? active.textContent : null,
+      inside: !!a && a.left >= bounds.left - 1 && a.right <= bounds.right + 1 && a.top >= bounds.top - 1 && a.bottom <= bounds.bottom + 1,
+      besideButton: !!a && !!b && (a.top >= b.bottom - 1 || a.bottom <= b.top + 1) && Math.abs(a.right - b.right) < 3,
+      pop: a ? [a.left, a.top, a.right, a.bottom].map(Math.round) : null,
+      button: b ? [b.left, b.top, b.right, b.bottom].map(Math.round) : null,
+      pane: [bounds.left, bounds.top, bounds.right, bounds.bottom].map(Math.round),
+      window: [innerWidth, innerHeight],
+    }
+  })()`)
+  const pickerOpen = await pickerState()
+  await shot('picker-open')
+  console.log(`note  language picker: ${JSON.stringify(pickerOpen)}`)
+  check(
+    'Ctrl+Alt+L in a code block opens its language picker, a combobox listing the languages from its own, beside its button and inside the pane',
+    pickerOpen.focused && pickerOpen.listbox === 'listbox' && pickerOpen.options > 40 && pickerOpen.active === 'Python' && pickerOpen.inside && pickerOpen.besideButton,
+    JSON.stringify(pickerOpen),
+  )
+  // Typed into the filter and chosen with Enter, by real keys.
+  await insertText('plain')
+  const filtered = await pickerState()
+  await pressKey('Enter', 'Enter', 13)
+  const asPlain = { html: await js(`${EDITOR}.editor.getHTML()`), focus: await js(`document.activeElement === ${EDITOR}`), ...(await tokenColors()) }
+  check(
+    'typing "plain" and Enter in the picker uncolors the block, drops its class and goes back to the code',
+    filtered.options === 1 && filtered.active === 'Plain text' && asPlain.spans === 0 && asPlain.focus && /^<pre><code># Totals/.test(asPlain.html),
+    JSON.stringify({ filtered, asPlain }).slice(0, 300),
+  )
+  await pressKey('l', 'KeyL', 76, CTRL | ALT)
+  await waitFor(`document.activeElement?.getAttribute('role') === 'combobox'`, 'the picker filter to take the focus')
+  await insertText('py')
+  const byAlias = await pickerState()
+  await pressKey('Enter', 'Enter', 13)
+  const back = { html: await js(`${EDITOR}.editor.getHTML()`), caret: await js(`${EDITOR}.editor.state.selection.from`), ...(await tokenColors()) }
+  check(
+    'typing the alias "py" finds Python; Enter colors the block again, saves class="language-python" and leaves the caret where it was',
+    byAlias.active === 'Python' && back.spans > 0 && back.caret === 5 && /^<pre><code class="language-python"># Totals/.test(back.html),
+    JSON.stringify({ byAlias, back }).slice(0, 300),
+  )
+  // Escape goes back to the code, changing nothing; arrows move through the list.
+  await pressKey('l', 'KeyL', 76, CTRL | ALT)
+  await waitFor(`document.activeElement?.getAttribute('role') === 'combobox'`, 'the picker filter to take the focus')
+  await pressKey('ArrowDown', 'ArrowDown', 40)
+  const moved = await pickerState()
+  await pressKey('Escape', 'Escape', 27)
+  const escaped = { html: await js(`${EDITOR}.editor.getHTML()`), focus: await js(`document.activeElement === ${EDITOR}`), open: await js(`!!document.querySelector('.code-lang-pop')`) }
+  check('Down moves on from Python; Escape closes the picker and goes back to the code, changing nothing', moved.active !== 'Python' && moved.active !== null && escaped.focus && !escaped.open && escaped.html === back.html, JSON.stringify({ moved, escaped }).slice(0, 300))
+  // The narrowest window (560 px): the list still fits inside the pane, beside its button.
+  {
+    const wide = await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).getSize()`)
+    await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).setSize(560, ${wide[1]})`)
+    await sleep(400)
+    await js(`document.querySelector('.clip-pane__editor pre button.code-lang__button').click()`)
+    await waitFor(`document.activeElement?.getAttribute('role') === 'combobox'`, 'the picker filter to take the focus')
+    await sleep(100)
+    const narrowPicker = await pickerState()
+    await pressKey('Escape', 'Escape', 27)
+    await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).setSize(${wide[0]}, ${wide[1]})`)
+    await sleep(400)
+    console.log(`note  language picker in a 560 px window: ${JSON.stringify(narrowPicker)}`)
+    // Across, inside the pane; down, a short pane may let it reach past, inside the window, to show a usable list.
+    const [l, t, r, b] = narrowPicker.pop ?? []
+    const across = l >= narrowPicker.pane[0] - 1 && r <= narrowPicker.pane[2] + 1
+    const tall = b - t >= Math.min(200, narrowPicker.pane[3] - narrowPicker.pane[1]) - 1 && t >= 0 && b <= narrowPicker.window[1]
+    check('in the narrowest window the language picker fits across the pane, beside its button, tall enough to use', across && tall && narrowPicker.besideButton, JSON.stringify(narrowPicker))
+  }
   // Real typing (through the DOM, not a command) right beside the picker, at the block's start.
   await js(`${EDITOR}.editor.commands.focus(1)`)
   // Tiptap focuses the view on the next animation frame; until then the page's

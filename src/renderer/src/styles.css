@@ -134,8 +134,20 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .clip-pane__editor pre { background: #f4f4f5; padding: .75rem; border-radius: 6px; overflow-x: auto; position: relative; }
 /* A code block's language picker (lib/code-color.ts): quiet in the corner, plain when wanted. */
 .clip-pane__editor .code-lang { position: absolute; top: .3rem; right: .35rem; user-select: none; }
-.clip-pane__editor .code-lang__select { font: inherit; font-family: system-ui, sans-serif; font-size: .75rem; color: #71717a; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: .05rem .2rem; max-width: 9rem; cursor: pointer; opacity: .75; }
-.clip-pane__editor pre:hover .code-lang__select, .clip-pane__editor .code-lang__select:focus-visible { opacity: 1; background: #fff; border-color: #d4d4d8; color: #3f3f46; }
+.clip-pane__editor .code-lang__button { font: inherit; font-family: system-ui, sans-serif; font-size: .75rem; line-height: 1.3; color: #71717a; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: .05rem .35rem; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; opacity: .75; }
+.clip-pane__editor pre:hover .code-lang__button, .clip-pane__editor .code-lang__button:focus-visible, .clip-pane__editor .code-lang__button[aria-expanded='true'] { opacity: 1; background: #fff; border-color: #d4d4d8; color: #3f3f46; }
+/* Its list, beside the button: placed by script inside the pane and the window (lib/place-popover.ts). */
+.code-lang-pop { position: fixed; z-index: 30; display: flex; flex-direction: column; width: 15rem; max-height: 22rem; box-sizing: border-box; background: #fff; border: 1px solid #d4d4d8; border-radius: 10px; box-shadow: 0 8px 24px rgba(24, 24, 27, .14); padding: .4rem; font-family: system-ui, sans-serif; font-size: .85rem; color: #27272a; }
+.code-lang-pop__filter { flex: none; font: inherit; border: 1px solid #d4d4d8; border-radius: 6px; padding: .3rem .5rem; margin-bottom: .3rem; }
+.code-lang-pop__filter:focus { outline: 2px solid #a5b4fc; outline-offset: 0; border-color: #6366f1; }
+.code-lang-pop__list, .code-lang-pop__group { list-style: none; margin: 0; padding: 0; }
+.code-lang-pop__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.code-lang-pop__option { padding: .25rem .5rem .25rem 1.4rem; border-radius: 6px; cursor: pointer; position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.code-lang-pop__option[aria-selected='true'] { background: #eef2ff; color: #3730a3; }
+.code-lang-pop__option--current::before { content: '✓'; position: absolute; left: .45rem; }
+.code-lang-pop__heading { margin: .35rem .5rem .15rem; color: #71717a; font-size: .72rem; }
+.code-lang-pop__empty { margin: .4rem .5rem; color: #71717a; }
+.code-lang-pop__empty[hidden] { display: none; }
 .clip-pane__editor blockquote { border-left: 4px solid #d4d4d8; margin: .5rem 0; padding: .1rem .9rem; color: #52525b; }
 .clip-pane__editor img { max-width: 100%; }
 .input-list { list-style: none; margin: .75rem 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
@@ -306,6 +318,8 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
  * dialog an edge of its own.
  */
 @media (forced-colors: active) {
+  .code-lang-pop { border-color: CanvasText; }
+  .code-lang-pop__option[aria-selected='true'] { outline: 2px solid Highlight; outline-offset: -2px; }
   .settings { border-color: CanvasText; }
   .settings__tab { border-color: Canvas; }
   .settings__tab--on, .settings__tab--on:hover { border-color: Highlight; outline: 1px solid Highlight; }

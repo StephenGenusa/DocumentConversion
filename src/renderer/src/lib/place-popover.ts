@@ -29,6 +29,11 @@ export interface PlaceOptions {
   margin?: number
   /** Lined up with the anchor's left edge, its middle, or its right edge, before it is shifted to fit. */
   align?: 'start' | 'center' | 'end'
+  /**
+   * When the pane is too short to show this much of it on either side, it may
+   * reach past the pane's top or bottom, staying inside the window.
+   */
+  minHeight?: number
 }
 
 /**
@@ -75,16 +80,24 @@ export function scrollParent(el: Element): Element {
 
 /**
  * Put a `position: fixed` popover beside `anchor`, inside the box of the
- * element it scrolls in (cut to the window). Returns the side it went to.
+ * element `within` scrolls in (cut to the window): for the editor, its pane.
+ * Not the anchor's own: a code block scrolls sideways, which makes it a
+ * scrolling box too, but a fixed popover is not held inside it.
  */
-export function placeBeside(pop: HTMLElement, anchor: Element, options: PlaceOptions = {}): Placement {
-  const bounds = visibleBox(scrollParent(anchor))
+export function placeBeside(pop: HTMLElement, anchor: Element, within: Element, options: PlaceOptions = {}): Placement {
+  const bounds = visibleBox(scrollParent(within))
   const margin = options.margin ?? 8
   // Measured at the widest it may be, so a long line wraps rather than pushing it out.
   pop.style.maxWidth = `${Math.max(0, bounds.right - bounds.left - 2 * margin)}px`
   pop.style.maxHeight = ''
   const size = pop.getBoundingClientRect()
-  const at = placePopover(anchor.getBoundingClientRect(), { width: size.width, height: size.height }, bounds, options)
+  const box = anchor.getBoundingClientRect()
+  let at = placePopover(box, { width: size.width, height: size.height }, bounds, options)
+  if (options.minHeight && at.maxHeight < Math.min(size.height, options.minHeight)) {
+    const win = pop.ownerDocument.defaultView
+    const tall = { ...bounds, top: 0, bottom: win?.innerHeight ?? bounds.bottom }
+    at = placePopover(box, { width: size.width, height: size.height }, tall, options)
+  }
   pop.style.left = `${Math.round(at.left)}px`
   pop.style.top = `${Math.round(at.top)}px`
   if (at.maxHeight < size.height) pop.style.maxHeight = `${Math.floor(at.maxHeight)}px`

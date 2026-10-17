@@ -7,6 +7,9 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import { HLJS_CSS, TOKEN_COLORS } from '../../../core/hljs-palette'
 import { GRAMMARS, grammarName, grammarReady, loadGrammar } from './code-grammars'
 import { colorTo, recolorText, tokensIn, uncolored, type Colors, type Token } from './code-tokens'
+import { closePicker, openPickerIn, pickerDom, pickerValue } from './code-language-picker'
+
+export { pickerValue }
 
 /**
  * Code blocks colored while they are edited, by the same highlight.js and the
@@ -42,7 +45,7 @@ declare module '@tiptap/core' {
     codeColor: {
       /** The language of the code block at the cursor; '' for plain text. One undo step. */
       setCodeLanguage: (language: string) => ReturnType
-      /** Focus the language picker of the code block at the cursor. */
+      /** Open the language picker of the code block at the cursor, its filter focused. */
       focusCodeLanguage: () => ReturnType
     }
   }
@@ -250,71 +253,25 @@ function setLanguageAt(tr: Transaction, pos: number, language: string): Transact
 }
 
 /*
- * The language picker: a small select in the block's top corner, for every
- * code block (diagrams and formulas are blocks of their own), so the toolbar
- * is no wider. Its list is filled when it is first used: a document of many
- * blocks does not carry a list of every language for each one.
+ * The language picker: a button in the block's top corner, for every code
+ * block (diagrams and formulas are blocks of their own), so the toolbar is
+ * no wider; it opens a searchable list (code-language-picker.ts).
  */
 function pickerWidget(pos: number, language: unknown): Decoration {
   const value = pickerValue(language)
-  return Decoration.widget(pos + 1, (view, getPos) => pickerDom(view, getPos, value), {
-    side: -1,
-    picker: true,
-    key: `lang:${value}`,
-    ignoreSelection: true,
-    stopEvent: () => true,
-  })
-}
-
-function pickerDom(view: EditorView, getPos: () => number | undefined, value: string): HTMLElement {
-  const doc = view.dom.ownerDocument
-  const wrap = doc.createElement('span')
-  wrap.className = 'code-lang'
-  wrap.contentEditable = 'false'
-  const select = doc.createElement('select')
-  select.className = 'code-lang__select'
-  select.setAttribute('aria-label', 'Code language')
-  select.title = 'Code language'
-  const option = (v: string, label: string): HTMLOptionElement => {
-    const o = doc.createElement('option')
-    o.value = v
-    o.textContent = label
-    return o
-  }
-  const all = codeLanguages()
-  select.append(option(value, all.find((l) => l.value === value)?.label ?? value))
-  select.value = value
-  let filled = false
-  const fill = (): void => {
-    if (filled) return
-    filled = true
-    select.replaceChildren()
-    for (const l of all.filter((l) => l.common)) select.append(option(l.value, l.label))
-    if (!all.some((l) => l.value === value)) select.append(option(value, value))
-    const more = doc.createElement('optgroup')
-    more.label = 'More languages'
-    for (const l of all.filter((l) => !l.common)) more.append(option(l.value, l.label))
-    select.append(more)
-    select.value = value
-  }
-  select.addEventListener('mousedown', fill)
-  select.addEventListener('focus', fill)
-  select.addEventListener('change', () => {
-    const at = getPos()
-    if (at === undefined) return
-    const blockPos = at - 1
-    const node = view.state.doc.nodeAt(blockPos)
-    if (!node || !isCodeBlock(node)) return
-    view.dispatch(setLanguageAt(view.state.tr, blockPos, select.value))
-  })
-  select.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return
-    // Back to the code, where the caret was.
-    e.preventDefault()
-    view.focus()
-  })
-  wrap.append(select)
-  return wrap
+  return Decoration.widget(
+    pos + 1,
+    (view, getPos) =>
+      pickerDom(view, getPos, value, {
+        languages: codeLanguages,
+        choose: (v, blockPos, chosen) => {
+          const node = v.state.doc.nodeAt(blockPos)
+          if (node && isCodeBlock(node)) v.dispatch(setLanguageAt(v.state.tr, blockPos, chosen))
+          v.focus()
+        },
+      }),
+    { side: -1, picker: true, key: `lang:${value}`, ignoreSelection: true, stopEvent: () => true },
+  )
 }
 
 /** Start positions of the code blocks a transaction touched, in the new document. */
@@ -649,11 +606,7 @@ export const CodeColor = Extension.create({
           const { $from } = state.selection
           for (let d = $from.depth; d > 0; d--) {
             if (!isCodeBlock($from.node(d))) continue
-            const dom = view.nodeDOM($from.before(d)) as HTMLElement | null
-            const select = dom?.querySelector<HTMLSelectElement>('.code-lang__select')
-            if (!select) return false
-            select.focus()
-            return true
+            return openPickerIn(view.nodeDOM($from.before(d)) as HTMLElement | null)
           }
           return false
         },
@@ -725,6 +678,7 @@ export const CodeColor = Extension.create({
             doc.removeEventListener('scroll', onScroll, { capture: true })
             win?.removeEventListener('resize', later)
             painter.destroy()
+            closePicker()
           },
         }
       },
@@ -759,11 +713,4 @@ export function codeLanguages(): CodeLanguage[] {
     ...rest.map((n) => ({ value: n, label: label(n), common: false })),
   ]
   return languages
-}
-
-/** The picker entry for a block's `language` attr: an alias as its language, an unknown name as itself. */
-export function pickerValue(language: unknown): string {
-  if (typeof language !== 'string' || !language) return ''
-  const name = grammarName(language) ?? language
-  return name === 'plaintext' ? '' : name
 }
