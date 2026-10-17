@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeSvg, svgImageUrls, withSvgImagePictures } from '../../src/core/svg-sanitize'
+import { sanitizeSvg, svgImageRefs, svgImageUrls, withSvgImagePictures } from '../../src/core/svg-sanitize'
 
 const SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">'
 const wrap = (inner: string): string => `${SVG_OPEN}${inner}</svg>`
@@ -248,6 +248,24 @@ describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
     expect(out).not.toContain('javascript')
     // Sanitized again without asking (as every SVG is once its pictures are fetched), they become text.
     expect(sanitizeSvg(out)).toContain('>[image: Desk photo]</text>')
+  })
+
+  it('keeps a web address in an SVG nested as a data URI too, when asked', () => {
+    const inner = wrap('<image width="4" height="4" href="https://example.invalid/a.png"><title>Desk photo</title></image>')
+    const svg = wrap(`<image width="8" height="8" href="data:image/svg+xml;base64,${Buffer.from(inner).toString('base64')}"/>`)
+    const nestedOf = (out: string): string =>
+      Buffer.from(/href="data:image\/svg\+xml;base64,([^"]+)"/.exec(out)![1], 'base64').toString('utf8')
+    const kept = sanitizeSvg(svg, { keepImageUrls: true })!
+    expect(nestedOf(kept)).toContain('href="https://example.invalid/a.png"')
+    expect(nestedOf(sanitizeSvg(kept)!)).toContain('>[image: Desk photo]</text>')
+    expect(nestedOf(sanitizeSvg(kept)!)).not.toContain('example.invalid')
+  })
+
+  it('lists every picture reference, data URIs and repeats included', () => {
+    const png = `data:image/png;base64,${PNG.toString('base64')}`
+    const svg = wrap(`<image href="a.png"/><g><image href="${png}"/></g><image href="a.png"/>`)
+    expect(svgImageRefs(svg)).toEqual(['a.png', png, 'a.png'])
+    expect(svgImageRefs('not an svg')).toEqual([])
   })
 
   it('lists the web addresses an SVG\'s pictures name, and puts fetched pictures in their place', () => {

@@ -2,11 +2,20 @@ import { parseDocument } from 'htmlparser2'
 import { append, removeElement, replaceElement } from 'domutils'
 import { Element } from 'domhandler'
 import render from 'dom-serializer'
-import { imageMime } from './readers/image'
-import { decodeSvgDataUri, svgDataUri, svgImageUrls, withSvgImagePictures } from './svg-sanitize'
+import { imageMime, svgText } from './readers/image'
+import {
+  decodeSvgDataUri,
+  isWebAddress,
+  MAX_NESTING,
+  svgDataUri,
+  svgImageRefs,
+  svgImageUrls,
+  withSvgImagePictures,
+} from './svg-sanitize'
 
 export interface ImageFetcher {
-  (url: string): Promise<{ bytes: Buffer; contentType: string }>
+  /** `url` in the answer is where the picture finally came from, after any redirect. */
+  (url: string): Promise<{ bytes: Buffer; contentType: string; url?: string }>
 }
 
 /**
@@ -224,12 +233,20 @@ export function imagePlaceholder(text?: string, display: 'block' | 'inline' = 'b
  * fails, is not an image, or is over `maxPerImage` becomes its alt-text
  * placeholder.
  *
- * The pictures an SVG <img> names by address (`<image href="https://…">`)
- * are fetched the same way and put in the SVG as data URIs. One that is not
- * fetched keeps its address, and the SVG sanitizer, which every SVG passes
- * after this, writes it as its description.
+ * The pictures an SVG names by address (`<image href="https://…">`) are
+ * fetched the same way and put in the SVG as data URIs: in an SVG <img>, in
+ * an SVG nested in one as a data URI, and in an SVG that was itself fetched
+ * (whose relative addresses are its own, so resolve against where it came
+ * from). Nesting goes as deep as the SVG sanitizer keeps it (MAX_NESTING),
+ * and an SVG is not fetched again inside itself, so one naming itself or a
+ * circle of them cannot loop. An SVG with its pictures in it is still one
+ * picture, held to `maxPerImage`: those that would take it past are left
+ * out, in document order. One that is not fetched keeps its address, and
+ * the SVG sanitizer, which every SVG passes after this, writes it as its
+ * description.
  *
- * Fetches run FETCH_CONCURRENCY at a time, with progress after each.
+ * Each address is fetched once, FETCH_CONCURRENCY at a time, with progress
+ * after each.
  */
 export async function inlineImages(
   html: string,
@@ -240,79 +257,158 @@ export async function inlineImages(
   /** Which sources to touch; the rest are left exactly as they are. */
   select: (src: string) => boolean = () => true,
 ): Promise<string> {
-  /** One picture to fetch, in document order. */
-  interface Fetch {
-    url?: string
-    dataUri?: string
+  /** A fetched picture: its type, its bytes, and the address it finally came from. */
+  interface Fetched {
+    mime: string
+    bytes: Buffer
+    url: string
   }
-  /** An <img> to fetch. */
-  interface Entry {
-    tag: string
-    alt?: string
-    fetch: Fetch
-  }
-  /** An SVG <img> naming pictures by address: each address as written, and its fetch. */
-  interface SvgEntry {
-    tag: string
-    svg: string
-    pictures: Map<string, Fetch>
-  }
-  const fetches: Fetch[] = []
-  const entries: Entry[] = []
-  const svgEntries: SvgEntry[] = []
+
   let wanted = 0
-  const want = (src: string): Fetch => {
-    const fetch: Fetch = {}
-    fetches.push(fetch)
-    try {
-      fetch.url = new URL(src, baseUrl).href
-      wanted++
-    } catch {
-      // Unresolvable: stays a placeholder.
-    }
-    return fetch
+  let done = 0
+  let active = 0
+  const waiting: Array<() => void> = []
+  const fetches = new Map<string, Promise<Fetched | null>>()
+  /** The picture at `url`, fetched once however often it is named; null when it did not arrive as an image. */
+  const fetchOnce = (url: string): Promise<Fetched | null> => {
+    let pending = fetches.get(url)
+    if (pending) return pending
+    wanted++
+    pending = (async () => {
+      while (active >= FETCH_CONCURRENCY) await new Promise<void>((resolve) => waiting.push(resolve))
+      active++
+      try {
+        const { bytes, contentType, url: finalUrl } = await fetchImage(url)
+        const mime = fetchedImageType(contentType, bytes)
+        return mime && bytes.byteLength <= maxPerImage ? { mime, bytes, url: finalUrl ?? url } : null
+      } catch {
+        // Failed: stays a placeholder.
+        return null
+      } finally {
+        active--
+        waiting.shift()?.()
+        done++
+        onProgress?.(`Fetched ${done} of ${wanted} image${wanted === 1 ? '' : 's'}`, (done / wanted) * 100)
+      }
+    })()
+    fetches.set(url, pending)
+    return pending
   }
+
+  const resolved = new Map<string, Promise<string | undefined>>()
+  /**
+   * The picture at `url`, `depth` SVGs down, as a data URI, an SVG with its
+   * own pictures in it; undefined when it did not arrive or would not be
+   * kept. `within` is the fetched SVGs it sits in.
+   */
+  const picture = (url: string, depth: number, within: ReadonlySet<string>): Promise<string | undefined> => {
+    // Keyed by depth too: deeper down, less of what it names is kept.
+    const key = `${depth} ${url}`
+    let pending = resolved.get(key)
+    if (pending) return pending
+    pending = (async () => {
+      const got = await fetchOnce(url)
+      if (!got) return undefined
+      const own = `data:${got.mime};base64,${got.bytes.toString('base64')}`
+      if (got.mime !== 'image/svg+xml') return own
+      // An SVG nested deeper than the sanitizer keeps.
+      if (depth > MAX_NESTING) return undefined
+      const svg = svgText(got.bytes)
+      const full = await withPictures(svg, got.url, depth, new Set([...within, url, got.url]), () => true)
+      return full === svg ? own : svgDataUri(full)
+    })()
+    resolved.set(key, pending)
+    return pending
+  }
+
+  /**
+   * The SVG, `depth` SVGs down, with the pictures it names by address (as
+   * `pick` chooses, resolved against `base`) and those of the SVGs nested in
+   * it put in as data URIs, as many as `maxPerImage` holds.
+   */
+  const withPictures = async (
+    svg: string,
+    base: string,
+    depth: number,
+    within: ReadonlySet<string>,
+    pick: (src: string) => boolean,
+  ): Promise<string> => {
+    const refs = svgImageRefs(svg)
+    const found = new Map<string, string>()
+    await Promise.all(
+      [...new Set(refs)].map(async (ref) => {
+        let uri: string | undefined
+        if (isWebAddress(ref)) {
+          if (!pick(ref)) return
+          let url: string
+          try {
+            url = new URL(ref.trim(), base).href
+          } catch {
+            return
+          }
+          if (within.has(url)) return
+          uri = await picture(url, depth + 1, within)
+        } else {
+          const inner = decodeSvgDataUri(ref)
+          if (inner === null || depth + 1 > MAX_NESTING) return
+          const full = await withPictures(inner, base, depth + 1, within, pick)
+          if (full !== inner) uri = svgDataUri(full)
+        }
+        if (uri) found.set(ref, uri)
+      }),
+    )
+    if (found.size === 0) return svg
+    // In document order, each time it is named, while the whole stays one picture's size.
+    const kept = new Map<string, string>()
+    const times = new Map<string, number>()
+    for (const ref of refs) times.set(ref, (times.get(ref) ?? 0) + 1)
+    let size = svg.length
+    for (const ref of new Set(refs)) {
+      const uri = found.get(ref)
+      if (!uri) continue
+      const cost = (uri.length - ref.length) * times.get(ref)!
+      if (size + cost > maxPerImage) continue
+      size += cost
+      kept.set(ref, uri)
+    }
+    return kept.size > 0 ? withSvgImagePictures(svg, kept) : svg
+  }
+
+  const tasks: Array<Promise<{ tag: string; replacement?: string }>> = []
   for (const tag of new Set(html.match(IMG_TAG) ?? [])) {
     const src = attr(tag, 'src')
     if (!src) continue
     if (src.startsWith('data:')) {
       const svg = decodeSvgDataUri(src)
-      const urls = svg === null ? [] : [...new Set(svgImageUrls(svg))].filter(select)
-      if (svg !== null && urls.length > 0) svgEntries.push({ tag, svg, pictures: new Map(urls.map((u) => [u, want(u)])) })
+      if (svg === null) continue
+      tasks.push(
+        withPictures(svg, baseUrl, 0, new Set(), select).then((full) => ({
+          tag,
+          replacement: full === svg ? undefined : withSrc(tag, svgDataUri(full)),
+        })),
+      )
       continue
     }
     if (!select(src)) continue
-    entries.push({ tag, alt: attr(tag, 'alt'), fetch: want(src) })
-  }
-
-  const queue = fetches.filter((e) => e.url)
-  let done = 0
-  const worker = async (): Promise<void> => {
-    for (let e = queue.shift(); e; e = queue.shift()) {
-      try {
-        const { bytes, contentType } = await fetchImage(e.url!)
-        const mime = fetchedImageType(contentType, bytes)
-        if (mime && bytes.byteLength <= maxPerImage) e.dataUri = `data:${mime};base64,${bytes.toString('base64')}`
-      } catch {
-        // Failed: stays a placeholder.
-      }
-      done++
-      onProgress?.(`Fetched ${done} of ${wanted} image${wanted === 1 ? '' : 's'}`, (done / wanted) * 100)
+    let url: string | undefined
+    try {
+      url = new URL(src, baseUrl).href
+    } catch {
+      // Unresolvable: stays a placeholder.
     }
+    const alt = attr(tag, 'alt')
+    tasks.push(
+      (url ? picture(url, 0, new Set()) : Promise.resolve(undefined)).then((uri) => ({
+        tag,
+        replacement: uri ? withSrc(tag, uri) : imagePlaceholder(alt),
+      })),
+    )
   }
-  if (wanted > 0) {
-    onProgress?.(`Fetching ${wanted} image${wanted === 1 ? '' : 's'}`, 0)
-    await Promise.all(Array.from({ length: Math.min(FETCH_CONCURRENCY, wanted) }, worker))
-  }
-
+  // Every address in the document itself is asked for by now; those in fetched SVGs add to the count as they arrive.
+  if (wanted > 0) onProgress?.(`Fetching ${wanted} image${wanted === 1 ? '' : 's'}`, 0)
   let out = html
-  for (const e of entries) {
-    out = out.split(e.tag).join(e.fetch.dataUri ? withSrc(e.tag, e.fetch.dataUri) : imagePlaceholder(e.alt))
-  }
-  for (const e of svgEntries) {
-    const fetched = new Map<string, string>()
-    for (const [src, f] of e.pictures) if (f.dataUri) fetched.set(src, f.dataUri)
-    if (fetched.size > 0) out = out.split(e.tag).join(withSrc(e.tag, svgDataUri(withSvgImagePictures(e.svg, fetched))))
+  for (const { tag, replacement } of await Promise.all(tasks)) {
+    if (replacement !== undefined) out = out.split(tag).join(replacement)
   }
   return out
 }
@@ -401,7 +497,7 @@ export function replaceImages(html: string, replace: (src: string, alt: string |
 
 /**
  * Whether any <img> in the html points at the network, as a parser reads it,
- * or is an SVG naming a picture there.
+ * or is an SVG naming a picture there (itself or in an SVG nested in it).
  */
 export function hasRemoteImages(html: string): boolean {
   if (!/<img/i.test(html)) return false
@@ -411,11 +507,21 @@ export function hasRemoteImages(html: string): boolean {
     if (isRemoteImageSrc(src)) found = true
     else {
       const svg = decodeSvgDataUri(src)
-      if (svg !== null && svgImageUrls(svg).some(isRemoteImageSrc)) found = true
+      if (svg !== null && svgNamesRemote(svg, 0)) found = true
     }
     return null
   })
   return found
+}
+
+/** Whether the SVG, or one nested in it as a data URI (as deep as the sanitizer keeps), names a picture on the network. */
+function svgNamesRemote(svg: string, depth: number): boolean {
+  if (svgImageUrls(svg).some(isRemoteImageSrc)) return true
+  if (depth >= MAX_NESTING) return false
+  return svgImageRefs(svg).some((ref) => {
+    const inner = decodeSvgDataUri(ref)
+    return inner !== null && svgNamesRemote(inner, depth + 1)
+  })
 }
 
 /**

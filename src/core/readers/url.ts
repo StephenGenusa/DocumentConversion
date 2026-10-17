@@ -276,7 +276,7 @@ export async function loadUrl(url: string, deps: GuardedFetchDeps, ctx?: ReadCon
         maxBytes: MAX_FETCHED_IMAGE_BYTES,
         allowPrivate,
       })
-      return { bytes: res.bytes, contentType: res.contentType }
+      return { bytes: res.bytes, contentType: res.contentType, url: res.finalUrl }
     },
     MAX_FETCHED_IMAGE_BYTES,
     ctx?.onProgress,

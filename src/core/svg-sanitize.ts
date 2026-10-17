@@ -52,16 +52,16 @@ export function sanitizeSvg(svg: string, opts: SanitizeOptions = {}): string | n
 
 export interface SanitizeOptions {
   /**
-   * For a reader: keep an <image> of the outer SVG that names a web address,
-   * its description as its aria-label, for the read step to fetch. Everything
-   * else is cleaned as usual, and the SVG is sanitized again without this
-   * once its pictures are fetched.
+   * For a reader: keep an <image> that names a web address, in the outer SVG
+   * or an SVG nested in it as a data URI, its description as its aria-label,
+   * for the read step to fetch. Everything else is cleaned as usual, and the
+   * SVG is sanitized again without this once its pictures are fetched.
    */
   keepImageUrls?: boolean
 }
 
 /** How many SVG images may be nested inside one another below the outer SVG. */
-const MAX_NESTING = 4
+export const MAX_NESTING = 4
 
 function svgRoot(svg: string): Element | null {
   let doc: Document
@@ -78,7 +78,7 @@ function sanitizeAt(svg: string, depth: number, opts: SanitizeOptions = {}): str
   const root = svgRoot(svg)
   if (!root) return null
   cleanAttributes(root)
-  clean(root, depth, depth === 0 && opts.keepImageUrls === true)
+  clean(root, depth, opts.keepImageUrls === true)
   return root.toString()
 }
 
@@ -130,7 +130,7 @@ function rasterDataUri(src: string): string | null {
  * SVG, the sanitized SVG. Null when the <image> is anything else, or an SVG
  * nested too deep.
  */
-function nestedImage(el: Element, depth: number): { name: string; src: string } | null {
+function nestedImage(el: Element, depth: number, opts: SanitizeOptions): { name: string; src: string } | null {
   const ref = imageRef(el)
   if (!ref) return null
   const value = ref.value ?? ''
@@ -138,7 +138,7 @@ function nestedImage(el: Element, depth: number): { name: string; src: string } 
   if (raster) return { name: ref.name, src: raster }
   if (depth >= MAX_NESTING) return null
   const svg = decodeSvgDataUri(value)
-  const clean = svg === null ? null : sanitizeAt(svg, depth + 1)
+  const clean = svg === null ? null : sanitizeAt(svg, depth + 1, opts)
   return clean === null ? null : { name: ref.name, src: svgDataUri(clean) }
 }
 
@@ -167,7 +167,7 @@ function attrText(value: string | null | undefined): string {
 }
 
 /** A web address, as a page would load it: http(s), or relative to or with the scheme of one. */
-function isWebAddress(value: string): boolean {
+export function isWebAddress(value: string): boolean {
   if (/^\s*(?:#|data:)/i.test(value)) return false
   try {
     const url = new URL(value.trim(), 'https://unresolved.invalid/')
@@ -203,8 +203,23 @@ export function svgImageUrls(svg: string): string[] {
 }
 
 /**
- * The SVG with each picture whose address is in `pictures` given that data
- * URI instead, everything else as it was. Sanitized again afterwards, which
+ * Every picture reference of the outer SVG (each <image>'s one href, as
+ * text), in document order, repeats included: web addresses and data URIs
+ * alike. [] when it is not an SVG.
+ */
+export function svgImageRefs(svg: string): string[] {
+  const root = svgRoot(svg)
+  if (!root) return []
+  return imagesIn(root).flatMap((el) => {
+    const ref = imageRef(el)
+    return ref ? [attrText(ref.value)] : []
+  })
+}
+
+/**
+ * The SVG with each picture whose reference (an address, or a nested SVG's
+ * data URI, as svgImageRefs gives it) is in `pictures` given that data URI
+ * instead, everything else as it was. Sanitized again afterwards, which
  * checks each picture is what it claims.
  */
 export function withSvgImagePictures(svg: string, pictures: ReadonlyMap<string, string>): string {
@@ -303,7 +318,7 @@ function clean(el: Element, depth: number, keepImageUrls: boolean): void {
     if (child.nodeType === 1) {
       const element = child as Element
       const name = localName(element)
-      const nested = name === 'image' ? nestedImage(element, depth) : null
+      const nested = name === 'image' ? nestedImage(element, depth, { keepImageUrls }) : null
       if (nested) {
         element.setAttribute(nested.name, nested.src)
         cleanAttributes(element, nested.name)

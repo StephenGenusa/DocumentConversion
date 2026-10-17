@@ -35,7 +35,7 @@ function guardedImageFetcher(deps: GuardedFetchDeps, ctx: PictureFetchContext | 
   const allowPrivate = ctx?.web?.allowLocalNetwork !== false
   return async (url) => {
     const res = await guardedFetch(url, deps, { signal: ctx?.signal, timeoutMs, maxBytes: MAX_FETCHED_IMAGE_BYTES, allowPrivate })
-    return { bytes: res.bytes, contentType: res.contentType }
+    return { bytes: res.bytes, contentType: res.contentType, url: res.finalUrl }
   }
 }
 

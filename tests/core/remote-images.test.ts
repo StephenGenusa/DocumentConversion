@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { pastedHtmlToHub, resolveRemoteImages } from '../../src/core/remote-images'
 import { inlineImages } from '../../src/core/inline-images'
 import { createConverter } from '../../src/core/convert'
+import { sanitizeSvgImages } from '../../src/core/svg-images'
 import { loadUrl } from '../../src/core/readers/url'
 import type { GuardedFetchDeps } from '../../src/core/net/guarded-fetch'
 
@@ -306,6 +307,161 @@ describe('pictures an SVG names by address (<image href="https://…">)', () => 
     const printed = render.mock.calls.at(-1)?.[0] as unknown as string
     for (const svg of svgsIn(printed)) expect(svg).not.toContain('example.com')
     expect(svgsIn(printed)[0]).toContain('[image: Desk photo]')
+  })
+})
+
+describe('pictures inside a fetched SVG, or an SVG nested as a data URI', () => {
+  const render = vi.fn(async () => Buffer.from('%PDF'))
+  const pngUri = `data:image/png;base64,${PNG.toString('base64')}`
+  const svgOf = (body: string): string => `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">${body}</svg>`
+  const imageOf = (href: string, title = 'Desk photo'): string => `<image width="16" height="16" href="${href}"><title>${title}</title></image>`
+  const b64 = (text: string): string => Buffer.from(text).toString('base64')
+  const svgUri = (svg: string): string => `data:image/svg+xml;base64,${b64(svg)}`
+  /** Every SVG in the html, and every SVG nested in those, decoded. */
+  const allSvgs = (html: string): string[] => {
+    const out: string[] = []
+    const walk = (text: string): void => {
+      for (const m of text.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)) {
+        const svg = Buffer.from(m[1], 'base64').toString('utf8')
+        out.push(svg)
+        walk(svg)
+      }
+    }
+    walk(html)
+    return out
+  }
+  /** A fake fetcher serving `files` (address → body), each SVG as image/svg+xml, each counted. */
+  const server = (files: Record<string, string | Buffer>) =>
+    vi.fn(async (url: string) => {
+      const body = files[url]
+      if (body === undefined) throw new Error('404')
+      return typeof body === 'string'
+        ? { bytes: Buffer.from(body), contentType: 'image/svg+xml' }
+        : { bytes: body, contentType: 'image/png' }
+    })
+
+  it('a fetched SVG gets its own pictures, relative ones resolved against where it came from', async () => {
+    const fetcher = server({
+      'https://example.com/plans/a.svg': svgOf(imageOf('photo.png') + imageOf('https://cdn.example.com/b.png')),
+      'https://example.com/plans/photo.png': PNG,
+      'https://cdn.example.com/b.png': PNG,
+    })
+    const out = await inlineImages('<img src="https://example.com/plans/a.svg" alt="plan">', 'https://example.com/', fetcher)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    const [svg] = allSvgs(out)
+    expect(svg.split(pngUri)).toHaveLength(3)
+    expect(svg).not.toContain('photo.png')
+  })
+
+  it('relative addresses follow a redirect to where the SVG really is', async () => {
+    const fetcher = vi.fn(async (url: string) =>
+      url === 'https://example.com/a.svg'
+        ? { bytes: Buffer.from(svgOf(imageOf('photo.png'))), contentType: 'image/svg+xml', url: 'https://cdn.example.com/x/a.svg' }
+        : url === 'https://cdn.example.com/x/photo.png'
+          ? { bytes: PNG, contentType: 'image/png' }
+          : Promise.reject(new Error('404')),
+    )
+    const out = await inlineImages('<img src="https://example.com/a.svg">', 'https://example.com/', fetcher)
+    expect(allSvgs(out)[0]).toContain(pngUri)
+  })
+
+  it('a picture in an SVG nested as a data URI is fetched, through the guarded fetcher', async () => {
+    const PHOTO = 'https://example.com/photo.png'
+    const outer = svgOf(`<image width="20" height="20" href="${svgUri(svgOf(imageOf(PHOTO)))}"/>`)
+    const d = deps({ [PHOTO]: PNG })
+    const out = await resolveRemoteImages(`<p><img src="${svgUri(outer)}" alt="plan"></p>`, 'html', d)
+    expect(d.fetch).toHaveBeenCalledTimes(1)
+    expect(allSvgs(out)[1]).toContain(`href="${pngUri}"`)
+    // And from an .svg file, whose reader keeps the nested address for the read step.
+    const conv = createConverter(render, { fetchImages: deps({ [PHOTO]: PNG }) })
+    const hub = await conv.read({ bytes: Buffer.from(outer), filename: 'plan.svg' }, 'svg')
+    expect(allSvgs(hub.html)[1]).toContain(`href="${pngUri}"`)
+    // Mail never fetches it: it is its description.
+    const mail = deps({ [PHOTO]: PNG })
+    const hubMail = await createConverter(render, { fetchImages: mail }).read(
+      { bytes: Buffer.from(`Content-Type: text/html\r\n\r\n<p><img src="${svgUri(outer)}" alt="plan"></p>`) },
+      'eml',
+    )
+    expect(mail.fetch).not.toHaveBeenCalled()
+    expect(allSvgs(hubMail.html)[1]).toContain('[image: Desk photo]')
+  })
+
+  it('a refused picture in a fetched SVG is refused like any other (loopback)', async () => {
+    const d: GuardedFetchDeps = {
+      fetch: vi.fn(async (url: string) =>
+        url === 'https://example.com/a.svg'
+          ? new Response(svgOf(imageOf('http://localhost/secret.png')), { headers: { 'content-type': 'image/svg+xml' } })
+          : new Response(new Uint8Array(PNG), { headers: { 'content-type': 'image/png' } }),
+      ),
+      lookup: vi.fn(async () => ['93.184.216.34']),
+    }
+    const hub = await createConverter(render, { fetchImages: d }).read({ bytes: Buffer.from('<p><img src="https://example.com/a.svg" alt="plan"></p>') }, 'html')
+    expect(d.fetch).toHaveBeenCalledTimes(1)
+    const [svg] = allSvgs(hub.html)
+    expect(svg).toContain('[image: Desk photo]')
+    expect(svg).not.toContain('localhost')
+  })
+
+  it('an SVG naming itself, or two naming each other, is fetched once each and never loops', async () => {
+    const fetcher = server({
+      'https://example.com/self.svg': svgOf(imageOf('self.svg', 'Me again')),
+      'https://example.com/a.svg': svgOf(imageOf('b.svg', 'B')),
+      'https://example.com/b.svg': svgOf(imageOf('a.svg', 'A again')),
+    })
+    const html = '<img src="https://example.com/self.svg" alt="self"><img src="https://example.com/a.svg" alt="a">'
+    const out = sanitizeSvgImages(await inlineImages(html, 'https://example.com/', fetcher))
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    const svgs = allSvgs(out)
+    // self.svg, a.svg, and b.svg inside a.svg; the reference back is its description.
+    expect(svgs).toHaveLength(3)
+    expect(svgs[0]).toContain('[image: Me again]')
+    expect(svgs[2]).toContain('[image: A again]')
+  })
+
+  it('goes as deep as the sanitizer keeps nested SVGs, and no deeper', async () => {
+    const files: Record<string, string> = {}
+    for (let i = 0; i < 10; i++) files[`https://example.com/${i}.svg`] = svgOf(imageOf(`${i + 1}.svg`, `level ${i + 1}`))
+    const fetcher = server(files)
+    const out = sanitizeSvgImages(await inlineImages('<img src="https://example.com/0.svg">', 'https://example.com/', fetcher))
+    // 0 is the picture; 1 to 4 nested in it (MAX_NESTING); 5 is fetched, since it could have been a photo, and left out.
+    expect(fetcher.mock.calls.map(([u]) => u)).toEqual([0, 1, 2, 3, 4, 5].map((i) => `https://example.com/${i}.svg`))
+    const svgs = allSvgs(out)
+    expect(svgs).toHaveLength(5)
+    expect(svgs[4]).toContain('[image: level 5]')
+  })
+
+  it('an SVG with its pictures in it is one picture: those past the per-picture ceiling are left out', async () => {
+    const big = Buffer.concat([PNG, Buffer.alloc(1000, 7)])
+    const fetcher = server({
+      'https://example.com/a.svg': svgOf(imageOf('one.png', 'One') + imageOf('two.png', 'Two')),
+      'https://example.com/one.png': big,
+      'https://example.com/two.png': big,
+    })
+    const out = sanitizeSvgImages(await inlineImages('<img src="https://example.com/a.svg">', 'https://example.com/', fetcher, 2000))
+    const [svg] = allSvgs(out)
+    expect(svg).toContain('data:image/png;base64,')
+    expect(svg).toContain('[image: Two]')
+    expect(svg).not.toContain('[image: One]')
+  })
+
+  it('each address is fetched once, however often it is named', async () => {
+    const fetcher = server({ 'https://example.com/a.svg': svgOf(imageOf('p.png') + imageOf('p.png')), 'https://example.com/p.png': PNG })
+    const html = '<img src="https://example.com/a.svg" alt="1"><img src="https://example.com/a.svg" alt="2"><img src="https://example.com/p.png">'
+    const out = await inlineImages(html, 'https://example.com/', fetcher)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(allSvgs(out)[0].split(pngUri)).toHaveLength(3)
+  })
+
+  it('with fetching off, a picture in a nested SVG is counted in the notice', async () => {
+    const outer = svgOf(`<image href="${svgUri(svgOf(imageOf('https://example.com/p.png')))}"/>`)
+    const seen: string[] = []
+    const d = deps({})
+    await resolveRemoteImages(`<img src="${svgUri(outer)}">`, 'html', d, {
+      web: { fetchPictures: false, allowLocalNetwork: true },
+      onAdvice: (_k, m) => void seen.push(m),
+    })
+    expect(d.fetch).not.toHaveBeenCalled()
+    expect(seen).toEqual(['1 web picture was not fetched (Settings → Web)'])
   })
 })
 
