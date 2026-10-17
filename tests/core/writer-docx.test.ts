@@ -389,6 +389,22 @@ describe('writeDocx writes merged cells in schema order', () => {
     expect(cells[0]).toEqual(expect.arrayContaining(['top', 'left']))
   })
 
+  it('continues a cell spanning rows at the end of its row in the next row, not the one after', async () => {
+    // The sample engineering note's header: two cells spanning rows on the left, one at the end.
+    const xml = await documentXml(
+      '<table><thead><tr><th rowspan="2">Member</th><th colspan="2">Demand</th><th rowspan="2">Result</th></tr>' +
+        '<tr><th>Timber</th><th>FRP</th></tr></thead>' +
+        '<tbody><tr><td>Stringer</td><td>29.0</td><td>27.3</td><td>OK</td></tr></tbody></table>',
+    )
+    const rows = [...xml.matchAll(/<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g)].map((m) => m[0])
+    const cells = (row: string): string[] => row.match(/<w:tc>[\s\S]*?<\/w:tc>/g) ?? []
+    const width = (row: string): number => cells(row).reduce((n, c) => n + Number(/<w:gridSpan w:val="(\d+)"/.exec(c)?.[1] ?? 1), 0)
+    expect(rows.map(width)).toEqual([4, 4, 4])
+    expect(cells(rows[1]).at(-1)).toMatch(/<w:vMerge w:val="continue"\/>/)
+    expect(cells(rows[2]).some((c) => c.includes('w:vMerge'))).toBe(false)
+    expect(cells(rows[2]).at(-1)).toContain('OK')
+  })
+
   it('writes no zero span, and a continued cell under a wide one keeps its width', async () => {
     const xml = await documentXml(html)
     expect(xml).not.toMatch(/<w:gridSpan w:val="0"\/>/)
@@ -815,3 +831,15 @@ describe('writeDocx draws each side of a cell border as its CSS says', () => {
     expect(plain).toBe('top=single/1/000000 left=single/1/000000 bottom=single/1/000000 right=single/1/000000')
   })
 })
+
+describe('writeDocx keeps the paragraphs of a block quote apart', () => {
+  it('writes each paragraph of a quote as its own indented paragraph', async () => {
+    const xml = await documentXml('<blockquote><p><strong>Note</strong></p><p>The move is set.</p></blockquote><p>after</p>')
+    const paras = [...xml.matchAll(/<w:p>[\s\S]*?<\/w:p>/g)].map((m) => m[0]).filter((p) => p.includes('<w:t'))
+    const note = paras.find((p) => p.includes('>Note<'))
+    expect(note).toBeDefined()
+    expect(note).not.toContain('The move is set.')
+    expect(paras.find((p) => p.includes('The move is set.'))).toMatch(/<w:ind w:left="\d+"\/>/)
+  })
+})
+

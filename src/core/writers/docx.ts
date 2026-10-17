@@ -458,6 +458,64 @@ function oneGrid(xml: string): string {
 }
 
 /**
+ * A cell spanning rows at the END of its row (`<th rowspan="2">Result</th>`
+ * as the last header) lost its continuation in the next row: html-to-docx
+ * writes a row's pending continuations only before each of its own cells, so
+ * one owed after the last cell was written into the row after, before that
+ * row's last cell. The header's second row came out a column short, the
+ * first body row a column long and shifted, and Word drew every column after
+ * it out of line. Each row short of the grid takes back the continuation the
+ * next row holds at the place it is missing (or gets an empty one).
+ */
+const TC = /<w:tc>(?:(?!<w:tc>)[\s\S])*?<\/w:tc>/g
+function trailingRowSpans(xml: string): string {
+  if (!xml.includes('w:vMerge')) return xml
+  return xml.replace(/<w:tbl>((?:(?!<w:tbl>)[\s\S])*?)<\/w:tbl>/g, (whole, inner: string) => {
+    if (!inner.includes('w:vMerge')) return whole
+    const grid = /<w:tblGrid>([\s\S]*?)<\/w:tblGrid>/.exec(inner)
+    const columns = grid ? (grid[1].match(/<w:gridCol\b/g) ?? []).length : 0
+    if (columns === 0) return whole
+    const rows = [...inner.matchAll(/(<w:tr\b[^>]*>)([\s\S]*?)(<\/w:tr>)/g)]
+    const parsed = rows.map((m): { head: string; cells: string[]; tail: string } => {
+      const first = m[2].search(/<w:tc>/)
+      return { head: m[1] + (first < 0 ? m[2] : m[2].slice(0, first)), cells: first < 0 ? [] : (m[2].slice(first).match(TC) ?? []), tail: m[3] }
+    })
+    const span = (cell: string): number => Number(/<w:gridSpan w:val="(\d+)"/.exec(cell)?.[1] ?? 1) || 1
+    const width = (cells: string[]): number => cells.reduce((n, c) => n + span(c), 0)
+    const isContinue = (cell: string): boolean => /<w:vMerge w:val="continue"\s*\/>/.test(cell)
+    let changed = false
+    for (let r = 0; r < parsed.length; r++) {
+      const row = parsed[r]
+      const next = parsed[r + 1]
+      while (width(row.cells) < columns) {
+        const at = width(row.cells)
+        let moved = false
+        if (next && width(next.cells) > columns) {
+          let pos = 0
+          for (let k = 0; k < next.cells.length; k++) {
+            if (pos === at && isContinue(next.cells[k])) {
+              row.cells.push(next.cells.splice(k, 1)[0])
+              moved = true
+              break
+            }
+            pos += span(next.cells[k])
+          }
+        }
+        if (!moved) break
+        changed = true
+      }
+    }
+    if (!changed) return whole
+    let i = 0
+    const rebuilt = inner.replace(/<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g, () => {
+      const row = parsed[i++]
+      return row.head + row.cells.join('') + row.tail
+    })
+    return `<w:tbl>${rebuilt}</w:tbl>`
+  })
+}
+
+/**
  * html-to-docx's document template opens the body with its w:sectPr (page
  * size and margins), and the paragraphs follow it; the schema (CT_Body) has
  * the body's section properties last, after every paragraph and table.
@@ -494,7 +552,7 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), languages))
+    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered))))), languages))
     for (const name of ['word/styles.xml', 'word/numbering.xml']) {
       const part = zip.file(name)
       if (part) zip.file(name, schemaOrder(await part.async('string')))
@@ -1573,6 +1631,20 @@ function styleRuns(xml: string, colored: ColoredLook[] = []): string {
   })
 }
 
+/**
+ * html-to-docx writes a block quote as ONE paragraph, its paragraphs run
+ * together: a GitHub alert came out "NoteThe move is set…", and a quote of
+ * two paragraphs lost the break between them. A quote of paragraphs only is
+ * handed over as one quote for each, which Word shows as the same indented
+ * block, paragraph by paragraph.
+ */
+export function quoteParagraphsForDocx(html: string): string {
+  if (!html.includes('<blockquote>')) return html
+  return html.replace(/<blockquote>((?:\s*<p>(?:(?!<\/?blockquote\b)[\s\S])*?<\/p>){2,}\s*)<\/blockquote>/g, (_whole, inner: string) =>
+    (inner.match(/<p>[\s\S]*?<\/p>/g) ?? []).map((p) => `<blockquote>${p}</blockquote>`).join('\n'),
+  )
+}
+
 export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
   const colored: ColoredLook[] = []
   const originals = new Map<string, Original>()
@@ -1584,7 +1656,7 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
       ...doc,
       html: flattenFormatting(
         cellBordersForDocx(
-          normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(definitionListsForDocx(pictures)))))), languages))),
+          normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(definitionListsForDocx(quoteParagraphsForDocx(pictures))))))), languages))),
           bordered,
         ),
         colored,
