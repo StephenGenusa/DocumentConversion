@@ -9,6 +9,10 @@ import { rasterSize, type PictureSize } from './picture-headers'
  * document is the picture, so the page is given to it: the PDF writer prints
  * it filling the page, and the AZW4 writer, whose page the target dictates,
  * turns that page landscape for a wide one.
+ *
+ * A document of pictures and nothing else, a rule between each two (a TIFF
+ * of several pages opened on its own: readers/image.ts), is a picture a
+ * page (picturePages): each is printed filling a page of its own.
  */
 
 /**
@@ -69,8 +73,24 @@ export function lonePicture(html: string): { size: PictureSize | null } | null {
   return { size: sizeFromAttributes(tag) ?? (src ? sizeFromSrc(src[1] ?? src[2]) : null) }
 }
 
-/** Whether the document is one picture, wider than tall. */
+/**
+ * The document's pictures, when it is pictures and nothing else, one a page:
+ * one picture, or several with a rule (<hr>) between each two and nothing
+ * else. Each one's size, as lonePicture gives it. Null for any other
+ * document.
+ */
+export function picturePages(html: string): { sizes: (PictureSize | null)[] } | null {
+  const sizes: (PictureSize | null)[] = []
+  for (const part of html.split(/<hr\b[^>]*>/i)) {
+    const one = lonePicture(part)
+    if (!one) return null
+    sizes.push(one.size)
+  }
+  return { sizes }
+}
+
+/** Whether the document is pictures alone (picturePages), each wider than tall. */
 export function isWideLonePicture(html: string): boolean {
-  const size = lonePicture(html)?.size
-  return !!size && size.width > size.height
+  const sizes = picturePages(html)?.sizes
+  return !!sizes && sizes.every((size) => !!size && size.width > size.height)
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { lonePicture, isWideLonePicture } from '../../src/core/lone-picture'
+import { lonePicture, isWideLonePicture, picturePages } from '../../src/core/lone-picture'
 import { rasterSize } from '../../src/core/picture-headers'
 import { svgDataUri } from '../../src/core/svg-images'
 import { encodePng } from '../../src/core/metafile/png'
@@ -94,6 +94,36 @@ describe('rasterSize', () => {
     expect(rasterSize(jpeg(1200, 800, 1))).toEqual({ width: 1200, height: 800 })
   })
 
+  it('reads BMP (core and later headers, either row order), ICO (its largest picture) and AVIF (its ispe)', () => {
+    const bmp = Buffer.alloc(54)
+    bmp.write('BM', 0, 'latin1')
+    bmp.writeUInt32LE(40, 14)
+    bmp.writeInt32LE(640, 18)
+    bmp.writeInt32LE(-480, 22)
+    expect(rasterSize(bmp)).toEqual({ width: 640, height: 480 })
+    const core = Buffer.alloc(26)
+    core.write('BM', 0, 'latin1')
+    core.writeUInt32LE(12, 14)
+    core.writeUInt16LE(30, 18)
+    core.writeUInt16LE(20, 20)
+    expect(rasterSize(core)).toEqual({ width: 30, height: 20 })
+    const ico = Buffer.alloc(6 + 32)
+    ico.writeUInt16LE(1, 2)
+    ico.writeUInt16LE(2, 4)
+    ico[6] = 16
+    ico[7] = 16
+    ico[22] = 0 // 256
+    ico[23] = 0
+    expect(rasterSize(ico)).toEqual({ width: 256, height: 256 })
+    const avif = Buffer.alloc(64)
+    avif.writeUInt32BE(16, 0)
+    avif.write('ftypavif', 4, 'latin1')
+    avif.write('ispe', 36, 'latin1')
+    avif.writeUInt32BE(1920, 44)
+    avif.writeUInt32BE(1080, 48)
+    expect(rasterSize(avif)).toEqual({ width: 1920, height: 1080 })
+  })
+
   it('says nothing of a file it cannot read, or one cut short', () => {
     expect(rasterSize(Buffer.from('not a picture'))).toBeNull()
     expect(rasterSize(png(40, 30).subarray(0, 12))).toBeNull()
@@ -158,6 +188,39 @@ describe('lonePicture', () => {
 })
 
 /*
+ * A TIFF of several pages opened on its own (readers/image.ts) is pictures
+ * alone, a rule between each two: a picture a page.
+ */
+describe('picturePages', () => {
+  const img = (w: number, h: number) => `<img src="${svgDataUri(svg(w, h))}" alt="" width="${w}" height="${h}">`
+
+  it('finds pictures alone, a rule between each two, each with its size', () => {
+    expect(picturePages(`${img(600, 800)}\n<hr>\n${img(800, 600)}\n<hr>\n${img(600, 800)}`)?.sizes).toEqual([
+      { width: 600, height: 800 },
+      { width: 800, height: 600 },
+      { width: 600, height: 800 },
+    ])
+    expect(picturePages(img(600, 800))?.sizes).toEqual([{ width: 600, height: 800 }])
+  })
+
+  it('is not pictures a page with two pictures on one page, text, or an empty page', () => {
+    for (const html of [
+      `${img(600, 800)}${img(600, 800)}<hr>${img(600, 800)}`,
+      `${img(600, 800)}<hr><p>Signed at the desk.</p>`,
+      `${img(600, 800)}<hr><hr>${img(600, 800)}`,
+      `<hr>${img(600, 800)}`,
+    ]) {
+      expect(picturePages(html)).toBeNull()
+    }
+  })
+
+  it('turns the Kindle page landscape only when every page is wide', () => {
+    expect(isWideLonePicture(`${img(800, 600)}<hr>${img(900, 600)}`)).toBe(true)
+    expect(isWideLonePicture(`${img(800, 600)}<hr>${img(600, 900)}`)).toBe(false)
+  })
+})
+
+/*
  * Printed at its own size, a 1200 px diagram took the top half of a portrait
  * page and a small one a corner. On paper the lone picture fills the page,
  * scaled up or down and kept whole.
@@ -179,6 +242,13 @@ describe('the PDF writer prints a lone picture filling the page', () => {
     const { css } = await printed(wide)
     expect(css).toMatch(/img \{[^}]*width: 100%;[^}]*height: 100vh;[^}]*object-fit: contain;/)
     expect(css).toMatch(/body \{[^}]*margin: 0;[^}]*max-width: none;/)
+  })
+
+  it('prints pictures a page each filling a page of its own, the rule the page break', async () => {
+    const { css } = await printed(`${wide}\n<hr>\n${wide}`)
+    expect(css).toMatch(/img \{[^}]*height: 100vh;[^}]*object-fit: contain;/)
+    expect(css).toMatch(/hr \{ display: none; \}/)
+    expect(css).toMatch(/hr \+ :not\(hr\) \{ break-before: page;/)
   })
 
   it('leaves a picture beside text at its own size', async () => {

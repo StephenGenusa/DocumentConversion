@@ -2,11 +2,11 @@
  * What a picture's header says, read in core without decoding a pixel: the
  * pages of a TIFF and their sizes, one page of a TIFF taken out on its own
  * (its strips copied byte for byte), the size of an EMF or WMF, and a PNG,
- * JPEG, GIF or WebP's size (rasterSize). Every offset is checked against
- * the file before it is followed, and a TIFF's chain of pages is followed
- * each offset once, so a hostile file costs a null, never a hang or a read
- * out of bounds. Pixels are decoded only in the render host's sandboxed
- * page (pictures.ts).
+ * JPEG, GIF, WebP, BMP, ICO or AVIF's size (rasterSize). Every offset is
+ * checked against the file before it is followed, and a TIFF's chain of
+ * pages is followed each offset once, so a hostile file costs a null, never
+ * a hang or a read out of bounds. Pixels are decoded only in the render
+ * host's sandboxed page (pictures.ts).
  */
 
 /** The most IFDs of one TIFF that are followed: past that, the file is refused. */
@@ -354,10 +354,30 @@ function jpegSize(bytes: Buffer): PictureSize | null {
   return null
 }
 
+/** An ICO's size: its largest picture's (a width or height byte of 0 is 256). */
+function icoSize(bytes: Buffer): PictureSize | null {
+  const count = bytes.readUInt16LE(4)
+  let best: PictureSize | null = null
+  for (let k = 0; k < count && 6 + k * 16 + 16 <= bytes.length; k++) {
+    const width = bytes[6 + k * 16] || 256
+    const height = bytes[6 + k * 16 + 1] || 256
+    if (!best || width * height > best.width * best.height) best = { width, height }
+  }
+  return best
+}
+
+/** An AVIF's size, from its image spatial extents property ('ispe', in its meta box near the start). */
+function avifSize(bytes: Buffer): PictureSize | null {
+  const at = bytes.subarray(0, 64 * 1024).indexOf('ispe', 0, 'latin1')
+  if (at < 4 || at + 16 > bytes.length) return null
+  return pixels(bytes.readUInt32BE(at + 8), bytes.readUInt32BE(at + 12))
+}
+
 /**
- * A PNG, JPEG, GIF or WebP's size in pixels (shown at 96 to the inch), from
- * its header alone; null when the header cannot be read. A JPEG a camera
- * stored on its side (EXIF orientation 5 to 8) is given as it is shown.
+ * A PNG, JPEG, GIF, WebP, BMP, ICO or AVIF's size in pixels (shown at 96 to
+ * the inch), from its header alone; null when the header cannot be read. A
+ * JPEG a camera stored on its side (EXIF orientation 5 to 8) is given as it
+ * is shown.
  */
 export function rasterSize(bytes: Buffer): PictureSize | null {
   if (bytes.length >= 24 && bytes[0] === 0x89 && bytes.toString('latin1', 1, 4) === 'PNG' && bytes.toString('latin1', 12, 16) === 'IHDR') {
@@ -376,5 +396,12 @@ export function rasterSize(bytes: Buffer): PictureSize | null {
     }
     if (kind === 'VP8X' && bytes.length >= 30) return pixels(bytes.readUIntLE(24, 3) + 1, bytes.readUIntLE(27, 3) + 1)
   }
+  if (bytes.length >= 26 && bytes.toString('latin1', 0, 2) === 'BM') {
+    // A core header (12 bytes) gives its size in words, every later one in long words; rows bottom up or top down.
+    if (bytes.readUInt32LE(14) === 12) return pixels(bytes.readUInt16LE(18), bytes.readUInt16LE(20))
+    return pixels(Math.abs(bytes.readInt32LE(18)), Math.abs(bytes.readInt32LE(22)))
+  }
+  if (bytes.length >= 22 && bytes.readUInt32BE(0) === 0x00000100) return icoSize(bytes)
+  if (bytes.length >= 16 && bytes.toString('latin1', 4, 8) === 'ftyp') return avifSize(bytes)
   return null
 }

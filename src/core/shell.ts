@@ -14,7 +14,7 @@ export interface ShellOptions {
   codePalette?: 'screen' | 'ereader'
   /** Code colored by language (pdf and html): on unless false (ConvertOptions.codeColor). */
   codeColor?: boolean
-  /** The document is one picture (lone-picture.ts), printed filling the page: the PDF writer says. */
+  /** The document is pictures alone, one a page (lone-picture.ts), each printed filling its page: the PDF writer says. */
   fillPage?: boolean
 }
 
@@ -219,6 +219,8 @@ const PDF_PRINT_CSS = `
  * page box in paged media, inside the margins), kept whole and its shape
  * kept (contain), centered. The cage, the body's margin and any wrapper's
  * margin go, or the page box would be overrun and a second, blank page made.
+ * Pictures a page (a TIFF of several pages) have a rule between each two,
+ * which PDF_PRINT_CSS makes the page break: each fills a page of its own.
  */
 const FILL_PAGE_CSS = `
   html { margin: 0; padding: 0; }

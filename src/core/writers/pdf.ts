@@ -1,6 +1,6 @@
 import { renderDocumentShell, escapeHtml, markTaskLists, type ShellOptions } from '../shell'
 import { colorizeStatusEmoji } from '../emoji'
-import { lonePicture } from '../lone-picture'
+import { picturePages } from '../lone-picture'
 import {
   chunkHtmlForPrinting,
   countRows,
@@ -41,8 +41,8 @@ export function createPdfWriter(render: RenderHtmlToPdf, shellOpts?: Pick<ShellO
     }
     // Task lists are found by their ballot boxes, before ☑ becomes a green check.
     const html = colorizeStatusEmoji(markTaskLists(doc.html))
-    // A document that is one picture is printed filling its page (shell.ts).
-    const fillPage = lonePicture(doc.html) !== null
+    // A document that is pictures alone is printed each filling its page (shell.ts).
+    const fillPage = picturePages(doc.html) !== null
     const shell = (body: string): string =>
       renderDocumentShell({ ...doc, html: body }, { ...shellOpts, target: 'pdf', codeColor: opts?.codeColor, fillPage })
 
