@@ -57,7 +57,7 @@ export function targetList(targets: readonly TargetFormat[]): string {
 
 // The outputs each setting changes. Kept here rather than imported: the lists
 // live in core modules the window does not otherwise load (pictures.ts) or in
-// the CLI (CODE_COLOUR_TARGETS). tests/renderer/settings-dialog.test.ts checks
+// the CLI (CODE_COLOR_TARGETS). tests/renderer/settings-dialog.test.ts checks
 // that they agree.
 const PICTURE_TARGETS: TargetFormat[] = ['html', 'revealjs', 'pdf', 'azw4', 'epub', 'azw3', 'md', 'docx']
 const DRAWING_TARGETS: TargetFormat[] = ['pdf', 'html', 'revealjs', 'epub', 'azw4']

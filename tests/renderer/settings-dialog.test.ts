@@ -6,7 +6,7 @@ import { SettingsDialog, SETTINGS_PAGES, targetList } from '../../src/renderer/s
 import { DEFAULT_SETTINGS, SETTING_KEYS, checkSetting, withSetting, parseSettings, type Settings } from '../../src/core/settings'
 import { PICTURE_TARGET_FORMATS } from '../../src/core/pictures'
 import { SVG_TARGETS } from '../../src/core/rendered-blocks'
-import { CODE_COLOUR_TARGETS } from '../../src/cli/args'
+import { CODE_COLOR_TARGETS } from '../../src/cli/args'
 
 /** The Settings dialog (settings spec 4 and 7), against a stand-in for the preload's settings calls. */
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -358,13 +358,13 @@ describe('the Affects lines', () => {
   it('name the outputs each setting changes', () => {
     expect(targetList(PICTURE_TARGET_FORMATS)).toBe('PDF, HTML, slides, EPUB, Kindle (AZW3, AZW4), Word, Markdown')
     expect(targetList([...SVG_TARGETS])).toBe('PDF, HTML, slides, EPUB, Kindle (AZW4)')
-    expect(targetList(CODE_COLOUR_TARGETS)).toBe('PDF, HTML, slides, EPUB, Kindle (AZW3, AZW4), Word')
+    expect(targetList(CODE_COLOR_TARGETS)).toBe('PDF, HTML, slides, EPUB, Kindle (AZW3, AZW4), Word')
   })
 
   it('are the ones the conversions use', () => {
     const affects = Object.fromEntries(SETTINGS_PAGES.flatMap((p) => p.settings.map((s) => [s.key, s.affects])))
     expect(affects['pictures.format']).toBe(targetList(PICTURE_TARGET_FORMATS))
     expect(affects['rendered.format']).toBe(targetList([...SVG_TARGETS]))
-    expect(affects['code.colour']).toBe(targetList(CODE_COLOUR_TARGETS))
+    expect(affects['code.colour']).toBe(targetList(CODE_COLOR_TARGETS))
   })
 })
