@@ -1,11 +1,12 @@
 /*
  * What a picture's header says, read in core without decoding a pixel: the
  * pages of a TIFF and their sizes, one page of a TIFF taken out on its own
- * (its strips copied byte for byte), and the size of an EMF or WMF. Every
- * offset is checked against the file before it is followed, and a TIFF's
- * chain of pages is followed each offset once, so a hostile file costs a
- * null, never a hang or a read out of bounds. Pixels are decoded only in the
- * render host's sandboxed page (pictures.ts).
+ * (its strips copied byte for byte), the size of an EMF or WMF, and a PNG,
+ * JPEG, GIF or WebP's size (rasterSize). Every offset is checked against
+ * the file before it is followed, and a TIFF's chain of pages is followed
+ * each offset once, so a hostile file costs a null, never a hang or a read
+ * out of bounds. Pixels are decoded only in the render host's sandboxed
+ * page (pictures.ts).
  */
 
 /** The most IFDs of one TIFF that are followed: past that, the file is refused. */
@@ -285,5 +286,95 @@ export function originalSize(mime: string, bytes: Buffer): PictureSize | null {
   if (mime === 'image/tiff') return tiffSize(bytes)
   if (mime === 'image/x-emf') return emfSize(bytes)
   if (mime === 'image/x-wmf') return wmfSize(bytes)
+  return null
+}
+
+/**
+ * A raster picture's pixel size, believed as its header gives it: unlike a
+ * metafile's frame, each format's field is bounded already, and a long
+ * panorama is a real picture (only its shape is asked of it here).
+ */
+function pixels(width: number, height: number): PictureSize | null {
+  return width >= 1 && height >= 1 ? { width, height } : null
+}
+
+/**
+ * The EXIF orientation (1 to 8) a JPEG's APP1 segment gives, from the
+ * segment's body (after its length); undefined when it gives none.
+ */
+function exifOrientation(seg: Buffer): number | undefined {
+  if (seg.length < 14 || seg.toString('latin1', 0, 6) !== 'Exif\0\0') return undefined
+  const t = seg.subarray(6)
+  const be = t.toString('latin1', 0, 2) === 'MM'
+  if (!be && t.toString('latin1', 0, 2) !== 'II') return undefined
+  const r16 = (at: number) => (be ? t.readUInt16BE(at) : t.readUInt16LE(at))
+  const ifd = be ? t.readUInt32BE(4) : t.readUInt32LE(4)
+  if (ifd + 2 > t.length) return undefined
+  const count = r16(ifd)
+  for (let i = 0; i < count; i++) {
+    const at = ifd + 2 + i * 12
+    if (at + 12 > t.length) return undefined
+    if (r16(at) === 0x0112) return r16(at + 8)
+  }
+  return undefined
+}
+
+/** A JPEG's size from its frame header (SOFn), turned as its EXIF orientation shows it. */
+function jpegSize(bytes: Buffer): PictureSize | null {
+  let at = 2
+  let turned = false
+  while (at + 4 <= bytes.length) {
+    if (bytes[at] !== 0xff) return null
+    const marker = bytes[at + 1]
+    // Fill bytes, and markers that stand alone (RSTn, TEM).
+    if (marker === 0xff) {
+      at++
+      continue
+    }
+    if ((marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) {
+      at += 2
+      continue
+    }
+    const len = bytes.readUInt16BE(at + 2)
+    if (len < 2 || at + 2 + len > bytes.length) return null
+    if (marker === 0xe1) {
+      const o = exifOrientation(bytes.subarray(at + 4, at + 2 + len))
+      if (o !== undefined) turned = o >= 5 && o <= 8
+    }
+    // SOF0-15, except DHT (C4), JPG (C8) and DAC (CC).
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      if (len < 7) return null
+      const h = bytes.readUInt16BE(at + 5)
+      const w = bytes.readUInt16BE(at + 7)
+      return turned ? pixels(h, w) : pixels(w, h)
+    }
+    if (marker === 0xda || marker === 0xd9) return null
+    at += 2 + len
+  }
+  return null
+}
+
+/**
+ * A PNG, JPEG, GIF or WebP's size in pixels (shown at 96 to the inch), from
+ * its header alone; null when the header cannot be read. A JPEG a camera
+ * stored on its side (EXIF orientation 5 to 8) is given as it is shown.
+ */
+export function rasterSize(bytes: Buffer): PictureSize | null {
+  if (bytes.length >= 24 && bytes[0] === 0x89 && bytes.toString('latin1', 1, 4) === 'PNG' && bytes.toString('latin1', 12, 16) === 'IHDR') {
+    return pixels(bytes.readUInt32BE(16), bytes.readUInt32BE(20))
+  }
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return jpegSize(bytes)
+  if (bytes.length >= 10 && /^GIF8[79]a/.test(bytes.toString('latin1', 0, 6))) {
+    return pixels(bytes.readUInt16LE(6), bytes.readUInt16LE(8))
+  }
+  if (bytes.length >= 16 && bytes.toString('latin1', 0, 4) === 'RIFF' && bytes.toString('latin1', 8, 12) === 'WEBP') {
+    const kind = bytes.toString('latin1', 12, 16)
+    if (kind === 'VP8 ' && bytes.length >= 30) return pixels(bytes.readUInt16LE(26) & 0x3fff, bytes.readUInt16LE(28) & 0x3fff)
+    if (kind === 'VP8L' && bytes.length >= 25) {
+      const v = bytes.readUInt32LE(21)
+      return pixels((v & 0x3fff) + 1, ((v >>> 14) & 0x3fff) + 1)
+    }
+    if (kind === 'VP8X' && bytes.length >= 30) return pixels(bytes.readUIntLE(24, 3) + 1, bytes.readUIntLE(27, 3) + 1)
+  }
   return null
 }

@@ -39,6 +39,27 @@ describe('the AZW4 writer', () => {
   })
 
   /*
+   * A Kindle page is taller than wide, and a wide diagram on it was a strip
+   * across the top. A book that is one wide picture gets the page turned:
+   * the picture fills it, and the reader rotates to read it.
+   */
+  it('turns the Kindle page landscape for a book that is one wide picture, and only then', async () => {
+    const wide = '<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="d" width="1200" height="800">'
+    const tall = '<img src="data:image/svg+xml;base64,PHN2Zy8+" alt="d" width="600" height="800">'
+    for (const [html, landscape] of [
+      [wide, true],
+      [`<p>${wide}</p>`, true],
+      [tall, false],
+      [`<h1>Plan</h1><p>${wide}</p>`, false],
+    ] as const) {
+      const seen: { opts?: PdfRenderOptions } = {}
+      await writerCapturing(seen)({ html, title: 'T' })
+      expect(seen.opts?.pageSize).toEqual(KINDLE_PAGE_INCHES)
+      expect(seen.opts?.landscape).toBe(landscape)
+    }
+  })
+
+  /*
    * Color alone is not enough here. A reader that cannot show the fixed page
    * rebuilds text from it, and Calibre's viewer does exactly that: its AZW4
    * input reflows the embedded PDF (pdftohtml -xml), reads each run's color

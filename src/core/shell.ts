@@ -14,6 +14,8 @@ export interface ShellOptions {
   codePalette?: 'screen' | 'ereader'
   /** Code colored by language (pdf and html): on unless false (ConvertOptions.codeColor). */
   codeColor?: boolean
+  /** The document is one picture (lone-picture.ts), printed filling the page: the PDF writer says. */
+  fillPage?: boolean
 }
 
 /**
@@ -210,6 +212,25 @@ const PDF_PRINT_CSS = `
 `
 
 /**
+ * A document that is one picture, on paper (ShellOptions.fillPage). Printed
+ * at its own size, a 1200 px diagram took the top half of a portrait page
+ * and a small one a corner; the page is the picture's, so the picture is
+ * given all of it: scaled up or down to the page box (viewport units are the
+ * page box in paged media, inside the margins), kept whole and its shape
+ * kept (contain), centered. The cage, the body's margin and any wrapper's
+ * margin go, or the page box would be overrun and a second, blank page made.
+ */
+const FILL_PAGE_CSS = `
+  html { margin: 0; padding: 0; }
+  body { margin: 0; padding: 0; max-width: none; }
+  body * { margin: 0; padding: 0; }
+  img {
+    display: block; width: 100%; height: 100vh; max-width: none; max-height: none;
+    object-fit: contain; object-position: center;
+  }
+`
+
+/**
  * A task list (GitHub's `- [ ] item`) reaches the hub as items opening with a
  * ballot box, ☐ or ☑ (md.ts). Printed under its bullets as well, each item
  * read "• ☐ Call the movers": the box is the marker. A list whose every item
@@ -267,6 +288,7 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
   // output is a plot would otherwise leave the block unstyled.
   if (/class="nb-|alt="output image"/.test(body)) css += NB_CSS + notebookPromptCss(body) + '\n'
   if (opts?.target === 'pdf' && body.includes('<hr')) css += PDF_PRINT_CSS
+  if (opts?.target === 'pdf' && opts.fillPage) css += FILL_PAGE_CSS
   body = markTaskLists(body)
   if (body.includes('<ul class="task-list">')) css += TASK_LIST_CSS
   if (opts?.target === 'pdf' || opts?.target === 'html') {
