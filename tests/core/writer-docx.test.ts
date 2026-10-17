@@ -655,9 +655,9 @@ describe('writeDocx reads every CSS color form', () => {
       return [...xml.matchAll(/<w:tcBorders>([\s\S]*?)<\/w:tcBorders>/g)].map((m) => [...m[1].matchAll(/<w:(\w+)\b[^>]*w:color="([^"]*)"/g)].map((b) => `${b[1]}:${b[2]}`).sort().join(' '))
     }
     for (const css of ['lime', 'hsl(120, 100%, 50%)', 'rgb(0, 255, 0)', 'rgb(0 255 0)', 'hwb(120 0% 0%)']) {
-      expect(await bordersOf(`1px solid ${css}`), css).toEqual(['bottom:00FF00 left:00FF00 right:00FF00 top:00FF00', 'bottom:00FF00 left:00FF00 right:00FF00 top:00FF00'])
+      expect(await bordersOf(`1px solid ${css}`), css).toEqual(['bottom:00FF00 left:00FF00 right:00FF00 top:00FF00', 'top:00FF00'])
     }
-    // Not drawn black: a transparent border is none (html-to-docx still gives a lone border-top's cell its other sides).
+    // Not drawn black: a transparent border is none.
     expect((await bordersOf('1px solid transparent')).join(' ')).not.toContain('top:')
   })
 })
@@ -763,5 +763,55 @@ describe('writeDocx keeps a background color on a link', () => {
     expect(await fillsOf(html, 'alpha')).toEqual(['E0E0FF'])
     expect(await formatsOf(html, 'alpha')).toEqual(['b+link'])
     expect(await fillsOf(html, 'beta')).toEqual(['FFE0A0'])
+  })
+})
+
+/**
+ * html-to-docx gave a cell with one border side styled thin borders on its
+ * other sides, and one color and stroke to all of them. A cell whose style
+ * names its borders now has each side as its CSS says: a side it does not
+ * give a style is no border, as in a browser.
+ */
+describe('writeDocx draws each side of a cell border as its CSS says', () => {
+  /** Each cell's borders, side by side: `top=single/12/FF0000`, `left=nil`; '' for a cell with none of its own. */
+  const sidesOf = async (cells: string): Promise<string[]> => {
+    const xml = await documentXml(`<table><tr>${cells}</tr></table>`)
+    return [...xml.matchAll(/<w:tc>([\s\S]*?)<\/w:tc>/g)].map((tc) => {
+      const borders = /<w:tcBorders>([\s\S]*?)<\/w:tcBorders>/.exec(tc[1])?.[1] ?? ''
+      return [...borders.matchAll(/<w:(\w+) w:val="(\w+)"(?: w:sz="(\d+)")?(?: w:space="\d+")?(?: w:color="(\w+)")?\/>/g)]
+        .map((b) => `${b[1]}=${[b[2], b[3], b[4]].filter(Boolean).join('/')}`)
+        .join(' ')
+    })
+  }
+
+  it('one side styled: that side only, in its own width, stroke and color', async () => {
+    expect(await sidesOf('<td style="border-top: 2px solid red">a</td>')).toEqual(['top=single/12/FF0000 left=nil bottom=nil right=nil'])
+    expect(await sidesOf('<td style="border-bottom: 1px dashed #3366AA">a</td>')).toEqual(['top=nil left=nil bottom=dashed/6/3366AA right=nil'])
+  })
+
+  it('two sides styled: each keeps its own stroke and color', async () => {
+    expect(await sidesOf('<td style="border-top: 4px double red; border-left: 1px dotted blue">a</td>')).toEqual([
+      'top=double/24/FF0000 left=dotted/6/0000FF bottom=nil right=nil',
+    ])
+  })
+
+  it('a shorthand and a side over it, longhands, and the CSS defaults', async () => {
+    expect(await sidesOf('<td style="border: 1px solid #3A3A3A; border-top: 3pt double red">a</td>')).toEqual([
+      'top=double/24/FF0000 left=single/6/3A3A3A bottom=single/6/3A3A3A right=single/6/3A3A3A',
+    ])
+    expect(await sidesOf('<td style="border-style: solid; border-width: 2px 0 2px 0; border-color: green">a</td>')).toEqual([
+      'top=single/12/008000 left=nil bottom=single/12/008000 right=nil',
+    ])
+    // No style is no border; no color is the cell's text color; no width is medium (3px).
+    expect(await sidesOf('<td style="border-top: 2px red; border-bottom: solid; color: #C00000">a</td>')).toEqual([
+      'top=nil left=nil bottom=single/18/C00000 right=nil',
+    ])
+    expect(await sidesOf('<td style="border: none">a</td>')).toEqual(['top=nil left=nil bottom=nil right=nil'])
+  })
+
+  it('leaves a cell with no border of its own to the table grid', async () => {
+    const [styled, plain] = await sidesOf('<td style="border-top: 2px solid red">a</td><td>b</td>')
+    expect(styled).toBe('top=single/12/FF0000 left=nil bottom=nil right=nil')
+    expect(plain).toBe('top=single/1/000000 left=single/1/000000 bottom=single/1/000000 right=single/1/000000')
   })
 })

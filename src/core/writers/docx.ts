@@ -482,6 +482,7 @@ async function recompress(
   colored: ColoredLook[] = [],
   originals: Map<string, Original> = new Map(),
   languages: string[] = [],
+  bordered: CellBorders[] = [],
 ): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
@@ -493,7 +494,7 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(oneGrid(orderCellProperties(styleRuns(sectionLast(await body.async('string')), colored)))), languages))
+    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), languages))
     for (const name of ['word/styles.xml', 'word/numbering.xml']) {
       const part = zip.file(name)
       if (part) zip.file(name, schemaOrder(await part.async('string')))
@@ -1180,6 +1181,141 @@ function normalizeColors(source: string): string {
   return changed ? serialize(dom.children) : source
 }
 
+/** One side of a cell's border, as Word writes it: `nil` for none. */
+interface BorderSide {
+  val: string
+  /** Eighths of a point. */
+  sz?: number
+  color?: string
+}
+type CellBorders = Record<'top' | 'left' | 'bottom' | 'right', BorderSide>
+
+const CELL_SIDES = ['top', 'left', 'bottom', 'right'] as const
+/** CSS border styles as Word's (ST_Border); none and hidden are no border. */
+const BORDER_STYLES: Record<string, string> = {
+  solid: 'single', dashed: 'dashed', dotted: 'dotted', double: 'double', groove: 'threeDEngrave',
+  ridge: 'threeDEmboss', inset: 'inset', outset: 'outset', none: 'nil', hidden: 'nil',
+}
+const BORDER_KEYWORD_WIDTHS: Record<string, number> = { thin: 1, medium: 3, thick: 5 }
+/** The most cells one document gives border stand-ins to (four hex digits); past it, html-to-docx's own borders. */
+const MAX_BORDERED_CELLS = 0x10000
+/** A cell's border stand-in color: `0E` and the cell's index in the document's CellBorders list. */
+const BORDER_STAND_IN = /w:color="0E([0-9A-F]{4})"/
+
+/** A CSS border width in points, or undefined when `word` is not one. */
+function borderWidthPt(word: string): number | undefined {
+  const keyword = BORDER_KEYWORD_WIDTHS[word.toLowerCase()]
+  if (keyword !== undefined) return keyword * 0.75
+  const m = /^(\d*\.?\d+)(px|pt|em|rem|mm|cm|in)?$/i.exec(word)
+  if (!m) return undefined
+  const n = parseFloat(m[1])
+  const unit = (m[2] ?? 'px').toLowerCase()
+  const pt = { px: 0.75, pt: 1, em: 12, rem: 12, mm: 72 / 25.4, cm: 72 / 2.54, in: 72 }[unit] ?? 0.75
+  return n * pt
+}
+
+/** CSS's one-to-four values for the four sides, as top, left, bottom, right. */
+function fourSides<T>(values: T[]): [T, T, T, T] | undefined {
+  const [a, b = a, c = a, d = b] = values
+  return a === undefined ? undefined : [a, d, c, b]
+}
+
+/**
+ * A cell's border sides from its style, as a browser draws them: each side
+ * is none until a style is given (`border-style` starts as none), medium
+ * (3px) wide and in the cell's text color until a width or color is. Later
+ * declarations win; a shorthand resets its sides. Undefined when the style
+ * says nothing about borders.
+ */
+function cellBordersOf(style: string, textColor: string | undefined): CellBorders | undefined {
+  type Css = { style: string; width: number; color?: string }
+  const sides: Record<(typeof CELL_SIDES)[number], Css> = {
+    top: { style: 'none', width: 2.25 },
+    left: { style: 'none', width: 2.25 },
+    bottom: { style: 'none', width: 2.25 },
+    right: { style: 'none', width: 2.25 },
+  }
+  let any = false
+  for (const piece of style.split(';')) {
+    const d = /^\s*(border(?:-(top|right|bottom|left))?(?:-(width|style|color))?)\s*:\s*([\s\S]*?)\s*(?:!\s*important\s*)?$/i.exec(piece)
+    if (!d) continue
+    any = true
+    const named = d[2]?.toLowerCase() as (typeof CELL_SIDES)[number] | undefined
+    const part = d[3]?.toLowerCase()
+    const words = d[4].match(/[^\s(]+\([^)]*\)|[^\s]+/g) ?? []
+    const targets = named ? [named] : [...CELL_SIDES]
+    if (!part) {
+      // A shorthand: whatever it leaves out goes back to its initial value.
+      const shorthand: Css = { style: 'none', width: 2.25 }
+      for (const w of words) {
+        const lower = w.toLowerCase()
+        if (BORDER_STYLES[lower]) shorthand.style = lower
+        else if (borderWidthPt(w) !== undefined) shorthand.width = borderWidthPt(w)!
+        else if (w === '0') shorthand.width = 0
+        else shorthand.color = parseCssColor(w) === 'currentcolor' ? undefined : (wordHex(w) ?? undefined)
+      }
+      for (const side of targets) sides[side] = { ...shorthand }
+      continue
+    }
+    // A longhand: one value for a side, or one to four for all of them.
+    const values = named ? [words[0]] : words
+    const spread = named ? undefined : fourSides(values)
+    targets.forEach((side, i) => {
+      const value = spread ? spread[i] : values[0]
+      if (value === undefined) return
+      if (part === 'style' && BORDER_STYLES[value.toLowerCase()]) sides[side].style = value.toLowerCase()
+      if (part === 'width') sides[side].width = borderWidthPt(value) ?? (value === '0' ? 0 : sides[side].width)
+      if (part === 'color') sides[side].color = parseCssColor(value) === 'currentcolor' ? undefined : (wordHex(value) ?? undefined)
+    })
+  }
+  if (!any) return undefined
+  const word = (css: Css): BorderSide => {
+    const val = BORDER_STYLES[css.style] ?? 'nil'
+    if (val === 'nil' || css.width <= 0) return { val: 'nil' }
+    // Word draws from a quarter point to twelve, in eighths.
+    return { val, sz: Math.min(96, Math.max(2, Math.round(css.width * 8))), color: css.color ?? textColor ?? 'auto' }
+  }
+  return { top: word(sides.top), left: word(sides.left), bottom: word(sides.bottom), right: word(sides.right) }
+}
+
+/**
+ * html-to-docx draws a cell's border sides in one color and one stroke, the
+ * last side's, and gives the sides a cell's style leaves out its thin default
+ * line; so `border-top: 2px solid red` came out a red box. Each cell whose
+ * style speaks of its borders is listed in `cells`, with every side as its
+ * CSS says, and its border declarations give way to one plain border in a
+ * stand-in color naming the entry. cellBorderSides then writes the cell's
+ * w:tcBorders from the entry. A cell whose style has no border keeps the
+ * table's grid, as before.
+ */
+function cellBordersForDocx(source: string, cells: CellBorders[]): string {
+  if (!/<t[dh]\b[^>]*\bstyle\s*=[^>]*\bborder/i.test(source)) return source
+  const dom = parseDocument(source)
+  for (const cell of [...elementsOf(dom.children, 'td'), ...elementsOf(dom.children, 'th')]) {
+    const style = cell.attribs.style
+    if (!style || cells.length >= MAX_BORDERED_CELLS) continue
+    const sides = cellBordersOf(style, wordHex(colorIn(cell) ?? '') ?? undefined)
+    if (!sides) continue
+    const at = cells.push(sides) - 1
+    const rest = style.split(';').filter((d) => !/^\s*border(?:-(?:top|right|bottom|left))?(?:-(?:width|style|color))?\s*:/i.test(d))
+    cell.attribs.style = [...rest.map((d) => d.trim()).filter(Boolean), `border: 1px solid #0E${at.toString(16).toUpperCase().padStart(4, '0')}`].join('; ')
+  }
+  return serialize(dom.children)
+}
+
+/** Each stand-in cell border (see cellBordersForDocx) as the sides its CSS gave. */
+function cellBorderSides(xml: string, cells: CellBorders[]): string {
+  if (cells.length === 0) return xml
+  return xml.replace(/<w:tcBorders>(?:(?!<\/w:tcBorders>)[\s\S])*<\/w:tcBorders>/g, (borders) => {
+    const at = BORDER_STAND_IN.exec(borders)
+    const cell = at ? cells[parseInt(at[1], 16)] : undefined
+    if (!cell) return borders
+    const side = (name: string, b: BorderSide): string =>
+      b.val === 'nil' ? `<w:${name} w:val="nil"/>` : `<w:${name} w:val="${b.val}" w:sz="${b.sz}" w:space="0" w:color="${b.color}"/>`
+    return `<w:tcBorders>${CELL_SIDES.map((name) => side(name, cell[name])).join('')}</w:tcBorders>`
+  })
+}
+
 /**
  * html-to-docx 1.8.0 maps <i> to italic but not <em>; it has a case for
  * <s>/<del>/<strike> that never sets anything; and in nested tags each one
@@ -1441,17 +1577,21 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
   const colored: ColoredLook[] = []
   const originals = new Map<string, Original>()
   const languages: string[] = []
+  const bordered: CellBorders[] = []
   const pictures = dropUnresolvableImages(standInOriginals(footnotesForOutput(doc.html, 'plain'), originals))
   const html = renderDocumentShell(
     {
       ...doc,
       html: flattenFormatting(
-        normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(definitionListsForDocx(pictures)))))), languages))),
+        cellBordersForDocx(
+          normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(definitionListsForDocx(pictures)))))), languages))),
+          bordered,
+        ),
         colored,
       ),
     },
     { target: 'docx' },
   )
   const result = await HTMLtoDOCX(html)
-  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages)
+  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages, bordered)
 }
