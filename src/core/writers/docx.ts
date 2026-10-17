@@ -349,9 +349,6 @@ const TCPR_ORDER = [
   'tcFitText', 'vAlign', 'hideMark', 'headers', 'cellIns', 'cellDel', 'cellMerge', 'tcPrChange',
 ]
 
-/** CT_TcBorders' child order (ISO/IEC 29500-4 wml.xsd: the transitional schema keeps left and right beside start and end). */
-const TCBORDERS_ORDER = ['top', 'start', 'left', 'bottom', 'end', 'right', 'insideH', 'insideV', 'tl2br', 'tr2bl']
-
 /** The `w:` children of an element's inside, each whole. */
 const childrenOf = (inner: string): string[] => inner.match(/<w:(\w+)\b[^>]*?\/>|<w:(\w+)\b[^>]*>[\s\S]*?<\/w:\2>/g) ?? []
 
@@ -369,22 +366,109 @@ function inOrder(children: string[], order: readonly string[]): string[] {
  * and w:vAlign in the order it meets them; the schema wants the span and the
  * merge before the borders. A strict reader may ignore an element out of
  * order, and Word may offer to repair the file (LibreOffice 7.3 happens to
- * honor the span either way). Each cell's properties are put back in order. A cell continuing a row span is also
+ * honor the span either way). Each cell's properties are put back in order
+ * (by schemaOrder). A cell continuing a row span is also
  * given `<w:gridSpan w:val="0"/>` when the span is one column wide: zero is
  * not a span, so it is dropped.
- *
- * The border sides inside are written in the order the cell's style named
- * them (`border-top` then `border-left` came out top, bottom, left, right),
- * where the schema wants top, left, bottom, right: they are put in order too.
  */
 function orderCellProperties(xml: string): string {
-  if (!xml.includes('<w:tcPr>')) return xml
-  return xml.replace(/<w:tcPr>([\s\S]*?)<\/w:tcPr>/g, (_whole, inner: string) => {
-    const kept = childrenOf(inner)
-      .filter((c) => !/^<w:gridSpan w:val="0"\s*\/>$/.test(c))
-      .map((c) => c.replace(/^<w:tcBorders>([\s\S]*)<\/w:tcBorders>$/, (_b, sides: string) => `<w:tcBorders>${inOrder(childrenOf(sides), TCBORDERS_ORDER).join('')}</w:tcBorders>`))
-    return `<w:tcPr>${inOrder(kept, TCPR_ORDER).join('')}</w:tcPr>`
+  if (!xml.includes('<w:gridSpan w:val="0"')) return xml
+  return xml.replace(/<w:gridSpan w:val="0"\s*\/>/g, '')
+}
+
+/** CT_PPrBase's child order, then CT_PPr's own. */
+const PPR_ORDER = [
+  'pStyle', 'keepNext', 'keepLines', 'pageBreakBefore', 'framePr', 'widowControl', 'numPr', 'suppressLineNumbers',
+  'pBdr', 'shd', 'tabs', 'suppressAutoHyphens', 'kinsoku', 'wordWrap', 'overflowPunct', 'topLinePunct', 'autoSpaceDE',
+  'autoSpaceDN', 'bidi', 'adjustRightInd', 'snapToGrid', 'spacing', 'ind', 'contextualSpacing', 'mirrorIndents',
+  'suppressOverlap', 'jc', 'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle',
+  'rPr', 'sectPr', 'pPrChange',
+]
+/** The sides of a table's, a cell's or a paragraph's borders and margins. */
+const SIDES = ['top', 'start', 'left', 'bottom', 'end', 'right', 'insideH', 'insideV', 'tl2br', 'tr2bl', 'between', 'bar']
+
+/**
+ * The child order of every element html-to-docx or this writer writes whose
+ * children the schema puts in a sequence: ISO/IEC 29500-4's wml.xsd, the
+ * transitional schema Word writes (CT_TblBorders, CT_TcBorders and the
+ * margins keep left and right beside start and end; ECMA-376's first edition
+ * had left and right only, in the same places). A run's properties are a
+ * choice there, in any order, but are given the first edition's sequence
+ * (RPR_ORDER) all the same, as styleRuns does; a row's (w:trPr) are a choice
+ * in both.
+ */
+const SCHEMA_ORDER: Record<string, readonly string[]> = {
+  pPr: PPR_ORDER,
+  tblPr: [
+    'tblStyle', 'tblpPr', 'tblOverlap', 'bidiVisual', 'tblStyleRowBandSize', 'tblStyleColBandSize', 'tblW', 'jc',
+    'tblCellSpacing', 'tblInd', 'tblBorders', 'shd', 'tblLayout', 'tblCellMar', 'tblLook', 'tblCaption', 'tblDescription',
+    'tblPrChange',
+  ],
+  tblBorders: SIDES,
+  tblCellMar: SIDES,
+  tcPr: TCPR_ORDER,
+  tcBorders: SIDES,
+  tcMar: SIDES,
+  pBdr: SIDES,
+  sectPr: [
+    'headerReference', 'footerReference', 'footnotePr', 'endnotePr', 'type', 'pgSz', 'pgMar', 'paperSrc', 'pgBorders',
+    'lnNumType', 'pgNumType', 'cols', 'formProt', 'vAlign', 'noEndnote', 'titlePg', 'textDirection', 'bidi', 'rtlGutter',
+    'docGrid', 'printerSettings', 'sectPrChange',
+  ],
+}
+
+/**
+ * Each element of SCHEMA_ORDER given its children in the schema's order, and
+ * each run's properties RPR_ORDER. html-to-docx writes them in the order it
+ * meets the HTML and CSS: a paragraph's w:spacing after its w:jc, a table's
+ * w:tblCellSpacing after its borders and its w:jc last, a cell's border sides
+ * as its style names them. An element holding anything but whole `w:`
+ * children is left as it is.
+ */
+function schemaOrder(xml: string): string {
+  const orders: [string, readonly string[]][] = [...Object.entries(SCHEMA_ORDER), ['rPr', RPR_ORDER]]
+  for (const [name, order] of orders) {
+    if (!xml.includes(`<w:${name}>`)) continue
+    xml = xml.replace(new RegExp(`<w:${name}>([\\s\\S]*?)<\\/w:${name}>`, 'g'), (whole, inner: string) => {
+      const children = childrenOf(inner)
+      const tight = (text: string): string => text.replace(/>\s+</g, '><').trim()
+      if (tight(children.join('')) !== tight(inner)) return whole
+      return `<w:${name}>${inOrder(children, order).join('')}</w:${name}>`
+    })
+  }
+  return xml
+}
+
+/**
+ * html-to-docx writes a table's grid (w:tblGrid) before the first row of
+ * each <thead> and <tbody>, so a table with both had two, the second among
+ * the rows, where the schema has one, right after w:tblPr. The widest is
+ * kept there; of two as wide, the first (a <colgroup>'s, with its widths).
+ */
+function oneGrid(xml: string): string {
+  if (!/<\/w:tblGrid>[\s\S]*?<w:tblGrid>/.test(xml)) return xml
+  return xml.replace(/<w:tbl>((?:(?!<w:tbl>)[\s\S])*?)<\/w:tbl>/g, (whole, inner: string) => {
+    const grids = inner.match(/<w:tblGrid>[\s\S]*?<\/w:tblGrid>/g) ?? []
+    if (grids.length < 2) return whole
+    const columns = (grid: string): number => grid.split('<w:gridCol').length
+    const widest = grids.reduce((a, b) => (columns(b) > columns(a) ? b : a))
+    const rest = inner.replace(/\s*<w:tblGrid>[\s\S]*?<\/w:tblGrid>/g, '')
+    return `<w:tbl>${rest.includes('</w:tblPr>') ? rest.replace('</w:tblPr>', () => `</w:tblPr>${widest}`) : widest + rest}</w:tbl>`
   })
+}
+
+/**
+ * html-to-docx's document template opens the body with its w:sectPr (page
+ * size and margins), and the paragraphs follow it; the schema (CT_Body) has
+ * the body's section properties last, after every paragraph and table.
+ * LibreOffice reads it either way, but a validating reader rejects the whole
+ * body ("w:p is not expected"), and Word may offer to repair the file, so it
+ * is moved to the end.
+ */
+function sectionLast(xml: string): string {
+  return xml.replace(/(<w:body>\s*)(<w:sectPr\b[^>]*>[\s\S]*?<\/w:sectPr>)([\s\S]*?)(\s*<\/w:body>)/, (_whole, open: string, section: string, rest: string, close: string) =>
+    rest.trim() ? `${open}${rest.trim()}${section}${close}` : _whole,
+  )
 }
 
 /**
@@ -409,7 +493,11 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', codeBookmarks(orderCellProperties(styleRuns(await body.async('string'), colored)), languages))
+    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(oneGrid(orderCellProperties(styleRuns(sectionLast(await body.async('string')), colored)))), languages))
+    for (const name of ['word/styles.xml', 'word/numbering.xml']) {
+      const part = zip.file(name)
+      if (part) zip.file(name, schemaOrder(await part.async('string')))
+    }
     if (lowerings.size > 0) {
       try {
         await lowerFormulas(zip, lowerings)
