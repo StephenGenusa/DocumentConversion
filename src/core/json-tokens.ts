@@ -1,3 +1,5 @@
+import { MEMORY_CHECK_EVERY, RecordsTooLarge, memory } from './records'
+
 /**
  * JSON read without being parsed.
  *
@@ -191,13 +193,15 @@ function compact(toks: Tok[]): string {
 export function readRecords(text: string, opts: { lines?: boolean } = {}): Records | null {
   const header: string[] = []
   const seen = new Map<string, number>()
-  const rows: Map<number, string>[] = []
+  // Rows are filled in place, a cell at its column, and padded at the end:
+  // a Map a row, then a copy as arrays, once held 300 MB of tiny records in
+  // more than the whole heap.
+  const rows: string[][] = []
   let fields = 0
   let nested = 0
   let toks: Generator<Tok, void, undefined>
-  const units = opts.lines ? text.split('\n').filter((l) => l.trim() !== '') : [text]
   try {
-    for (const unit of units) {
+    for (const unit of unitsOf(text, opts.lines === true)) {
       toks = tokens(unit)
       const next = (): Tok | undefined => {
         for (;;) {
@@ -215,7 +219,7 @@ export function readRecords(text: string, opts: { lines?: boolean } = {}): Recor
       }
       for (;;) {
         if (t?.k !== 'open' || t.c !== '{') return null
-        const row = new Map<number, string>()
+        const row: string[] = new Array<string>(header.length)
         t = next()
         if (!(t?.k === 'close' && t.c === '}')) {
           for (;;) {
@@ -246,7 +250,7 @@ export function readRecords(text: string, opts: { lines?: boolean } = {}): Recor
               header.push(key)
               seen.set(key, col)
             }
-            row.set(col, cell)
+            row[col] = cell
             t = next()
             if (t?.k === 'comma') {
               t = next()
@@ -256,7 +260,7 @@ export function readRecords(text: string, opts: { lines?: boolean } = {}): Recor
             return null
           }
         }
-        rows.push(row)
+        if (rows.push(row) % MEMORY_CHECK_EVERY === 0 && memory.full()) throw new RecordsTooLarge()
         if (!inArray) {
           if (next() !== undefined) return null
           break
@@ -273,9 +277,26 @@ export function readRecords(text: string, opts: { lines?: boolean } = {}): Recor
         return null
       }
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof RecordsTooLarge) throw err
     return null
   }
   if (rows.length === 0 || (fields > 0 && nested / fields > 0.1)) return null
-  return { header, rows: rows.map((r) => header.map((_h, i) => r.get(i) ?? '')) }
+  for (const r of rows) for (let i = 0; i < header.length; i++) r[i] ??= ''
+  return { header, rows }
+}
+
+/** The whole text, or (JSON Lines) each line that is not blank, without splitting all of them at once. */
+function* unitsOf(text: string, lines: boolean): Generator<string> {
+  if (!lines) {
+    yield text
+    return
+  }
+  for (let at = 0; at <= text.length; ) {
+    const end = text.indexOf('\n', at)
+    const line = text.slice(at, end === -1 ? text.length : end)
+    if (line.trim() !== '') yield line
+    if (end === -1) break
+    at = end + 1
+  }
 }

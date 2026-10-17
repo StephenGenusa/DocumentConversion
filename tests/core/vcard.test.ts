@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { readVcard, readVcardRows, parseVcards } from '../../src/core/readers/vcard'
 import { detect } from '../../src/core/detect'
 import { createConverter } from '../../src/core/convert'
+import { MEMORY_CHECK_EVERY, memory } from '../../src/core/records'
 import type { ReadContext } from '../../src/core/types'
 
 const src = (text: string | Buffer, filename = 'contacts.vcf') => ({
@@ -169,5 +170,18 @@ describe('detecting vCards', () => {
   it('sniffs a vCard with no extension', () => {
     const d = detect(Buffer.from('BEGIN:VCARD\nVERSION:4.0\nFN:x\nEND:VCARD\n'), 'contact')
     expect(d.kind === 'ok' && d.format).toBe('vcard')
+  })
+})
+
+describe('a very large address book', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('stops with a sentence, not a crash, when the contacts fill the heap', async () => {
+    const full = vi.spyOn(memory, 'full').mockReturnValue(true)
+    const many = 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:x\r\nEND:VCARD\r\n'.repeat(MEMORY_CHECK_EVERY + 1)
+    const message = 'big.vcf is too large to convert: its records need more memory than the app has.'
+    await expect(readVcard(src(many, 'big.vcf'))).rejects.toThrow(message)
+    await expect(readVcardRows(src(many, 'big.vcf'))).rejects.toThrow(message)
+    expect(full).toHaveBeenCalled()
   })
 })

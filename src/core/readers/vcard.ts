@@ -1,8 +1,7 @@
 import * as iconv from 'iconv-lite'
-import { ConversionError } from '../errors'
 import { escapeHtml } from '../shell'
 import { decodeTextBytes } from './txt'
-import { MAX_RECORD_SOURCE_BYTES, PRINT_RECORD_LIMIT, limitMessage, recordsTableHtml, type RowSource } from '../records'
+import { MEMORY_CHECK_EVERY, PRINT_RECORD_LIMIT, RecordsTooLarge, limitMessage, memory, recordsTableHtml, tooLargeError, type RowSource } from '../records'
 import type { HubDocument, ReadContext, SourceInput } from '../types'
 
 /**
@@ -124,17 +123,32 @@ const isQp = (p: Prop): boolean =>
  * a quoted-printable value's soft line break (`=` at the end of a line),
  * which 2.1 writers use instead of folding.
  */
-function logicalLines(text: string): string[] {
-  const lines: string[] = []
-  for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
-    const prev = lines.length - 1
-    if (prev >= 0 && (raw.startsWith(' ') || raw.startsWith('\t'))) {
-      lines[prev] += raw.slice(1)
-    } else if (prev >= 0 && lines[prev].endsWith('=') && /QUOTED-PRINTABLE/i.test(lines[prev].slice(0, valueColon(lines[prev])))) {
-      lines[prev] = lines[prev] + '\n' + raw
-    } else lines.push(raw)
+function* logicalLines(text: string): Generator<string> {
+  // One line at a time, never all of them: a file of millions of lines
+  // would otherwise be held twice over, as raw lines and unfolded.
+  let line: string | null = null
+  for (const raw of rawLines(text)) {
+    if (line !== null && (raw.startsWith(' ') || raw.startsWith('\t'))) {
+      line += raw.slice(1)
+    } else if (line !== null && line.endsWith('=') && /QUOTED-PRINTABLE/i.test(line.slice(0, valueColon(line)))) {
+      line = line + '\n' + raw
+    } else {
+      if (line !== null) yield line
+      line = raw
+    }
   }
-  return lines
+  if (line !== null) yield line
+}
+
+/** The text's lines, split at CRLF, CR or LF. */
+function* rawLines(text: string): Generator<string> {
+  const eol = /\r\n?|\n/g
+  let at = 0
+  for (let m = eol.exec(text); m; m = eol.exec(text)) {
+    yield text.slice(at, m.index)
+    at = eol.lastIndex
+  }
+  yield text.slice(at)
 }
 
 /** The value as text: quoted-printable decoded; escapes left for the caller (structured values split first). */
@@ -242,7 +256,7 @@ export function parseVcards(text: string): { header: string[]; rows: string[][];
     if (/^END:VCARD$/i.test(t)) {
       if (depth > 0 && --depth === 0 && props) {
         const card = cardRow(props)
-        rows.push(card.row)
+        if (rows.push(card.row) % MEMORY_CHECK_EVERY === 0 && memory.full()) throw new RecordsTooLarge()
         photos += card.photos
         props = null
       }
@@ -258,11 +272,12 @@ export function parseVcards(text: string): { header: string[]; rows: string[][];
 const baseName = (filename?: string): string => (filename ?? 'contacts.vcf').split(/[\\/]/).pop() ?? 'contacts.vcf'
 
 function contactsOf(src: SourceInput): ReturnType<typeof parseVcards> {
-  if (src.bytes.length > MAX_RECORD_SOURCE_BYTES) {
-    const mb = (src.bytes.length / 1024 / 1024).toFixed(0)
-    throw new ConversionError('read-failed', `${baseName(src.filename)} is ${mb} MB, over the 200 MB limit for record files.`)
+  // Too large for memory (see records.ts), it says so in words.
+  try {
+    return parseVcards(decodeTextBytes(src.bytes))
+  } catch (err) {
+    throw tooLargeError(baseName(src.filename), err) ?? err
   }
-  return parseVcards(decodeTextBytes(src.bytes))
 }
 
 function photoNotice(photos: number, ctx?: ReadContext): void {

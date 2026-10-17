@@ -26,8 +26,10 @@ import type { Reply, Request } from './sqlite-worker'
  *                                statement over it fails in words, and its
  *                                worker is ended to give the memory back
  *
- * The bytes stay here for the life of the database so a replacement worker
- * can open them again; the file they came from is never opened by either side.
+ * The bytes stay here, in shared memory (sharedBytes), for the life of the
+ * database so a replacement worker can open them again; the file they came
+ * from is never opened by either side. There is no size limit: the engine's
+ * memory cap and the timeouts are what protect the app.
  */
 
 /** Engine time each view may use, in milliseconds. */
@@ -96,6 +98,18 @@ export function sqliteAssetDir(): string {
   return candidates.find((dir) => existsSync(join(dir, 'sql-wasm.wasm'))) ?? candidates[0]
 }
 
+/**
+ * The database's bytes, copied once into shared memory. Each worker (a
+ * replacement too) sees them without a copy of its own; cloned into
+ * workerData instead, a database of 1.1 GB or more crashed Electron's main
+ * process outright.
+ */
+export function sharedBytes(bytes: Uint8Array): Uint8Array {
+  const shared = new Uint8Array(new SharedArrayBuffer(bytes.length))
+  shared.set(bytes)
+  return shared
+}
+
 export function createSqliteHost(opts: SqliteHostOptions = {}): SqliteHost {
   const timeouts = opts.timeouts ?? DEFAULT_TIMEOUTS
   const workerPath = opts.workerPath ?? unpacked(join(__dirname, 'sqlite-worker.js'))
@@ -116,7 +130,7 @@ export function createSqliteHost(opts: SqliteHostOptions = {}): SqliteHost {
         {
           workerPath,
           ...assetsOf(),
-          bytes: new Uint8Array(bytes),
+          bytes: sharedBytes(bytes),
           resourceLimits: opts.resourceLimits ?? DEFAULT_LIMITS,
           memoryLimit: opts.memoryLimit ?? defaultMemoryLimit(),
         },

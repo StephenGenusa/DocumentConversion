@@ -1,12 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import * as XLSX from 'xlsx'
 import { reindentJson, needsReformat } from '../../src/core/json-tokens'
 import { reindentXml } from '../../src/core/xml-indent'
-import { readJson, readJsonRows } from '../../src/core/readers/json'
+import { readJson, readJsonRows, jsonIsTable } from '../../src/core/readers/json'
 import { readCode } from '../../src/core/readers/code'
 import { writeRows } from '../../src/core/writers/rows'
 import { detect } from '../../src/core/detect'
-import { MAX_RECORD_SOURCE_BYTES, PRINT_RECORD_LIMIT, type RowSource } from '../../src/core/records'
+import { PRINT_RECORD_LIMIT, MEMORY_CHECK_EVERY, heapNearlyFull, memory, tooLargeError, type RowSource } from '../../src/core/records'
 import { checkFlagScope, parseArgs } from '../../src/cli/args'
 
 const src = (text: string, filename: string) => ({ bytes: Buffer.from(text, 'utf8'), filename })
@@ -133,16 +133,52 @@ describe('JSON records as a table', () => {
     expect((await collect(sources![0].rows)).length).toBe(6000)
   })
 
-  it('refuses a record file over 200 MB, saying why', async () => {
-    const big = { bytes: Buffer.alloc(MAX_RECORD_SOURCE_BYTES + 1, 0x20), filename: 'huge.json' }
-    await expect(readJson(big)).rejects.toThrow(/over the 200 MB limit/)
-    await expect(readJsonRows(big)).rejects.toThrow(/over the 200 MB limit/)
+  it('stops with a sentence, not a crash, when the records fill the heap', async () => {
+    // A file of millions of tiny records ({"a":1}) once took the process
+    // down: the heap, not the file's size, is what runs out.
+    const full = vi.spyOn(memory, 'full').mockReturnValue(true)
+    const big = src(records(MEMORY_CHECK_EVERY + 1), 'huge.json')
+    await expect(readJson(big)).rejects.toThrow('huge.json is too large to convert: its records need more memory than the app has.')
+    await expect(readJsonRows(big)).rejects.toThrow(/too large to convert/)
+    await expect(readJson(src(Array.from({ length: MEMORY_CHECK_EVERY + 1 }, (_, i) => `{"id":${i}}`).join('\n'), 'huge.jsonl'))).rejects.toThrow(/too large/)
+    expect(jsonIsTable(big.bytes, 'huge.json')).toBe(false)
+    expect(full).toHaveBeenCalled()
+    // A small file is never asked about.
+    full.mockClear()
+    await readJson(src(records(10), 'r.json'))
+    expect(full).not.toHaveBeenCalled()
+  })
+
+  it('reads a record file of any size: there is no size limit', async () => {
+    // The 200 MB refusal is gone (owner, 2026-10-17); a 201 MB buffer is
+    // not built here, but nothing in the readers looks at the length.
+    const hub = await readJson(src(records(3) + ' '.repeat(1024), 'r.json'))
+    expect(hub.html).toContain('<table>')
   })
 
   it('formats instead of tabulating when asked', async () => {
     const hub = await readJson(src(records(3), 'r.json'), { jsonAs: 'text' })
     expect(hub.html).toContain('<code class="language-json">')
     expect(await readJsonRows(src(records(3), 'r.json'), { jsonAs: 'text' })).toBeNull()
+  })
+})
+
+afterEach(() => vi.restoreAllMocks())
+
+describe('memory protection', () => {
+  it('says the heap is nearly full only near its limit', () => {
+    const stats = (used: number) => ({ used_heap_size: used, heap_size_limit: 1000 }) as never
+    expect(heapNearlyFull(stats(500))).toBe(false)
+    expect(heapNearlyFull(stats(950))).toBe(true)
+  })
+
+  it("turns the engine's own string limit into a sentence", () => {
+    const tooLong = Object.assign(new Error('Cannot create a string longer than 0x1fffffe8 characters'), { code: 'ERR_STRING_TOO_LONG' })
+    expect(tooLargeError('big.json', tooLong)?.message).toBe(
+      'big.json is too large to convert: it is more text than the app can hold at once (536,870,888 characters).',
+    )
+    expect(tooLargeError('big.json', new RangeError('Invalid string length'))?.message).toMatch(/^big\.json is too large to convert: it is more text/)
+    expect(tooLargeError('big.json', new Error('something else'))).toBeNull()
   })
 })
 
@@ -175,6 +211,17 @@ describe('writing row sources', () => {
     expect(csv).toBe('id,name\r\n1,n1\r\n2,n2\r\n3,n3\r\n')
     const json = JSON.parse((await writeRows([source(2)], 'json')).parts[0].bytes.toString('utf8'))
     expect(json).toEqual([{ id: 1, name: 'n1' }, { id: 2, name: 'n2' }])
+  })
+
+  it('json is written exactly as JSON.stringify would, a record at a time', async () => {
+    // Written in pieces so no export is one string: a string over the
+    // engine's limit (about 512 million characters) cannot be made at all.
+    const records = [{ id: 1, name: 'n1' }, { id: 2, name: 'n2' }]
+    const json = (await writeRows([source(2)], 'json')).parts[0].bytes.toString('utf8')
+    expect(json).toBe(`${JSON.stringify(records, null, 2)}\n`)
+    expect((await writeRows([source(0)], 'json')).parts[0].bytes.toString('utf8')).toBe('[]\n')
+    const empty: RowSource = { name: 'e', header: [], rows: [[], []] }
+    expect((await writeRows([empty], 'json')).parts[0].bytes.toString('utf8')).toBe(`${JSON.stringify([{}, {}], null, 2)}\n`)
   })
 
   it('xlsx continues a table past the sheet row limit onto "name (2)", header repeated', async () => {

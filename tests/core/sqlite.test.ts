@@ -199,12 +199,12 @@ describe('the SQLite reader', () => {
     await expect(conv.convert(src(), 'sqlite', 'csv')).rejects.toBeInstanceOf(ConversionError)
   })
 
-  it('refuses a file over 200 MB before opening it', async () => {
+  it("opens a file over 200 MB: there is no size limit, only the engine's memory cap", async () => {
     const engine = fakeEngine(shop)
     const big = Buffer.alloc(200 * 1024 * 1024 + 1)
     header().copy(big)
-    await expect(html(engine, {}, big)).rejects.toThrow(/over the 200 MB limit/)
-    expect(engine.log.opened).toHaveLength(0)
+    await expect(html(engine, {}, big)).resolves.toBeDefined()
+    expect(engine.log.opened).toHaveLength(1)
   })
 })
 

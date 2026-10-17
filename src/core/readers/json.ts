@@ -1,7 +1,6 @@
-import { ConversionError } from '../errors'
 import { escapeHtml } from '../shell'
 import { readRecords, reindentJson } from '../json-tokens'
-import { MAX_RECORD_SOURCE_BYTES, PRINT_RECORD_LIMIT, limitMessage, recordsTableHtml, type RowSource } from '../records'
+import { PRINT_RECORD_LIMIT, limitMessage, recordsTableHtml, tooLargeError, type RowSource } from '../records'
 import { codeListing } from './code'
 import type { HubDocument, ReadContext, SourceInput } from '../types'
 
@@ -19,14 +18,23 @@ const isLines = (filename?: string): boolean => /\.(jsonl|ndjson)$/i.test(filena
 const baseName = (filename?: string): string => (filename ?? 'data.json').split(/[\\/]/).pop() ?? 'data.json'
 
 function textOf(src: SourceInput): string {
-  if (src.bytes.length > MAX_RECORD_SOURCE_BYTES) {
-    const mb = (src.bytes.length / 1024 / 1024).toFixed(0)
-    throw new ConversionError('read-failed', `${baseName(src.filename)} is ${mb} MB, over the 200 MB limit for record files.`)
-  }
   return src.bytes.toString('utf8').replace(/^﻿/, '').replace(/\r\n?/g, '\n')
 }
 
-export async function readJson(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
+/** `read`, with a file too large for memory (see records.ts) said in words. */
+async function sized<T>(src: SourceInput, read: () => Promise<T>): Promise<T> {
+  try {
+    return await read()
+  } catch (err) {
+    throw tooLargeError(baseName(src.filename), err) ?? err
+  }
+}
+
+export function readJson(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
+  return sized(src, () => readJsonWhole(src, ctx))
+}
+
+async function readJsonWhole(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
   const name = baseName(src.filename)
   const text = textOf(src)
   const lines = isLines(src.filename)
@@ -51,8 +59,16 @@ export async function readJson(src: SourceInput, ctx?: ReadContext): Promise<Hub
 
 /** One block per record, re-indented; a line that is not JSON is kept as written. */
 function jsonLinesListing(name: string, text: string, ctx?: ReadContext): HubDocument {
-  const records = text.split('\n').map((l, i) => ({ line: l, n: i + 1 })).filter((r) => r.line.trim() !== '')
-  const shown = records.slice(0, PRINT_RECORD_LIMIT)
+  // Only the lines shown are kept; the rest are counted.
+  const shown: { line: string; n: number }[] = []
+  let count = 0
+  for (let at = 0, n = 1; at <= text.length; n++) {
+    const end = text.indexOf('\n', at)
+    const stop = end === -1 ? text.length : end
+    if (text.slice(at, stop).trim() !== '' && ++count <= PRINT_RECORD_LIMIT) shown.push({ line: text.slice(at, stop), n })
+    if (end === -1) break
+    at = end + 1
+  }
   const bad: number[] = []
   const blocks = shown.map(({ line, n }) => {
     const pretty = reindentJson(line)
@@ -63,22 +79,28 @@ function jsonLinesListing(name: string, text: string, ctx?: ReadContext): HubDoc
     const where = bad.length === 1 ? `line ${bad[0]}` : `lines ${bad.slice(0, 5).join(', ')}${bad.length > 5 ? '…' : ''}`
     ctx?.onAdvice?.('record-error', `${where[0].toUpperCase()}${where.slice(1)} ${bad.length === 1 ? 'is' : 'are'} not JSON and ${bad.length === 1 ? 'is' : 'are'} shown as written.`)
   }
-  const limited = records.length > shown.length
-  if (limited) ctx?.onAdvice?.('records-limited', limitMessage(shown.length, records.length))
-  const note = limited ? `\n<p><em>${limitMessage(shown.length, records.length)}</em></p>` : ''
+  const limited = count > shown.length
+  if (limited) ctx?.onAdvice?.('records-limited', limitMessage(shown.length, count))
+  const note = limited ? `\n<p><em>${limitMessage(shown.length, count)}</em></p>` : ''
   return { html: `<h1>${escapeHtml(name)}</h1>\n${blocks.join('\n')}${note}`, title: name, ...(limited ? { limited: true } : {}) }
 }
 
 /** Every record, for csv/json/xlsx export; null when the file is not records (or the user chose text). */
-export async function readJsonRows(src: SourceInput, ctx?: ReadContext): Promise<RowSource[] | null> {
-  if (ctx?.jsonAs === 'text') return null
-  const recs = readRecords(textOf(src), { lines: isLines(src.filename) })
-  if (!recs) return null
-  return [{ name: baseName(src.filename).replace(/\.[^.]+$/, ''), header: recs.header, rows: recs.rows }]
+export function readJsonRows(src: SourceInput, ctx?: ReadContext): Promise<RowSource[] | null> {
+  return sized(src, async () => {
+    if (ctx?.jsonAs === 'text') return null
+    const recs = readRecords(textOf(src), { lines: isLines(src.filename) })
+    if (!recs) return null
+    return [{ name: baseName(src.filename).replace(/\.[^.]+$/, ''), header: recs.header, rows: recs.rows }]
+  })
 }
 
 /** Whether a file would read as a table, for showing the Table / Formatted JSON choice. */
 export function jsonIsTable(bytes: Buffer, filename?: string): boolean {
-  if (bytes.length > MAX_RECORD_SOURCE_BYTES) return false
-  return readRecords(bytes.toString('utf8').replace(/^﻿/, ''), { lines: isLines(filename) }) !== null
+  // A file too large to read whole offers no choice; converting it says why.
+  try {
+    return readRecords(bytes.toString('utf8').replace(/^﻿/, ''), { lines: isLines(filename) }) !== null
+  } catch {
+    return false
+  }
 }

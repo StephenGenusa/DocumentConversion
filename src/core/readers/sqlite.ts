@@ -1,6 +1,6 @@
 import { ConversionError } from '../errors'
 import { escapeHtml } from '../shell'
-import { MAX_RECORD_SOURCE_BYTES, PRINT_RECORD_LIMIT, limitMessage, recordsTableHtml, type RowSource } from '../records'
+import { PRINT_RECORD_LIMIT, limitMessage, recordsTableHtml, type RowSource } from '../records'
 import {
   SQLITE_ENCRYPTED_MESSAGE,
   SQLITE_NEEDS_DESKTOP,
@@ -10,7 +10,7 @@ import {
   type SqliteEngine,
   type SqliteObject,
 } from '../sqlite'
-import type { HubDocument, ReadContext, SourceInput } from '../types'
+import type { HubDocument, ReadContext } from '../types'
 import type { Reader, RowReader } from './index'
 
 /**
@@ -33,12 +33,8 @@ const byName = (a: SqliteObject, b: SqliteObject): number => (a.name < b.name ? 
 const WAL_NOTICE =
   'This database is in WAL mode: its most recent changes may be only in the -wal file beside it, which is not read.'
 
-function engineOf(engine: SqliteEngine | undefined, src: SourceInput): SqliteEngine {
+function engineOf(engine: SqliteEngine | undefined): SqliteEngine {
   if (!engine) throw new ConversionError('read-failed', SQLITE_NEEDS_DESKTOP)
-  if (src.bytes.length > MAX_RECORD_SOURCE_BYTES) {
-    const mb = (src.bytes.length / 1024 / 1024).toFixed(0)
-    throw new ConversionError('read-failed', `${baseName(src.filename)} is ${mb} MB, over the 200 MB limit for record files.`)
-  }
   return engine
 }
 
@@ -86,7 +82,7 @@ async function collect(rows: AsyncIterable<string[]>): Promise<string[][]> {
 /** The printing reader: schema, then each table (and view) up to the limit. */
 export function sqliteReader(engine?: SqliteEngine): Reader {
   return async (src, ctx) => {
-    const sqlite = engineOf(engine, src)
+    const sqlite = engineOf(engine)
     const name = baseName(src.filename)
     const wal = isWalMode(src.bytes)
     if (wal) ctx?.onAdvice?.('sqlite-wal', WAL_NOTICE)
@@ -137,7 +133,7 @@ export function sqliteReader(engine?: SqliteEngine): Reader {
  */
 export function sqliteRowReader(engine?: SqliteEngine): RowReader {
   return async (src, ctx) => {
-    const sqlite = engineOf(engine, src)
+    const sqlite = engineOf(engine)
     if (isWalMode(src.bytes)) ctx?.onAdvice?.('sqlite-wal', WAL_NOTICE)
     const db = await sqlite.open(src.bytes, { purpose: 'export', signal: ctx?.signal })
     const close = (): Promise<void> => db.close()

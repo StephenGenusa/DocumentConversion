@@ -68,9 +68,10 @@ async function writeAll(sources: RowSource[], target: TargetFormat, opts: RowWri
   if (target === 'csv') {
     const parts: WritePart[] = []
     for (let i = 0; i < sources.length; i++) {
-      const lines: string[] = [sources[i].header.map(csvCell).join(',') + '\r\n']
-      for await (const row of rowsOf(sources[i], opts, i, sources.length)) lines.push(row.map(csvCell).join(',') + '\r\n')
-      parts.push({ suffix: suffixFor(sources, i), bytes: Buffer.from(lines.join(''), 'utf8') })
+      const out = new Pieces()
+      out.add(sources[i].header.map(csvCell).join(',') + '\r\n')
+      for await (const row of rowsOf(sources[i], opts, i, sources.length)) out.add(row.map(csvCell).join(',') + '\r\n')
+      parts.push({ suffix: suffixFor(sources, i), bytes: out.end() })
     }
     return { parts }
   }
@@ -78,13 +79,17 @@ async function writeAll(sources: RowSource[], target: TargetFormat, opts: RowWri
     const parts: WritePart[] = []
     for (let i = 0; i < sources.length; i++) {
       const keys = keysFor(sources[i].header, sources[i].header.length)
-      const records: Record<string, string | number>[] = []
+      // JSON.stringify(records, null, 2), a record at a time.
+      const out = new Pieces()
+      let first = true
       for await (const row of rowsOf(sources[i], opts, i, sources.length)) {
         const record: Record<string, string | number> = {}
         keys.forEach((k, c) => (record[k] = typed(row[c] ?? '')))
-        records.push(record)
+        out.add(`${first ? '[\n' : ',\n'}  ${JSON.stringify(record, null, 2).replace(/\n/g, '\n  ')}`)
+        first = false
       }
-      parts.push({ suffix: suffixFor(sources, i), bytes: Buffer.from(`${JSON.stringify(records, null, 2)}\n`, 'utf8') })
+      out.add(first ? '[]\n' : '\n]\n')
+      parts.push({ suffix: suffixFor(sources, i), bytes: out.end() })
     }
     return { parts }
   }
@@ -98,6 +103,35 @@ async function writeAll(sources: RowSource[], target: TargetFormat, opts: RowWri
     return { parts: [{ suffix: '', bytes: await book.end() }] }
   }
   throw new ConversionError('unsupported', `${target} is not a table output`)
+}
+
+/**
+ * An export's text, made into bytes a piece at a time: one string of it all
+ * could pass the engine's limit (about 512 million characters, a 300 MB
+ * file's csv in a non-Latin script) and hold the whole export in the heap.
+ */
+class Pieces {
+  private texts: string[] = []
+  private chars = 0
+  private readonly done: Buffer[] = []
+
+  add(text: string): void {
+    this.texts.push(text)
+    this.chars += text.length
+    if (this.chars >= 1 << 22) this.flush()
+  }
+
+  end(): Buffer {
+    this.flush()
+    return this.done.length === 1 ? this.done[0] : Buffer.concat(this.done)
+  }
+
+  private flush(): void {
+    if (this.texts.length === 0) return
+    this.done.push(Buffer.from(this.texts.join(''), 'utf8'))
+    this.texts = []
+    this.chars = 0
+  }
 }
 
 async function* mapRows(rows: AsyncIterable<string[]>, cell: (v: string) => CellValue): AsyncGenerator<CellValue[]> {

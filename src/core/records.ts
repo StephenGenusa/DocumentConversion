@@ -1,3 +1,5 @@
+import { getHeapStatistics } from 'node:v8'
+import { ConversionError } from './errors'
 import { escapeHtml } from './shell'
 
 /**
@@ -13,8 +15,63 @@ import { escapeHtml } from './shell'
  */
 export const PRINT_RECORD_LIMIT = 5000
 
-/** Bigger than this and a record source is refused: its bytes are held in memory. */
-export const MAX_RECORD_SOURCE_BYTES = 200 * 1024 * 1024
+/**
+ * Memory (hostile-file protection). There is no size limit on a record
+ * source (owner, 2026-10-17), but it is read whole: its text is one string
+ * and its rows are held until written. Two things can run out, and neither
+ * may take the app down with it:
+ *
+ *   the string limit    the engine cannot make a string over about 512
+ *                       million characters; it throws, and tooLargeError
+ *                       says so in words
+ *   the heap            running out of JavaScript heap ends the process,
+ *                       not just the conversion: 300 MB of tiny records
+ *                       ({"a":1}, 38 million rows) once did. The record
+ *                       readers ask every MEMORY_CHECK_EVERY rows whether
+ *                       the heap is nearly full and stop with a sentence
+ *                       if it is
+ *
+ * Measured in Electron's main process (a 4 GB heap): 300 MB of ordinary
+ * records reads and exports in 2 to 8 s and 1.1 to 2.2 GB; 500 MB of tiny
+ * records (63 million rows) in 33 s and 4.3 GB.
+ */
+export const MEMORY_CHECK_EVERY = 16_384
+
+/** How full the heap may get, of its limit, before a record source is given up on. */
+const HEAP_FULL = 0.85
+
+export function heapNearlyFull(stats = getHeapStatistics()): boolean {
+  return stats.used_heap_size > stats.heap_size_limit * HEAP_FULL
+}
+
+/** The check the readers make; an object so a test can stand in for a full heap. */
+export const memory = { full: (): boolean => heapNearlyFull() }
+
+/** Thrown by a record parser when memory.full() says the heap is nearly full. */
+export class RecordsTooLarge extends Error {
+  constructor() {
+    super('The records need more memory than the app has')
+    this.name = 'RecordsTooLarge'
+  }
+}
+
+/** The longest string the engine can make, in characters (V8's String::kMaxLength). */
+const MAX_STRING_CHARS = 2 ** 29 - 24
+
+const stringTooLong = (err: unknown): boolean =>
+  (err as { code?: string })?.code === 'ERR_STRING_TOO_LONG' || (err instanceof RangeError && /Invalid string length/.test(err.message))
+
+/** A record file that ran out of memory or string, as the sentence the user sees; null for any other error. */
+export function tooLargeError(name: string, err: unknown): ConversionError | null {
+  if (err instanceof RecordsTooLarge) {
+    return new ConversionError('read-failed', `${name} is too large to convert: its records need more memory than the app has.`)
+  }
+  if (stringTooLong(err)) {
+    const most = MAX_STRING_CHARS.toLocaleString('en-US')
+    return new ConversionError('read-failed', `${name} is too large to convert: it is more text than the app can hold at once (${most} characters).`)
+  }
+  return null
+}
 
 export interface RowSource {
   /** The table's name: a file name, a database table. */

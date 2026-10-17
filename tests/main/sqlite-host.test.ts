@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { createSqliteHost, defaultMemoryLimit } from '../../src/main/sqlite-host'
+import { createSqliteHost, defaultMemoryLimit, sharedBytes } from '../../src/main/sqlite-host'
 import { sqliteReal } from '../../src/main/sqlite-cells'
 import { createConverter } from '../../src/core/convert'
 import { ConversionError } from '../../src/core/errors'
@@ -336,6 +336,17 @@ describe('memory', () => {
     expect(defaultMemoryLimit(512 * MB)).toBe(256 * MB)
     expect(defaultMemoryLimit(4096 * MB)).toBe(1024 * MB)
     expect(defaultMemoryLimit(65536 * MB)).toBe(1536 * MB)
+  })
+})
+
+describe('a large database', () => {
+  it('is handed to each worker as shared memory, not copied into it', () => {
+    // Electron's main process crashed outright cloning a database of 1.1 GB
+    // or more into a worker's workerData; shared memory is not cloned.
+    const bytes = Buffer.from([1, 2, 3, 4])
+    const shared = sharedBytes(bytes)
+    expect(shared.buffer).toBeInstanceOf(SharedArrayBuffer)
+    expect([...shared]).toEqual([1, 2, 3, 4])
   })
 })
 
