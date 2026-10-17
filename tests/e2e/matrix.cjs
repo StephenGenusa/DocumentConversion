@@ -190,6 +190,8 @@ function tiffPageCount(buf) {
 
 /** The targets whose output is text (or an EPUB of it) a picture's type can be read from. */
 const PICTURE_TEXT_TARGETS = ['html', 'revealjs', 'md', 'epub']
+/** Every target that shows pictures. */
+const PICTURE_TARGETS = ['html', 'revealjs', 'md', 'epub', 'pdf', 'azw3', 'azw4', 'docx']
 
 function sniffOk(target, buf) {
   const head = buf.subarray(0, 8)
@@ -271,8 +273,9 @@ async function main() {
       (n, m) => n + tiffPageCount(Buffer.from(m[1], 'base64')),
       0,
     )
-    // EMF and WMF pictures (Word's vector pictures): kept by Word only, their alt text elsewhere.
-    // (Not an alternate, data-alt-src: the picture step chooses between the two.)
+    // EMF and WMF pictures (Word's vector pictures): kept by Word, drawn for every other target
+    // (src/core/metafile): SVG where SVG images stay SVG, PNG for Kindle, the bitmap itself for a
+    // metafile that is only one. (Not an alternate, data-alt-src: the picture step chooses between the two.)
     const vectorImages = (hubText.match(/(?<![\w-])src="data:image\/x-[ew]mf[;,]/gi) ?? []).length
     // Code highlight.js finds tokens in (a shell prompt line may hold none).
     const hasColouredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
@@ -311,8 +314,9 @@ async function main() {
         console.log(`${rec.ok ? 'PASS' : 'FAIL'}  ${source.padEnd(5)} -> ${target.padEnd(4)}  ${filename}  ${rec.note}`)
         continue
       }
+      const notices = []
       try {
-        const out = (await conv.convert({ bytes, filename }, source, target)).parts[0].bytes
+        const out = (await conv.convert({ bytes, filename }, source, target, undefined, { onAdvice: (_kind, message) => notices.push(message) })).parts[0].bytes
         rec.ms = Date.now() - t0
         rec.bytes = out.length
         const outName = `${basename(filename, extname(filename))}.${source}-to-${target}.${target}`
@@ -383,6 +387,7 @@ async function main() {
           if (!/<span class="hljs-/.test(text) || !text.includes('.hljs-keyword')) throw new Error('revealjs code is not coloured')
         }
         let azw3Html
+        let azw3Pictures = 0
         if (target === 'azw3') {
           // Pictures survive: every <img> resolves to a JPEG, PNG or GIF
           // record; diagrams and SVG images arrive as PNG; a diagram is never the cover.
@@ -394,6 +399,7 @@ async function main() {
           if (book.pictures.length < tiffImages) throw new Error(`azw3 kept ${book.pictures.length} pictures of ${tiffImages} TIFFs`)
           if (book.cover && (hasDiagrams || hasMath) && !hasSvgImages && !hasRasterImages) throw new Error('a drawn diagram or formula is the azw3 cover')
           rec.note = `${book.pictures.length} pictures, ${book.resources ?? 0} resources${book.cover ? ', cover' : ''}`
+          azw3Pictures = book.pictures.length
           azw3Html = book.html
         }
         if ((tiffImages > 0 || vectorImages > 0) && PICTURE_TEXT_TARGETS.includes(target)) {
@@ -411,7 +417,16 @@ async function main() {
           if (/image\/(?:tiff|x-emf|x-wmf)/i.test(text)) throw new Error(`${target} still holds a TIFF, EMF or WMF picture`)
           const shown = (text.match(/data:image\/(?:png|jpeg);base64,/g) ?? []).length + items
           if (shown < tiffImages) throw new Error(`${target} has ${shown} PNG or JPEG pictures for ${tiffImages} TIFFs`)
+          const vectorsShown = shown + (text.match(/data:image\/svg\+xml;base64,/g) ?? []).length + (target === 'epub' ? (text.match(/media-type="image\/svg\+xml"/g) ?? []).length : 0)
+          if (vectorsShown < tiffImages + vectorImages) throw new Error(`${target} shows ${vectorsShown} pictures for ${tiffImages} TIFF pages and ${vectorImages} EMF/WMF`)
           rec.note = `${rec.note ? rec.note + ', ' : ''}no TIFF, EMF or WMF left (${tiffImages} TIFF pages, ${vectorImages} EMF/WMF in)`
+        }
+        if (vectorImages > 0 && target !== 'docx' && PICTURE_TARGETS.includes(target)) {
+          // Every EMF and WMF is drawn: none left as its alt text (each would come with a notice).
+          const lost = notices.filter((m) => /\b(EMF|WMF)\b/.test(m))
+          if (lost.length) throw new Error(`${target} lost ${lost.length} EMF/WMF pictures: ${lost[0]}`)
+          if (target === 'azw3' && azw3Pictures < vectorImages) throw new Error(`azw3 kept ${azw3Pictures} pictures for ${vectorImages} EMF/WMF`)
+          rec.note = `${rec.note ? rec.note + ', ' : ''}${vectorImages} EMF/WMF drawn`
         }
         if (tiffImages > 0 && (target === 'pdf' || target === 'azw4')) {
           // Printed by Chromium, which shows no TIFF: each is an image in the PDF.

@@ -4,10 +4,14 @@ import { append, replaceElement } from 'domutils'
 import serialize from 'dom-serializer'
 import { imageMime } from './readers/image'
 import { imagePlaceholder } from './inline-images'
-import { MAX_PICTURE_BYTES, type PictureFormat, type RenderRequest, type RenderResult } from './rendered-blocks'
-import type { DrawContext } from './draw-blocks'
+import { MAX_PICTURE_BYTES, MAX_SVG_IMAGE_BYTES, type PictureFormat, type RenderRequest, type RenderResult } from './rendered-blocks'
+import { DOCX_MAX_WIDTH, type DrawContext } from './draw-blocks'
 import type { TargetFormat } from './types'
 import { originalSize, tiffPage, tiffPages } from './picture-headers'
+import { drawMetafile, type MetafileResult } from './metafile'
+import { sanitizeSvg, svgDataUri } from './svg-sanitize'
+import { DOCX_MAX_HEIGHT, prepareSvgForRaster, rasterizesSvgImages } from './svg-images'
+import { createHash } from 'node:crypto'
 
 /*
  * The pictures each target can hold (spec D10's raster half), made right
@@ -22,10 +26,32 @@ import { originalSize, tiffPage, tiffPages } from './picture-headers'
  * PictureFormat). Chromium has no TIFF decoder, so the page decodes TIFF
  * with UTIF.js (vendored in resources/render). What cannot be converted
  * becomes its alt text, with a notice, so no output holds a picture its
- * reader shows as a broken icon: EMF and WMF (Word's vector pictures,
- * which nothing here draws yet: vectorRequest is where that goes), and
- * anything unrecognised. SVG images do not reach here as pictures to
- * convert: svg-images.ts made PNG copies for the targets without SVG.
+ * reader shows as a broken icon: anything unrecognised, and an EMF or WMF
+ * the metafile drawing code cannot draw. SVG images do not reach here as
+ * pictures to convert: svg-images.ts made PNG copies for the targets
+ * without SVG.
+ *
+ * EMF and WMF (Word's vector pictures) are kept by Word; for every other
+ * target they are drawn by our own code (metafile/, vectorRequest):
+ *
+ *   one bitmap    a metafile that is only a bitmap covering its frame (a
+ *                 pasted screenshot or photograph) becomes that bitmap,
+ *                 exactly: its own JPEG or PNG, or its pixels as PNG.
+ *   SVG           everywhere the document's SVG images stay SVG (web
+ *                 pages, slides, PDF, AZW4, EPUB, Markdown): a drawing
+ *                 stays a drawing - sharp at any zoom, printed as vectors
+ *                 by Chromium, its text still text - and is usually far
+ *                 smaller than a picture of it. Sanitised like any SVG.
+ *   PNG           where SVG images become PNG (Kindle's AZW3, Word for a
+ *                 metafile whose header gives no size, HTML for pasting):
+ *                 the SVG rasterised by the render host, fitted to Word's
+ *                 page and drawn at twice that, like an SVG image. PNG,
+ *                 not JPEG, whatever pictureFormat says: lines and text
+ *                 stay crisp and colours flat.
+ *
+ * Where an RTF picture comes with a bitmap beside it (\\nonshppict), a
+ * metafile that can be drawn is chosen over that bitmap: it is the
+ * picture, the bitmap a low-resolution copy for old readers.
  *
  * Kindle (AZW3/KF8) also has a size limit, per picture: 5 MB. Classic MOBI
  * capped image records at about 127 KB (64 KB on early readers), and
@@ -189,15 +215,54 @@ export function storableAsIs(bytes: Buffer, maxBytes = KINDLE_IMAGE_MAX_BYTES, h
   return mime !== null && holds.has(mime) && bytes.length <= maxBytes
 }
 
+/** How an EMF or WMF reaches a target that cannot hold it (vectorRequest). */
+type VectorPlan =
+  | { src: string; width: number; height: number; bitmap?: { mime: string; bytes: Buffer } }
+  | { request: RenderRequest; width: number; height: number }
+  | { error: string }
+
 /**
- * EMF and WMF, for a target that cannot hold them: the request that draws
- * one as a picture, or null when nothing can (now: always). This is where
- * an EMF drawing step plugs in - answer a render request for the vector
- * source, and its result is stored like any other converted picture, in
- * the picture format asked for. Until then each becomes its alt text.
+ * EMF and WMF, for a target that cannot hold them: drawn (metafile/), and
+ * then given as the bitmap it is, as SVG (`raster` false), or as the
+ * render request that rasterises that SVG (`raster`, with a renderer).
+ * See the top of this file for which and why.
  */
-function vectorRequest(_mime: string, _bytes: Buffer, _format: PictureFormat): RenderRequest | null {
-  return null
+function vectorRequest(mime: string, drawn: MetafileResult, opts: { raster: boolean; render: boolean }): VectorPlan {
+  const type = typeName(mime)
+  if ('error' in drawn) return { error: `the ${type} picture could not be drawn: ${drawn.error}` }
+  const { width, height } = drawn
+  if (drawn.bitmap) {
+    const { mime: m, bytes } = drawn.bitmap
+    return { src: `data:${m};base64,${bytes.toString('base64')}`, width, height, bitmap: { mime: m, bytes } }
+  }
+  const svg = sanitizeSvg(drawn.svg)
+  if (!svg) return { error: `the ${type} picture could not be drawn` }
+  if (!opts.raster) return { src: svgDataUri(svg), width, height }
+  if (!opts.render) return { error: `${type} pictures are not converted` }
+  const prepared = Buffer.byteLength(svg, 'utf8') > MAX_SVG_IMAGE_BYTES ? null : prepareSvgForRaster(svg, { width, height, maxWidth: DOCX_MAX_WIDTH, maxHeight: DOCX_MAX_HEIGHT })
+  if (!prepared || Buffer.byteLength(prepared.svg, 'utf8') > MAX_SVG_IMAGE_BYTES) return { error: `the ${type} picture is too large to convert` }
+  return { request: { kind: 'svg', source: prepared.svg, display: true, format: 'png' }, width: prepared.width, height: prepared.height }
+}
+
+/** Each metafile drawn once per conversion, however many times a document shows it. */
+function metafileDrawer(): (bytes: Buffer) => MetafileResult {
+  const seen = new Map<string, MetafileResult>()
+  return (bytes) => {
+    const key = createHash('sha1').update(bytes).digest('hex')
+    let r = seen.get(key)
+    if (!r) {
+      r = drawMetafile(bytes)
+      seen.set(key, r)
+    }
+    return r
+  }
+}
+
+/** An <img> given the size it is shown at, where it says none (a picture replaced by one of another size). */
+function sizeIfUnsized(el: Element, width: number, height: number): void {
+  if (el.attribs.width !== undefined || el.attribs.height !== undefined) return
+  el.attribs.width = String(Math.max(1, Math.round(width)))
+  el.attribs.height = String(Math.max(1, Math.round(height)))
 }
 
 const DATA_IMAGE = /^\s*data:(image\/[\w.+-]+)(?:;[^,]*)?;base64,([\s\S]*)$/i
@@ -239,17 +304,22 @@ const BASE64 = /^[A-Za-z0-9+/]+=*$/
  * A picture that came with an alternate (`data-alt-src`: an RTF picture's
  * `\\nonshppict` fallback, readers/rtf.ts) becomes whichever of the two the
  * target can use best: one it holds as it is, else one that can be
- * converted (a raster picture), else the picture itself. So Word keeps an
- * EMF and a web page shows the DIB written beside it. The attribute goes,
- * whichever is kept. Answers whether anything changed.
+ * converted (a metafile that can be drawn, then a raster picture), else
+ * the picture itself. So Word keeps an EMF, and a web page shows the EMF
+ * drawn rather than the DIB written beside it for old readers. The
+ * attribute goes, whichever is kept. Answers whether anything changed.
  */
-function chooseAlternates(dom: ReturnType<typeof parseDocument>, profile: PictureTarget): boolean {
+function chooseAlternates(dom: ReturnType<typeof parseDocument>, profile: PictureTarget, drawable: (bytes: Buffer) => boolean): boolean {
   let changed = false
   const rank = (src: string): number => {
     const data = dataBytes(src)
     const mime = data && pictureType(data.bytes)
     if (!data || !mime) return 0
-    return holds(profile, mime, data.bytes) ? 3 : pictureMime(data.bytes) ? 2 : 1
+    if (holds(profile, mime, data.bytes)) return 3
+    // A metafile that draws is as good as one held: it is the picture itself,
+    // a bitmap beside it a low-resolution copy. (A tie keeps the first.)
+    if (vectorMime(data.bytes)) return drawable(data.bytes) ? 3 : 1
+    return pictureMime(data.bytes) ? 2 : 1
   }
   for (const el of images(dom.children)) {
     const alternate = el.attribs['data-alt-src']
@@ -334,12 +404,21 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
   const format = ctx.pictureFormat ?? DEFAULT_PICTURE_FORMAT
   const dom = parseDocument(html)
   const pageOf = new Map<Element, number>()
-  let changed = chooseAlternates(dom, profile)
+  // Metafiles become SVG where the document's SVG images stay SVG, PNG where they become PNG.
+  const raster = rasterizesSvgImages(target) || ctx.svgImagesAsPng === true
+  const draw = metafileDrawer()
+  const drawable = (bytes: Buffer): boolean => {
+    const r = draw(bytes)
+    return !('error' in r) && (!!r.bitmap || !raster || !!render)
+  }
+  let changed = chooseAlternates(dom, profile, drawable)
   changed = splitTiffPages(dom, pageOf) || changed
   interface Job {
     el: Element
     number: number
     request: RenderRequest
+    /** The size it is shown at, given to an <img> that says none. */
+    size?: { width: number; height: number }
   }
   const jobs: Job[] = []
   const failed = (n: number, why: string): void =>
@@ -372,9 +451,20 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
       continue
     }
     if (vectorMime(data.bytes)) {
-      const request = render ? vectorRequest(mime, data.bytes, format) : null
-      if (request) jobs.push({ el, number, request })
-      else describe(el, number, `${typeName(mime)} pictures are not converted`)
+      const plan = vectorRequest(mime, draw(data.bytes), { raster, render: !!render })
+      if ('error' in plan) describe(el, number, plan.error)
+      else if ('request' in plan) jobs.push({ el, number, request: plan.request, size: plan })
+      else {
+        el.attribs.src = plan.src
+        sizeIfUnsized(el, plan.width, plan.height)
+        changed = true
+        // The bitmap a metafile is, where the target holds it only smaller (a Kindle's 5 MB).
+        const b = plan.bitmap
+        if (b && !holds(profile, b.mime, b.bytes)) {
+          if (render) jobs.push({ el, number, request: picture(plan.src, 'jpeg') })
+          else describe(el, number, `it is over ${Math.round(profile.maxBytes / (1024 * 1024))} MB`)
+        }
+      }
       continue
     }
     if (!render) {
@@ -418,6 +508,7 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
         const jpeg = typeof result.jpeg === 'string' && BASE64.test(result.jpeg) ? result.jpeg : undefined
         if (png || jpeg) {
           job.el.attribs.src = png ? `data:image/png;base64,${png}` : `data:image/jpeg;base64,${jpeg}`
+          if (job.size) sizeIfUnsized(job.el, job.size.width, job.size.height)
           continue
         }
       }

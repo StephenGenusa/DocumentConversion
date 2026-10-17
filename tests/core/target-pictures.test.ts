@@ -7,6 +7,8 @@ import type { RenderBlocks, RenderRequest, RenderResult } from '../../src/core/r
 import type { TargetFormat } from '../../src/core/types'
 // @ts-expect-error: a plain .mjs fixture library, no types.
 import { emf, tiff as makeTiff } from '../../scripts/fixtures/lib-tiff.mjs'
+// @ts-expect-error: a plain .mjs fixture library, no types.
+import { scanEmf } from '../../scripts/fixtures/metafile-corpus.mjs'
 
 /*
  * The one picture step every writer gets (pictures.ts): what each target
@@ -121,20 +123,46 @@ describe('targetPictures: what each target holds', () => {
     expect(calls[0].source.startsWith('data:image/tiff;base64,')).toBe(true)
   })
 
-  it('EMF and WMF become their alt text, with a notice, where the target cannot hold them', async () => {
-    for (const target of ['html', 'pdf', 'epub', 'md', 'azw3', 'azw4', 'revealjs'] as TargetFormat[]) {
+  it('EMF and WMF are drawn as SVG where SVG images stay SVG; one that draws nothing is its alt text, with a notice', async () => {
+    for (const target of ['html', 'pdf', 'epub', 'md', 'azw4', 'revealjs'] as TargetFormat[]) {
       const { render, calls } = host()
       const notices: string[] = []
+      // The WMF here is a bare header with no records: it draws nothing.
       const out = await targetPictures(`<p>${img('image/x-emf', EMF, 'Site plan')} and ${img('image/x-wmf', wmf(), 'Logo')}</p>`, target, {
         renderBlocks: render,
         onAdvice: (_k, m) => notices.push(m),
       })
       expect(calls).toHaveLength(0)
-      expect(out).toContain('[image: Site plan]')
+      expect(types(out)).toEqual(['image/svg+xml'])
+      expect(out).toMatch(/<img src="data:image\/svg\+xml;base64,[^"]+" alt="Site plan" width="64" height="48">/)
       expect(out).toContain('[image: Logo]')
-      expect(out).not.toContain('<img')
-      expect(notices).toEqual([expect.stringMatching(/^Picture 1 could not be stored for .+: EMF pictures are not converted$/), expect.stringMatching(/WMF pictures are not converted$/)])
+      expect(notices).toEqual([expect.stringMatching(/^Picture 2 could not be stored for .+: the WMF picture could not be drawn: it draws nothing this app can show$/)])
     }
+  })
+
+  it('EMF and WMF become PNG where SVG images do (Kindle): the drawing rasterised by the render host, at the size it is shown', async () => {
+    const { render, calls } = host()
+    const out = await targetPictures(`<p>${img('image/x-emf', EMF, 'Site plan')}</p>`, 'azw3', { renderBlocks: render })
+    expect(calls.map((c) => [c.kind, c.format])).toEqual([['svg', 'png']])
+    expect(calls[0].source).toMatch(/^<svg[^>]* width="64" height="48"/)
+    expect(out).toBe(`<p><img src="data:image/png;base64,${OUT_PNG}" alt="Site plan" width="64" height="48"></p>`)
+    // Without a renderer there is nothing to rasterise with.
+    const notices: string[] = []
+    const alone = await targetPictures(`<p>${img('image/x-emf', EMF, 'Site plan')}</p>`, 'azw3', { onAdvice: (_k, m) => notices.push(m) })
+    expect(alone).toContain('[image: Site plan]')
+    expect(notices).toEqual(['Picture 1 could not be stored for Kindle: EMF pictures are not converted'])
+  })
+
+  it('a metafile that is one bitmap becomes that bitmap, at the size the metafile is shown, for every target but Word', async () => {
+    const scan: Buffer = scanEmf()
+    for (const target of ['html', 'pdf', 'epub', 'md', 'azw3', 'azw4', 'revealjs'] as TargetFormat[]) {
+      const { render, calls } = host()
+      const out = await targetPictures(`<p>${img('image/x-emf', scan, 'Pasted photograph')}</p>`, target, { renderBlocks: render })
+      expect(calls, target).toHaveLength(0)
+      expect(out, target).toMatch(/^<p><img src="data:image\/png;base64,[^"]+" alt="Pasted photograph" width="200" height="150"><\/p>$/)
+    }
+    const word = await targetPictures(`<p>${img('image/x-emf', scan, 'Pasted photograph')}</p>`, 'docx', {})
+    expect(types(word)).toEqual(['image/x-emf'])
   })
 
   it('without a renderer, a TIFF a target cannot hold becomes its alt text with a notice', async () => {

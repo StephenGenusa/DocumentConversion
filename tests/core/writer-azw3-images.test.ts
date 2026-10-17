@@ -390,7 +390,7 @@ describe('AZW3 through the converter', () => {
     expect(book.text).toContain('[image: Media shelves]')
     expect(book.text).toContain('[image: Empty scan]')
     expect(notices).toEqual([
-      'Picture 1 could not be stored for Kindle: EMF pictures are not converted',
+      'Picture 1 could not be stored for Kindle: the picture could not be decoded',
       'Picture 2 could not be stored for Kindle: the picture could not be decoded',
       'Picture 3 could not be stored for Kindle: the picture could not be decoded',
     ])

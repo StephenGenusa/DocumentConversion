@@ -144,17 +144,29 @@ describe('RTF pictures through the picture step: the best of the pair each targe
   const OUT_PNG = png().toString('base64')
   const render: RenderBlocks = async (reqs) => reqs.map((): RenderResult => ({ png: OUT_PNG, width: 8, height: 6 }))
 
-  it('an EMF with a DIB fallback: Word keeps the EMF, a PDF or web page shows the DIB', async () => {
+  it('an EMF with a DIB fallback: Word keeps the EMF, every other target the EMF drawn (the DIB is a copy for old readers)', async () => {
     const drawing: Buffer = emf({ width: 160, height: 120 })
     const rtf = doc(`{\\*\\shppict{\\pict\\emfblip\\picwgoal2400\\pichgoal1800 ${hex(drawing)}}}{\\nonshppict{\\pict\\dibitmap0\\picwgoal2400\\pichgoal1800 ${hex(dib())}}}`)
     const html = (await readRtf({ bytes: rtf })).html
     const word = await targetPictures(html, 'docx', { renderBlocks: render })
     expect(pictures(word).map((p) => [p.type, p.alternate])).toEqual([['image/x-emf', undefined]])
+    for (const target of ['html', 'epub', 'pdf'] as const) {
+      const page = await targetPictures(html, target, { renderBlocks: render })
+      expect(pictures(page).map((p) => [p.type, p.alternate])).toEqual([['image/svg+xml', undefined]])
+    }
+    // Kindle takes no SVG: the drawing as PNG.
+    const book = await targetPictures(html, 'azw3', { renderBlocks: render })
+    expect(pictures(book).map((p) => p.type)).toEqual(['image/png'])
+  })
+
+  it('an EMF that cannot be drawn, with a DIB fallback: the DIB', async () => {
+    const empty = Buffer.from(emf({ width: 160, height: 120 }))
+    // Its one drawing record (the rectangle, type 0x2b) made one nothing reads.
+    for (let at = 0; at + 8 <= empty.length; at += empty.readUInt32LE(at + 4)) if (empty.readUInt32LE(at) === 0x2b) empty.writeUInt32LE(0x7a, at)
+    const rtf = doc(`{\\*\\shppict{\\pict\\emfblip\\picwgoal2400\\pichgoal1800 ${hex(empty)}}}{\\nonshppict{\\pict\\dibitmap0\\picwgoal2400\\pichgoal1800 ${hex(dib())}}}`)
+    const html = (await readRtf({ bytes: rtf })).html
     const page = await targetPictures(html, 'html', { renderBlocks: render })
     expect(pictures(page).map((p) => [p.type, p.alternate])).toEqual([['image/bmp', undefined]])
-    // EPUB holds neither: the DIB, which can be converted, becomes PNG.
-    const book = await targetPictures(html, 'epub', { renderBlocks: render })
-    expect(pictures(book).map((p) => p.type)).toEqual(['image/png'])
   })
 
   it('a PNG with a WMF fallback: the PNG everywhere', async () => {

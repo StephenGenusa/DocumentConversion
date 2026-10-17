@@ -62,7 +62,7 @@ export const SVG_IMAGE_LIMITS = {
  * page with 1-inch margins html-to-docx writes (9 in at 96 px/in). With the
  * width cap (DOCX_MAX_WIDTH) a picture fits the page whatever its shape.
  */
-const DOCX_MAX_HEIGHT = 864
+export const DOCX_MAX_HEIGHT = 864
 
 export function isSvgDataUri(src: string | undefined): boolean {
   return typeof src === 'string' && /^\s*data:image\/svg\+xml(?:;[^,]*)?,/i.test(src)
