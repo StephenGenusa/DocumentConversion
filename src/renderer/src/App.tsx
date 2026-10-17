@@ -692,7 +692,15 @@ function App(): React.JSX.Element {
         )}
         {batch && <BatchResults outDir={batch.outDir} rows={batch.rows} onRetry={retryRow} onDone={reset} />}
       </main>
-      {settingsOpen && <SettingsDialog onClose={closeSettings} notice={settingsNotice} />}
+      {settingsOpen && (
+        <SettingsDialog
+          onClose={closeSettings}
+          notice={settingsNotice}
+          // The screen's OCR language named a pack just removed: back to the setting
+          // (English, if that was the one removed).
+          onOcrPackRemoved={(code) => setOcrLanguage((l) => (l === code ? startRef.current.ocrLanguage : l))}
+        />
+      )}
     </div>
   )
 }

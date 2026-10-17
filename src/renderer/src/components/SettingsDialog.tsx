@@ -3,6 +3,7 @@ import type { Settings, SettingKey, SettingsSection, TargetFormat } from '../../
 import { settingOf } from '../../../core/settings'
 import { PDF_PAGE_SIZES } from '../../../core/pdf-options'
 import { zoomLevels } from './OutputPicker'
+import { OcrLanguagePicker, announcePacksChanged, megabytes, useOcrLanguages } from './OcrLanguagePicker'
 import { IconClose } from './editor-icons'
 
 /**
@@ -20,7 +21,8 @@ import { IconClose } from './editor-icons'
  * only means something under another one that is off (local network under
  * fetching). Each says what it changes in its "Affects:" line.
  *
- * OCR (spec 4.7) is the seventh section, added with the language manager.
+ * OCR (spec 4.7) also manages the downloaded language packs: removing one is
+ * housekeeping, not a setting, so it is not undone by Reset.
  */
 
 /** The outputs, as an "Affects:" line names them, in the order it lists them. */
@@ -70,7 +72,8 @@ interface Choice {
 export interface SettingView {
   key: SettingKey
   title: string
-  kind: 'radio' | 'check' | 'select'
+  /** `ocr-language`: the conversion screen's language picker, which can also download one. */
+  kind: 'radio' | 'check' | 'select' | 'ocr-language'
   /** Radio and select choices. A select's may depend on the value (a zoom off the steps). */
   choices?: (value: unknown) => Choice[]
   help?: string
@@ -85,7 +88,17 @@ export interface SettingsPage {
   /** What "Reset this section" resets. */
   section: SettingsSection
   settings: SettingView[]
+  /** The installed OCR languages, each with Remove, after the settings. */
+  packs?: true
 }
+
+/** What the OCR section's settings change. */
+const OCR_AFFECTS = 'images and scanned PDFs with OCR on'
+
+/** The installed-languages list's help: also what removing the default does. */
+export const PACKS_HELP =
+  "Languages are downloaded once and kept on this computer. English is included and can't be removed. " +
+  'If you remove the default language, English is used instead until you install it again.'
 
 const percent = (z: number): string => `${Math.round(z * 100)}%`
 
@@ -227,7 +240,111 @@ export const SETTINGS_PAGES: SettingsPage[] = [
       },
     ],
   },
+  {
+    id: 'ocr',
+    label: 'OCR',
+    section: 'ocr',
+    settings: [
+      {
+        key: 'ocr.language',
+        title: 'Default language',
+        kind: 'ocr-language',
+        help:
+          'The language text in pictures and scanned PDFs is read in. You can still change it on the conversion ' +
+          "screen. Choosing one that isn't installed downloads it first, after showing its size.",
+        affects: OCR_AFFECTS,
+      },
+    ],
+    packs: true,
+  },
 ]
+
+/**
+ * The installed OCR languages, with their size and Remove (spec 4.7). English
+ * is part of the app and has no Remove. Removing the default language leaves
+ * English in force (the store's rule, spec 5.3): the status line says so.
+ */
+function OcrPacks({
+  defaultLanguage,
+  onStatus,
+  onRemoved,
+}: {
+  defaultLanguage: string
+  onStatus: (text: string) => void
+  onRemoved?: (code: string) => void
+}): React.JSX.Element {
+  const ids = useId()
+  const [languages, refresh] = useOcrLanguages()
+  const [busy, setBusy] = useState<string | null>(null)
+  const groupRef = useRef<HTMLDivElement>(null)
+  const installed = languages.filter((l) => l.installed)
+
+  async function remove(code: string): Promise<void> {
+    const language = installed.find((l) => l.code === code)
+    if (!language?.set) return
+    const wasDefault = code === defaultLanguage
+    setBusy(code)
+    onStatus('')
+    try {
+      const res = await window.api.removeOcrLanguage(code, language.set)
+      if (!res.ok) {
+        onStatus(`Not removed: ${res.message ?? 'the pack could not be deleted'}`)
+        return
+      }
+      await refresh()
+      announcePacksChanged()
+      onRemoved?.(code)
+      onStatus(wasDefault ? `${language.name} is removed. The default language is now English.` : `${language.name} is removed.`)
+      // Its button is gone; the focus stays in the list rather than falling to the page.
+      groupRef.current?.focus()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div
+      ref={groupRef}
+      className="setting"
+      role="group"
+      tabIndex={-1}
+      aria-labelledby={`${ids}-title`}
+      aria-describedby={`${ids}-help ${ids}-affects`}
+      data-ocr-packs=""
+    >
+      <span className="setting__title" id={`${ids}-title`}>
+        Installed languages
+      </span>
+      <ul className="ocr-packs">
+        {installed.map((l) => (
+          <li key={l.code} className="ocr-packs__item" data-language={l.code}>
+            <span className="ocr-packs__name">{l.name}</span>
+            <span className="ocr-packs__size">
+              {l.source === 'bundled' ? 'Included' : megabytes(l.size[l.set ?? 'fast'])}
+            </span>
+            {l.source === 'downloaded' && (
+              <button
+                type="button"
+                className="btn btn--mini"
+                aria-label={`Remove ${l.name}`}
+                disabled={busy !== null}
+                onClick={() => void remove(l.code)}
+              >
+                Remove
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="setting__help" id={`${ids}-help`}>
+        {PACKS_HELP}
+      </p>
+      <p className="setting__affects" id={`${ids}-affects`}>
+        Affects: {OCR_AFFECTS}
+      </p>
+    </div>
+  )
+}
 
 /** The window width below which the section list is a row of tabs (styles.css has the same number). */
 const NARROW = '(max-width: 719px)'
@@ -248,10 +365,13 @@ function useNarrow(): boolean {
 export function SettingsDialog({
   onClose,
   notice,
+  onOcrPackRemoved,
 }: {
   onClose: () => void
   /** "Your settings file could not be read and was reset.", when it was. */
   notice?: string | null
+  /** A language pack was removed here, for a screen value that names it. */
+  onOcrPackRemoved?: (code: string) => void
 }): React.JSX.Element {
   const ids = useId()
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -379,6 +499,22 @@ export function SettingsDialog({
         </fieldset>
       )
     }
+    if (s.kind === 'ocr-language') {
+      return (
+        <div className="setting" key={s.key}>
+          <label className="setting__title" htmlFor={id}>
+            {s.title}
+          </label>
+          <OcrLanguagePicker
+            id={id}
+            describedBy={described}
+            value={String(value)}
+            onChange={(code) => void save(s.key, code)}
+          />
+          {text}
+        </div>
+      )
+    }
     if (s.kind === 'check') {
       return (
         <div className={`setting${s.under ? ' setting--under' : ''}`} key={s.key}>
@@ -490,6 +626,9 @@ export function SettingsDialog({
             </p>
           )}
           {current.settings.map(view)}
+          {current.packs && settings && (
+            <OcrPacks defaultLanguage={settings.ocr.language} onStatus={setStatus} onRemoved={onOcrPackRemoved} />
+          )}
         </div>
       </div>
       <footer className="settings__foot">

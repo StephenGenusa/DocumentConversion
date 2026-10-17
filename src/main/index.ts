@@ -460,17 +460,23 @@ function registerIpc(settings: SettingsStore): void {
 
   ipcMain.handle('ocr:list-languages', () => listPacks())
 
-  ipcMain.handle('ocr:download-language', async (_e, { code, set, sha256 }: { code: string; set?: unknown; sha256?: unknown }) =>
-    downloadPack(
+  // A pack coming or going can change the OCR language in force (a saved
+  // language whose pack is gone reads as English), and the windows follow it.
+  ipcMain.handle('ocr:download-language', async (_e, { code, set, sha256 }: { code: string; set?: unknown; sha256?: unknown }) => {
+    const result = await downloadPack(
       String(code),
       set === 'best' ? 'best' : 'fast',
       typeof sha256 === 'string' ? sha256 : undefined,
-    ),
-  )
+    )
+    settings.packsChanged()
+    return result
+  })
 
-  ipcMain.handle('ocr:remove-language', async (_e, { code, set }: { code: string; set?: unknown }) =>
-    removePack(String(code), set === 'best' ? 'best' : 'fast'),
-  )
+  ipcMain.handle('ocr:remove-language', async (_e, { code, set }: { code: string; set?: unknown }) => {
+    const result = await removePack(String(code), set === 'best' ? 'best' : 'fast')
+    settings.packsChanged()
+    return result
+  })
 
   ipcMain.handle('app:resize-content', (e, { height, reset }: { height?: number; reset?: boolean }) => {
     const win = BrowserWindow.fromWebContents(e.sender)

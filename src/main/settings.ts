@@ -126,8 +126,17 @@ export interface SettingsStore {
   takeNotice(): string | undefined
   /** Values in the file that were not used, and why (from the last read). */
   problems(): SettingsProblem[]
-  /** Called after each saved change. Returns the way to stop. */
+  /**
+   * Called after each saved change, and when a pack coming or going changed
+   * the OCR language in force (`packsChanged`). Returns the way to stop.
+   */
   onChange(listener: (settings: Settings) => void): () => void
+  /**
+   * An OCR pack was installed or removed. When that changed the language in
+   * force (the saved one's pack went, so English; or came back), the
+   * listeners are told. Nothing is written: the file keeps the saved language.
+   */
+  packsChanged(): void
   /** Resolves once every write asked for so far has finished. */
   flushed(): Promise<void>
 }
@@ -249,13 +258,8 @@ export function openSettings(options: SettingsStoreOptions): SettingsStore {
       const read = parseSettings(raw)
       settings = read.settings
       problems = read.problems
-      for (const listener of tell ? listeners : []) {
-        try {
-          listener(get())
-        } catch {
-          // One listener's failure is not the save's.
-        }
-      }
+      if (tell) notify()
+      ocrInForce = get().ocr.language
       return { ok: true, settings: get() }
     })
     queue = run.catch(() => undefined)
@@ -267,6 +271,19 @@ export function openSettings(options: SettingsStoreOptions): SettingsStore {
     if (!options.ocrInstalled(copy.ocr.language)) copy.ocr.language = BUNDLED_LANGUAGE
     return copy
   }
+
+  const notify = (): void => {
+    for (const listener of listeners) {
+      try {
+        listener(get())
+      } catch {
+        // One listener's failure is not the save's.
+      }
+    }
+  }
+
+  /** The OCR language the listeners were last told of (or that was in force at the start). */
+  let ocrInForce = get().ocr.language
 
   if (fresh) void commit(() => ({ raw }), false)
 
@@ -303,6 +320,12 @@ export function openSettings(options: SettingsStoreOptions): SettingsStore {
       return () => void listeners.delete(listener)
     },
     flushed: () => queue.then(() => undefined),
+    packsChanged: () => {
+      const now = get().ocr.language
+      if (now === ocrInForce) return
+      ocrInForce = now
+      notify()
+    },
   }
 }
 

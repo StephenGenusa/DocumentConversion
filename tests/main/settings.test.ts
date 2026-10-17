@@ -25,25 +25,37 @@ import { DEFAULT_SETTINGS } from '../../src/core/settings'
 let dir: string
 let file: string
 let installed: Set<string>
+/** Every store a test opened: each may still be writing (a first run writes at once) when the test ends. */
+let opened: SettingsStore[]
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'docconv-settings-'))
   file = join(dir, SETTINGS_FILE)
   installed = new Set(['eng', 'deu'])
+  opened = []
 })
 
 afterEach(async () => {
+  // A write still under way would make the folder again (it creates its
+  // folder) after it was removed, and leave it behind.
+  await Promise.all(opened.map((s) => s.flushed()))
   await rm(dir, { recursive: true, force: true })
 })
 
 function open(extra: Partial<SettingsStoreOptions> = {}): SettingsStore {
-  return openSettings({
-    dir,
-    region: () => 'US',
-    ocrInstalled: (code) => installed.has(code),
-    now: () => new Date(Date.UTC(2026, 9, 16, 12, 30, 45, 6)),
-    ...extra,
-  })
+  return track(
+    openSettings({
+      dir,
+      region: () => 'US',
+      ocrInstalled: (code) => installed.has(code),
+      now: () => new Date(Date.UTC(2026, 9, 16, 12, 30, 45, 6)),
+      ...extra,
+    }),
+  )
+}
+function track(store: SettingsStore): SettingsStore {
+  opened.push(store)
+  return store
 }
 
 const onDisk = async (): Promise<unknown> => JSON.parse(await readFile(file, 'utf8'))
@@ -106,7 +118,7 @@ describe('the file', () => {
 
   it('creates the folder if it is not there yet', async () => {
     const nested = join(dir, 'not', 'yet')
-    const store = openSettings({ dir: nested, region: () => 'US', ocrInstalled: () => true })
+    const store = track(openSettings({ dir: nested, region: () => 'US', ocrInstalled: () => true }))
     await store.set({ key: 'code.colour', value: false })
     expect(JSON.parse(await readFile(join(nested, SETTINGS_FILE), 'utf8'))).toEqual({ version: 1, code: { colour: false } })
   })
@@ -343,6 +355,32 @@ describe('the OCR language', () => {
     expect(store.get().ocr.language).toBe('eng')
     installed.add('deu')
     expect(store.get().ocr.language).toBe('deu')
+  })
+
+  it('tells the windows when a pack coming or going changes the language in force', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, ocr: { language: 'deu' } }))
+    const store = open()
+    const told: string[] = []
+    store.onChange((s) => told.push(s.ocr.language))
+    installed.delete('deu')
+    store.packsChanged()
+    expect(told).toEqual(['eng'])
+    // The file still names German: it is the language again once it is back.
+    expect(await onDisk()).toEqual({ version: 1, ocr: { language: 'deu' } })
+    installed.add('deu')
+    store.packsChanged()
+    expect(told).toEqual(['eng', 'deu'])
+  })
+
+  it('says nothing when the pack that came or went is not the one in force', async () => {
+    const store = open()
+    const told: string[] = []
+    store.onChange((s) => told.push(s.ocr.language))
+    installed.delete('deu')
+    store.packsChanged()
+    installed.add('fra')
+    store.packsChanged()
+    expect(told).toEqual([])
   })
 })
 

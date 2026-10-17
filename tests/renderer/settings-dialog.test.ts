@@ -16,6 +16,13 @@ let host: HTMLElement
 let saved: Settings
 let raw: Record<string, unknown>
 let changed: ((s: Settings) => void) | null
+/** The OCR languages, as `listOcrLanguages` gives them: English bundled, German downloaded, French not installed. */
+let packs: { code: string; name: string; script: string; installed: boolean; source?: string; set?: string; size: { fast: number; best: number } }[]
+const freshPacks = (): typeof packs => [
+  { code: 'eng', name: 'English', script: 'Latin', installed: true, source: 'bundled', set: 'fast', size: { fast: 4_000_000, best: 12_000_000 } },
+  { code: 'deu', name: 'German', script: 'Latin', installed: true, source: 'downloaded', set: 'fast', size: { fast: 1_520_000, best: 8_000_000 } },
+  { code: 'fra', name: 'French', script: 'Latin', installed: false, size: { fast: 1_100_000, best: 7_000_000 } },
+]
 const api = {
   getSettings: vi.fn(async () => saved),
   setSetting: vi.fn(async (key: string, value: unknown) => {
@@ -34,12 +41,20 @@ const api = {
     changed = cb
     return () => (changed = null)
   }),
+  listOcrLanguages: vi.fn(async () => structuredClone(packs)),
+  removeOcrLanguage: vi.fn(async (code: string) => {
+    const pack = packs.find((p) => p.code === code)!
+    Object.assign(pack, { installed: false, source: undefined, set: undefined })
+    return { ok: true }
+  }),
+  downloadOcrLanguage: vi.fn(async () => ({ kind: 'ok', path: '' })),
 }
 
 beforeEach(() => {
   saved = structuredClone(DEFAULT_SETTINGS) as Settings
   raw = {}
   changed = null
+  packs = freshPacks()
   for (const f of Object.values(api)) f.mockClear()
   ;(window as unknown as { api: typeof api }).api = api
   host = document.body.appendChild(document.createElement('div'))
@@ -56,9 +71,11 @@ const flush = async (): Promise<void> => {
   })
 }
 const onClose = vi.fn()
+const onOcrPackRemoved = vi.fn()
 async function mount(notice?: string): Promise<void> {
   onClose.mockClear()
-  act(() => root.render(createElement(SettingsDialog, { onClose, notice })))
+  onOcrPackRemoved.mockClear()
+  act(() => root.render(createElement(SettingsDialog, { onClose, notice, onOcrPackRemoved })))
   await flush()
 }
 const dialog = (): HTMLDialogElement => host.querySelector('dialog')!
@@ -78,15 +95,15 @@ const button = (text: string): HTMLButtonElement =>
   [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!
 
 describe('the Settings dialog', () => {
-  it('is a labeled modal dialog with the six sections as tabs', async () => {
+  it('is a labeled modal dialog with the seven sections as tabs', async () => {
     await mount()
     expect(dialog().open).toBe(true)
     const title = document.getElementById(dialog().getAttribute('aria-labelledby')!)
     expect(title?.textContent).toBe('Settings')
-    expect(tabs().map((t) => t.textContent)).toEqual(['Pictures', 'Web', 'Formulas & diagrams', 'Code', 'PDF', 'Reading'])
+    expect(tabs().map((t) => t.textContent)).toEqual(['Pictures', 'Web', 'Formulas & diagrams', 'Code', 'PDF', 'Reading', 'OCR'])
     expect(host.querySelector('[role="tablist"]')?.getAttribute('aria-label')).toBe('Settings sections')
     // One tab stop: the selected tab; the panel is labeled by it.
-    expect(tabs().map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1, -1])
+    expect(tabs().map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1])
     expect(panel().getAttribute('aria-labelledby')).toBe(tabs()[0].id)
     expect(tabs()[0].getAttribute('aria-controls')).toBe(panel().id)
     expect(document.activeElement).toBe(tabs()[0])
@@ -99,13 +116,13 @@ describe('the Settings dialog', () => {
     expect(document.activeElement).toBe(tab('Web'))
     key(tab('Web'), 'ArrowUp')
     key(tab('Pictures'), 'ArrowUp')
-    expect(document.activeElement).toBe(tab('Reading'))
-    key(tab('Reading'), 'Home')
+    expect(document.activeElement).toBe(tab('OCR'))
+    key(tab('OCR'), 'Home')
     expect(document.activeElement).toBe(tab('Pictures'))
     key(tab('Pictures'), 'End')
-    expect(tab('Reading').getAttribute('aria-selected')).toBe('true')
+    expect(tab('OCR').getAttribute('aria-selected')).toBe('true')
     // Left and right too: on a narrow window the list is a row of tabs.
-    key(tab('Reading'), 'ArrowRight')
+    key(tab('OCR'), 'ArrowRight')
     expect(document.activeElement).toBe(tab('Pictures'))
   })
 
@@ -114,6 +131,7 @@ describe('the Settings dialog', () => {
     const seen = new Set<string>()
     for (const t of tabs()) {
       act(() => t.click())
+      await flush()
       const controls = [...panel().querySelectorAll<HTMLElement>('[data-setting]')]
       expect(controls.length, t.textContent!).toBeGreaterThan(0)
       for (const c of controls) {
@@ -123,8 +141,7 @@ describe('the Settings dialog', () => {
         expect(text, c.dataset.setting).toMatch(/Affects: \S/)
       }
     }
-    // Every setting but OCR's (step 7) has a control.
-    expect([...seen].sort()).toEqual(SETTING_KEYS.filter((k) => !k.startsWith('ocr.')).sort())
+    expect([...seen].sort()).toEqual([...SETTING_KEYS].sort())
   })
 
   it('says what stays PNG or SVG whatever the picture format, and that email never loads web pictures', async () => {
@@ -230,6 +247,110 @@ describe('the Settings dialog', () => {
     expect(document.activeElement).not.toBe(opener)
     act(() => root.render(createElement('div')))
     expect(document.activeElement).toBe(opener)
+  })
+})
+
+describe('the OCR section', () => {
+  const ocrTab = async (): Promise<void> => {
+    await mount()
+    act(() => tab('OCR').click())
+    await flush()
+  }
+  const items = (): HTMLElement[] => [...panel().querySelectorAll<HTMLElement>('.ocr-packs__item')]
+  const status = (): string | null | undefined => host.querySelector('.settings__status')?.textContent
+
+  it('picks the default language with the conversion screen\'s picker, and saves it', async () => {
+    saved = { ...saved, ocr: { language: 'deu' } }
+    await ocrTab()
+    const select = labeled('Default language') as HTMLSelectElement
+    expect(select.dataset.setting).toBe('ocr.language')
+    expect(select.value).toBe('deu')
+    // Installed first, then those to download, with their size.
+    const groups = [...select.querySelectorAll('optgroup')].map((g) => [g.label, [...g.children].map((o) => o.textContent)])
+    expect(groups).toEqual([
+      ['Installed', ['English', 'German']],
+      ['Download on demand', ['French — 1.1 MB']],
+    ])
+    act(() => {
+      select.value = 'eng'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flush()
+    expect(api.setSetting).toHaveBeenLastCalledWith('ocr.language', 'eng')
+    expect(status()).toBe('Saved')
+  })
+
+  it('downloads a language chosen that is not installed, then makes it the default', async () => {
+    await ocrTab()
+    const select = labeled('Default language') as HTMLSelectElement
+    api.downloadOcrLanguage.mockImplementationOnce(async () => {
+      Object.assign(packs[2], { installed: true, source: 'downloaded', set: 'fast' })
+      return { kind: 'ok', path: '' }
+    })
+    act(() => {
+      select.value = 'fra'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flush()
+    await flush()
+    expect(api.downloadOcrLanguage).toHaveBeenCalledWith('fra', 'fast')
+    expect(api.setSetting).toHaveBeenLastCalledWith('ocr.language', 'fra')
+    // The installed list read the packs again.
+    expect(items().map((i) => i.dataset.language)).toEqual(['eng', 'deu', 'fra'])
+  })
+
+  it('lists the installed languages with their size; English is included and has no Remove', async () => {
+    await ocrTab()
+    expect(items().map((i) => i.textContent)).toEqual(['EnglishIncluded', 'German1.5 MBRemove'])
+    expect(items()[0].querySelector('button')).toBeNull()
+    expect(items()[1].querySelector('button')?.getAttribute('aria-label')).toBe('Remove German')
+    const group = panel().querySelector<HTMLElement>('[data-ocr-packs]')!
+    const described = group.getAttribute('aria-describedby')!.split(' ').map((id) => document.getElementById(id)?.textContent)
+    expect(described.join(' ')).toMatch(/downloaded once and kept on this computer/)
+    expect(described.join(' ')).toMatch(/English is used instead until you install it again/)
+    expect(described.join(' ')).toMatch(/Affects: images and scanned PDFs with OCR on/)
+    expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('Installed languages')
+  })
+
+  it('removes a language, and says when that puts the default back to English', async () => {
+    saved = { ...saved, ocr: { language: 'deu' } }
+    await ocrTab()
+    act(() => items()[1].querySelector('button')!.click())
+    await flush()
+    expect(api.removeOcrLanguage).toHaveBeenCalledWith('deu', 'fast')
+    expect(items().map((i) => i.dataset.language)).toEqual(['eng'])
+    expect(status()).toBe('German is removed. The default language is now English.')
+    expect(onOcrPackRemoved).toHaveBeenCalledWith('deu')
+    // The focus stays in the list, not lost with the button.
+    expect(document.activeElement).toBe(panel().querySelector('[data-ocr-packs]'))
+    // Main tells the windows the language in force is now English.
+    act(() => changed!({ ...saved, ocr: { language: 'eng' } }))
+    expect((labeled('Default language') as HTMLSelectElement).value).toBe('eng')
+  })
+
+  it('removes a language that is not the default without a word about English', async () => {
+    await ocrTab()
+    act(() => items()[1].querySelector('button')!.click())
+    await flush()
+    expect(status()).toBe('German is removed.')
+  })
+
+  it('says when a pack could not be removed, and keeps it listed', async () => {
+    api.removeOcrLanguage.mockImplementationOnce(async () => ({ ok: false, message: 'EACCES' }))
+    await ocrTab()
+    act(() => items()[1].querySelector('button')!.click())
+    await flush()
+    expect(status()).toBe('Not removed: EACCES')
+    expect(items().map((i) => i.dataset.language)).toEqual(['eng', 'deu'])
+    expect(onOcrPackRemoved).not.toHaveBeenCalled()
+  })
+
+  it('resets its own section, which removes no pack', async () => {
+    await ocrTab()
+    act(() => button('Reset this section').click())
+    await flush()
+    expect(api.resetSettings).toHaveBeenLastCalledWith('ocr')
+    expect(api.removeOcrLanguage).not.toHaveBeenCalled()
   })
 })
 
