@@ -329,4 +329,39 @@ describe('targetPictures: what each target holds', () => {
     expect(types(out)).toEqual(['image/jpeg'])
     expect(onAdvice).not.toHaveBeenCalled()
   })
+
+  describe('a drawing over Kindle\'s 5 MB', () => {
+    /** A PNG answer of `bytes` bytes (a PNG signature, then zeros). */
+    const pngOf = (bytes: number): string => Buffer.concat([png().subarray(0, 16), Buffer.alloc(bytes - 16)]).toString('base64')
+    const overSize = KINDLE_IMAGE_MAX_BYTES + 1024 * 1024
+
+    function drawingHost(shrunk: RenderResult): { render: RenderBlocks; calls: RenderRequest[] } {
+      const calls: RenderRequest[] = []
+      const render: RenderBlocks = async (requests) =>
+        requests.map((r): RenderResult => {
+          calls.push(r)
+          return r.kind === 'svg' ? { png: pngOf(overSize), width: 64, height: 48 } : shrunk
+        })
+      return { render, calls }
+    }
+
+    it('is made smaller to fit, as other pictures are, and keeps the size it is shown at', async () => {
+      const { render, calls } = drawingHost({ jpeg: OUT_JPEG, width: 1000, height: 750 })
+      const onAdvice = vi.fn()
+      const out = await targetPictures(`<p>${img('image/x-emf', EMF, 'Site plan')}</p>`, 'azw3', { renderBlocks: render, onAdvice })
+      expect(calls.map((c) => c.kind)).toEqual(['svg', 'picture'])
+      expect(calls[1].source).toBe(`data:image/png;base64,${pngOf(overSize)}`)
+      expect(calls[1].fit).toEqual({ maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'jpeg' })
+      expect(out).toBe(`<p><img src="data:image/jpeg;base64,${OUT_JPEG}" alt="Site plan" width="64" height="48"></p>`)
+      expect(onAdvice).not.toHaveBeenCalled()
+    })
+
+    it('is its alt text, with a notice, when it cannot be made small enough', async () => {
+      const { render } = drawingHost({ error: 'it cannot be made small enough' })
+      const onAdvice = vi.fn()
+      const out = await targetPictures(`<p>${img('image/x-emf', EMF, 'Site plan')}</p>`, 'azw3', { renderBlocks: render, onAdvice })
+      expect(out).toContain('[image: Site plan]')
+      expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Picture 1 could not be stored for Kindle: it cannot be made small enough')
+    })
+  })
 })

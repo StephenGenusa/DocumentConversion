@@ -11,6 +11,8 @@ import { initKf8File } from '../kf8-reader.mjs'
 import { KINDLE_IMAGE_MAX_BYTES } from '../../src/core/pictures'
 // @ts-expect-error: a plain .mjs fixture library, no types.
 import { tiff as makeTiff } from '../../scripts/fixtures/lib-tiff.mjs'
+// @ts-expect-error: a plain .mjs fixture library, no types.
+import { EmfWriter, dib24 } from '../../scripts/fixtures/lib-metafile.mjs'
 
 /**
  * Large pictures and long formula runs, converted whole by the real render
@@ -64,6 +66,20 @@ function bigSvg(bytes: number): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1500" viewBox="0 0 2000 1500">${parts.join('')}</svg>`
 }
 
+/** An EMF drawing (a frame line round a photograph-like bitmap) whose PNG at Word's page, drawn at twice that, is over Kindle's 5 MB. */
+function heavyEmf(): Buffer {
+  const noise = randomBytes(1200 * 1700 * 3)
+  const e = new EmfWriter({ width: 624, height: 864 })
+  e.saveDC().setMapMode(1)
+  e.stretchDIBits(12, 7, 600, 850, dib24(1200, 1700, (x: number, y: number) => {
+    const at = (y * 1200 + x) * 3
+    return [noise[at], noise[at + 1], noise[at + 2]]
+  }))
+  e.pen(1, 0, 3, 0x000000).select(1).moveTo(2, 2).lineTo(620, 2).lineTo(620, 860)
+  e.restoreDC()
+  return e.bytes()
+}
+
 const uri = (mime: string, bytes: Buffer): string => `data:${mime};base64,${bytes.toString('base64')}`
 const page = (alt: string, src: string): string => `<p>Before.</p><p><img src="${src}" alt="${alt}"></p><p>After.</p>`
 
@@ -108,6 +124,7 @@ describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the 
       png: page('Noise', uri('image/png', png)),
       tiff: page('Panorama', uri('image/tiff', tiff)),
       svg: page('Plan', uri('image/svg+xml', svg)),
+      emf: page('Heavy drawing', uri('image/x-emf', heavyEmf())),
       formulas: formulas(2500),
     }
     for (const [name, html] of Object.entries(files)) await writeFile(join(dir, `${name}.html`), html)
@@ -118,6 +135,7 @@ describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the 
       ['tiff.azw3', 'azw3', 'tiff'],
       ['png.azw3', 'azw3', 'png'],
       ['svg.azw3', 'azw3', 'svg'],
+      ['emf.azw3', 'azw3', 'emf'],
       ['formulas.html', 'html', 'formulas'],
       ['formulas.docx', 'docx', 'formulas'],
     ].map(([name, target, input]) => ({ name, target, htmlFile: join(dir, `${input}.html`) }))
@@ -214,6 +232,14 @@ describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the 
     expect(html).not.toContain('[image:')
     expect(pictures).toHaveLength(1)
     expect(isPng(pictures[0]) || isJpeg(pictures[0])).toBe(true)
+    expect(pictures[0].length).toBeLessThanOrEqual(KINDLE_IMAGE_MAX_BYTES)
+  })
+
+  it('Kindle: a drawing whose PNG is over 5 MB is made smaller to fit, not dropped', async () => {
+    ok('emf.azw3')
+    const { pictures, html } = await kindle('emf.azw3')
+    expect(html).not.toContain('[image:')
+    expect(pictures).toHaveLength(1)
     expect(pictures[0].length).toBeLessThanOrEqual(KINDLE_IMAGE_MAX_BYTES)
   })
 

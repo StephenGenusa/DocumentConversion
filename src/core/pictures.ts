@@ -61,6 +61,8 @@ import { createHash } from 'node:crypto'
  * calibre's KF8 writer allows 10 MB. We take Amazon's 5 MB: under it a
  * picture is stored as given; over it, it is re-encoded - JPEG at falling
  * quality, then scaled down; PNG (transparency) scaled down - until it fits.
+ * A drawing (an EMF or WMF) rasterised to PNG over the limit is made smaller
+ * the same way, after it is drawn.
  */
 
 export const KINDLE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
@@ -525,13 +527,27 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
   if (render && jobs.length > 0) {
     changed = true
     const results = await convertAll(jobs.map((j) => j.request), render, ctx, profile.name)
+    // A drawing rasterised over the target's limit (a Kindle's 5 MB): made
+    // smaller to fit, as any picture held but too large is, rather than
+    // left to become its alt text in the writer.
+    const shrink = new Map<Job, RenderRequest>()
     for (const job of jobs) {
+      const result = results.get(job.request)
+      const src = result && answerSrc(result)
+      if (src && job.request.kind === 'svg' && Math.floor(((src.length - src.indexOf(',') - 1) * 3) / 4) > profile.maxBytes) {
+        shrink.set(job, picture(src, 'jpeg'))
+      }
+    }
+    const shrunk = shrink.size > 0 ? await convertAll([...shrink.values()], render, ctx, profile.name) : new Map<RenderRequest, RenderResult | undefined>()
+    for (const job of jobs) {
+      const again = shrink.get(job)
+      const request = again ?? job.request
       // The converter went down before this one: said once, in convertAll.
-      if (!results.has(job.request)) {
+      if (!(again ? shrunk : results).has(request)) {
         toPlaceholder(job.el)
         continue
       }
-      const result = results.get(job.request)
+      const result = (again ? shrunk : results).get(request)
       const src = result && answerSrc(result)
       if (src) {
         job.el.attribs.src = src
