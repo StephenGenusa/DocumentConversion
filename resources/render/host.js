@@ -69,6 +69,11 @@
       securityLevel: 'strict',
       htmlLabels: false,
       flowchart: { htmlLabels: false },
+      // A Gantt chart is as wide as the element it is drawn in, and the
+      // scratch area is 2000 px wide: printed, every label shrank to a few
+      // points. Drawn for a page's width instead (a diagram's own init may
+      // still choose another), its text prints at the size of the prose.
+      gantt: { useWidth: 820, fontSize: 13, sectionFontSize: 13, barHeight: 24, barGap: 6 },
       theme: 'neutral',
       fontFamily: FONT,
       themeVariables: { fontFamily: FONT },
