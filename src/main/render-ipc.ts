@@ -1,4 +1,6 @@
 import { DRAWN_KINDS, MAX_SOURCE_BYTES, type BlockKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
+import type { DrawContext } from '../core/draw-blocks'
+import { targetPictures } from '../core/pictures'
 
 /**
  * The editor's door to the render host (spec B11): `render:block`.
@@ -58,5 +60,30 @@ export async function renderForEditor(value: unknown, render: Render): Promise<E
     return { uri, width: result.width, height: result.height, ...(result.baseline !== undefined ? { baseline: result.baseline } : {}) }
   } catch (err) {
     return { error: (err as Error).message || 'the drawing failed' }
+  }
+}
+
+/** A data: URL of a picture the editor's page cannot show (renderer picture-preview.ts). */
+const NOT_SHOWN = /^data:image\/(?:tiff|x-emf|x-wmf);base64,[A-Za-z0-9+/=\s]*$/i
+
+/** A copy the page can show: a raster picture, or a sanitized SVG. */
+const SHOWN = /^data:image\/(?:png|jpeg|svg\+xml);base64,/
+
+/**
+ * Answer one `picture:preview` call: a copy the editor can show of a TIFF,
+ * EMF or WMF, made exactly as an HTML conversion makes it (pictures.ts,
+ * target html): a TIFF converted by the render host (its first page, for
+ * one of several), a drawing drawn as sanitized SVG. Anything else is
+ * refused. Never throws.
+ */
+export async function previewForEditor(value: unknown, ctx: DrawContext): Promise<{ uri: string } | { error: string }> {
+  const src = typeof value === 'object' && value !== null ? (value as Record<string, unknown>).src : undefined
+  if (typeof src !== 'string' || !NOT_SHOWN.test(src)) return { error: 'not a TIFF, EMF or WMF picture' }
+  try {
+    const html = await targetPictures(`<img src="${src.replace(/\s+/g, '')}" alt="">`, 'html', { ...ctx, onAdvice: undefined })
+    const shown = /<img\b[^>]*\ssrc="([^"]+)"/.exec(html)?.[1]
+    return shown && SHOWN.test(shown) ? { uri: shown } : { error: 'the picture could not be shown' }
+  } catch (err) {
+    return { error: (err as Error).message || 'the picture could not be shown' }
   }
 }

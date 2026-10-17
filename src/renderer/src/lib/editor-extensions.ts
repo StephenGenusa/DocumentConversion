@@ -1,6 +1,5 @@
 import StarterKit from '@tiptap/starter-kit'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
-import Image from '@tiptap/extension-image'
 import Superscript from '@tiptap/extension-superscript'
 import Subscript from '@tiptap/extension-subscript'
 import CodeBlock from '@tiptap/extension-code-block'
@@ -15,6 +14,7 @@ import { RenderedBlocks, blockNodeView, inlineNodeView } from './block-views'
 import { CodeColor } from './code-color'
 import { markColor, markStyle } from '../../../core/mark'
 import { cellAlign, cellAlignStyle } from '../../../core/cell-align'
+import { PreviewedImage } from './picture-preview'
 
 /**
  * The editor schema must model everything the hub sanitizer passes
@@ -439,7 +439,8 @@ export const EDITOR_EXTENSIONS: Extensions = [
   TableRow,
   AlignedTableHeader,
   AlignedTableCell,
-  Image.configure({ allowBase64: true }),
+  // Shows a TIFF, EMF or WMF by a copy, keeping the picture itself (picture-preview.ts).
+  PreviewedImage.configure({ allowBase64: true }),
   // sup and sub are in HUB_TAGS; StarterKit models neither.
   Superscript,
   Subscript,

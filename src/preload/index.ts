@@ -117,6 +117,8 @@ const api = {
   /** One diagram or formula for the editor, as an <img>-ready data URI (spec B11). */
   renderBlock: (req: { kind: string; source: string; display: boolean; priority: 'visible' | 'prefetch' }) =>
     ipcRenderer.invoke('render:block', req),
+  /** A copy the editor can show of a TIFF, EMF or WMF picture (picture-preview.ts). */
+  previewPicture: (src: string) => ipcRenderer.invoke('picture:preview', { src }),
   /*
    * Settings (spec 5.6). Main checks every request against the schema; the
    * page never sends a whole file, only one { key, value } or a section name.

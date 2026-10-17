@@ -1075,6 +1075,27 @@ try {
     check('it converts to Word with PNG media and no SVG', /word\/media\/[^\0]*?\.png/.test(docx) && !/svg\+xml|media\/[^\0]*?\.svg/.test(docx), JSON.stringify(row))
   }
 
+  // A TIFF and an EMF opened on their own (they used to be read as text, and came out as
+  // garbage): a picture a page and a drawing, shown in the editor by copies the page can show.
+  for (const [file, detected, ocr, copy, count] of [
+    ['reading-room-lease.tiff', 'Image', true, ['data:image/png;', 'data:image/jpeg;'], 3],
+    ['reading-room-floor-plan.emf', 'EMF/WMF drawing', false, ['data:image/svg+xml;'], 1],
+  ]) {
+    await startOver()
+    const path = join(ROOT, 'tests', 'corpus', file)
+    await js(
+      `(() => { const dt=new DataTransfer(); dt.setData('text/uri-list', ${JSON.stringify(pathToFileURL(path).href)}); document.querySelector('.dropzone').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true})) })()`,
+    )
+    await waitFor(`[...document.querySelectorAll('.card__name')].some(e=>e.textContent.includes(${JSON.stringify(file)}))`, `${file} to load`)
+    const card = await js(`(() => { const s=[...document.querySelectorAll('.card select')][0]; return { detected: s?.selectedOptions[0]?.textContent, chips: [...document.querySelectorAll('.card .chip')].map(c=>c.textContent.trim()) } })()`)
+    check(`${file} is detected as ${detected}, ${ocr ? 'with' : 'without'} the OCR choice`, card.detected === detected && card.chips.some((c) => c.startsWith('OCR')) === ocr, JSON.stringify(card))
+    await click('Edit')
+    const shownExpr = `[...document.querySelectorAll('.clip-pane__editor img')].filter(i=>${JSON.stringify(copy)}.some(p=>(i.getAttribute('src')||'').startsWith(p)) && i.naturalWidth>0).length`
+    await waitFor(`${shownExpr} === ${count}`, `${file} shown in the editor`)
+    const kept = await js(`[...document.querySelectorAll('.clip-pane__editor img')].length`)
+    check(`the editor shows ${file} by ${count} cop${count === 1 ? 'y' : 'ies'} it can draw`, kept === count, String(kept))
+  }
+
   // The batch path, straight through the bridge. Naming the output folder
   // skips the folder dialog, which is how "retry" calls it. One file changed
   // after it was added, one deleted: the first converts as it is now, the

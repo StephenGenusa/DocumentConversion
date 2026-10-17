@@ -300,6 +300,12 @@ export interface Api {
    * or `unavailable` for a kind this version does not draw.
    */
   renderBlock(req: BlockRenderRequest): Promise<BlockRenderResult>
+  /**
+   * A copy the editor can show of a picture its page cannot (a TIFF, EMF or
+   * WMF data: URL): PNG or JPEG for a TIFF (its first page), SVG for a
+   * drawing, as an HTML conversion makes them; or why not.
+   */
+  previewPicture(src: string): Promise<{ uri: string } | { error: string }>
   /** The saved defaults (settings spec 5.6): the whole object. */
   getSettings(): Promise<Settings>
   /** Change one setting; main checks the key and value and refuses anything else. */

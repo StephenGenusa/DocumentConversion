@@ -149,12 +149,18 @@ export const sqliteHost = createSqliteHost()
  */
 export const renderHost = createRenderHost()
 
+/** The fonts a metafile's glyph-numbered text is read with, indexed on first need. */
+const fontFiles = localFontFiles()
+
 export const converter = createConverter(renderHtmlToPdf, {
   fetchImages: urlFetchDeps,
   sqlite: sqliteHost,
   renderBlocks: renderHost.renderBlocks,
-  fontFiles: localFontFiles(),
+  fontFiles,
 })
+
+/** What the editor's picture copies are made with (render-ipc.ts previewForEditor): the conversions' own host and fonts. */
+export const pictureContext = { renderBlocks: renderHost.renderBlocks, fontFiles }
 
 /**
  * OCR pages to one hub document.

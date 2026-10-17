@@ -16,6 +16,7 @@ import {
   clipboardFlavors,
   mergeToTarget,
   readForConversion,
+  pictureContext,
   renderHost,
   runConversion,
   sqliteHost,
@@ -51,7 +52,7 @@ import { installAppMenu } from './menu'
 import { readSample, type SampleId } from './samples'
 import { isSampleId } from '../core/samples'
 import { openAboutWindow } from './about-window'
-import { renderForEditor } from './render-ipc'
+import { previewForEditor, renderForEditor } from './render-ipc'
 
 // CLI mode: `DocumentConverter convert ...` (packaged, argv[1]) or
 // `electron <app-path> convert ...` (dev, argv[2]).
@@ -820,6 +821,8 @@ function registerIpc(settings: SettingsStore): void {
   // The editor's drawings (spec B11): checked in render-ipc.ts, drawn by the
   // same host and cache as conversions.
   ipcMain.handle('render:block', (_e, req: unknown) => renderForEditor(req, renderHost.render))
+  // A copy the editor can show of a TIFF, EMF or WMF picture, made as an HTML conversion makes it.
+  ipcMain.handle('picture:preview', (_e, req: unknown) => previewForEditor(req, pictureContext))
 
   ipcMain.handle('app:reveal', async (_e, { path }: { path: string }) => {
     shell.showItemInFolder(path)
