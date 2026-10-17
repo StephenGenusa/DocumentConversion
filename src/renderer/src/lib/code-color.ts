@@ -35,8 +35,6 @@ export { pickerValue }
  * line, and its visible lines are painted again.
  */
 
-/** A code block of this many lines or more is not colored (plain monospace, as before). */
-export const COLOR_LINE_LIMIT = 6000
 /** Lines colored past what is on screen, above and below. */
 export const COLOR_MARGIN_LINES = 150
 
@@ -57,17 +55,10 @@ function grammarOf(language: unknown): string | null {
   return name && name !== 'plaintext' ? name : null
 }
 
-function lineCountReaches(text: string, limit: number): boolean {
-  let n = 1
-  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) if (++n >= limit) return true
-  return n >= limit
-}
-
-/** The language a block is colored in now, or null (none, unknown, not loaded, or too long). */
-function colorLanguage(node: PMNode, text: string): string | null {
+/** The language a block is colored in now, or null (none, unknown, or not loaded). */
+function colorLanguage(node: PMNode): string | null {
   const language = grammarOf(node.attrs.language)
-  if (!language || !grammarReady(language)) return null
-  return lineCountReaches(text, COLOR_LINE_LIMIT) ? null : language
+  return language && grammarReady(language) ? language : null
 }
 
 /* ------------------------------ what is colored ------------------------------- */
@@ -206,7 +197,7 @@ function update(state: ColorState, doc: PMNode, pos: number, node: PMNode, prev:
     if (picker.length) decorations = decorations.remove(picker)
     decorations = decorations.add(doc, [pickerWidget(pos, node.attrs.language)])
   }
-  const language = colorLanguage(node, text)
+  const language = colorLanguage(node)
   const window = language ? windowOf(doc, pos, text, state.visible, prev?.window ?? null) : null
   let colors: Colors | null = null
   if (language && window) {
@@ -321,7 +312,7 @@ function movesWindows(state: EditorState, visible: readonly [number, number]): b
     if (!node || !b) continue
     const text = node.textContent
     const was = b.window
-    const now = colorLanguage(node, text) ? windowOf(state.doc, pos, text, visible, was) : null
+    const now = colorLanguage(node) ? windowOf(state.doc, pos, text, visible, was) : null
     if (now !== was && (!now || !was || now[0] !== was[0] || now[1] !== was[1])) return true
   }
   return false

@@ -5,7 +5,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import type { Node as PMNode } from '@tiptap/pm/model'
 import { EDITOR_EXTENSIONS } from '../../src/renderer/src/lib/editor-extensions'
 import { configureBlockViews } from '../../src/renderer/src/lib/block-views'
-import { COLOR_LINE_LIMIT, COLOR_MARGIN_LINES, codeColorKey, codeLanguages, pickerValue } from '../../src/renderer/src/lib/code-color'
+import { COLOR_MARGIN_LINES, codeColorKey, codeLanguages, pickerValue } from '../../src/renderer/src/lib/code-color'
 import hljs from '../../src/core/hljs'
 import { hljs as editorHljs, loadGrammar } from '../../src/renderer/src/lib/code-grammars'
 import { installHighlights, painted as spans } from './highlights'
@@ -165,25 +165,17 @@ describe("the author's markup in code", () => {
   })
 })
 
-describe(`the ${COLOR_LINE_LIMIT}-line limit`, () => {
-  it('shows a block of the limit or more as plain monospace, editable, and colors it again once shorter', () => {
-    const e = make(`<pre><code class="language-python">${lines(COLOR_LINE_LIMIT - 1)}</code></pre>`)
+describe('a long block', () => {
+  it('colors a block of 6,500 lines, and keeps coloring it as it grows', () => {
+    const e = make(`<pre><code class="language-python">${lines(6500)}</code></pre>`)
     expect(spans(blocks()[0]).length).toBeGreaterThan(0)
-
-    // The limit reached: plain at once.
     typeInto(e, 0, '\nwhile True: pass')
-    expect(spans(blocks()[0])).toEqual([])
-    expect(e.state.doc.textContent.endsWith('while True: pass')).toBe(true)
-
-    // One line removed: colored again, on that key.
-    const pos = codeBlockPositions(e)[0]
-    const end = pos + 1 + e.state.doc.nodeAt(pos)!.content.size
-    e.view.dispatch(e.state.tr.delete(end - '\nwhile True: pass'.length, end))
     expect(spans(blocks()[0]).length).toBeGreaterThan(0)
+    expect(e.state.doc.textContent.endsWith('while True: pass')).toBe(true)
   })
 
-  it('round-trips a block over the limit byte for byte', () => {
-    const html = `<pre><code class="language-python">${lines(COLOR_LINE_LIMIT + 10)}</code></pre>`
+  it('round-trips a block of 6,500 lines byte for byte', () => {
+    const html = `<pre><code class="language-python">${lines(6500)}</code></pre>`
     expect(make(html).getHTML()).toBe(html)
   })
 })

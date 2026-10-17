@@ -90,7 +90,7 @@ describe('the editor round-trips what the hub allows', () => {
     ['an alias', '<pre><code class="language-js">let n = 0</code></pre>'],
     ['no language', '<pre><code>x = 1</code></pre>'],
     ['plaintext', '<pre><code class="language-plaintext">x = 1</code></pre>'],
-    ['a block over the coloring limit', `<pre><code class="language-python">${Array.from({ length: 6100 }, (_, i) => `n${i} = ${i}`).join('\n')}</code></pre>`],
+    ['a block of 6,100 lines', `<pre><code class="language-python">${Array.from({ length: 6100 }, (_, i) => `n${i} = ${i}`).join('\n')}</code></pre>`],
   ])('keeps a code block (%s) byte for byte', (_name, html) => {
     expect(roundTrip(html)).toBe(html)
   })
