@@ -92,14 +92,19 @@ export function hubFeatures(html: string): HubFeatures {
  * document already carries, which the host only rasterises, for the targets
  * that cannot show SVG (spec D10, svg-images.ts). `picture` is a raster
  * image the document carries, decoded and re-encoded as PNG or JPEG for a
- * target that cannot store its format or its size (Kindle,
- * kindle-pictures.ts): decoding happens in the host's sandboxed page, never
- * in the main process. The editor asks for neither.
+ * target that cannot hold its format or its size (pictures.ts): decoding
+ * happens in the host's sandboxed page, never in the main process. The
+ * editor asks for neither.
  */
 export type RenderKind = BlockKind | 'svg' | 'picture'
 /** The kinds a hub block is drawn as: what the editor and draw-blocks.ts ask for. */
 export type BlockKind = 'mermaid' | 'dot' | 'math'
 export type RenderFormat = 'png' | 'svg'
+/**
+ * What a converted picture becomes (ConvertOptions.pictureFormat): PNG, or
+ * JPEG - which has no transparency, so a picture with any stays PNG.
+ */
+export type PictureFormat = 'png' | 'jpeg'
 
 /**
  * The targets that take an SVG picture (spec B3): the choice applies there,
@@ -124,11 +129,14 @@ export interface RenderRequest {
   display: boolean
   format: RenderFormat
   /**
-   * `picture` only: the largest the answer may be, in bytes. The host keeps
-   * PNG for a picture with transparency, JPEG otherwise, lowering JPEG
-   * quality and then the size until it fits. `format` is ignored.
+   * `picture` only: the largest the answer may be, in bytes, and what it is
+   * to be (`as`): PNG, scaled down until it fits; or JPEG, quality lowered
+   * and then the size, except for a picture with transparency, which stays
+   * PNG. Without `as`, JPEG's rule. `format` is ignored.
    */
-  fit?: { maxBytes: number }
+  fit?: { maxBytes: number; as?: PictureFormat }
+  /** `picture` only: which page of a TIFF, by its place in the file's chain of pages (IFDs). The first when not given. */
+  page?: number
 }
 
 /**

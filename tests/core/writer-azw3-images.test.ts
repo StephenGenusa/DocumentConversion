@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { createCanvas } from '@napi-rs/canvas'
 import { initKf8File } from '../kf8-reader.mjs'
 import { writeAzw3 } from '../../src/core/writers/azw3'
-import { kindlePictures, KINDLE_IMAGE_MAX_BYTES, pictureMime, storableAsIs } from '../../src/core/kindle-pictures'
+import { targetPictures, KINDLE_IMAGE_MAX_BYTES, pictureMime, storableAsIs } from '../../src/core/pictures'
 import { createConverter } from '../../src/core/convert'
 import type { RenderBlocks, RenderRequest, RenderResult } from '../../src/core/rendered-blocks'
 // @ts-expect-error: a plain .mjs fixture library, no types.
@@ -359,11 +359,12 @@ describe('AZW3 through the converter', () => {
     )
     const out = await conv.convert({ bytes: page, filename: 'p.html' }, 'html', 'azw3')
     expect(calls.map((c) => [c.kind, c.source.slice(0, 15), c.fit])).toEqual([
-      ['picture', 'data:image/webp', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
-      ['picture', 'data:image/bmp;', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
-      ['picture', 'data:image/png;', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
-      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
-      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES }],
+      // A type a Kindle cannot store becomes PNG (the picture format); one only too large, JPEG.
+      ['picture', 'data:image/webp', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'png' }],
+      ['picture', 'data:image/bmp;', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'png' }],
+      ['picture', 'data:image/png;', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'jpeg' }],
+      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'png' }],
+      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'png' }],
     ])
     expect(calls[4].source).toBe(`data:image/tiff;base64,${scan.toString('base64')}`)
     expect(calls[3].source).toBe(`data:image/tiff;base64,${tiffPicture().toString('base64')}`)
@@ -389,7 +390,7 @@ describe('AZW3 through the converter', () => {
     expect(book.text).toContain('[image: Media shelves]')
     expect(book.text).toContain('[image: Empty scan]')
     expect(notices).toEqual([
-      'Picture 1 could not be stored for Kindle: a Kindle cannot show EMF pictures',
+      'Picture 1 could not be stored for Kindle: EMF pictures are not converted',
       'Picture 2 could not be stored for Kindle: the picture could not be decoded',
       'Picture 3 could not be stored for Kindle: the picture could not be decoded',
     ])
@@ -398,9 +399,9 @@ describe('AZW3 through the converter', () => {
   it('asks nothing for other targets, or when every picture can be stored as it is', async () => {
     const render = vi.fn<RenderBlocks>(async () => [])
     const html = `<p>${imgTag('image/webp', webp())}</p>`
-    expect(await kindlePictures(html, 'epub', { renderBlocks: render })).toBe(html)
+    expect(await targetPictures(html, 'epub', { renderBlocks: render })).toBe(html)
     const fine = `<p>${imgTag('image/png', png())}${imgTag('image/jpeg', jpeg())}</p>`
-    expect(await kindlePictures(fine, 'azw3', { renderBlocks: render })).toBe(fine)
+    expect(await targetPictures(fine, 'azw3', { renderBlocks: render })).toBe(fine)
     expect(render).not.toHaveBeenCalled()
   })
 })

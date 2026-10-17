@@ -87,6 +87,10 @@ interface HarnessResult {
   pictureTiffLzw: Picture
   pictureTiffAlpha: Picture
   pictureTiffBilevel: Picture
+  pictureTiffBilevelPng: Picture
+  pictureWebpPng: Picture
+  pictureAlphaJpeg: Picture
+  pictureTiffLoop: Picture
   pictureTiffPixels: string[] | string
   pictureTiffVast: Picture
   pictureAfter: Picture
@@ -370,6 +374,10 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     expect(result.pictureTiffLzw).toEqual({ type: 'jpeg', bytes: expect.any(Number), width: 300, height: 200, magicOk: true })
     expect(result.pictureTiffAlpha).toMatchObject({ type: 'png', width: 60, height: 40, magicOk: true })
     expect(result.pictureTiffBilevel).toMatchObject({ type: 'jpeg', width: 97, height: 31, magicOk: true })
+    expect(result.pictureTiffBilevelPng).toMatchObject({ type: 'png', width: 97, height: 31, magicOk: true })
+    expect(result.pictureWebpPng).toMatchObject({ type: 'png', width: 300, height: 200, magicOk: true })
+    expect(result.pictureAlphaJpeg).toMatchObject({ type: 'png', width: 200, height: 200, magicOk: true })
+    expect(result.pictureTiffLoop.error).toBe('the TIFF could not be read')
     expect(result.pictureTiffPixels).toEqual(['#ff0000', '#0000ff'])
   })
 

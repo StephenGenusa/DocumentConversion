@@ -12,8 +12,8 @@ import { MAX_PICTURE_BYTES, MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBl
  * Graphviz) and TeX formulas (MathJax) from vendored engines, for conversions now and for
  * the editor (render-ipc.ts). It also makes PNG copies of the SVG images a
  * document carries, for Word and Kindle (kind `svg`, spec D10;
- * core/svg-images.ts), and re-encodes raster pictures a Kindle cannot store
- * as they are (kind `picture`, core/kindle-pictures.ts): a picture is
+ * core/svg-images.ts), and re-encodes raster pictures a target cannot hold
+ * as they are (kind `picture`, core/pictures.ts): a picture is
  * decoded only here, in the sandboxed page, so a malformed one can at worst
  * crash that page, never the app. Chromium decodes no TIFF, so the page
  * does that with UTIF.js, loaded the first time a TIFF comes.
@@ -55,12 +55,16 @@ export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
   math: '3.2.2',
   svg: 'raster-1',
   // 2: TIFF is decoded (UTIF.js 4.1.0, pako 1.0.11), where it was refused.
-  picture: 'reencode-2',
+  // 3: the answer's type is asked for (fit.as), and a TIFF's page (page).
+  picture: 'reencode-3',
 }
 
 /** The largest source of each kind: a diagram's text, a whole SVG image, or a picture's data: URL. */
 const maxSourceBytes = (kind: RenderKind): number =>
   kind === 'svg' ? MAX_SVG_IMAGE_BYTES : kind === 'picture' ? Math.ceil(MAX_PICTURE_BYTES / 3) * 4 + 64 : MAX_SOURCE_BYTES
+
+/** The most pages of one TIFF a request may name (core/picture-sizes.ts reads no more). */
+const MAX_TIFF_PAGES = 1000
 
 /** A picture's source: a base64 data: URL of a raster image type, nothing else. */
 const PICTURE_SOURCE = /^data:image\/(?:png|jpeg|gif|webp|bmp|avif|x-icon|vnd\.microsoft\.icon|tiff);base64,[A-Za-z0-9+/]+=*$/
@@ -361,12 +365,15 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
       if (req.kind === 'picture') {
         draws++
         const maxBytes = req.fit?.maxBytes
+        const as = req.fit?.as === 'png' || req.fit?.as === 'jpeg' ? req.fit.as : 'jpeg'
+        const page = req.page ?? 0
         if (!PICTURE_SOURCE.test(req.source)) return { result: { error: 'it is not a picture this app reads' }, cacheable: true }
         if (typeof maxBytes !== 'number' || !(maxBytes > 0)) return { result: { error: 'no size to fit' }, cacheable: true }
+        if (!Number.isInteger(page) || page < 0 || page >= MAX_TIFF_PAGES) return { result: { error: 'no such page' }, cacheable: true }
         const out = await call<Answer<{ data: string; mime: string; width: number; height: number }>>(
           w,
           'reencode',
-          [req.source, maxBytes],
+          [req.source, maxBytes, as, page],
           left(),
         )
         if (!out.ok) return { result: { error: out.error }, cacheable: true }

@@ -27,7 +27,7 @@ import type { TargetFormat } from './types'
 
 /**
  * Targets that get PNG copies of SVG images: Word, and Kindle (azw3), whose
- * image records hold JPEG, PNG or GIF only (kindle-pictures.ts).
+ * image records hold JPEG, PNG or GIF only (pictures.ts).
  */
 const RASTER_TARGETS: ReadonlySet<TargetFormat> = new Set(['docx', 'azw3'])
 

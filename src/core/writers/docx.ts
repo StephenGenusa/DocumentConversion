@@ -13,7 +13,7 @@ import hljs, { highlightedRuns } from '../hljs'
 import { codeBlockText } from '../code-language'
 import type { HubDocument } from '../types'
 import { DOCX_OWN_LINE } from '../draw-blocks'
-import { wordTakes } from '../kindle-pictures'
+import { wordTakes } from '../pictures'
 
 /**
  * html-to-docx tries to load every <img> and gives up on the whole document
@@ -46,7 +46,7 @@ const SVG_IMAGE = /^\s*data:image\/svg\+xml/i
  * memory and no EMF or WMF at all, and the whole document then failed. So
  * only the types it sizes are passed, told by their bytes (a page may label
  * a TIFF as a PNG). Converter.write() gives Word a PNG or JPEG of a TIFF
- * first (kindlePictures); what is still here becomes its alt text.
+ * first (targetPictures); what is still here becomes its alt text.
  */
 function wordSizes(src: string): boolean {
   const b64 = src.slice(src.indexOf(',') + 1, src.indexOf(',') + 1 + 64).replace(/\s+/g, '')

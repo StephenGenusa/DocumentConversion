@@ -186,8 +186,8 @@ async function main() {
       return c
     }
     const uri = (mime, buf) => `data:${mime};base64,${Buffer.from(buf).toString('base64')}`
-    const picture = async (source, maxBytes) => {
-      const r = await host.render({ kind: 'picture', source, display: true, format: 'png', fit: { maxBytes } })
+    const picture = async (source, maxBytes, as, page) => {
+      const r = await host.render({ kind: 'picture', source, display: true, format: 'png', fit: as ? { maxBytes, as } : { maxBytes }, ...(page === undefined ? {} : { page }) })
       if (r.error) return { error: r.error }
       const data = r.png ?? r.jpeg
       const bytes = Buffer.from(data, 'base64')
@@ -208,6 +208,17 @@ async function main() {
     out.pictureTiffLzw = await picture(uri('image/tiff', tiff({ width: 300, height: 200, pixel: shade, compression: 'lzw' })), 5 * 1024 * 1024)
     out.pictureTiffAlpha = await picture(uri('image/tiff', tiff({ width: 60, height: 40, pixel: shade, kind: 'rgba', compression: 'deflate' })), 5 * 1024 * 1024)
     out.pictureTiffBilevel = await picture(uri('image/tiff', tiff({ width: 97, height: 31, pixel: shade, kind: 'bilevel', compression: 'packbits', bigEndian: true })), 5 * 1024 * 1024)
+    // The picture format asked for: PNG for an opaque picture too; JPEG still PNG with transparency.
+    out.pictureTiffBilevelPng = await picture(uri('image/tiff', tiff({ width: 97, height: 31, pixel: shade, kind: 'bilevel', compression: 'packbits', bigEndian: true })), 5 * 1024 * 1024, 'png')
+    out.pictureWebpPng = await picture(uri('image/webp', opaque.toBuffer('image/webp')), 5 * 1024 * 1024, 'png')
+    out.pictureAlphaJpeg = await picture(uri('image/png', canvas(200, 200, true).toBuffer('image/png')), 5 * 1024 * 1024, 'jpeg')
+    // A TIFF whose chain of pages loops back on itself: refused, not followed forever.
+    {
+      const t = tiff({ width: 4, height: 4, pixel: shade, kind: 'gray' })
+      const ifd = t.readUInt32LE(4)
+      t.writeUInt32LE(ifd, ifd + 2 + t.readUInt16LE(ifd) * 12)
+      out.pictureTiffLoop = await picture(uri('image/tiff', t), 5 * 1024 * 1024, 'png')
+    }
     {
       // Two of its pixels, as the page drew them (one transparent pixel keeps it PNG): the colours kept, not only the size.
       const r = await host.render({ kind: 'picture', source: uri('image/tiff', tiff({ width: 40, height: 4, pixel: (x, y) => (x + y === 0 ? [0, 0, 0, 0] : x < 20 ? [255, 0, 0, 255] : [0, 0, 255, 255]), kind: 'rgba' })), display: true, format: 'png', fit: { maxBytes: 5 * 1024 * 1024 } })

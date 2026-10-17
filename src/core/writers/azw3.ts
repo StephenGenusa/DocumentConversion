@@ -3,7 +3,7 @@ import { writeEpub } from './epub'
 import { buildPalmDb } from './palmdb'
 import { buildCncx, buildFdst, buildIndex, type IndexEntry } from './kf8-index'
 import { EXTH, buildRecord0, exthString, exthUint, splitTextRecords, TEXT_RECORD_SIZE, type ExthRecord } from './mobi-header'
-import { kindleFallback } from '../kindle-pictures'
+import { kindleFallback } from '../pictures'
 import type { HubDocument } from '../types'
 
 /**
@@ -21,7 +21,7 @@ import type { HubDocument } from '../types'
  * `kindle:embed:XXXX?mime=...` (XXXX = the 1-based resource number in base
  * 32, as kindlegen and calibre write it). Before that every picture is made
  * one a Kindle stores - JPEG, PNG or GIF, under the size limit - by
- * Converter.write() (kindle-pictures.ts); any other still here becomes its
+ * Converter.write() (pictures.ts); any other still here becomes its
  * alt text. The EPUB writer's cover (never a drawn diagram) is named in
  * EXTH 201. No thumbnail (EXTH 202): a Kindle makes its own from the cover,
  * and making one would mean decoding the picture here.

@@ -28,7 +28,7 @@ import { guessCodeLanguages } from './code-language'
 import { hubFeatures, type RenderBlocks } from './rendered-blocks'
 import { drawBlocks } from './draw-blocks'
 import { rasterizeSvgImages, sanitizeSvgImages } from './svg-images'
-import { kindlePictures } from './kindle-pictures'
+import { targetPictures } from './pictures'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
 
 export interface Converter {
@@ -146,6 +146,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
         renderBlocks: deps.renderBlocks,
         format: opts?.renderedFormat,
         svgImagesAsPng: opts?.svgImagesAsPng,
+        pictureFormat: opts?.pictureFormat,
         signal: ctx?.signal,
         onAdvice: ctx?.onAdvice,
       }
@@ -153,9 +154,9 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // PNG copies of the document's SVG images for Word and Kindle (spec
       // D10), and for HTML that is to be pasted (FOR_PASTING).
       const rasterised = await rasterizeSvgImages(drawn, target, drawCtx)
-      // Pictures a Kindle cannot store as they are, re-encoded (AZW3), and
-      // TIFFs for Word, whose writer cannot embed them (kindle-pictures.ts).
-      const html = await kindlePictures(rasterised, target, drawCtx)
+      // Pictures the target cannot hold (a TIFF in a PDF, a WebP in a Kindle
+      // book), converted, once, for every writer (pictures.ts).
+      const html = await targetPictures(rasterised, target, drawCtx)
       return await writers[target](html === hub.html ? hub : { ...hub, html }, opts)
     } catch (err) {
       if (err instanceof ConversionError) throw err

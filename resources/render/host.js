@@ -174,22 +174,46 @@
   var MAX_TIFF_PIXELS = 50 * 1000 * 1000
 
   /**
+   * UTIF.js follows a TIFF's chain of pages (IFDs) until an offset of zero,
+   * so a file whose chain loops back on itself would hold the page forever.
+   * The chain is walked first, each offset once, up to 1,000 pages.
+   */
+  function checkTiffChain(bytes) {
+    var view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    var le = bytes[0] === 0x49
+    var seen = {}
+    var at = bytes.length >= 8 ? view.getUint32(4, le) : 0
+    for (var n = 0; at !== 0; n++) {
+      if (at + 2 > bytes.length) break
+      if (n >= 1000 || seen[at]) throw new Error('the TIFF could not be read')
+      seen[at] = true
+      var next = at + 2 + view.getUint16(at, le) * 12
+      if (next + 4 > bytes.length) break
+      at = view.getUint32(next, le)
+    }
+  }
+
+  /**
    * A TIFF (a base64 data: URL), decoded by UTIF.js onto a canvas: Chromium
-   * decodes no TIFF itself. The first page, which is what Word and every
-   * other viewer show. Its size is read before anything is decoded, so a
+   * decodes no TIFF itself. The page at `index` in the file's chain of pages
+   * (core read the chain, and asks for each page in turn), or the first
+   * with a size, which is what Word and every other viewer show. Its size is read before anything is decoded, so a
    * TIFF claiming a vast picture is refused rather than allocated.
    */
-  async function tiffCanvas(src) {
+  async function tiffCanvas(src, index) {
     await load('tiff')
     var text = atob(src.slice(src.indexOf(',') + 1))
     var bytes = new Uint8Array(text.length)
     for (var i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
+    checkTiffChain(bytes)
     var UTIF = window.UTIF
     var ifds = UTIF.decode(bytes.buffer, { parseMN: false, debug: false })
-    var page = ifds.filter(function (d) {
-      return d.t256 && d.t257
-    })[0]
-    if (!page) throw new Error('the TIFF holds no picture')
+    var page = index
+      ? ifds[index]
+      : ifds.filter(function (d) {
+          return d.t256 && d.t257
+        })[0]
+    if (!page || !(page.t256 && page.t257)) throw new Error(index ? 'the TIFF has no page ' + (index + 1) : 'the TIFF holds no picture')
     var w = page.t256[0]
     var h = page.t257[0]
     if (!(w > 0 && h > 0)) throw new Error('the picture has no size')
@@ -211,14 +235,14 @@
   /**
    * A raster picture (a data: URL the main process built from the document's
    * bytes) decoded here, in the sandbox, and re-encoded to fit `maxBytes`:
-   * PNG when it has transparency (scaled down until it fits), JPEG otherwise
-   * (quality lowered, then scaled down). Answers the base64, its type and
-   * its size in pixels.
+   * PNG when asked for (`as`) or when it has transparency (scaled down until
+   * it fits), JPEG otherwise (quality lowered, then scaled down). `page` is
+   * a TIFF's page. Answers the base64, its type and its size in pixels.
    */
-  async function reencode(src, maxBytes) {
+  async function reencode(src, maxBytes, as, page) {
     var img
     if (/^data:image\/tiff;/.test(src)) {
-      img = await tiffCanvas(src)
+      img = await tiffCanvas(src, page)
     } else {
       img = new Image()
       img.src = src
@@ -234,33 +258,30 @@
     var fctx = full.getContext('2d', { willReadFrequently: true })
     fctx.drawImage(img, 0, 0, full.width, full.height)
     var data = fctx.getImageData(0, 0, full.width, full.height).data
-    var alpha = false
-    for (var i = 3; i < data.length; i += 4) {
-      if (data[i] !== 255) {
-        alpha = true
-        break
-      }
+    var asPng = as === 'png'
+    for (var i = 3; !asPng && i < data.length; i += 4) {
+      if (data[i] !== 255) asPng = true
     }
     function encode(scale, quality) {
       var c = full
-      if (scale < 1 || !alpha) {
+      if (scale < 1 || !asPng) {
         c = document.createElement('canvas')
         c.width = Math.max(1, Math.round(full.width * scale))
         c.height = Math.max(1, Math.round(full.height * scale))
         var g = c.getContext('2d')
-        if (!alpha) {
+        if (!asPng) {
           // JPEG has no transparency; what shows through is white, as on a page.
           g.fillStyle = '#ffffff'
           g.fillRect(0, 0, c.width, c.height)
         }
         g.drawImage(full, 0, 0, c.width, c.height)
       }
-      var out = payloadBytes(alpha ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', quality))
-      return { data: out.b64, bytes: out.bytes, mime: alpha ? 'image/png' : 'image/jpeg', width: c.width, height: c.height }
+      var out = payloadBytes(asPng ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', quality))
+      return { data: out.b64, bytes: out.bytes, mime: asPng ? 'image/png' : 'image/jpeg', width: c.width, height: c.height }
     }
     var scale = 1
     var out
-    if (alpha) {
+    if (asPng) {
       for (;;) {
         out = encode(scale, 0)
         if (out.bytes <= maxBytes) return out
@@ -792,8 +813,8 @@
     rasterize: function (svg, width, height, scale) {
       return answer(rasterize(svg, width, height, scale))
     },
-    reencode: function (src, maxBytes) {
-      return answer(reencode(src, maxBytes))
+    reencode: function (src, maxBytes, as, page) {
+      return answer(reencode(src, maxBytes, as, page))
     },
   }
 })()

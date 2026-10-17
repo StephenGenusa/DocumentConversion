@@ -1,4 +1,4 @@
-import type { HubFeatures, RenderFormat } from './rendered-blocks'
+import type { HubFeatures, PictureFormat, RenderFormat } from './rendered-blocks'
 
 /** Formats the app can write. csv/json/xlsx are table extraction, not documents. */
 export type TargetFormat =
@@ -291,6 +291,11 @@ export interface ConvertOptions {
    * or Outlook: see FOR_PASTING). Word and Kindle get them anyway.
    */
   svgImagesAsPng?: boolean
+  /**
+   * What a picture the target cannot hold (a TIFF in a PDF, a WebP in a
+   * Kindle book) is converted to: PNG when not given (pictures.ts).
+   */
+  pictureFormat?: PictureFormat
 }
 
 export type RenderHtmlToPdf = (html: string, opts?: PdfRenderOptions) => Promise<Buffer>

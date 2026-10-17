@@ -8,6 +8,7 @@ import {
   renderedFormatFor,
   type RenderBlocks,
   type RenderFormat,
+  type PictureFormat,
   type BlockKind,
   type RenderRequest,
   type RenderResult,
@@ -31,7 +32,7 @@ export function renderCacheKey(req: RenderRequest, engineVersion: string): strin
       JSON.stringify(
         // `fit` only where it is given, so every earlier key stays as it was.
         req.fit
-          ? [req.kind, req.display, req.format, req.source, engineVersion, req.fit.maxBytes]
+          ? [req.kind, req.display, req.format, req.source, engineVersion, req.fit.maxBytes, req.fit.as ?? null, req.page ?? null]
           : [req.kind, req.display, req.format, req.source, engineVersion],
       ),
     )
@@ -94,6 +95,8 @@ export interface DrawContext {
   format?: RenderFormat
   /** SVG images as PNG even where the target shows SVG (ConvertOptions.svgImagesAsPng). */
   svgImagesAsPng?: boolean
+  /** What a picture the target cannot hold is converted to (ConvertOptions.pictureFormat; PNG when not given). */
+  pictureFormat?: PictureFormat
   signal?: AbortSignal
   onAdvice?: (kind: 'render-failed', message: string) => void
 }

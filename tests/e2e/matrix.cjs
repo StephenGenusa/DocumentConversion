@@ -164,6 +164,9 @@ function probeWords(text) {
   return out
 }
 
+/** The targets whose output is text (or an EPUB of it) a picture's type can be read from. */
+const PICTURE_TEXT_TARGETS = ['html', 'revealjs', 'md', 'epub']
+
 function sniffOk(target, buf) {
   const head = buf.subarray(0, 8)
   switch (target) {
@@ -240,6 +243,8 @@ async function main() {
     const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp|tiff)[;,]/i.test(hubText)
     // TIFF pictures, which a Kindle book gets as JPEG or PNG (decoded in the render host).
     const tiffImages = (hubText.match(/src="data:image\/tiff[;,]/gi) ?? []).length
+    // EMF and WMF pictures (Word's vector pictures): kept by Word only, their alt text elsewhere.
+    const vectorImages = (hubText.match(/src="data:image\/x-[ew]mf[;,]/gi) ?? []).length
     // Code highlight.js finds tokens in (a shell prompt line may hold none).
     const hasColouredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
@@ -361,6 +366,29 @@ async function main() {
           if (book.cover && (hasDiagrams || hasMath) && !hasSvgImages && !hasRasterImages) throw new Error('a drawn diagram or formula is the azw3 cover')
           rec.note = `${book.pictures.length} pictures, ${book.resources ?? 0} resources${book.cover ? ', cover' : ''}`
           azw3Html = book.html
+        }
+        if ((tiffImages > 0 || vectorImages > 0) && PICTURE_TEXT_TARGETS.includes(target)) {
+          // Every target gets pictures it can show (pictures.ts): no TIFF, EMF or
+          // WMF in a web page, slides, Markdown or EPUB; a PNG or JPEG for each TIFF.
+          let text = out.toString('utf8')
+          let items = 0
+          if (target === 'epub') {
+            const zip = await JSZip.loadAsync(out)
+            const names = Object.keys(zip.files)
+            text = (await Promise.all(names.filter((n) => /\.(xhtml|opf|html)$/.test(n)).map((n) => zip.file(n).async('string')))).join('\n')
+            if (names.some((n) => /\.(tiff?|emf|wmf)$/i.test(n))) throw new Error('epub holds a TIFF, EMF or WMF file')
+            items = (text.match(/media-type="image\/(?:png|jpeg)"/g) ?? []).length
+          }
+          if (/image\/(?:tiff|x-emf|x-wmf)/i.test(text)) throw new Error(`${target} still holds a TIFF, EMF or WMF picture`)
+          const shown = (text.match(/data:image\/(?:png|jpeg);base64,/g) ?? []).length + items
+          if (shown < tiffImages) throw new Error(`${target} has ${shown} PNG or JPEG pictures for ${tiffImages} TIFFs`)
+          rec.note = `${rec.note ? rec.note + ', ' : ''}${tiffImages} TIFF as PNG/JPEG, ${vectorImages} EMF/WMF described`
+        }
+        if (tiffImages > 0 && (target === 'pdf' || target === 'azw4')) {
+          // Printed by Chromium, which shows no TIFF: each is an image in the PDF.
+          const images = (out.toString('latin1').match(/\/Subtype\s*\/Image\b/g) ?? []).length
+          if (images < tiffImages) throw new Error(`${target} has ${images} images for ${tiffImages} TIFFs`)
+          rec.note = `${rec.note ? rec.note + ', ' : ''}${images} images for ${tiffImages} TIFFs`
         }
         if (tiffImages > 0 && target === 'docx') {
           // Word gets a PNG or JPEG of each TIFF (its writer cannot embed one).
