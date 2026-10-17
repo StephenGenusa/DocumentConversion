@@ -124,6 +124,39 @@ describe('hostile metafiles', () => {
     }
   })
 
+  it('MaskBlt and PlgBlt: a mask claiming too much is not decoded (the bitmap is drawn without it); a flat parallelogram draws nothing', () => {
+    const src = dib24(2, 2, () => [200, 0, 0])
+    for (const [w, h] of [[30_000, 1], [8_000, 8_000], [0x7fffffff, 0x7fffffff]]) {
+      const mask = dib24(2, 2, () => [255, 255, 255])
+      mask.info.writeInt32LE(w, 4)
+      mask.info.writeInt32LE(h, 8)
+      const t0 = Date.now()
+      for (const bytes of [
+        new EmfWriter({ width: 50, height: 50 }).maskBlt(0, 0, 50, 50, src, mask, 0xaacc0020).bytes(),
+        new EmfWriter({ width: 50, height: 50 }).plgBlt([0, 0, 50, 0, 0, 50], src, mask).bytes(),
+      ]) {
+        const r = drawMetafile(bytes)
+        expect('svg' in r && r.lost).toEqual(['a bitmap mask that could not be read'])
+      }
+      expect(Date.now() - t0).toBeLessThan(2_000)
+    }
+    // Its three corners on one line, and a source far outside the bitmap: nothing to draw, no throw.
+    expect(drawMetafile(new EmfWriter({ width: 50, height: 50 }).plgBlt([0, 0, 50, 50, 25, 25], src).bytes())).toMatchObject({ error: expect.any(String) })
+    expect(answers(new EmfWriter({ width: 50, height: 50 }).maskBlt(0, 0, 50, 50, src, src, 0xaacc0020, { xSrc: 0x7ffffff0, xMask: -0x7ffffff0 }).bytes())).toBeTruthy()
+  })
+
+  it('PolyTextOut claiming four billion strings reads the ones it holds', () => {
+    const e = new EmfWriter({ width: 100, height: 50 }).polyText([{ x: 5, y: 20, s: 'ab' }])
+    const bytes = e.bytes()
+    // The record after the header: its string count, 36 bytes in.
+    const at = bytes.readUInt32LE(4)
+    bytes.writeUInt32LE(0xffffffff, at + 36)
+    const t0 = Date.now()
+    const r = drawMetafile(bytes)
+    expect('svg' in r && (r.svg.match(/<text /g) ?? []).length).toBe(1)
+    expect(Date.now() - t0).toBeLessThan(1_000)
+  })
+
   it('saved states, clip chains and region rectangles stay within their caps', () => {
     const e = new EmfWriter({ width: 100, height: 100 }).stock(4)
     for (let i = 0; i < 20_000; i++) e.saveDC()

@@ -209,6 +209,9 @@ export class WmfPlayer {
       case META.SETTEXTALIGN:
         g.set('textAlign', u(0))
         return
+      case META.SETLAYOUT:
+        g.set('layout', u(0))
+        return
       case META.SETTEXTCOLOR:
         g.set('textColor', r.u32(6))
         return

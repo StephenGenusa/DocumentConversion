@@ -162,6 +162,52 @@ export function scanWmf() {
   return w.bytes()
 }
 
+/**
+ * A right-to-left program's drawing (SETLAYOUT LAYOUT_RTL): everything
+ * mirrored across the frame, its text ending at its mirrored place with
+ * its letters the right way round, a bitmap mirrored and one kept as it
+ * is (LAYOUT_BITMAPORIENTATIONPRESERVED); then, laid out left to right,
+ * Hebrew text read right to left (ETO_RTLREADING).
+ */
+export function rtlEmf() {
+  const [, entrance] = R.signs
+  const e = new EmfWriter({ width: 240, height: 160 })
+  e.setLayout(1).stock(8)
+  // A bar at the left of the page as the program sees it: on the right as drawn.
+  e.brush(1, 0, BLUE).select(1).rectangle(10, 10, 40, 150)
+  e.setBkMode(1).setTextAlign(24).setTextColor(0x000000)
+  e.font(2, { height: -20, face: 'Arial' }).select(2).text(50, 40, entrance, { advance: 10 })
+  // A bitmap red on its left, mirrored; the same kept the right way round.
+  const halves = dib24(20, 10, (x) => (x < 10 ? [192, 57, 43] : [79, 154, 82]))
+  e.stretchDIBits(50, 60, 60, 30, halves)
+  e.setLayout(9).stretchDIBits(130, 60, 60, 30, halves)
+  e.setLayout(0)
+  e.font(3, { height: -22, charset: 177, face: 'Arial' }).select(3).setTextColor(RED).text(110, 140, R.rtlSign, { advance: 12, options: 0x80 })
+  return e.bytes()
+}
+
+/**
+ * Bitmaps through masks: a round marker by MaskBlt (the source where the
+ * mask is set, the page left alone elsewhere) over a bar, a square by
+ * MaskBlt with black where the mask is clear, a photograph slanted onto a
+ * parallelogram by PlgBlt with its corner cut off by a mask, and two
+ * labels by PolyTextOut.
+ */
+export function masksEmf() {
+  const [quiet, , returns] = R.signs
+  const e = new EmfWriter({ width: 240, height: 160 })
+  e.stock(8).brush(1, 0, ORANGE).select(1).rectangle(0, 40, 120, 60)
+  const marker = dib24(10, 10, () => [58, 110, 165])
+  const round = dib1(10, 10, (x, y) => (x - 4.5) ** 2 + (y - 4.5) ** 2 <= 20)
+  e.maskBlt(10, 10, 100, 100, marker, round, 0xaacc0020)
+  e.maskBlt(130, 10, 40, 40, dib24(4, 4, () => [79, 154, 82]), dib1(4, 4, (x) => x < 2), 0x00cc0020)
+  // Corners at (130, 70), (230, 90) and (120, 130); the mask cuts off its bottom-right quarter.
+  e.plgBlt([130, 70, 230, 90, 120, 130], dib24(20, 12, photo(20, 12)), dib1(20, 12, (x, y) => x < 10 || y < 6))
+  e.setBkMode(1).setTextAlign(24).setTextColor(0x000000).font(2, { height: -14, face: 'Arial' }).select(2)
+  e.polyText([{ x: 10, y: 130, s: quiet, advance: 7 }, { x: 10, y: 150, s: returns }])
+  return e.bytes()
+}
+
 /** Every picture, with its alt text and size (CSS px), in the order the document shows them. */
 export function metafileCorpus() {
   return [
@@ -176,5 +222,7 @@ export function metafileCorpus() {
     { name: 'plusphoto', ext: 'emf', bytes: plusPhoto().emf, alt: R.plusPhotoAlt, width: 200, height: 160 },
     { name: 'plan', ext: 'wmf', bytes: planWmf(), alt: R.wmfPlanAlt, width: 200, height: 120 },
     { name: 'wmfscan', ext: 'wmf', bytes: scanWmf(), alt: R.wmfScanAlt, width: 160, height: 100 },
+    { name: 'rtl', ext: 'emf', bytes: rtlEmf(), alt: R.rtlAlt, width: 240, height: 160 },
+    { name: 'masks', ext: 'emf', bytes: masksEmf(), alt: R.masksAlt, width: 240, height: 160 },
   ]
 }

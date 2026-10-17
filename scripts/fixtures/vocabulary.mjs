@@ -636,6 +636,10 @@ export const READING_ROOM = {
   wmfPlanAlt: 'An older drawing of the desk and entrance',
   wmfScanAlt: 'An older scan of the shelf label',
   signs: ['Quiet please', 'Entrance', 'Returns', 'Media', 'Fiction'],
+  rtlAlt: 'The entrance sign as a right-to-left program draws it',
+  masksAlt: 'Shelf markers cut out by masks, a slanted photograph and two labels',
+  // "Library" in Hebrew, for text read right to left.
+  rtlSign: 'ספרייה',
   metafilesAfter: 'Volunteers can print every drawing from any of these formats.',
 }
 

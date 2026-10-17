@@ -554,6 +554,7 @@ kinds
 know
 kraft
 label
+labels
 lambda
 laminate
 langle
@@ -622,7 +623,9 @@ marc
 mark
 marked
 marker
+markers
 marta
+masks
 material
 math
 mathbb
@@ -943,6 +946,7 @@ review
 reviews
 rich
 right
+right-to-left
 rightarrow
 riverside
 role
@@ -1031,6 +1035,7 @@ situation
 size
 sketch
 skewed
+slanted
 sleeve
 slip
 slowest

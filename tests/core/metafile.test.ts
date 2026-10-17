@@ -217,6 +217,7 @@ describe('metafile corpus: a metafile that is one bitmap is that bitmap', () => 
 })
 
 describe('metafile records', () => {
+  const inch = { width: 96, height: 96 }
   const emf = (build: (e: typeof EmfWriter.prototype) => void, size = { width: 100, height: 100 }) => {
     const e = new EmfWriter(size)
     build(e)
@@ -353,6 +354,81 @@ describe('metafile records', () => {
   it('text by glyph number is not drawn (it is noted), and alone it leaves nothing to show', () => {
     const r = drawMetafile(new EmfWriter({ width: 100, height: 40 }).font(1, {}).select(1).text(0, 20, READING_ROOM.signs[0], { options: 0x10 }).bytes())
     expect(r).toEqual({ error: 'it draws nothing this app can show' })
+  })
+
+  it('SetLayout right to left: shapes mirrored across the frame; SaveDC/RestoreDC and a left-to-right layout bring it back', () => {
+    // A frame 96 px wide (exactly an inch): x mirrors to 96 - x.
+    const { root } = emf((e) => e.stock(8).stock(4).setLayout(1).rectangle(10, 10, 30, 30).saveDC().setLayout(0).rectangle(10, 40, 30, 60).restoreDC(-1).rectangle(10, 70, 30, 90), inch)
+    expect(shapes(root).map((p) => p.getAttribute('d'))).toEqual(['M86 10L66 10L66 30L86 30Z', 'M10 40L30 40L30 60L10 60Z', 'M86 70L66 70L66 90L86 90Z'])
+  })
+
+  it('right to left: text ends at its mirrored reference point, its glyphs the right way round; bitmaps mirrored unless kept', () => {
+    const [quiet] = READING_ROOM.signs
+    const t = emf((e) => e.setBkMode(1).setTextAlign(24).font(1, {}).select(1).setLayout(1).text(10, 20, quiet, { advance: 5 }), inch).root.querySelector('text')!
+    expect(t.getAttribute('transform')).toBe('matrix(1 0 0 1 86 20)')
+    const xs = t.getAttribute('x')!.split(' ').map(Number)
+    // The run is 5 px a character, laid out left to right, its right end at x = 86 (the mirror of 10).
+    expect(xs[0]).toBe(-5 * quiet.length)
+    expect(xs[1] - xs[0]).toBe(5)
+    // Not right-aligned by an anchor (the places say where), and not mirrored itself.
+    expect(t.getAttribute('text-anchor')).toBeNull()
+    const noDx = emf((e) => e.setBkMode(1).font(1, {}).select(1).setLayout(1).text(10, 20, quiet), inch).root.querySelector('text')!
+    expect(noDx.getAttribute('text-anchor')).toBe('end')
+    const photo = dib24(4, 2, () => [0, 128, 255])
+    const use = (layout: number) => emf((e) => e.setLayout(layout).stretchDIBits(10, 10, 40, 20, photo), inch).root.querySelector('use')!.getAttribute('transform')
+    expect(use(1)).toBe('matrix(-10 0 0 10 86 10)')
+    expect(use(9)).toBe('matrix(10 0 0 10 46 10)')
+  })
+
+  it('ETO_RTLREADING: text read right to left by the reader, its run fitted to its advances, anchored by its box', () => {
+    const [, entrance] = READING_ROOM.signs
+    const withDx = emf((e) => e.setBkMode(1).setTextAlign(24).font(1, {}).select(1).text(10, 20, entrance, { advance: 6, options: 0x80 })).root.querySelector('text')!
+    expect(withDx.getAttribute('direction')).toBe('rtl')
+    expect(withDx.getAttribute('x')).toBe(String(6 * entrance.length))
+    expect(withDx.getAttribute('textLength')).toBe(String(6 * entrance.length))
+    expect(withDx.getAttribute('text-anchor')).toBe('start')
+    const noDx = emf((e) => e.setBkMode(1).setTextAlign(2).font(1, {}).select(1).text(90, 20, entrance, { options: 0x80 })).root.querySelector('text')!
+    expect([noDx.getAttribute('direction'), noDx.getAttribute('text-anchor'), noDx.getAttribute('x')]).toEqual(['rtl', 'start', '0'])
+    // TA_RTLREADING in the text alignment means the same.
+    const byAlign = emf((e) => e.setBkMode(1).setTextAlign(0x100).font(1, {}).select(1).text(10, 20, entrance)).root.querySelector('text')!
+    expect([byAlign.getAttribute('direction'), byAlign.getAttribute('text-anchor')]).toEqual(['rtl', 'end'])
+  })
+
+  it('PolyTextOut: each string at its own place, as ExtTextOut draws it', () => {
+    const [quiet, entrance] = READING_ROOM.signs
+    const { root } = emf((e) => e.setBkMode(1).setTextAlign(24).font(1, {}).select(1).polyText([{ x: 5, y: 20, s: quiet, advance: 4 }, { x: 5, y: 60, s: entrance }]))
+    const texts = all(root, 'text')
+    expect(texts.map((t) => t.textContent)).toEqual([quiet, entrance])
+    expect(texts.map((t) => t.getAttribute('transform'))).toEqual(['matrix(1 0 0 1 5 20)', 'matrix(1 0 0 1 5 60)'])
+    expect(texts[0].getAttribute('x')!.split(' ')[1]).toBe('4')
+  })
+
+  it('MaskBlt: the source where the mask is set; where clear, the background operation (the page left alone, or black)', () => {
+    const red = [200, 0, 0]
+    const green = [0, 150, 0]
+    const src = dib24(2, 1, (x: number) => (x === 0 ? red : green))
+    const mask = dib1(2, 1, (x: number) => x === 0)
+    const keep = drawn(drawMetafile(new EmfWriter({ width: 20, height: 10 }).maskBlt(0, 0, 20, 10, src, mask, 0xaacc0020).bytes()))
+    expect([pngPixel(keep.bitmap!.bytes, 0, 0), pngPixel(keep.bitmap!.bytes, 1, 0)[3]]).toEqual([[...red, 255], 0])
+    const black = drawn(drawMetafile(new EmfWriter({ width: 20, height: 10 }).maskBlt(0, 0, 20, 10, src, mask, 0x00cc0020).bytes()))
+    expect([pngPixel(black.bitmap!.bytes, 0, 0), pngPixel(black.bitmap!.bytes, 1, 0)]).toEqual([red, [0, 0, 0]])
+    // A mask cut out from its own offset; no mask at all is a BitBlt with the foreground operation.
+    const shifted = drawn(drawMetafile(new EmfWriter({ width: 20, height: 10 }).maskBlt(0, 0, 20, 10, src, dib1(3, 1, (x: number) => x === 2), 0xaacc0020, { xMask: 1 }).bytes()))
+    expect([pngPixel(shifted.bitmap!.bytes, 0, 0)[3], pngPixel(shifted.bitmap!.bytes, 1, 0)]).toEqual([0, [...green, 255]])
+    const plain = drawn(drawMetafile(new EmfWriter({ width: 20, height: 10 }).maskBlt(0, 0, 20, 10, src, null, 0xaacc0020).bytes()))
+    expect(pngPixel(plain.bitmap!.bytes, 1, 0)).toEqual(green)
+    expect(plain.lost).toEqual([])
+  })
+
+  it('PlgBlt: the bitmap onto its parallelogram; with a mask, transparent where it is clear', () => {
+    const src = dib24(2, 1, (x: number) => (x === 0 ? [200, 0, 0] : [0, 150, 0]))
+    const { r, root } = svgOf(new EmfWriter({ width: 100, height: 100 }).plgBlt([10, 10, 30, 20, 10, 40], src).bytes())
+    expect(root.querySelector('use')!.getAttribute('transform')).toBe('matrix(10 5 0 30 10 10)')
+    expect(r.lost).toEqual([])
+    const masked = svgOf(new EmfWriter({ width: 100, height: 100 }).plgBlt([10, 10, 30, 20, 10, 40], src, dib1(2, 1, (x: number) => x === 1)).bytes())
+    const href = masked.root.querySelector('image')!.getAttribute('xlink:href')!
+    const pngBytes = Buffer.from(href.replace(/^data:image\/png;base64,/, ''), 'base64')
+    expect([pngPixel(pngBytes, 0, 0)[3], pngPixel(pngBytes, 1, 0)]).toEqual([0, [0, 150, 0, 255]])
   })
 
   it('a drawing wholly outside its frame is not a picture', () => {

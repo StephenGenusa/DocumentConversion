@@ -1,5 +1,5 @@
 import { ShortRecord, View } from './bytes'
-import { readDib, type Raster, type Picture } from './dib'
+import { crop, isPicture, readDib, type Raster, type Picture } from './dib'
 import {
   decodeAnsi,
   ETO_CLIPPED,
@@ -262,6 +262,46 @@ export class EmfPlayer {
       palette: this.gdi.dc.palette ?? undefined,
       keepAlpha,
     })
+  }
+
+  /** A MaskBlt or PlgBlt mask (its usage, then its four offsets and sizes, at `at`): set bits white, clear ones black; null when there is none. */
+  private mask(r: View, at: number): Raster | null {
+    const [usage, offBmi, cbBmi, offBits, cbBits] = [r.u32(at), r.u32(at + 4), r.u32(at + 8), r.u32(at + 12), r.u32(at + 16)]
+    if (cbBmi === 0) return null
+    const m = readDib(r.sub(offBmi, cbBmi), r.sub(offBits, cbBits), { budget: this.gdi.setup.budget, usage, mono: [0, 0xffffff] })
+    if (!m || isPicture(m)) {
+      this.gdi.lost.add('a bitmap mask that could not be read')
+      return null
+    }
+    return m
+  }
+
+  /**
+   * MaskBlt and PlgBlt: the source bitmap's part `src` drawn into `dest`
+   * (or onto the parallelogram `to`) through the mask, by the foreground
+   * and background raster operations (MAKEROP4: the background's in the
+   * top byte). Without a mask, a BitBlt by the foreground operation.
+   */
+  private masked(
+    dest: [number, number, number, number],
+    src: [number, number, number, number],
+    bmp: Raster | Picture | null,
+    mask: Raster | null,
+    at: [number, number],
+    rop: number,
+    to?: number[],
+  ): void {
+    const g = this.gdi
+    const fore = (rop >>> 16) & 0xff
+    const back = (rop >>> 24) & 0xff
+    if (!mask || !bmp || isPicture(bmp)) {
+      if (mask && bmp) g.lost.add('a mask on a JPEG or PNG bitmap')
+      g.bitmap(dest, src, bmp, fore << 16, { to })
+      return
+    }
+    const part = crop(bmp, src[0], src[1], src[2] || bmp.width, src[3] || bmp.height)
+    const raster = g.maskedRaster(part, mask, at[0], at[1], fore, back)
+    g.bitmap(dest, [0, 0, part.width, part.height], raster, 0xcc0020, { to })
   }
 
   private text(r: View, at: number, wide: boolean): void {
@@ -682,19 +722,40 @@ export class EmfPlayer {
         return
       }
       case EMR.SETLAYOUT:
-        if (r.u32(8) & 1) g.lost.add('right-to-left layout')
+        g.set('layout', r.u32(8))
         return
-      case EMR.MASKBLT:
-      case EMR.PLGBLT:
-        g.lost.add('masked and parallelogram bitmaps')
+      case EMR.MASKBLT: {
+        const dest: [number, number, number, number] = [r.i32(24), r.i32(28), r.i32(32), r.i32(36)]
+        const rop = r.u32(40)
+        const [usage, offBmi, cbBmi, offBits, cbBits] = [r.u32(80), r.u32(84), r.u32(88), r.u32(92), r.u32(96)]
+        const mask = this.mask(r, 108)
+        if (cbBmi === 0) {
+          // No source: a pattern fill, by the foreground operation (a mask on one is not drawn).
+          if (mask) g.lost.add('masked pattern fills')
+          g.patBlt(...dest, rop & 0xff0000)
+          return
+        }
+        this.masked(dest, [r.i32(44), r.i32(48), dest[2], dest[3]], this.dib(r, offBmi, cbBmi, offBits, cbBits, usage), mask, [r.i32(100), r.i32(104)], rop)
         return
+      }
+      case EMR.PLGBLT: {
+        const to = points(r, 24, 3, false)
+        const src: [number, number, number, number] = [r.i32(48), r.i32(52), r.i32(56), r.i32(60)]
+        const [usage, offBmi, cbBmi, offBits, cbBits] = [r.u32(92), r.u32(96), r.u32(100), r.u32(104), r.u32(108)]
+        // The source is copied where the mask is set; where it is clear, the page is left alone.
+        this.masked([0, 0, 0, 0], src, this.dib(r, offBmi, cbBmi, offBits, cbBits, usage), this.mask(r, 120), [r.i32(112), r.i32(116)], 0xaacc0020, to)
+        return
+      }
       case EMR.EXTFLOODFILL:
         g.lost.add('flood fill')
         return
       case EMR.POLYTEXTOUTA:
-      case EMR.POLYTEXTOUTW:
-        g.lost.add('PolyTextOut text')
+      case EMR.POLYTEXTOUTW: {
+        // Strings each an EMRTEXT of their own, as ExtTextOut's: as many as the record holds.
+        const n = Math.min(r.u32(36), Math.floor((r.length - 40) / 40))
+        for (let i = 0; i < n; i++) this.text(r, 40 + i * 40, type === EMR.POLYTEXTOUTW)
         return
+      }
       default:
         return
     }

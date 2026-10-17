@@ -115,6 +115,8 @@ interface DC {
   cur: [number, number]
   arcCCW: boolean
   miter: number
+  /** SetLayout: LAYOUT_RTL (1), LAYOUT_BITMAPORIENTATIONPRESERVED (8). */
+  layout: number
 }
 
 export const DEFAULT_FONT: Font = {
@@ -191,7 +193,12 @@ const TA_BASELINE = 24
 export const ETO_OPAQUE = 2
 export const ETO_CLIPPED = 4
 export const ETO_GLYPH_INDEX = 0x10
+export const ETO_RTLREADING = 0x80
 export const ETO_PDY = 0x2000
+const TA_RTLREADING = 0x100
+/* SetLayout. */
+const LAYOUT_RTL = 1
+const LAYOUT_BITMAPORIENTATIONPRESERVED = 8
 
 /** How much of the em is above the baseline and below it, for placing text by its top or bottom. */
 const ASCENT = 0.905
@@ -341,6 +348,8 @@ export interface GdiSetup {
   wmfView?: Rect
   /** The fonts text given as glyph numbers is read with (fonts.ts). */
   fonts?: GlyphFonts
+  /** The picture's frame in device space: what a right-to-left layout mirrors across. */
+  frame?: Rect | null
 }
 
 export class Gdi {
@@ -378,6 +387,7 @@ export class Gdi {
       cur: [0, 0],
       arcCCW: true,
       miter: 10,
+      layout: 0,
     }
   }
 
@@ -393,7 +403,8 @@ export class Gdi {
 
   set<K extends keyof DC>(key: K, value: DC[K]): void {
     this.dc = { ...this.dc, [key]: value }
-    if (['mapMode', 'winOrg', 'winExt', 'vpOrg', 'vpExt', 'world'].includes(key)) this.m = null
+    if (['mapMode', 'winOrg', 'winExt', 'vpOrg', 'vpExt', 'world', 'layout'].includes(key)) this.m = null
+    if (key === 'layout' && (value as number) & LAYOUT_RTL && !this.setup.frame) this.lost.add('right-to-left layout')
   }
 
   save(): void {
@@ -409,10 +420,24 @@ export class Gdi {
     this.m = null
   }
 
-  /** Logical units to device units: world transform, then the mapping mode's page transform. */
+  /**
+   * Logical units to device units: world transform, then the mapping
+   * mode's page transform, then, in a right-to-left layout, the mirror
+   * across the picture's frame (GDI mirrors across the device; the frame
+   * is this picture's device).
+   */
   matrix(): Matrix {
-    if (!this.m) this.m = compose(this.dc.world, this.page())
+    if (!this.m) {
+      const m = compose(this.dc.world, this.page())
+      const f = this.setup.frame
+      this.m = this.mirrored() && f ? compose(m, [-1, 0, 0, 1, f.l + f.r, 0]) : m
+    }
     return this.m
+  }
+
+  /** Whether the layout is right to left (and there is a frame to mirror across). */
+  mirrored(): boolean {
+    return (this.dc.layout & LAYOUT_RTL) !== 0 && !!this.setup.frame
   }
 
   private page(): Matrix {
@@ -1086,13 +1111,18 @@ export class Gdi {
    * bitmap they mean, transparent where the mask is white: blending in an
    * SVG happens against the picture's own transparent backdrop, not the
    * page, so drawn one by one they would not come out.
+   *
+   * `to` (PlgBlt) puts the bitmap onto a parallelogram instead of `dest`:
+   * the logical points its top-left, top-right and bottom-left corners go
+   * to. A right-to-left layout mirrors bitmaps with the rest, unless it
+   * keeps their orientation (LAYOUT_BITMAPORIENTATIONPRESERVED).
    */
   bitmap(
     dest: [number, number, number, number],
     src: [number, number, number, number],
     bmp: Raster | Picture | null,
     rop: number,
-    extra: { opacity?: number; premultiplied?: boolean; transparent?: number } = {},
+    extra: { opacity?: number; premultiplied?: boolean; transparent?: number; to?: readonly number[] } = {},
   ): void {
     if (!bmp) {
       this.lost.add('a bitmap that could not be read')
@@ -1123,8 +1153,11 @@ export class Gdi {
     const [x, y, w, h] = dest
     const pw = cropBox ? cropBox.r - cropBox.l : pic.width
     const ph = cropBox ? cropBox.b - cropBox.t : pic.height
-    if (!(pw > 0 && ph > 0) || w === 0 || h === 0) return
-    const local: Matrix = [w / pw, 0, 0, h / ph, x, y]
+    if (!(pw > 0 && ph > 0) || (!extra.to && (w === 0 || h === 0))) return
+    const to = extra.to
+    let local: Matrix = to ? [(to[2] - to[0]) / pw, (to[3] - to[1]) / pw, (to[4] - to[0]) / ph, (to[5] - to[1]) / ph, to[0], to[1]] : [w / pw, 0, 0, h / ph, x, y]
+    if (!(det(local) !== 0 && local.every(Number.isFinite))) return
+    if (this.mirrored() && this.dc.layout & LAYOUT_BITMAPORIENTATIONPRESERVED) local = compose([-1, 0, 0, 1, pw, 0], local)
     const m = compose(local, this.matrix())
     const key = `${m.join(',')}|${pw}x${ph}`
     const last = this.lastBlt
@@ -1158,6 +1191,52 @@ export class Gdi {
 
   private xorImage: { image: Raster; key: string; drawn: number } | null = null
 
+  /**
+   * MaskBlt and PlgBlt's mask: `source` (already cut to the part drawn)
+   * through a monochrome `mask` read from (mx, my), the foreground raster
+   * operation where the mask is set (or runs out) and the background one
+   * where it is clear, the brush's color as the pattern. As a masked pair
+   * is (masked()), each pixel is worked out on a black page and a white
+   * one: what does not depend on the page is drawn as it is, the page
+   * left alone is transparent, anything else what it makes of white paper.
+   */
+  maskedRaster(source: Raster, mask: Raster, mx: number, my: number, fore: number, back: number): Raster {
+    const brush = this.dc.brush
+    const pattern = brush.style === 0 ? this.color(brush.color) : 0
+    // Per operation, per channel, per page (black, white): the result for each source value.
+    const tables = [fore, back].map((code) =>
+      [16, 8, 0].map((shift) => {
+        const p = (pattern >> shift) & 0xff
+        return [0, 0xff].map((d) => Uint8Array.from({ length: 256 }, (_, s) => rop3(code, p, s, d)))
+      }),
+    )
+    const { width, height } = source
+    const src = source.rgba
+    const out = new Uint8Array(src.length)
+    let alpha = false
+    for (let j = 0; j < height; j++) {
+      for (let i = 0; i < width; i++) {
+        const o = (j * width + i) * 4
+        const u = mx + i
+        const v = my + j
+        const set = u < 0 || v < 0 || u >= mask.width || v >= mask.height || mask.rgba[(v * mask.width + u) * 4] >= 128
+        const t = tables[set ? 0 : 1]
+        let same = true
+        let page = true
+        for (let c = 0; c < 3; c++) {
+          const onBlack = t[c][0][src[o + c]]
+          const onWhite = t[c][1][src[o + c]]
+          out[o + c] = onWhite
+          if (onWhite !== onBlack) same = false
+          if (onWhite !== 0xff || onBlack !== 0) page = false
+        }
+        out[o + 3] = !same && page ? 0 : 0xff
+        if (out[o + 3] === 0) alpha = true
+      }
+    }
+    return { width, height, rgba: out, alpha }
+  }
+
   /* ---- text ----------------------------------------------------------- */
 
   /** ExtTextOut's glyph numbers (ETO_GLYPH_INDEX, one per UTF-16 unit of `raw`) as characters: readGlyphs. */
@@ -1172,6 +1251,14 @@ export class Gdi {
    * `dx` when there is one (so text keeps its layout whatever font draws
    * it), rotated by the font's escapement. ETO_OPAQUE fills `box` with the
    * background color first; ETO_CLIPPED clips the text to it.
+   *
+   * In a right-to-left layout the text's box is mirrored with everything
+   * else (so text aligned left ends at its mirrored reference point) but
+   * its glyphs are not: it is drawn through a flip of its own, its
+   * characters still in their order. ETO_RTLREADING (or TA_RTLREADING)
+   * text is in reading order and shown right to left: the reader lays it
+   * out (direction="rtl", so the bidirectional algorithm places digits and
+   * Latin words in it), fitted to its advances when they are known.
    */
   text(x: number, y: number, raw: string, dx: number[] | null, options: number, box: [number, number, number, number] | null): void {
     const dc = this.dc
@@ -1207,7 +1294,9 @@ export class Gdi {
     const m = this.matrix()
     const em = font.height < 0 ? -font.height : font.height > 0 ? font.height / CELL : 16 / Math.max(1e-9, scaleOf(m))
     if (!(em > 0) || !Number.isFinite(em)) return
-    const sgn = det(m) < 0 ? -1 : 1
+    const mirrored = this.mirrored()
+    // Whether y is flipped (a mapping mode with y up), the mirror aside.
+    const sgn = (det(m) < 0) !== mirrored ? -1 : 1
     const theta = (font.escapement / 10) * (Math.PI / 180)
     const u: [number, number] = [Math.cos(theta), -sgn * Math.sin(theta)]
     const v: [number, number] = [sgn * Math.sin(theta), sgn * Math.cos(theta)]
@@ -1234,6 +1323,10 @@ export class Gdi {
     const baseY = vAlign === TA_BASELINE ? 0 : vAlign === TA_BOTTOM ? -DESCENT * em : ASCENT * em
     const x0 = hasDx ? (right ? -total : center ? -total / 2 : 0) : 0
     const left = right ? -total : center ? -total / 2 : 0
+    const rtl = (options & ETO_RTLREADING) !== 0 || (dc.textAlign & TA_RTLREADING) !== 0
+    // What the markup is drawn through, and the box's left there: mirrored, a flip of the text's own.
+    const drawT = mirrored ? compose([-1, 0, 0, 1, 0, 0], t) : t
+    const boxLeft = mirrored ? -left - total : left
 
     if (dc.bkMode === 2 && !(box && options & ETO_OPAQUE)) {
       const p = new PathData()
@@ -1256,17 +1349,29 @@ export class Gdi {
       const keep = code >= 0x20 && !(code >= 0x7f && code < 0xa0) && code !== 0xfffe && code !== 0xffff
       if (keep) {
         content += c
-        if (hasDx) xs.push(num(pos))
+        if (hasDx) xs.push(num(boxLeft + pos - left))
       }
       if (hasDx) pos += advances[i]
     })
     if (!content.trim()) return
     const r = this.rop(this.color(dc.textColor))
     if (!r) return
-    const anchor = hasDx || (!right && !center) ? '' : ` text-anchor="${right ? 'end' : 'middle'}"`
+    // The side of its box the text is anchored by (mirrored, the other one), as SVG names it for its direction.
+    const side = center ? 'middle' : right !== mirrored ? 'right' : 'left'
+    const anchorName = side === 'middle' ? 'middle' : (side === 'right') !== rtl ? 'end' : 'start'
+    let place: string
+    let anchor: string
+    if (rtl && hasDx) {
+      // Its right end at the box's right, its run as long as its advances make it.
+      place = ` x="${num(boxLeft + total)}" y="${num(baseY)}" textLength="${num(total)}" lengthAdjust="spacingAndGlyphs"`
+      anchor = ' direction="rtl" text-anchor="start"'
+    } else {
+      place = ` x="${hasDx ? xs.join(' ') : '0'}" y="${num(baseY)}"`
+      anchor = rtl ? ` direction="rtl" text-anchor="${anchorName}"` : hasDx || anchorName === 'start' ? '' : ` text-anchor="${anchorName}"`
+    }
     const decoration = [font.underline ? 'underline' : '', font.strike ? 'line-through' : ''].filter(Boolean).join(' ')
     const markup =
-      `<text transform="${matrixAttr(t)}" x="${hasDx ? xs.join(' ') : '0'}" y="${num(baseY)}"` +
+      `<text transform="${matrixAttr(drawT)}"${place}` +
       ` font-family="${esc(fontFamily(font, symbolic))}" font-size="${num(em) === '0' ? '0.01' : num(em)}"` +
       (font.weight >= 550 ? ` font-weight="${font.weight >= 650 ? 'bold' : Math.round(font.weight / 100) * 100}"` : '') +
       (font.italic ? ' font-style="italic"' : '') +
@@ -1324,6 +1429,13 @@ export function readGlyphs(
     }
   })
   return { raw, dx: advances, parts }
+}
+
+/** A ternary raster operation (its code's eight bits, one for each pattern, source and destination bit) on bytes. */
+function rop3(code: number, p: number, s: number, d: number): number {
+  let out = 0
+  for (let i = 0; i < 8; i++) if ((code >> i) & 1) out |= (i & 4 ? p : ~p) & (i & 2 ? s : ~s) & (i & 1 ? d : ~d)
+  return out & 0xff
 }
 
 /**

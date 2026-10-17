@@ -178,7 +178,7 @@ function drawEmf(file: View, bytes: Buffer, opts: Options): MetafileResult {
     const out = new SvgOut(maxChars, `m${opts.depth ?? 0}${mode[0]}`)
     out.hairline = box && width > 0 ? (box.r - box.l) / width : 1
     const budget = new Budget()
-    const gdi = new Gdi({ out, budget, pxPerMm: h.pxPerMm, universe: universe(box), fonts: opts.fonts })
+    const gdi = new Gdi({ out, budget, pxPerMm: h.pxPerMm, universe: universe(box), fonts: opts.fonts, frame: box })
     const player = mode === 'plus' ? new EmfPlusPlayer(out, h.pxPerMm, budget, universe(box), gdi.lost, nestedFor(opts), opts.fonts) : null
     const emf = new EmfPlayer(gdi, player)
     emf.play(file)
@@ -253,7 +253,7 @@ function drawWmf(file: View, bytes: Buffer, header: NonNullable<ReturnType<typeo
   }
   const view: Rect = { l: 0, t: 0, r: width || 1, b: height || 1 }
   const out = new SvgOut(maxChars, `w${opts.depth ?? 0}`)
-  const gdi = new Gdi({ out, budget: new Budget(), pxPerMm: [96 / 25.4, 96 / 25.4], universe: universe(window ? view : null), wmfView: view, fonts: opts.fonts })
+  const gdi = new Gdi({ out, budget: new Budget(), pxPerMm: [96 / 25.4, 96 / 25.4], universe: universe(window ? view : null), wmfView: view, fonts: opts.fonts, frame: view })
   if (window && p && placeableSize) {
     gdi.set('winOrg', window.org)
     gdi.set('winExt', window.ext)

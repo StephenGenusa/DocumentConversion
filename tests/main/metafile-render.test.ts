@@ -170,6 +170,32 @@ describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
     expectAt('plan', 195, 5, WHITE)
   })
 
+  it('right to left: the bar on the right, the sign ending at its mirrored place, one bitmap mirrored and one kept; Hebrew read right to left in its box', () => {
+    expectAt('rtl', 215, 80, '#3a6ea5')
+    expectAt('rtl', 25, 80, WHITE)
+    expect(inked('rtl', 110, 22, 192, 42)).toBeGreaterThan(200)
+    expect(inked('rtl', 20, 22, 100, 42)).toBe(0)
+    // Red was on the bitmap's left: mirrored, it is on the right.
+    expectAt('rtl', 180, 75, '#c0392b')
+    expectAt('rtl', 140, 75, '#4f9a52')
+    expectAt('rtl', 60, 75, '#c0392b')
+    expectAt('rtl', 100, 75, '#4f9a52')
+    expect(inked('rtl', 108, 120, 184, 145)).toBeGreaterThan(100)
+    expect(inked('rtl', 20, 120, 104, 145)).toBe(0)
+  })
+
+  it('masks: the marker round over the bar, black where the second mask is clear, the slanted photograph cut by its mask, two labels', () => {
+    expectAt('masks', 60, 60, '#3a6ea5')
+    expectAt('masks', 12, 12, WHITE)
+    expectAt('masks', 12, 50, '#e8a33d')
+    expectAt('masks', 140, 30, '#4f9a52')
+    expectAt('masks', 160, 30, '#000000')
+    expectAt('masks', 152, 90, '#4345a0', 40)
+    expectAt('masks', 197, 130, WHITE)
+    expect(inked('masks', 10, 118, 100, 134)).toBeGreaterThan(100)
+    expect(inked('masks', 10, 138, 100, 154)).toBeGreaterThan(100)
+  })
+
   it('a DIB drawn in an SVG keeps its pixels', () => {
     // The scan: 100 by 75 pixels over 200 by 150 px; pixel (50, 37) at (101, 75).
     expectAt('scan', 101, 75, `#${[Math.round((50 * 255) / 99), Math.round((37 * 255) / 74), 160].map((v) => v.toString(16).padStart(2, '0')).join('')}`, 12)

@@ -236,6 +236,71 @@ export class EmfWriter {
     const dx = advance ? u32s(...Array.from({ length: n }, () => advance)) : Buffer.alloc(0)
     return this.rec(0x54, this.bounds(), u32s(1), f32s(1, 1), u32s(x, y, n, offString, options, ...rect, offDx), str, dx)
   }
+  /** SETLAYOUT: 1 right to left (LAYOUT_RTL), | 8 bitmaps kept the right way round. */
+  setLayout(layout) { return this.rec(0x73, u32s(layout)) }
+  /** POLYTEXTOUTW: strings, each `{ x, y, s, advance }`, each character `advance` apart when given. */
+  polyText(items, { options = 0 } = {}) {
+    const head = 40 + 40 * items.length
+    const data = []
+    let at = head
+    const texts = items.map(({ x, y, s, advance }) => {
+      const str = pad4(utf16(s))
+      const offString = at
+      data.push(str)
+      at += str.length
+      let offDx = 0
+      if (advance) {
+        offDx = at
+        const dx = u32s(...Array.from({ length: s.length }, () => advance))
+        data.push(dx)
+        at += dx.length
+      }
+      return u32s(x, y, s.length, offString, options, 0, 0, 0, 0, offDx)
+    })
+    return this.rec(0x61, this.bounds(), u32s(1), f32s(1, 1), u32s(items.length), ...texts, ...data)
+  }
+  /**
+   * MASKBLT: a DIB drawn into (x, y, w, h) through a monochrome mask (a dib1:
+   * set bits take the foreground raster operation, clear ones the background),
+   * `rop` both of them (MAKEROP4: background in the top byte); no mask when null.
+   */
+  maskBlt(x, y, w, h, src, mask, rop, { xSrc = 0, ySrc = 0, xMask = 0, yMask = 0 } = {}) {
+    const offBmi = 128
+    const offBits = offBmi + src.info.length
+    const offMaskBmi = offBits + src.bits.length
+    const offMaskBits = mask ? offMaskBmi + mask.info.length : 0
+    return this.rec(
+      0x4e,
+      this.bounds(),
+      u32s(x, y, w, h, rop, xSrc, ySrc),
+      f32s(1, 0, 0, 1, 0, 0),
+      u32s(0xffffff, 0, offBmi, src.info.length, offBits, src.bits.length, xMask, yMask, 0),
+      u32s(mask ? offMaskBmi : 0, mask ? mask.info.length : 0, offMaskBits, mask ? mask.bits.length : 0),
+      src.info,
+      src.bits,
+      ...(mask ? [mask.info, mask.bits] : []),
+    )
+  }
+  /** PLGBLT: the part (xSrc, ySrc, w, h) of a DIB drawn onto the parallelogram whose top-left, top-right and bottom-left corners are `pts` (flat), through a mask when given. */
+  plgBlt(pts, src, mask = null, { xSrc = 0, ySrc = 0, w, h, xMask = 0, yMask = 0 } = {}) {
+    const width = w ?? src.info.readInt32LE(4)
+    const height = h ?? Math.abs(src.info.readInt32LE(8))
+    const offBmi = 140
+    const offBits = offBmi + src.info.length
+    const offMaskBmi = offBits + src.bits.length
+    const offMaskBits = mask ? offMaskBmi + mask.info.length : 0
+    return this.rec(
+      0x4f,
+      this.bounds(),
+      u32s(...pts, xSrc, ySrc, width, height),
+      f32s(1, 0, 0, 1, 0, 0),
+      u32s(0xffffff, 0, offBmi, src.info.length, offBits, src.bits.length, xMask, yMask, 0),
+      u32s(mask ? offMaskBmi : 0, mask ? mask.info.length : 0, offMaskBits, mask ? mask.bits.length : 0),
+      src.info,
+      src.bits,
+      ...(mask ? [mask.info, mask.bits] : []),
+    )
+  }
   /** STRETCHDIBITS: a DIB drawn into (x, y, w, h). */
   stretchDIBits(x, y, w, h, { info, bits }, rop = 0x00cc0020) {
     const offBmi = 80
