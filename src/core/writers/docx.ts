@@ -16,6 +16,7 @@ import { DOCX_OWN_LINE } from '../draw-blocks'
 import { pictureType, wordTakes } from '../pictures'
 import { originalSize } from '../picture-headers'
 import { codeBookmarkName } from '../code-bookmark'
+import { parseCssColor, wordHex } from '../css-color'
 
 /**
  * html-to-docx tries to load every <img> and gives up on the whole document
@@ -920,14 +921,75 @@ const COLORED_BLOCK = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 't
 
 const colorIn = (el: Element): string | undefined => /(?:^|;)\s*color:\s*([^;]+)/i.exec(el.attribs.style ?? '')?.[1]?.trim()
 
-/** A CSS color as Word's RRGGBB: hex or rgb() only; a name or hsl() is left to html-to-docx. */
-function wordColor(css: string): string | undefined {
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(css)?.[1]
-  if (hex) return (hex.length === 3 ? hex.replace(/./g, '$&$&') : hex).toUpperCase()
-  const rgb = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*[\d.]+%?\s*)?\)$/i.exec(css)
-  if (!rgb) return undefined
-  const parts = rgb.slice(1, 4).map(Number)
-  return parts.every((n) => n <= 255) ? parts.map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase() : undefined
+/** Declarations whose colors html-to-docx reads (a border's as one of its words). */
+const BORDER = new Set(['border', 'border-top', 'border-right', 'border-bottom', 'border-left'])
+const COLOR_DECLARATION = /(?:color|border)[\w-]*\s*:/i
+
+/**
+ * html-to-docx reads a color as a name, #rrggbb, #rgb or a comma rgb() or
+ * hsl() of whole numbers, and writes black for anything else: rgba(), space
+ * syntax, hwb(), currentColor, even `inherit`. flattenFormatting read only
+ * hex and rgb(), so the bold words of a paragraph colored by name or hsl()
+ * lost the color. Every `color`, `background-color` and border color is
+ * written as #RRGGBB first (css-color.ts reads every CSS form), so both meet
+ * one form only.
+ *
+ * What gives no color of its own is left out, and the color around it shows,
+ * as in a browser: `inherit`, `initial`, `unset`, a color that is not one,
+ * and `transparent` or a fully transparent color (a run or cell is left
+ * uncolored rather than hidden). currentColor is the element's color, its
+ * own or the one it inherits, when that is known. Word has no alpha, so a
+ * semi-transparent color is blended with the white page.
+ */
+function normalizeColors(source: string): string {
+  if (!/\bstyle\s*=/i.test(source) || !COLOR_DECLARATION.test(source)) return source
+  const dom = parseDocument(source)
+  let changed = false
+  const walk = (nodes: AnyNode[], inherited: string | undefined): void => {
+    for (const node of nodes) {
+      if (!isElement(node) || UNTOUCHED.has(node.name)) continue
+      const style = node.attribs.style
+      let current = inherited
+      if (style !== undefined && COLOR_DECLARATION.test(style)) {
+        const pieces = style.split(';')
+        const declarations = pieces.map((d) => /^\s*([\w-]+)\s*:\s*([\s\S]*?)\s*(?:!\s*important\s*)?$/i.exec(d))
+        const hexOf = (css: string): string | undefined => (parseCssColor(css) === 'currentcolor' ? current : wordHex(css))
+        // The last `color` counts; currentColor there, or no color, is the one inherited.
+        const own = declarations.filter((d) => d?.[1].toLowerCase() === 'color').pop()
+        const ownHex = own ? hexOf(own[2]) : undefined
+        if (ownHex) current = ownHex
+        const kept = pieces.flatMap((text, i): string[] => {
+          const d = declarations[i]
+          const property = d?.[1].toLowerCase() ?? ''
+          // Anything else kept as it is: a url() may hold a `;` of its own.
+          if (!d || !(property === 'color' || property === 'background-color' || BORDER.has(property))) return [text]
+          if (property === 'color') return d === own && ownHex ? [` color: #${ownHex}`] : []
+          if (property === 'background-color') {
+            const hex = hexOf(d[2])
+            return hex ? [` background-color: #${hex}`] : []
+          }
+          // A border's words: each that is a color written as hex (a function
+          // kept whole). A transparent one is no border: html-to-docx drew it black.
+          const words = d[2].match(/[^\s(]+\([^)]*\)|[^\s]+/g) ?? []
+          const unseen = (w: string): boolean => {
+            const color = parseCssColor(w)
+            return color === 'transparent' || (typeof color === 'object' && color.a === 0)
+          }
+          if (words.some(unseen)) return [` ${property}: ${property === 'border' ? 'none' : '0'}`]
+          return [` ${property}: ${words.map((w) => (parseCssColor(w) && hexOf(w) ? `#${hexOf(w)}` : w)).join(' ')}`]
+        })
+        const restyled = kept.join(';').trim()
+        if (restyled !== style) {
+          changed = true
+          if (restyled.replace(/[\s;]/g, '')) node.attribs.style = restyled
+          else delete node.attribs.style
+        }
+      }
+      walk(node.children, current)
+    }
+  }
+  walk(dom.children, undefined)
+  return changed ? serialize(dom.children) : source
 }
 
 /**
@@ -997,7 +1059,7 @@ function flattenFormatting(source: string, colored: ColoredLook[] = []): string 
 
   const index = new Map<string, number>()
   const standIn = (look: Look): string => {
-    const color = wordColor(look.color ?? look.blockColor ?? '')
+    const color = wordHex(look.color ?? look.blockColor ?? '')
     if (color) {
       const key = `${look.bits}:${color}`
       let at = index.get(key)
@@ -1181,7 +1243,7 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
     {
       ...doc,
       html: flattenFormatting(
-        monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(pictures))))), languages)),
+        normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(pictures))))), languages))),
         colored,
       ),
     },

@@ -546,3 +546,100 @@ describe('writeDocx records each code block language in a hidden bookmark', () =
     expect(xml).toContain('w:name="_DocConvCode_0_c_2b_2b"')
   })
 })
+
+/** The w:shd fill of every run (or, with `cell`, every cell) whose text holds `marker`, or '' for none. */
+async function fillsOf(html: string, marker: string, cell = false): Promise<string[]> {
+  const xml = await documentXml(html)
+  return [...xml.matchAll(cell ? /<w:tc>[\s\S]*?<\/w:tc>/g : /<w:r>[\s\S]*?<\/w:r>/g)]
+    .map((m) => m[0])
+    .filter((r) => [...r.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].some((t) => t[1].includes(marker)))
+    .map((r) => /<w:shd\b[^>]*w:fill="([^"]*)"/.exec(r)?.[1]?.toUpperCase() ?? '')
+}
+
+/**
+ * Only hex and rgb() were read for a paragraph's color on formatted text, so
+ * a named or hsl() one was lost there; and html-to-docx itself reads names,
+ * #rrggbb/#rgb and comma rgb()/hsl() only, writing black for anything else
+ * (rgba(), space syntax, hwb(), currentColor, inherit), for a run's color,
+ * a cell's shading and its borders alike. Every color, background-color and
+ * border color is written as hex before it sees them.
+ */
+describe('writeDocx reads every CSS color form', () => {
+  const RED = ['red', 'RED', '#f00', '#f00f', '#FF0000', '#ff0000ff', 'rgb(255, 0, 0)', 'rgba(255,0,0,1)', 'rgb(255 0 0)', 'rgb(100% 0% 0%)', 'rgb(255 0 0 / 100%)', 'hsl(0, 100%, 50%)', 'hsla(0,100%,50%,1)', 'hsl(0deg 100% 50%)', 'hsl(1turn 100% 50%)', 'hsl(0rad 100% 50%)', 'hsl(400grad 100% 50%)', 'hwb(0 0% 0%)']
+
+  it('colors formatted text in a colored paragraph, heading or cell', async () => {
+    for (const css of RED) {
+      const html = `<p style="color: ${css}">plain <strong>alpha</strong> <em>beta</em></p><h3 style="color: ${css}">head <em>gamma</em></h3><table><tr><td style="color: ${css}">cell <strong>delta</strong></td></tr></table>`
+      for (const marker of ['plain', 'alpha', 'beta', 'head', 'gamma', 'cell', 'delta']) expect(await colorsOf(html, marker), `${css} ${marker}`).toEqual(['FF0000'])
+    }
+  })
+
+  it('colors a run by its own color', async () => {
+    for (const css of RED) {
+      const html = `<p>plain <strong style="color: ${css}">alpha</strong> <small style="color: ${css}">beta</small> <code style="color: ${css}">gamma</code></p>`
+      expect(await colorsOf(html, 'alpha'), css).toEqual(['FF0000'])
+      expect(await colorsOf(html, 'beta'), css).toEqual(['FF0000'])
+      expect(await colorsOf(html, 'gamma'), css).toEqual(['FF0000'])
+      expect(await colorsOf(html, 'plain'), css).toEqual([''])
+    }
+    expect(await colorsOf('<p><small style="color: rebeccapurple">alpha</small></p>', 'alpha')).toEqual(['663399'])
+  })
+
+  it('blends a semi-transparent color with the white page', async () => {
+    expect(await colorsOf('<p style="color: rgba(255, 0, 0, 0.5)">plain <strong>alpha</strong></p>', 'alpha')).toEqual(['FF8080'])
+    expect(await colorsOf('<p><small style="color: hsl(0 100% 50% / 50%)">alpha</small></p>', 'alpha')).toEqual(['FF8080'])
+  })
+
+  it('leaves a transparent color off', async () => {
+    expect(await colorsOf('<p style="color: transparent">plain <strong>alpha</strong></p>', 'alpha')).toEqual([''])
+    expect(await colorsOf('<p style="color: transparent">plain <strong>alpha</strong></p>', 'plain')).toEqual([''])
+    expect(await colorsOf('<p><small style="color: rgba(0, 0, 255, 0)">alpha</small></p>', 'alpha')).toEqual([''])
+    expect(await colorsOf('<p style="color: #00f">plain <strong style="color: transparent">alpha</strong></p>', 'alpha')).toEqual(['0000FF'])
+  })
+
+  it('reads currentColor as the color around it', async () => {
+    expect(await colorsOf('<p style="color: #00f">plain <strong style="color: currentColor">alpha</strong></p>', 'alpha')).toEqual(['0000FF'])
+    expect(await colorsOf('<p style="color: #00f">plain <small style="color: currentColor">alpha</small></p>', 'alpha')).toEqual(['0000FF'])
+    expect(await fillsOf('<table><tr style="color: blue"><td style="background-color: currentcolor">alpha</td></tr></table>', 'alpha', true)).toEqual(['0000FF'])
+    expect(await fillsOf('<table><tr><td style="color: lime; background-color: currentColor">alpha</td></tr></table>', 'alpha', true)).toEqual(['00FF00'])
+    expect(await fillsOf('<table><tr><td style="background-color: currentColor">alpha</td></tr></table>', 'alpha', true)).toEqual([''])
+  })
+
+  it('takes inherit, initial and unset as no color of its own', async () => {
+    for (const css of ['inherit', 'initial', 'unset']) {
+      expect(await colorsOf(`<p style="color: #00f">plain <strong style="color: ${css}">alpha</strong></p>`, 'alpha'), css).toEqual(['0000FF'])
+      expect(await colorsOf(`<p style="color: #00f">plain <small style="color: ${css}">beta</small></p>`, 'beta'), css).toEqual(['0000FF'])
+      expect(await colorsOf(`<p style="color: ${css}">plain <strong>alpha</strong></p>`, 'plain'), css).toEqual([''])
+    }
+  })
+
+  it('ignores a color that is not one, keeping the rest of the style', async () => {
+    const html = '<p style="color: reddish">plain <strong style="color: rgb(1, 2)">alpha</strong> <code style="color: hsl(red, 1%, 2%)">beta</code></p>'
+    expect(await colorsOf(html, 'plain')).toEqual([''])
+    expect(await colorsOf(html, 'alpha')).toEqual([''])
+    expect(await colorsOf(html, 'beta')).toEqual([''])
+    expect(await formatsOf(html, 'beta')).toEqual(['mono'])
+    expect(await colorsOf('<p style="color: #00f">plain <strong style="color: nope">alpha</strong></p>', 'alpha')).toEqual(['0000FF'])
+  })
+
+  it('reads a background color on a run or cell in every form', async () => {
+    expect(await fillsOf('<table><tr><td style="background-color: hsl(60, 100%, 50%)">alpha</td></tr></table>', 'alpha', true)).toEqual(['FFFF00'])
+    expect(await fillsOf('<table><tr><td style="background-color: Yellow">alpha</td></tr></table>', 'alpha', true)).toEqual(['FFFF00'])
+    expect(await fillsOf('<table><tr><td style="background-color: rgba(0, 0, 0, 0)">alpha</td></tr></table>', 'alpha', true)).toEqual([''])
+    expect(await fillsOf('<table><tr><td style="background-color: nope">alpha</td></tr></table>', 'alpha', true)).toEqual([''])
+    expect(await fillsOf('<table><tr><td style="background-color: rgb(255 255 0 / 50%)">alpha</td></tr></table>', 'alpha', true)).toEqual(['FFFF80'])
+    expect(await fillsOf('<table><tr><td style="background-color: hwb(60 0% 0%)">alpha</td></tr></table>', 'alpha', true)).toEqual(['FFFF00'])
+  })
+
+  it('reads a cell border color in every form', async () => {
+    const bordersOf = async (border: string): Promise<string[]> => {
+      const xml = await documentXml(`<table><tr><td style="border: ${border}">alpha</td><td style="border-top: ${border}">beta</td></tr></table>`)
+      return [...xml.matchAll(/<w:tcBorders>([\s\S]*?)<\/w:tcBorders>/g)].map((m) => [...m[1].matchAll(/<w:(\w+)\b[^>]*w:color="([^"]*)"/g)].map((b) => `${b[1]}:${b[2]}`).sort().join(' '))
+    }
+    for (const css of ['lime', 'hsl(120, 100%, 50%)', 'rgb(0, 255, 0)', 'rgb(0 255 0)', 'hwb(120 0% 0%)']) {
+      expect(await bordersOf(`1px solid ${css}`), css).toEqual(['bottom:00FF00 left:00FF00 right:00FF00 top:00FF00', 'bottom:00FF00 left:00FF00 right:00FF00 top:00FF00'])
+    }
+    // Not drawn black: a transparent border is none (html-to-docx still gives a lone border-top's cell its other sides).
+    expect((await bordersOf('1px solid transparent')).join(' ')).not.toContain('top:')
+  })
+})
