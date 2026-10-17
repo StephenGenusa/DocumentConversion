@@ -33,6 +33,16 @@ describe('readMarkdown inline html', () => {
     expect(doc.html).not.toContain('<center>')
   })
 
+  it('keeps an SVG picture given as a data URI, as the Markdown writer writes one', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>').toString('base64')
+    const doc = await readMarkdown(src(`A plan: ![floor plan](data:image/svg+xml;base64,${svg})\n`))
+    expect(doc.html).toContain(`<img src="data:image/svg+xml;base64,${svg}" alt="floor plan"`)
+    expect(doc.html).not.toContain('![floor plan]')
+    // Other data: links are still refused.
+    const link = await readMarkdown(src('[click](data:text/html;base64,PGI+)\n'))
+    expect(link.html).not.toContain('href="data:')
+  })
+
   it('drops unknown tags but keeps their text', async () => {
     const doc = await readMarkdown(src('<spoiler title="List of articles">\n\nsee below\n\n</spoiler>\n'))
     expect(doc.html).not.toContain('spoiler')

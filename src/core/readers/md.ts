@@ -26,6 +26,18 @@ import type { HubDocument, SourceInput } from '../types'
 // text, instead of printing their angle brackets at the reader.
 const md = new MarkdownIt({ html: true, linkify: true, typographer: false })
 
+/**
+ * `![plan](data:image/svg+xml;base64,…)` is a picture, as the PNG, JPEG, GIF
+ * and WebP ones markdown-it already accepts are. Its link check refused SVG,
+ * so the picture arrived as its own source text, and the Markdown writer
+ * writes every SVG image in exactly this form: an SVG picture written out
+ * and read back was lost. Like any SVG image it is sanitized (B6) when the
+ * document is read (convert.ts), and shown only as an <img>.
+ */
+const SVG_DATA_URI = /^data:image\/svg\+xml[;,]/i
+const validateLink = md.validateLink.bind(md)
+md.validateLink = (url: string): boolean => SVG_DATA_URI.test(url.trim()) || validateLink(url)
+
 /*
  * GitHub-flavored Markdown that markdown-it core does not read. Each one
  * produces markup the hub already has, so nothing here widens the allowlist,
