@@ -9,6 +9,7 @@ import { BLOCK, gridForElement, normalizeText } from '../table-grid'
 import type { HubDocument } from '../types'
 import { mathClose, TEX_SHAPED } from '../rendered-blocks'
 import { markColor, markOpenTag } from '../mark'
+import { cellAlign, type CellAlign } from '../cell-align'
 
 const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 td.use([tables, strikethrough])
@@ -120,14 +121,40 @@ function cellMarkdown(cell: Element): string {
  * output size, and it also materialized a second full DOM (turndown parses the
  * HTML again with domino), which is where the 1.4 GB peak came from.
  */
-function renderPipeTable(grid: string[][]): string {
+function renderPipeTable(grid: string[][], aligns?: Array<CellAlign | undefined>): string {
   const width = grid.reduce((max, row) => Math.max(max, row.length), 0)
   const lines: string[] = [pipeRow(grid[0], width)]
   let border = ''
-  for (let i = 0; i < width; i++) border += (i === 0 ? '| ' : ' ') + '---' + ' |'
+  for (let i = 0; i < width; i++) border += (i === 0 ? '| ' : ' ') + ALIGN_MARKER[aligns?.[i] ?? 'none'] + ' |'
   lines.push(border)
   for (let r = 1; r < grid.length; r++) lines.push(pipeRow(grid[r], width))
   return lines.join('\n')
+}
+
+const ALIGN_MARKER: Record<CellAlign | 'none', string> = { none: '---', left: ':---', center: ':---:', right: '---:' }
+
+/**
+ * Each column's alignment (src/core/cell-align.ts), for the pipe table's
+ * delimiter row. A pipe table aligns whole columns, the hub single cells, so
+ * a column takes the alignment its body cells (`td`) share; an empty cell
+ * shows no alignment and has no say, nor has a header cell below the first
+ * row (a second header row, a row's own header). A column with no body text
+ * to go by takes its first-row cell's. Cells that disagree, or share none,
+ * leave the column plain. `grid` is the table's Markdown, which says which
+ * cells are empty.
+ */
+function columnAligns(table: Element, grid: string[][]): Array<CellAlign | undefined> | undefined {
+  // A span's later columns and rows are '' here, so they are skipped as empty.
+  const cells = gridForElement(table, { cellValue: (cell) => `${cell.name}:${cellAlign(cell.attribs.style) ?? 'none'}` })
+  const width = grid.reduce((max, row) => Math.max(max, row.length), 0)
+  const aligns: Array<CellAlign | undefined> = []
+  for (let c = 0; c < width; c++) {
+    const body = new Set<string>()
+    for (let r = 1; r < grid.length; r++) if (grid[r][c] !== '' && cells[r]?.[c]?.startsWith('td:')) body.add(cells[r][c].slice(3))
+    const shared = body.size === 0 ? cells[0]?.[c]?.slice(3) : body.size === 1 ? [...body][0] : undefined
+    aligns.push(shared && shared !== 'none' ? (shared as CellAlign) : undefined)
+  }
+  return aligns.some(Boolean) ? aligns : undefined
 }
 
 /**
@@ -149,6 +176,8 @@ function extractTablesForMarkdown(html: string): { prose: string; tableMarkdown:
   if (!html.includes('<table')) return { prose: html, tableMarkdown: [] }
   const dom = parseDocument(html)
   const rendered: string[] = []
+  // Most tables have no alignment, and a 300k-cell workbook is not walked twice for none.
+  const aligned = html.includes('text-align')
   for (const table of findAll((el) => el.name === 'table', dom.children)) {
     const grid = gridForElement(table, { cellValue: cellMarkdown })
     // turndown-plugin-gfm dereferences node.rows[0].parentNode with no guard,
@@ -161,7 +190,7 @@ function extractTablesForMarkdown(html: string): { prose: string; tableMarkdown:
     // Rows that yielded no cells at all: leave the element alone, as before.
     if (grid.every((row) => row.length === 0)) continue
     const marker = `${TABLE_SENTINEL}${rendered.length}${TABLE_SENTINEL}`
-    rendered.push(renderPipeTable(grid))
+    rendered.push(renderPipeTable(grid, aligned ? columnAligns(table, grid) : undefined))
     replaceElement(table, new Element('p', {}, [new Text(marker)]))
   }
   // decodeEntities must stay on: with it off, text that legitimately contains

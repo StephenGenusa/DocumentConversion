@@ -2,6 +2,7 @@ import sanitizeHtml from 'sanitize-html'
 import { FOOTNOTE_LABEL } from './footnotes'
 import { diagramLanguage } from './rendered-blocks'
 import { markColor, markStyle } from './mark'
+import { cellAlign, cellAlignStyle } from './cell-align'
 
 /**
  * Single source of truth for what the hub allows. The TipTap editor schema
@@ -72,6 +73,17 @@ function keepMarkColor(tagName: string, attribs: sanitizeHtml.Attributes): sanit
 }
 
 /**
+ * A cell keeps its spans and its alignment (src/core/cell-align.ts), from its
+ * style or the legacy `align` attribute, rebuilt as the one `text-align` the
+ * hub writes; nothing else of the style survives.
+ */
+function keepCellAlign(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
+  const { style, align, ...rest } = attribs
+  const kept = cellAlign(style, align)
+  return { tagName, attribs: kept ? { ...rest, style: cellAlignStyle(kept) } : rest }
+}
+
+/**
  * `code` keeps a class only to name its language (`language-*`) or to say the
  * shell highlighted it (`hljs`). The class is what makes a block a diagram or
  * a formula (spec B1), so anything else an input put there is dropped.
@@ -95,8 +107,8 @@ export function hubSanitizeOptions(): sanitizeHtml.IOptions {
     allowedAttributes: {
       a: ['href', 'title'],
       img: ['src', 'alt', 'width', 'height'],
-      td: ['colspan', 'rowspan'],
-      th: ['colspan', 'rowspan'],
+      td: ['colspan', 'rowspan', 'style'],
+      th: ['colspan', 'rowspan', 'style'],
       code: ['class'],
       pre: ['class'],
       // Footnotes (src/core/footnotes.ts). Structural attributes are allowed
@@ -106,10 +118,21 @@ export function hubSanitizeOptions(): sanitizeHtml.IOptions {
       li: ['data-fn'],
       mark: ['style'],
     },
-    // What keepMarkColor writes, and nothing else; sanitize-html writes it back
-    // as `property:value;property:value`, the form markStyle makes.
-    allowedStyles: { mark: { 'background-color': [/^#[0-9A-F]{6}$/], color: [/^#FFFFFF$/] } },
-    transformTags: { sup: keepValidLabel, li: keepValidLabel, code: keepCodeClass, mark: keepMarkColor },
+    // What keepMarkColor and keepCellAlign write, and nothing else; sanitize-html
+    // writes it back as `property:value;property:value`, the form they make.
+    allowedStyles: {
+      mark: { 'background-color': [/^#[0-9A-F]{6}$/], color: [/^#FFFFFF$/] },
+      td: { 'text-align': [/^(?:left|center|right)$/] },
+      th: { 'text-align': [/^(?:left|center|right)$/] },
+    },
+    transformTags: {
+      sup: keepValidLabel,
+      li: keepValidLabel,
+      code: keepCodeClass,
+      mark: keepMarkColor,
+      td: keepCellAlign,
+      th: keepCellAlign,
+    },
     // Text inside these is metadata or code, not content: without this the
     // <title> of an HTML page leaked into the body above its own <h1>.
     nonTextTags: ['script', 'style', 'textarea', 'option', 'title', 'head', 'noframes'],

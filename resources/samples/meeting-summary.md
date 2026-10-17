@@ -62,7 +62,7 @@ The plan holds 38 desks in four groups, two quiet rooms and a design studio with
 ## Decisions
 
 | # | Decision | Agreed by | Effective |
-|---|---|---|---|
+|:---:|---|---|---|
 | D1 | Move weekend is December 5 and 6; nobody works from the third floor after December 4. | All | Now |
 | D2 | Desk group 1, by the elevators, is kept step-free and holds the four adjustable desks. | Odile Larkspur | Plan rev 3 |
 | D3 | The second small meeting room becomes Quiet room B. | Iris Vellum | Plan rev 3 |

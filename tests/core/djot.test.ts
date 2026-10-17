@@ -29,7 +29,8 @@ describe('Djot', () => {
     expect(hub.html).toContain('<h2>Changes</h2>')
     expect(hub.html).toContain('<em>emphasis</em>, <strong>strong</strong> text and a <a href="https://example.com/">link</a>.')
     expect(hub.html.replace(/\s+/g, '')).toContain('<ul><li>one</li><li>two</li></ul>')
-    expect(hub.html.replace(/\s+/g, '')).toContain('<table><tr><th>Name</th><th>Count</th></tr><tr><td>a</td><td>1</td></tr></table>')
+    // `------:` right-aligns the column, which the hub keeps (src/core/cell-align.ts).
+    expect(hub.html.replace(/>\s+</g, '><')).toContain('<table><tr><th>Name</th><th style="text-align:right">Count</th></tr><tr><td>a</td><td style="text-align:right">1</td></tr></table>')
     expect(hub.html).toContain('<pre><code class="language-js">let x = 1 &lt; 2\n</code></pre>')
     expect(hub.html).not.toContain('<section')
   })

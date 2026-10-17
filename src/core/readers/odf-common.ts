@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import { ConversionError } from '../errors'
 import { escapeHtml } from '../shell'
 import { scanElements, type XmlElement } from '../ooxml'
+import { paragraphAlign, type CellAlign } from '../cell-align'
 
 /**
  * ODF stores the document body in content.xml inside the package.
@@ -66,7 +67,8 @@ const FORMAT_TAGS: [number, string][] = [
  * bold paragraph has to switch bold OFF, not merely fail to add it.
  */
 type TextFormat = { set: number; on: number }
-type StyleEntry = { parent?: string; format: TextFormat }
+/** `align`: a paragraph style's own `fo:text-align`, if it gives one. */
+type StyleEntry = { parent?: string; format: TextFormat; align?: string }
 /** `cell` is the spreadsheet family, `table-cell`: a whole cell's look. */
 export type OdfStyles = { text: Map<string, StyleEntry>; paragraph: Map<string, StyleEntry>; cell: Map<string, StyleEntry> }
 
@@ -119,7 +121,9 @@ export function parseOdfStyles(xml: string): OdfStyles {
     const map = family === 'text' || family === 'paragraph' ? styles[family] : family === 'table-cell' ? styles.cell : undefined
     if (name === undefined || !map) continue
     const props = /<style:text-properties\b([^>]*)>/.exec(m[2] ?? '')?.[1] ?? ''
-    map.set(name, { parent: attr(attrs, 'style:parent-style-name'), format: textFormat(props) })
+    const paragraphProps = family === 'paragraph' ? /<style:paragraph-properties\b([^>]*)>/.exec(m[2] ?? '')?.[1] : undefined
+    const align = paragraphProps === undefined ? undefined : attr(paragraphProps, 'fo:text-align')
+    map.set(name, { parent: attr(attrs, 'style:parent-style-name'), format: textFormat(props), ...(align ? { align } : {}) })
   }
   return styles
 }
@@ -147,6 +151,27 @@ export function withOdfStyles<T>(styles: OdfStyles, build: () => T): T {
   } finally {
     documentStyles = NO_STYLES
   }
+}
+
+/**
+ * A paragraph's alignment (src/core/cell-align.ts) by its style, or the style
+ * that one is based on; `paragraphXml` is the whole `<text:p>` or `<text:h>`.
+ * LibreOffice writes `start` and `end` for left and right; left, its default,
+ * is none here, as justified is.
+ */
+export function odfParagraphAlign(paragraphXml: string): CellAlign | 'none' {
+  const open = /^<[^\s>]+([^>]*)>/.exec(paragraphXml)?.[1] ?? ''
+  let name = attr(open, 'text:style-name')
+  for (let depth = 0; name !== undefined && depth <= 20; depth++) {
+    const entry = documentStyles.paragraph.get(name)
+    if (!entry) break
+    if (entry.align !== undefined) {
+      const align = paragraphAlign(entry.align)
+      return align === 'left' ? 'none' : align
+    }
+    name = entry.parent
+  }
+  return 'none'
 }
 
 /**

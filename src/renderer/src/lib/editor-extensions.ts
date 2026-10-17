@@ -14,6 +14,7 @@ import type { Extensions } from '@tiptap/core'
 import { RenderedBlocks, blockNodeView, inlineNodeView } from './block-views'
 import { CodeColor } from './code-color'
 import { markColor, markStyle } from '../../../core/mark'
+import { cellAlign, cellAlignStyle } from '../../../core/cell-align'
 
 /**
  * The editor schema must model everything the hub sanitizer passes
@@ -404,6 +405,30 @@ const CodeAwareLink = Link.extend({
   },
 })
 
+/*
+ * A cell's alignment, the hub's `style="text-align:…"` (core/cell-align.ts),
+ * read from the style or the legacy align attribute and written back byte for
+ * byte. The cell's other attributes (spans, widths) are TipTap's own.
+ */
+const textAlign = {
+  default: null,
+  parseHTML: (el: HTMLElement) => cellAlign(el.getAttribute('style') ?? undefined, el.getAttribute('align') ?? undefined) ?? null,
+  renderHTML: (attrs: { textAlign?: Parameters<typeof cellAlignStyle>[0] | null }) =>
+    attrs.textAlign ? { style: cellAlignStyle(attrs.textAlign) } : {},
+}
+
+const AlignedTableCell = TableCell.extend({
+  addAttributes() {
+    return { ...this.parent?.(), textAlign }
+  },
+})
+
+const AlignedTableHeader = TableHeader.extend({
+  addAttributes() {
+    return { ...this.parent?.(), textAlign }
+  },
+})
+
 export const EDITOR_EXTENSIONS: Extensions = [
   // No empty trailing paragraph after the notes: they are always last, and
   // that paragraph would be written into every document that has footnotes.
@@ -412,8 +437,8 @@ export const EDITOR_EXTENSIONS: Extensions = [
   CodeAwareLink,
   Table.configure({ resizable: false }),
   TableRow,
-  TableHeader,
-  TableCell,
+  AlignedTableHeader,
+  AlignedTableCell,
   Image.configure({ allowBase64: true }),
   // sup and sub are in HUB_TAGS; StarterKit models neither.
   Superscript,

@@ -129,13 +129,13 @@ Demands are from the frame model with the new live load, for a timber deck repla
 <tr><th>Timber</th><th>FRP</th><th>Timber</th><th>FRP</th></tr>
 </thead>
 <tbody>
-<tr><td>Interior stringer</td><td>W8x18</td><td>86.4 kN·m</td><td>29.0 kN·m</td><td>27.3 kN·m</td><td>0.34</td><td>0.32</td><td>OK</td></tr>
-<tr><td>Floor beam</td><td>W12x26</td><td>189 kN·m</td><td>72.4 kN·m</td><td>68.1 kN·m</td><td>0.38</td><td>0.36</td><td>OK</td></tr>
-<tr><td>Bottom chord</td><td>2L 4x4x3/8</td><td>612 kN</td><td>438 kN</td><td>401 kN</td><td>0.72</td><td>0.66</td><td>OK</td></tr>
-<tr><td>Top chord</td><td>2L 4x4x3/8</td><td>540 kN</td><td>446 kN</td><td>409 kN</td><td>0.83</td><td>0.76</td><td>OK</td></tr>
-<tr><td>End diagonal</td><td>2L 3x3x5/16</td><td>296 kN</td><td>305 kN</td><td>279 kN</td><td><strong>1.03</strong></td><td>0.94</td><td>Needs FRP deck</td></tr>
-<tr><td>L2 gusset, as found</td><td>3/8 in plate</td><td>563 kN</td><td>438 kN</td><td>401 kN</td><td>0.78</td><td>0.71</td><td>Plate over</td></tr>
-<tr><td>Bearing</td><td>Elastomeric pad</td><td>180 kN</td><td>166 kN</td><td>152 kN</td><td>0.92</td><td>0.84</td><td>Replace</td></tr>
+<tr><td>Interior stringer</td><td>W8x18</td><td style="text-align:right">86.4 kN·m</td><td style="text-align:right">29.0 kN·m</td><td style="text-align:right">27.3 kN·m</td><td style="text-align:right">0.34</td><td style="text-align:right">0.32</td><td>OK</td></tr>
+<tr><td>Floor beam</td><td>W12x26</td><td style="text-align:right">189 kN·m</td><td style="text-align:right">72.4 kN·m</td><td style="text-align:right">68.1 kN·m</td><td style="text-align:right">0.38</td><td style="text-align:right">0.36</td><td>OK</td></tr>
+<tr><td>Bottom chord</td><td>2L 4x4x3/8</td><td style="text-align:right">612 kN</td><td style="text-align:right">438 kN</td><td style="text-align:right">401 kN</td><td style="text-align:right">0.72</td><td style="text-align:right">0.66</td><td>OK</td></tr>
+<tr><td>Top chord</td><td>2L 4x4x3/8</td><td style="text-align:right">540 kN</td><td style="text-align:right">446 kN</td><td style="text-align:right">409 kN</td><td style="text-align:right">0.83</td><td style="text-align:right">0.76</td><td>OK</td></tr>
+<tr><td>End diagonal</td><td>2L 3x3x5/16</td><td style="text-align:right">296 kN</td><td style="text-align:right">305 kN</td><td style="text-align:right">279 kN</td><td style="text-align:right"><strong>1.03</strong></td><td style="text-align:right">0.94</td><td>Needs FRP deck</td></tr>
+<tr><td>L2 gusset, as found</td><td>3/8 in plate</td><td style="text-align:right">563 kN</td><td style="text-align:right">438 kN</td><td style="text-align:right">401 kN</td><td style="text-align:right">0.78</td><td style="text-align:right">0.71</td><td>Plate over</td></tr>
+<tr><td>Bearing</td><td>Elastomeric pad</td><td style="text-align:right">180 kN</td><td style="text-align:right">166 kN</td><td style="text-align:right">152 kN</td><td style="text-align:right">0.92</td><td style="text-align:right">0.84</td><td>Replace</td></tr>
 </tbody>
 </table>
 
@@ -304,7 +304,7 @@ stateDiagram-v2
 All endpoints take and return JSON, and need a bearer token from the auth service.
 
 | Method | Path | Purpose | Reply |
-|---|---|---|---|
+|---|---|---|:---:|
 | \`GET\` | \`/v1/docs/:id\` | Head revision and its text | \`200\` |
 | \`GET\` | \`/v1/docs/:id/revisions\` | Revisions newer than \`?after=n\` | \`200\` |
 | \`POST\` | \`/v1/docs/:id/changes\` | Push a change | \`201\` |
@@ -579,7 +579,7 @@ The plan holds 38 desks in four groups, two quiet rooms and a design studio with
 ## Decisions
 
 | # | Decision | Agreed by | Effective |
-|---|---|---|---|
+|:---:|---|---|---|
 | D1 | Move weekend is December 5 and 6; nobody works from the third floor after December 4. | All | Now |
 | D2 | Desk group 1, by the elevators, is kept step-free and holds the four adjustable desks. | Odile Larkspur | Plan rev 3 |
 | D3 | The second small meeting room becomes Quiet room B. | Iris Vellum | Plan rev 3 |

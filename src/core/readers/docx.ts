@@ -13,6 +13,7 @@ import type { HubDocument, ReadContext, SourceInput } from '../types'
 import { MATH_NAMESPACES, ommlLinearText, ommlToTex } from '../omml-tex'
 import { codeBookmarkLanguage } from '../code-bookmark'
 import { markOpenTag, WORD_HIGHLIGHTS } from '../mark'
+import { cellAlignStyle, paragraphAlign, sharedAlign, type CellAlign } from '../cell-align'
 import { zipPartsMatch } from '../zip-scan'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode, type ParentNode } from 'domhandler'
@@ -55,6 +56,76 @@ export function promoteHeaderRows(html: string, flags: boolean[]): string {
       done = true
       return row.replace(/<(\/?)td\b/g, '<$1th')
     })
+  })
+}
+
+/* -------------------------------------------------------------------------- */
+/* Table cell alignment                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Each table cell's alignment (src/core/cell-align.ts), in the order mammoth
+ * writes the cells: document order, a nested table's cells after the cell
+ * holding them. mammoth reads no alignment at all, so a column of numbers
+ * Word showed on the right came out on the left everywhere else.
+ *
+ * Word aligns paragraphs, not cells: a cell is aligned as all its paragraphs
+ * are, each by its own `w:jc`, else its style's (and the styles that one is
+ * based on), else the default paragraph style's. Left is Word's default and
+ * every output's for a cell, so it is none here. A cell that continues a
+ * vertical merge is no cell of mammoth's (it is the row span above) and is
+ * left out.
+ */
+async function cellAligns(bytes: Buffer): Promise<Array<CellAlign | undefined>> {
+  try {
+    const zip = await JSZip.loadAsync(bytes)
+    const xml = (await zip.files['word/document.xml']?.async('string')) ?? ''
+    if (!/<w:jc\b/.test(xml) && !xml.includes('<w:pStyle')) return []
+    const stylesXml = (await zip.files['word/styles.xml']?.async('string')) ?? ''
+    const styles = parseWordStyles(stylesXml)
+    const defaultStyle = /<w:style\b(?=[^>]*\bw:type="paragraph")(?=[^>]*\bw:default="(?:1|true)")[^>]*\bw:styleId="([^"]*)"/.exec(stylesXml)?.[1]
+    const docDefault = /<w:pPrDefault\b[\s\S]*?<\/w:pPrDefault>/.exec(stylesXml)?.[0].match(/<w:jc\b[^>]*\bw:val="([^"]*)"/)?.[1]
+    const paragraph = (p: string): ReturnType<typeof paragraphAlign> => {
+      const props = (scanElements(p, ['w:pPr'])[0]?.xml ?? '').replace(/<w:pPrChange\b[\s\S]*?<\/w:pPrChange>/g, '')
+      const own = /<w:jc\b[^>]*\bw:val="([^"]*)"/.exec(props)?.[1]
+      const styleId = /<w:pStyle\b[^>]*\bw:val="([^"]*)"/.exec(props)?.[1] ?? defaultStyle
+      const jc = own ?? styleChain(styles, styleId).find((st) => st.jc !== undefined)?.jc ?? docDefault
+      const align = paragraphAlign(jc)
+      return align === 'left' ? 'none' : align
+    }
+    const out: Array<CellAlign | undefined> = []
+    const walk = (tableXml: string): void => {
+      for (const row of scanElements(tableXml, ['w:tr'])) {
+        for (const cell of scanElements(row.inner, ['w:tc'])) {
+          const props = scanElements(cell.inner, ['w:tcPr'])[0]?.xml ?? ''
+          const merge = /<w:vMerge\b[^>]*?(?:\bw:val="([^"]*)")?[^>]*>/.exec(props)
+          if (merge && merge[1] !== 'restart') continue
+          const blocks = scanElements(cell.inner, ['w:p', 'w:tbl'])
+          out.push(sharedAlign(blocks.filter((b) => b.name === 'w:p').map((b) => paragraph(b.xml))))
+          for (const nested of blocks) if (nested.name === 'w:tbl') walk(nested.inner)
+        }
+      }
+    }
+    for (const table of scanElements(xml, ['w:tbl'])) walk(table.inner)
+    return out
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Give each cell mammoth wrote its alignment, one for one. Where the count
+ * differs (a table mammoth read and this scan did not, in a text box or a
+ * note) nothing is guessed: the cells keep no alignment, as before.
+ */
+export function alignCells(html: string, aligns: Array<CellAlign | undefined>): string {
+  if (!aligns.some(Boolean)) return html
+  const cells = html.match(/<t[dh][\s>]/g) ?? []
+  if (cells.length !== aligns.length) return html
+  let index = 0
+  return html.replace(/<(t[dh])((?:\s[^>]*)?)>/g, (tag, name: string, attrs: string) => {
+    const align = aligns[index++]
+    return align ? `<${name}${attrs} style="${cellAlignStyle(align)}">` : tag
   })
 }
 
@@ -588,6 +659,8 @@ interface WordStyle {
   basedOn?: string
   /** The font the style's own run properties name, if any. */
   font?: string
+  /** The alignment (`w:jc`) the style's own paragraph properties give, if any. */
+  jc?: string
 }
 
 /** The font a run-properties fragment names: its ascii face, else hAnsi; a theme font is not monospace. */
@@ -605,11 +678,13 @@ function parseWordStyles(xml: string): Map<string, WordStyle> {
     const id = /\bw:styleId="([^"]*)"/.exec(el.xml)?.[1]
     if (!id) continue
     const rPr = scanElements(el.inner, ['w:rPr'])[0]?.xml ?? ''
+    const pPr = scanElements(el.inner, ['w:pPr'])[0]?.xml ?? ''
     styles.set(id, {
       id,
       name: decodeXml(/<w:name\b[^>]*\bw:val="([^"]*)"/.exec(el.inner)?.[1] ?? id),
       basedOn: /<w:basedOn\b[^>]*\bw:val="([^"]*)"/.exec(el.inner)?.[1],
       font: rPrFont(rPr),
+      jc: /<w:jc\b[^>]*\bw:val="([^"]*)"/.exec(pPr)?.[1],
     })
   }
   return styles
@@ -1358,7 +1433,7 @@ export async function readDocx(src: SourceInput, ctx?: ReadContext): Promise<Hub
   // Last: code and equations are taken out first, so neither is read as highlighted.
   const shading = await shadingAsHighlight(unshaded)
   const bytes = shading?.bytes ?? unshaded
-  const [{ value }, flags, header, numIds] = await Promise.all([
+  const [{ value }, flags, header, numIds, aligns] = await Promise.all([
     mammoth.convertToHtml(
       { buffer: bytes },
       {
@@ -1369,11 +1444,12 @@ export async function readDocx(src: SourceInput, ctx?: ReadContext): Promise<Hub
     headerFlags(bytes),
     headerTitle(bytes),
     listNumIds(bytes),
+    cellAligns(bytes),
   ])
   const converted = marksToHub(math ? restoreEquations(value, math.marker, math.equations) : value)
   if (math) equationNotice(math.equations, ctx)
   const html = keepTabsVisible(
-    mergeInterruptedOrderedLists(promoteHeaderRows(replaceUninlinedImages(converted), flags), numIds),
+    mergeInterruptedOrderedLists(promoteHeaderRows(alignCells(replaceUninlinedImages(converted), aligns), flags), numIds),
   )
   // After keepTabsVisible: a tab in code stays a tab.
   const withCode = code ? restoreCodeBlocks(code.inline ? codeInsideFormatting(html) : html, code.marker, code.blocks) : html

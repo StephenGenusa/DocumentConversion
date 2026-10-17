@@ -1,5 +1,6 @@
 import { scanElements } from '../ooxml'
-import { collectOdfNotes, appendOdfList, loadOdfDocument, odfRich, withOdfStyles, type ListRun } from './odf-common'
+import { collectOdfNotes, appendOdfList, loadOdfDocument, odfParagraphAlign, odfRich, withOdfStyles, type ListRun } from './odf-common'
+import { cellAlignStyle, sharedAlign, type CellAlign } from '../cell-align'
 import type { HubDocument, SourceInput } from '../types'
 
 /**
@@ -15,11 +16,21 @@ import type { HubDocument, SourceInput } from '../types'
  * with the inner table's first cell.
  */
 export function odfRowCells(rowXml: string): string[] {
-  const cells: string[] = []
+  return odfAlignedRowCells(rowXml).map((cell) => cell.html)
+}
+
+/**
+ * The same cells, each with its alignment: the one all its paragraphs share
+ * by their styles (a list in it is none). A sheet's cell style is not read.
+ */
+function odfAlignedRowCells(rowXml: string): Array<{ html: string; align?: CellAlign }> {
+  const cells: Array<{ html: string; align?: CellAlign }> = []
   for (const cell of scanElements(rowXml, ['table:table-cell', 'table:covered-table-cell'])) {
     const attrs = /^<[^\s>]+([^>]*)>/.exec(cell.xml)?.[1] ?? ''
     const pieces: string[] = []
+    const aligns: Array<CellAlign | 'none'> = []
     for (const block of scanElements(cell.inner, ['text:p', 'text:h', 'text:list', 'table:table'])) {
+      if (block.name !== 'table:table') aligns.push(block.name === 'text:list' ? 'none' : odfParagraphAlign(block.xml))
       if (block.name === 'table:table') {
         const nested = renderOdfTable(block.inner)
         if (nested) pieces.push(nested)
@@ -30,28 +41,31 @@ export function odfRowCells(rowXml: string): string[] {
       if (text) pieces.push(inline)
     }
     const html = pieces.join(' ')
+    const align = sharedAlign(aligns)
     const repeat = Math.min(1000, Math.max(1, Number(/number-columns-repeated="(\d+)"/.exec(attrs)?.[1] ?? 1)))
-    for (let i = 0; i < repeat; i++) cells.push(html)
+    for (let i = 0; i < repeat; i++) cells.push(align ? { html, align } : { html })
   }
   // Trailing repeated blanks pad ODF rows out to the sheet width; drop them.
-  while (cells.length > 0 && cells[cells.length - 1] === '') cells.pop()
+  while (cells.length > 0 && cells[cells.length - 1].html === '') cells.pop()
   return cells
 }
 
 export function renderOdfTable(tableXml: string): string | null {
-  const headerRows: string[][] = []
-  const bodyRows: string[][] = []
+  type Cell = { html: string; align?: CellAlign }
+  const headerRows: Cell[][] = []
+  const bodyRows: Cell[][] = []
   for (const block of scanElements(tableXml, ['table:table-header-rows', 'table:table-row'])) {
     if (block.name === 'table:table-header-rows') {
-      for (const row of scanElements(block.inner, ['table:table-row'])) headerRows.push(odfRowCells(row.inner))
+      for (const row of scanElements(block.inner, ['table:table-row'])) headerRows.push(odfAlignedRowCells(row.inner))
     } else {
-      bodyRows.push(odfRowCells(block.inner))
+      bodyRows.push(odfAlignedRowCells(block.inner))
     }
   }
   const all = [...headerRows, ...bodyRows]
-  if (all.every((row) => row.every((cell) => cell === ''))) return null
+  if (all.every((row) => row.every((cell) => cell.html === ''))) return null
 
-  const cellsHtml = (row: string[], tag: string): string => row.map((c) => `<${tag}>${c}</${tag}>`).join('')
+  const cellsHtml = (row: Cell[], tag: string): string =>
+    row.map((c) => `<${tag}${c.align ? ` style="${cellAlignStyle(c.align)}"` : ''}>${c.html}</${tag}>`).join('')
   const thead =
     headerRows.length > 0 ? `<thead>${headerRows.map((r) => `<tr>${cellsHtml(r, 'th')}</tr>`).join('')}</thead>` : ''
   const tbody = `<tbody>${bodyRows.map((r) => `<tr>${cellsHtml(r, 'td')}</tr>`).join('')}</tbody>`

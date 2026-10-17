@@ -56,6 +56,19 @@ describe('the editor round-trips what the hub allows', () => {
     expect(roundTrip(code)).toBe(code)
   })
 
+  it("keeps a table cell's alignment, as the hub writes it", () => {
+    const html =
+      '<table><tbody><tr><th style="text-align:left"><p>Item</p></th><th style="text-align:right"><p>Mass</p></th><th><p>Note</p></th></tr>' +
+      '<tr><td><p>Beaker</p></td><td style="text-align:right"><p>12.5</p></td><td colspan="1" style="text-align:center"><p>ok</p></td></tr></tbody></table>'
+    // The editor writes every cell's spans, 1 and 1 included; those are no change.
+    const plain = (out: string): string => out.replace(/ colspan="1"| rowspan="1"/g, '')
+    expect(plain(sanitizeToHub(roundTrip(html)))).toBe(plain(html))
+    // The DOM's spelling, as the pane writes it, comes back as the hub's.
+    expect(plain(sanitizeToHub(roundTrip('<table><tbody><tr><td style="text-align: center;"><p>a</p></td></tr></tbody></table>')))).toBe(
+      '<table><tbody><tr><td style="text-align:center"><p>a</p></td></tr></tbody></table>',
+    )
+  })
+
   it('keeps footnotes exactly: references, labels and the notes list', () => {
     const html =
       '<p>A claim<sup data-fn="smith2020">1</sup> and<sup data-fn="2">2</sup>.</p>' +

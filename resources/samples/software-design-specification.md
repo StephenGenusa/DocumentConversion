@@ -125,7 +125,7 @@ stateDiagram-v2
 All endpoints take and return JSON, and need a bearer token from the auth service.
 
 | Method | Path | Purpose | Reply |
-|---|---|---|---|
+|---|---|---|:---:|
 | `GET` | `/v1/docs/:id` | Head revision and its text | `200` |
 | `GET` | `/v1/docs/:id/revisions` | Revisions newer than `?after=n` | `200` |
 | `POST` | `/v1/docs/:id/changes` | Push a change | `201` |
