@@ -40,26 +40,21 @@ export function rasterizesSvgImages(target: TargetFormat): boolean {
 }
 
 /**
- * Per conversion: how many SVG images are converted, how long each may take,
- * how large each may be, and the limits on them all together.
+ * How SVG images are converted: `batch` at a time, each allowed `eachMs` of
+ * drawing, each source at most `maxBytes`.
  *
  * Each distinct picture is one request to the render host, which draws one
  * at a time; an ordinary icon or plan takes a few milliseconds, so a page of
- * hundreds converts in a second or two. They are asked for `batch` at a time,
- * which keeps the two totals: no batch is started once `totalMs` has passed
- * (and one still running is given up at that point, so a document of slow
- * pictures stops near it, not at `max` times `eachMs`), and none once the PNG
- * copies made so far reach `maxTotalBytes`, since every one of them is held
- * until the document is written. What is left is its alt text, with one
- * notice.
+ * hundreds converts in a second or two. Every one is converted, however many
+ * there are (owner, 2026-10-16: the earlier 2,000 pictures, 120 s and 100 MB
+ * of PNG copies are gone). Batches keep each request to the host small, and
+ * a picture that takes too long is that picture's alt text, not the end of
+ * the rest.
  */
 export const SVG_IMAGE_LIMITS = {
-  max: 2000,
   eachMs: 10_000,
-  totalMs: 120_000,
   batch: 25,
   maxBytes: MAX_SVG_IMAGE_BYTES,
-  maxTotalBytes: 100 * 1024 * 1024,
 } as const
 
 /**
@@ -362,7 +357,7 @@ function oneLine(text: string): string {
  * same picture at the size it is shown (its own width/height, else the SVG's
  * size, capped at Word's text area), drawn at twice that by the render host,
  * with its alt kept. A picture that cannot be made becomes its alt text,
- * with a notice; so do the pictures over the limit, with one notice.
+ * with a notice.
  *
  * Also for any picture target when `ctx.svgImagesAsPng` asks (HTML for the
  * clipboard, FOR_PASTING), at the same Word-page sizes, since Word is where
@@ -384,16 +379,7 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
   const failed = (n: number, why: string): void =>
     ctx.onAdvice?.('render-failed', `SVG image ${n} could not be converted for ${name}: ${why}`)
 
-  const { max, eachMs, totalMs, batch, maxBytes, maxTotalBytes } = SVG_IMAGE_LIMITS
-  const converted = images.slice(0, max)
-  if (images.length > max) {
-    const over = images.length - max
-    ctx.onAdvice?.(
-      'render-failed',
-      `This document has ${images.length} SVG images; the first ${max} were converted for ${name} and the other ${over} are shown as their descriptions`,
-    )
-    for (const el of images.slice(max)) replaceWith(el, placeholderFor(el))
-  }
+  const { eachMs, batch, maxBytes } = SVG_IMAGE_LIMITS
 
   interface Job {
     el: Element
@@ -403,7 +389,7 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
     height: number
   }
   const jobs: Job[] = []
-  converted.forEach((el, i) => {
+  images.forEach((el, i) => {
     const number = i + 1
     const svg = decodeSvgDataUri(el.attribs.src)
     const prepared =
@@ -432,51 +418,24 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
     // One request per distinct picture at a given size, `batch` at a time.
     const unique = [...new Set(jobs.map((j) => j.source))]
     const bySource = new Map<string, RenderResult | undefined>()
-    let stopped: 'time' | 'memory' | 'down' | undefined
-    let spent = 0
-    const started = Date.now()
-    for (let i = 0; i < unique.length && !stopped; i += batch) {
-      const left = totalMs - (Date.now() - started)
-      if (i > 0 && left <= 0) {
-        stopped = 'time'
-        break
-      }
+    for (let i = 0; i < unique.length; i += batch) {
       const part = unique.slice(i, i + batch)
-      // The batch still running when the time is up is given up too.
-      const deadline = AbortSignal.timeout(Math.max(1, left))
       let results: RenderResult[]
       try {
         results = await render(
           part.map((source) => ({ kind: 'svg', source, display: true, format: 'png' })),
-          { signal: ctx.signal ? AbortSignal.any([ctx.signal, deadline]) : deadline, timeoutMs: eachMs },
+          { signal: ctx.signal, timeoutMs: eachMs },
         )
       } catch (err) {
         if (ctx.signal?.aborted) throw err
-        if (deadline.aborted) {
-          stopped = 'time'
-          break
-        }
         ctx.onAdvice?.('render-failed', `SVG images could not be converted for ${name}: ${oneLine((err as Error)?.message ?? String(err))}`)
-        stopped = 'down'
         break
       }
-      for (const [k, source] of part.entries()) {
-        const result = results[k]
-        if (result && !('error' in result) && typeof result.png === 'string') {
-          const bytes = Math.floor((result.png.length * 3) / 4)
-          if (spent + bytes > maxTotalBytes) {
-            stopped = 'memory'
-            break
-          }
-          spent += bytes
-        }
-        bySource.set(source, result)
-      }
+      for (const [k, source] of part.entries()) bySource.set(source, results[k])
     }
-    let notReached = 0
     for (const job of jobs) {
       if (!bySource.has(job.source)) {
-        notReached++
+        // The rasteriser went down before this one: said once, above.
         replaceWith(job.el, placeholderFor(job.el))
         continue
       }
@@ -491,17 +450,6 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
       }
       failed(job.number, result && 'error' in result ? oneLine(result.error) : 'the rasteriser gave no picture')
       replaceWith(job.el, placeholderFor(job.el))
-    }
-    if (stopped === 'time') {
-      ctx.onAdvice?.(
-        'render-failed',
-        `Converting SVG images for ${name} took over ${totalMs / 1000} s; the other ${notReached} are shown as their descriptions`,
-      )
-    } else if (stopped === 'memory') {
-      ctx.onAdvice?.(
-        'render-failed',
-        `The PNG copies of this document's SVG images reached ${Math.round(maxTotalBytes / (1024 * 1024))} MB; the other ${notReached} are shown as their descriptions for ${name}`,
-      )
     }
   }
   return serialize(dom, { encodeEntities: 'utf8' })

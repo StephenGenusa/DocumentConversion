@@ -223,4 +223,41 @@ describe('targetPictures: what each target holds', () => {
     expect(calls).toHaveLength(1)
     expect(types(out)).toEqual(['image/png', 'image/png'])
   })
+
+  it('converts every picture past the old 200 per document, asking 25 at a time (owner, 2026-10-16)', async () => {
+    const batches: number[] = []
+    const timeouts = new Set<number | undefined>()
+    const { render: inner, calls } = host()
+    const render: RenderBlocks = async (requests, opts) => {
+      batches.push(requests.length)
+      timeouts.add(opts.timeoutMs)
+      return inner(requests, opts)
+    }
+    const n = 230
+    // Distinct pictures: the TIFF with a different byte at its end each time.
+    const html = Array.from({ length: n }, (_, i) => `<p>${img('image/tiff', Buffer.concat([TIFF, Buffer.from([i & 0xff, i >> 8])]), `p${i}`)}</p>`).join('')
+    const onAdvice = vi.fn()
+    const out = await targetPictures(html, 'epub', { renderBlocks: render, onAdvice })
+    expect(calls).toHaveLength(n)
+    expect(Math.max(...batches)).toBe(25)
+    expect(timeouts).toEqual(new Set([20_000]))
+    expect(types(out)).toEqual(Array(n).fill('image/png'))
+    expect(onAdvice).not.toHaveBeenCalled()
+  })
+
+  it('keeps the batches already converted when the converter goes down, with one notice', async () => {
+    let asked = 0
+    const { render: inner } = host()
+    const render: RenderBlocks = async (requests, opts) => {
+      if (asked++ > 0) throw new Error('the render window closed')
+      return inner(requests, opts)
+    }
+    const html = Array.from({ length: 30 }, (_, i) => `<p>${img('image/tiff', Buffer.concat([TIFF, Buffer.from([i])]), `p${i}`)}</p>`).join('')
+    const onAdvice = vi.fn()
+    const out = await targetPictures(html, 'epub', { renderBlocks: render, onAdvice })
+    expect(types(out)).toEqual(Array(25).fill('image/png'))
+    expect(out).toContain('[image: p29]')
+    expect(onAdvice).toHaveBeenCalledTimes(1)
+    expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Pictures could not be converted for EPUB: the render window closed')
+  })
 })

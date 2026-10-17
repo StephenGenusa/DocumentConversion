@@ -361,65 +361,43 @@ describe('rasterizeSvgImages (spec D10): PNG copies of SVG images for Word and K
     expect(onAdvice).not.toHaveBeenCalled()
   })
 
-  it('converts the first images up to the limit, and says how many were not', async () => {
+  it('converts every image past the old 2,000, with no notice (owner, 2026-10-16)', async () => {
     const { render, calls } = fakeRenderer()
     const onAdvice = vi.fn()
-    const out = await rasterizeSvgImages(manyImages(SVG_IMAGE_LIMITS.max + 2), 'docx', { renderBlocks: render, onAdvice })
-    expect(calls.flat()).toHaveLength(SVG_IMAGE_LIMITS.max)
-    expect(out.match(/data:image\/png/g)).toHaveLength(SVG_IMAGE_LIMITS.max)
-    expect(out).not.toContain('image/svg+xml')
-    expect(onAdvice).toHaveBeenCalledWith(
-      'render-failed',
-      `This document has ${SVG_IMAGE_LIMITS.max + 2} SVG images; the first ${SVG_IMAGE_LIMITS.max} were converted for Word and the other 2 are shown as their descriptions`,
-    )
+    const n = 2_050
+    const out = await rasterizeSvgImages(manyImages(n), 'docx', { renderBlocks: render, onAdvice })
+    expect(calls.flat()).toHaveLength(n)
+    expect(Math.max(...calls.map((c) => c.length))).toBe(SVG_IMAGE_LIMITS.batch)
+    expect(out.match(/data:image\/png/g)).toHaveLength(n)
+    expect(onAdvice).not.toHaveBeenCalled()
   })
 
-  it('starts no batch once the time for all of them has passed: the rest are their alt text, with one notice', async () => {
-    let now = 0
-    const spy = vi.spyOn(Date, 'now').mockImplementation(() => now)
-    try {
-      const { render: inner, calls } = fakeRenderer()
-      const render: RenderBlocks = async (reqs, opts) => {
-        now += SVG_IMAGE_LIMITS.totalMs / 2 + 1
-        return inner(reqs, opts)
-      }
-      const onAdvice = vi.fn()
-      const n = SVG_IMAGE_LIMITS.batch * 3 + 5
-      const out = await rasterizeSvgImages(manyImages(n), 'docx', { renderBlocks: render, onAdvice })
-      // Two batches take just over the limit: no third is started.
-      expect(calls).toHaveLength(2)
-      expect(out.match(/data:image\/png/g)).toHaveLength(SVG_IMAGE_LIMITS.batch * 2)
-      expect(out).toContain(`<p><em>[image: Icon ${n - 1}]</em></p>`)
-      expect(onAdvice).toHaveBeenCalledTimes(1)
-      expect(onAdvice).toHaveBeenCalledWith(
-        'render-failed',
-        `Converting SVG images for Word took over ${SVG_IMAGE_LIMITS.totalMs / 1000} s; the other ${n - SVG_IMAGE_LIMITS.batch * 2} are shown as their descriptions`,
-      )
-    } finally {
-      spy.mockRestore()
+  it('gives each picture its own time: one too slow is its alt text, the rest convert', async () => {
+    const { render: inner } = fakeRenderer()
+    const seen: (number | undefined)[] = []
+    const render: RenderBlocks = async (reqs, opts) => {
+      seen.push(opts.timeoutMs)
+      const results = await inner(reqs, opts)
+      return results.map((r, i) => (reqs[i].source.includes(`#${'1'.padStart(6, '0')}`) ? { error: 'took longer than 10 s' } : r))
     }
+    const onAdvice = vi.fn()
+    const n = SVG_IMAGE_LIMITS.batch * 3 + 5
+    const out = await rasterizeSvgImages(manyImages(n), 'docx', { renderBlocks: render, onAdvice })
+    expect(new Set(seen)).toEqual(new Set([SVG_IMAGE_LIMITS.eachMs]))
+    expect(out.match(/data:image\/png/g)).toHaveLength(n - 1)
+    expect(out).toContain('<p><em>[image: Icon 1]</em></p>')
+    expect(onAdvice).toHaveBeenCalledTimes(1)
+    expect(onAdvice).toHaveBeenCalledWith('render-failed', 'SVG image 2 could not be converted for Word: took longer than 10 s')
   })
 
-  it('keeps the PNG copies within their memory budget: past it, the rest are their alt text, with one notice', async () => {
-    // Each answer is just over a quarter of the budget: three fit, the fourth would not.
-    const big = Buffer.alloc(Math.floor(SVG_IMAGE_LIMITS.maxTotalBytes / 4) + 1024).toString('base64')
+  it('keeps PNG copies past the old 100 MB', async () => {
+    // Five answers of 26 MB each.
+    const big = Buffer.alloc(26 * 1024 * 1024).toString('base64')
     const render: RenderBlocks = async (reqs) => reqs.map(() => ({ png: big, width: 200, height: 100 }))
     const onAdvice = vi.fn()
-    const out = await rasterizeSvgImages(manyImages(6), 'docx', { renderBlocks: render, onAdvice })
-    expect(out.match(/data:image\/png/g)).toHaveLength(3)
-    expect(out.match(/\[image: Icon \d\]/g)).toEqual(['[image: Icon 3]', '[image: Icon 4]', '[image: Icon 5]'])
-    expect(onAdvice).toHaveBeenCalledTimes(1)
-    expect(onAdvice).toHaveBeenCalledWith(
-      'render-failed',
-      `The PNG copies of this document's SVG images reached ${SVG_IMAGE_LIMITS.maxTotalBytes / (1024 * 1024)} MB; the other 3 are shown as their descriptions for Word`,
-    )
-  })
-
-  it('counts a picture repeated once against the budget', async () => {
-    const big = Buffer.alloc(Math.floor(SVG_IMAGE_LIMITS.maxTotalBytes / 4) + 1024).toString('base64')
-    const render: RenderBlocks = async (reqs) => reqs.map(() => ({ png: big, width: 200, height: 100 }))
-    const out = await rasterizeSvgImages(`<p>${img(SVG)}</p>`.repeat(6), 'docx', { renderBlocks: render })
-    expect(out.match(/data:image\/png/g)).toHaveLength(6)
+    const out = await rasterizeSvgImages(manyImages(5), 'docx', { renderBlocks: render, onAdvice })
+    expect(out.match(/data:image\/png/g)).toHaveLength(5)
+    expect(onAdvice).not.toHaveBeenCalled()
   })
 
   it('one notice when the rasteriser is down, every picture its alt text', async () => {

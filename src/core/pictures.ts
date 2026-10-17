@@ -39,8 +39,13 @@ import { originalSize, tiffPage, tiffPages } from './picture-headers'
 
 export const KINDLE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 
-/** Per conversion: how many pictures are converted, and how long each may take. */
-export const PICTURE_LIMITS = { max: 200, eachMs: 20_000 } as const
+/**
+ * How long each picture may take to convert. Every picture is converted,
+ * however many there are (owner, 2026-10-16: the earlier cap of 200 per
+ * document is gone); they are asked for `batch` at a time, as SVG images are,
+ * so each request to the render host stays small.
+ */
+export const PICTURE_LIMITS = { eachMs: 20_000, batch: 25 } as const
 
 /** The picture format a converted picture is given when nothing else is chosen (ConvertOptions.pictureFormat). */
 export const DEFAULT_PICTURE_FORMAT: PictureFormat = 'png'
@@ -382,36 +387,32 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
     const page = pageOf.get(el)
     jobs.push({ el, number, request: page === undefined ? request : { ...request, page } })
   }
-  const { max, eachMs } = PICTURE_LIMITS
-  for (const job of jobs.slice(max)) {
-    toPlaceholder(job.el)
-    changed = true
-  }
-  if (jobs.length > max) {
-    ctx.onAdvice?.(
-      'render-failed',
-      `This document has ${jobs.length} pictures to convert for ${profile.name}; the first ${max} were converted and the other ${jobs.length - max} are shown as their descriptions`,
-    )
-  }
-  const converted = jobs.slice(0, max)
-  if (render && converted.length > 0) {
+  const { eachMs, batch } = PICTURE_LIMITS
+  if (render && jobs.length > 0) {
     changed = true
     const keyOf = (r: RenderRequest): string => JSON.stringify([r.kind, r.source, r.fit, r.page])
-    const unique = [...new Map(converted.map((j) => [keyOf(j.request), j.request])).values()]
-    let results: RenderResult[] | undefined
-    try {
-      results = await render(unique, { signal: ctx.signal, timeoutMs: eachMs })
-    } catch (err) {
-      if (ctx.signal?.aborted) throw err
-      ctx.onAdvice?.('render-failed', `Pictures could not be converted for ${profile.name}: ${oneLine((err as Error)?.message ?? String(err))}`)
+    const unique = [...new Map(jobs.map((j) => [keyOf(j.request), j.request])).values()]
+    const byKey = new Map<string, RenderResult | undefined>()
+    for (let i = 0; i < unique.length; i += batch) {
+      const part = unique.slice(i, i + batch)
+      let results: RenderResult[]
+      try {
+        results = await render(part, { signal: ctx.signal, timeoutMs: eachMs })
+      } catch (err) {
+        if (ctx.signal?.aborted) throw err
+        ctx.onAdvice?.('render-failed', `Pictures could not be converted for ${profile.name}: ${oneLine((err as Error)?.message ?? String(err))}`)
+        break
+      }
+      part.forEach((r, k) => byKey.set(keyOf(r), results[k]))
     }
-    const byKey = new Map(unique.map((r, i) => [keyOf(r), results?.[i]]))
-    for (const job of converted) {
-      const result = byKey.get(keyOf(job.request))
-      if (!results) {
+    for (const job of jobs) {
+      const key = keyOf(job.request)
+      // The converter went down before this one: said once, above.
+      if (!byKey.has(key)) {
         toPlaceholder(job.el)
         continue
       }
+      const result = byKey.get(key)
       if (result && !('error' in result)) {
         const png = typeof result.png === 'string' && BASE64.test(result.png) ? result.png : undefined
         const jpeg = typeof result.jpeg === 'string' && BASE64.test(result.jpeg) ? result.jpeg : undefined
