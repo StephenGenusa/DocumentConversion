@@ -84,8 +84,71 @@ describe('docx: code blocks', () => {
         `<w:tbl><w:tr><w:tc><w:p>${run('ID-42', font('Courier New'))}</w:p></w:tc></w:tr></w:tbl>`,
     )
     expect(html).not.toContain('<pre>')
-    expect(html).toContain('<p>Call run() twice.</p>')
+    expect(html).toContain('<p>Call <code>run()</code> twice.</p>')
     expect(html).toContain('ID-42')
+  })
+})
+
+describe('docx: inline code', () => {
+  const STYLES_CODE =
+    `<?xml version="1.0"?><w:styles ${W}>` +
+    `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr>${font('Calibri')}</w:rPr></w:style>` +
+    `<w:style w:type="character" w:styleId="HTMLCode"><w:name w:val="HTML Code"/></w:style>` +
+    `<w:style w:type="character" w:styleId="ApiName"><w:name w:val="Api Name"/><w:basedOn w:val="HTMLCode"/></w:style>` +
+    `<w:style w:type="character" w:styleId="VerbatimChar"><w:name w:val="Verbatim Char"/></w:style>` +
+    `<w:style w:type="character" w:styleId="Strong"><w:name w:val="Strong"/></w:style>` +
+    `</w:styles>`
+  const readCode = (body: string): Promise<string> => read(body, STYLES_CODE)
+
+  it('reads a Consolas run in a Calibri paragraph as code', async () => {
+    const html = await readCode(`<w:p>${run('Call ')}${run('run()', font('Consolas'))}${run(' twice.')}</w:p>`)
+    expect(html).toBe('<p>Call <code>run()</code> twice.</p>')
+  })
+
+  it('reads Word\'s "HTML Code", pandoc\'s "Verbatim Char" and a style based on them as code', async () => {
+    const html = await readCode(
+      `<w:p>${run('Use ')}${run('fetch()', '<w:rStyle w:val="HTMLCode"/>')}${run(', ')}` +
+        `${run('Array.from', '<w:rStyle w:val="ApiName"/>')}${run(' or ')}${run('x', '<w:rStyle w:val="VerbatimChar"/>')}${run('.')}</w:p>`,
+    )
+    expect(html).toBe('<p>Use <code>fetch()</code>, <code>Array.from</code> or <code>x</code>.</p>')
+  })
+
+  it('keeps neighboring monospace runs one piece of code, a space between them included', async () => {
+    const html = await readCode(
+      `<w:p>${run('Run ')}${run('npm', font('Consolas'))}${run(' ', font('Consolas'))}${run('test', font('Courier New'))}${run(' now.')}</w:p>`,
+    )
+    expect(html).toBe('<p>Run <code>npm test</code> now.</p>')
+  })
+
+  it('leaves a monospace space alone between ordinary words', async () => {
+    const html = await readCode(`<w:p>${run('One')}${run(' ', font('Consolas'))}${run('two.')}</w:p>`)
+    expect(html).toBe('<p>One two.</p>')
+  })
+
+  it('keeps bold and links around code', async () => {
+    const html = await readCode(
+      `<w:p>${run('A ')}${run('bold', font('Consolas') + '<w:b/>')}${run(' and ')}${run('strong', '<w:rStyle w:val="Strong"/>' + font('Consolas'))}` +
+        `${run(' word.')}</w:p>`,
+    )
+    expect(html).toBe('<p>A <strong><code>bold</code></strong> and <strong><code>strong</code></strong> word.</p>')
+  })
+
+  it('still reads a code style in a document set in a monospace face, but no font', async () => {
+    const styles =
+      `<?xml version="1.0"?><w:styles ${W}>` +
+      `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr>${font('Courier New')}</w:rPr></w:style>` +
+      `<w:style w:type="character" w:styleId="HTMLCode"><w:name w:val="HTML Code"/></w:style></w:styles>`
+    const html = await read(
+      `<w:p>${run('INT. KITCHEN. ')}${run('NIGHT', font('Consolas'))}</w:p><w:p>${run('Type ')}${run('ls', '<w:rStyle w:val="HTMLCode"/>')}</w:p>`,
+      styles,
+    )
+    expect(html).toBe('<p>INT. KITCHEN. NIGHT</p><p>Type <code>ls</code></p>')
+  })
+
+  it('reads no font as code where nearly every paragraph is set in it', async () => {
+    const lines = Array.from({ length: 24 }, (_, i) => `<w:p>${run(`Line ${i} of the letter.`, font('Courier New'))}</w:p>`)
+    const html = await read(`<w:p>${run('Dear ')}${run('reader', font('Courier New'))}</w:p>` + lines.join(''))
+    expect(html).not.toContain('<code>')
   })
 })
 
@@ -120,6 +183,13 @@ describe('md → docx → md', () => {
     expect(md).toContain(`\`\`\`python\n${code}\n\`\`\``)
     expect(md).toContain('```\nplain  two  spaces\n  indented <tag> & more\n```')
     expect(md).toContain('Middle.')
-    expect(md).toContain('End with inline code.')
+    expect(md).toContain('End with `inline` code.')
+  })
+
+  it('gives back inline code in a sentence, bold and linked too', async () => {
+    const md = await roundTrip('Set `x = 1` first, then **`go()`** and [`docs`](https://example.com/a).\n')
+    expect(md).toContain('Set `x = 1` first')
+    expect(md).toMatch(/\*\*`go\(\)`\*\*|`\*\*go\(\)\*\*`/)
+    expect(md).toContain('[`docs`](https://example.com/a)')
   })
 })

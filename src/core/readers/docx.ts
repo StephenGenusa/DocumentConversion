@@ -563,9 +563,10 @@ function dropBackLinks(li: Element): void {
  * the block's text comes back as `<pre><code>`, and convert.ts guesses its
  * language as it does for any unnamed block (Word keeps no language).
  *
- * Not code: a word of code in a sentence (the paragraph is not all
+ * Not a code block: a word of code in a sentence (the paragraph is not all
  * monospace), a heading or list paragraph, and a one-line monospace paragraph
- * in a table cell (an ID column, not a listing).
+ * in a table cell (an ID column, not a listing). Those are inline code
+ * instead (see markInlineCode).
  */
 
 /** Style names that mean a code block, compared lower case without spaces or dashes. */
@@ -622,7 +623,8 @@ function styleChain(styles: Map<string, WordStyle>, id: string | undefined): Wor
 const styleFont = (styles: Map<string, WordStyle>, id: string | undefined): string | undefined =>
   styleChain(styles, id).find((s) => s.font !== undefined)?.font
 
-const codeName = (name: string): boolean => CODE_STYLE_NAMES.has(name.toLowerCase().replace(/[\s_-]+/g, ''))
+const styleKey = (name: string): string => name.toLowerCase().replace(/[\s_-]+/g, '')
+const codeName = (name: string): boolean => CODE_STYLE_NAMES.has(styleKey(name))
 
 /** The paragraph style, or one it is based on, is a code style by its name or its id. */
 const isCodeStyle = (styles: Map<string, WordStyle>, id: string | undefined): boolean =>
@@ -708,9 +710,10 @@ const MONOSPACE_SHARE = 0.8
 
 /**
  * Replace each run of code paragraphs in `xml` (word/document.xml) with one
- * marker paragraph, appending each block's text to `blocks` in order.
+ * marker paragraph, appending each block's text to `blocks` in order. With
+ * `inline`, the runs of code left in sentences are given that style id too.
  */
-export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, blocks: string[]): string {
+export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, blocks: string[], inline?: string): string {
   const styles = parseWordStyles(stylesXml)
   // Where each table lies, to tell a paragraph in a cell.
   const tables: [number, number][] = []
@@ -757,7 +760,6 @@ export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, b
     }
   }
   close()
-  if (groups.length === 0) return xml
 
   let out = ''
   let last = 0
@@ -766,11 +768,93 @@ export function takeCodeBlocks(xml: string, stylesXml: string, marker: string, b
     blocks.push(g.map((p) => p.text).join('\n'))
     last = g[g.length - 1].end
   }
+  out += xml.slice(last)
+  // The blocks are markers by now, so none of their runs is read as inline code.
+  return inline === undefined ? out : markInlineCode(out, styles, inline, fonts && !setInMonospace)
+}
+
+/**
+ * Character styles that mean inline code: Word's "HTML Code" (and its
+ * "HTML Typewriter"), pandoc's "Verbatim Char", and plain "Code" styles;
+ * compared as CODE_STYLE_NAMES are.
+ */
+const CODE_CHAR_STYLE_NAMES = new Set(['htmlcode', 'htmltypewriter', 'verbatimchar', 'code', 'codechar', 'inlinecode', 'sourcecode'])
+
+const isCodeCharStyle = (styles: Map<string, WordStyle>, id: string | undefined): boolean =>
+  (id !== undefined && CODE_CHAR_STYLE_NAMES.has(styleKey(id))) ||
+  styleChain(styles, id).some((s) => CODE_CHAR_STYLE_NAMES.has(styleKey(s.name)) || CODE_CHAR_STYLE_NAMES.has(styleKey(s.id)))
+
+/**
+ * Inline code, which mammoth reads as plain text for the same reason: a run
+ * in a code character style, or (with `fonts`) in a monospace face by its own
+ * font, its character style or its paragraph style, in a paragraph that is
+ * not a code block. Our docx writer sets inline code in Courier this way.
+ * Each such run is given the style `id`, which readDocx's style map makes
+ * `<code>`; mammoth joins neighboring runs into one. A run of only spaces is
+ * code only between two runs of code ("npm" " " "test"). `fonts` is false in
+ * a document set in a monospace face (see monospaceBody, MONOSPACE_SHARE),
+ * where only the styles count.
+ */
+function markInlineCode(xml: string, styles: Map<string, WordStyle>, id: string, fonts: boolean): string {
+  let out = ''
+  let last = 0
+  let cursor = 0
+  for (const p of scanElements(xml, ['w:p'])) {
+    const at = xml.indexOf(p.xml, cursor)
+    if (at < 0) continue
+    cursor = at + p.xml.length
+    const pPr = /^<w:p\b[^>]*>\s*(<w:pPr\b[\s\S]*?<\/w:pPr>)/.exec(p.xml)?.[1] ?? ''
+    const paragraphFont = styleFont(styles, /<w:pStyle\b[^>]*\bw:val="([^"]*)"/.exec(pPr)?.[1])
+    // Each run: whether it is code, and whether it shows only spaces.
+    const runs: { at: number; xml: string; rPr: string; rStyle?: string; code: boolean; blank: boolean }[] = []
+    let from = 0
+    for (const r of scanElements(p.xml, ['w:r'])) {
+      const rAt = p.xml.indexOf(r.xml, from)
+      if (rAt < 0) continue
+      from = rAt + r.xml.length
+      if (/<w:(?:footnoteReference|endnoteReference|drawing|pict|object)\b/.test(r.inner)) continue
+      const rPr = /^\s*(<w:rPr\b[\s\S]*?<\/w:rPr>|<w:rPr\/>)/.exec(r.inner)?.[1] ?? ''
+      const rStyle = /<w:rStyle\b[^>]*\bw:val="([^"]*)"/.exec(rPr)?.[1]
+      const font = rPrFont(rPr) ?? styleFont(styles, rStyle) ?? paragraphFont
+      const code = isCodeCharStyle(styles, rStyle) || (fonts && font !== undefined && MONOSPACE.test(font))
+      runs.push({ at: rAt, xml: r.xml, rPr, rStyle, code, blank: codeParagraphText(r.inner).trim() === '' })
+    }
+    const shown = runs.filter((r) => !r.blank)
+    const marked = runs.filter((r) => {
+      if (!r.code) return false
+      if (!r.blank) return true
+      const before = shown.filter((s) => s.at < r.at).pop()
+      const after = shown.find((s) => s.at > r.at)
+      return !!before?.code && !!after?.code && /^[ \t\u00a0]+$/.test(codeParagraphText(r.xml))
+    })
+    if (!marked.length) continue
+    let para = ''
+    let pLast = 0
+    for (const r of marked) {
+      // The run's own style goes: mammoth maps none of a run's styles but
+      // "Strong", which is kept as bold.
+      const strong = styleChain(styles, r.rStyle).some((s) => styleKey(s.name) === 'strong')
+      const props = r.rPr
+        .replace(/^<w:rPr\/>$/, '')
+        .replace(/^<w:rPr\b[^>]*>|<\/w:rPr>$/g, '')
+        .replace(/<w:rStyle\b[^>]*\/>/, '')
+      const rPr = `<w:rPr><w:rStyle w:val="${id}"/>${props}${strong && !/<w:b\b/.test(props) ? '<w:b/>' : ''}</w:rPr>`
+      const open = /^<w:r\b[^>]*>/.exec(r.xml)![0]
+      const body = r.xml.slice(open.length)
+      const rest = r.rPr ? body.replace(r.rPr, '') : body
+      para += p.xml.slice(pLast, r.at) + open + rPr + rest
+      pLast = r.at + r.xml.length
+    }
+    out += xml.slice(last, at) + para + p.xml.slice(pLast)
+    last = cursor
+  }
   return out + xml.slice(last)
 }
 
 /** The package with its code blocks replaced by markers, or undefined when it has none. */
-async function extractCodeBlocks(bytes: Buffer): Promise<{ bytes: Buffer; marker: string; blocks: string[] } | undefined> {
+async function extractCodeBlocks(
+  bytes: Buffer,
+): Promise<{ bytes: Buffer; marker: string; blocks: string[]; inline?: string } | undefined> {
   try {
     const zip = await JSZip.loadAsync(bytes)
     const doc = zip.files['word/document.xml']
@@ -781,17 +865,35 @@ async function extractCodeBlocks(bytes: Buffer): Promise<{ bytes: Buffer; marker
     if (!MONOSPACE_HINT.test(xml) && !MONOSPACE_HINT.test(stylesXml)) return undefined
     const marker = uniqueMarker([xml], 'code')
     const blocks: string[] = []
-    const taken = takeCodeBlocks(xml, stylesXml, marker, blocks)
-    if (blocks.length === 0) return undefined
+    let inline = 'DocConvInlineCode'
+    for (let i = 0; stylesXml.includes(inline) || xml.includes(inline); i++) inline = `DocConvInlineCode${i.toString(36)}x`
+    const taken = takeCodeBlocks(xml, stylesXml, marker, blocks, inline)
+    const hasInline = taken.includes(`w:val="${inline}"`)
+    if (blocks.length === 0 && !hasInline) return undefined
     zip.file('word/document.xml', taken)
-    return { bytes: await zip.generateAsync({ type: 'nodebuffer' }), marker, blocks }
+    return { bytes: await zip.generateAsync({ type: 'nodebuffer' }), marker, blocks, inline: hasInline ? inline : undefined }
   } catch {
     return undefined
   }
 }
 
-/** Any font name or style name that could make a paragraph code. */
-const MONOSPACE_HINT = /mono|courier|consolas|menlo|monaco|lucida|inconsolata|source ?code|cascadia|fira code|andale|preformatted|w:val="code/i
+/** Any font name or style name that could make a paragraph or a run code. */
+const MONOSPACE_HINT =
+  /mono|courier|consolas|menlo|monaco|lucida|inconsolata|source ?code|cascadia|fira code|andale|preformatted|html ?(?:code|typewriter)|verbatim|w:val="(?:inline ?)?code/i
+
+/**
+ * mammoth puts a run's style outside its bold and italic, `<code><strong>x</strong></code>`;
+ * code wholly in one formatting tag is turned inside out, as Markdown writes it (**`x`**).
+ */
+export function codeInsideFormatting(html: string): string {
+  let out = html
+  for (let i = 0; i < 3; i++) {
+    const next = out.replace(/<code>(<(strong|em|s|u|sup|sub)>)((?:(?!<\/?code\b|<\/?\2>)[\s\S])*)<\/\2><\/code>/g, '$1<code>$3</code></$2>')
+    if (next === out) break
+    out = next
+  }
+  return out
+}
 
 /** Each code block's marker paragraph as `<pre><code>`; a marker found anywhere else as its text. */
 export function restoreCodeBlocks(html: string, marker: string, blocks: string[]): string {
@@ -973,7 +1075,10 @@ export async function readDocx(src: SourceInput, ctx?: ReadContext): Promise<Hub
   // were, so a paragraph holding only an equation is not taken for empty.
   const bytes = math?.bytes ?? code?.bytes ?? src.bytes
   const [{ value }, flags, header, numIds] = await Promise.all([
-    mammoth.convertToHtml({ buffer: bytes }, { convertImage: budgetedImageConverter(ledger) }),
+    mammoth.convertToHtml(
+      { buffer: bytes },
+      { convertImage: budgetedImageConverter(ledger), styleMap: code?.inline ? [`r.${code.inline} => code`] : [] },
+    ),
     headerFlags(bytes),
     headerTitle(bytes),
     listNumIds(bytes),
@@ -984,6 +1089,6 @@ export async function readDocx(src: SourceInput, ctx?: ReadContext): Promise<Hub
     mergeInterruptedOrderedLists(promoteHeaderRows(replaceUninlinedImages(converted), flags), numIds),
   )
   // After keepTabsVisible: a tab in code stays a tab.
-  const withCode = code ? restoreCodeBlocks(html, code.marker, code.blocks) : html
+  const withCode = code ? restoreCodeBlocks(code.inline ? codeInsideFormatting(html) : html, code.marker, code.blocks) : html
   return withHeaderTitle(wordNotesToHub(withCode), header)
 }
