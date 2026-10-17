@@ -11,6 +11,7 @@ import * as iconv from 'iconv-lite'
 import { ConversionError } from '../errors'
 import { decodeTextBytes } from './txt'
 import { sanitizeToHub } from '../allowlist'
+import { inlineSvgElements } from '../svg-images'
 import { rtfStringToHubHtml } from './rtf'
 import { renderAttachmentList, renderEmailHeader, textToParagraphs } from './email-common'
 import type { HubDocument, SourceInput } from '../types'
@@ -120,14 +121,15 @@ function formatParty(name?: string, email?: string, smtpAddress?: string): strin
 export async function msgToHub(fields: MsgFields): Promise<HubDocument> {
   let body = ''
   if (fields.bodyHtml) {
-    body = sanitizeToHub(inlineMsgImages(fields.bodyHtml, fields.attachments))
+    // An SVG drawn in the body is kept as an SVG image, as in an .eml.
+    body = sanitizeToHub(inlineMsgImages(inlineSvgElements(fields.bodyHtml), fields.attachments))
   } else if (fields.compressedRtf && fields.compressedRtf.length > 0) {
     // decompressRTF's types want number[], but any Uint8Array works at runtime.
     const compressed = Buffer.from(fields.compressedRtf) as unknown as number[]
     const rtf = Buffer.from(decompressRTF(compressed)).toString('latin1')
     if (/\\fromhtml1\b/.test(rtf)) {
       const res = deEncapsulateSync(rtf, { decode: iconv.decode, mode: 'html' })
-      body = sanitizeToHub(inlineMsgImages(String(res.text), fields.attachments))
+      body = sanitizeToHub(inlineMsgImages(inlineSvgElements(String(res.text)), fields.attachments))
     } else {
       body = await rtfStringToHubHtml(rtf)
     }

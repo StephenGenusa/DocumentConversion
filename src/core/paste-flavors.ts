@@ -25,7 +25,8 @@
  * `span`, `div`, `br`, `meta`, `html`, `head`, `body` and `font` are absent on
  * purpose — those are exactly what a whitespace wrapper is built from. `pre`
  * and `code` ARE here: a copied code block is formatted content, and re-reading
- * its indentation as markdown would mangle it.
+ * its indentation as markdown would mangle it. So is `svg`: a copied drawing's
+ * plain flavor is only its labels.
  */
 const FORMATTING_TAGS = [
   'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -33,7 +34,7 @@ const FORMATTING_TAGS = [
   'table', 'thead', 'tbody', 'tr', 'td', 'th',
   'blockquote', 'pre', 'code', 'hr',
   'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'mark',
-  'a', 'img',
+  'a', 'img', 'svg',
 ]
 
 /**

@@ -227,3 +227,55 @@ describe('epub detection', () => {
     expect(detect(Buffer.from('x'), 'book.epub')).toEqual({ kind: 'ok', format: 'epub' })
   })
 })
+
+describe('readEpub: SVG in a chapter', () => {
+  const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex')
+  const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489', 'hex')
+  const svgsIn = (html: string): string[] =>
+    [...html.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)].map((m) => Buffer.from(m[1], 'base64').toString('utf8'))
+
+  async function book(chapter: string, files: Record<string, Buffer | string> = {}): Promise<Buffer> {
+    const zip = new JSZip()
+    zip.file('mimetype', 'application/epub+zip')
+    zip.file('META-INF/container.xml', '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>')
+    zip.file(
+      'OEBPS/content.opf',
+      `<package><metadata><dc:title>Reading Room</dc:title></metadata><manifest><item id="c" href="text/cover.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>`,
+    )
+    zip.file('OEBPS/text/cover.xhtml', `<html xmlns="http://www.w3.org/1999/xhtml"><body>${chapter}</body></html>`)
+    for (const [name, body] of Object.entries(files)) zip.file(name, body)
+    return zip.generateAsync({ type: 'nodebuffer' }) as Promise<Buffer>
+  }
+
+  it("keeps an SVG cover, its picture taken from the package", async () => {
+    const cover =
+      '<div><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="100%" height="100%" viewBox="0 0 600 800" preserveAspectRatio="xMidYMid meet">' +
+      '<image width="600" height="800" xlink:href="../images/cover.jpg"/></svg></div><p>Chapter text.</p>'
+    const hub = await readEpub({ bytes: await book(cover, { 'OEBPS/images/cover.jpg': JPEG }) })
+    const [svg] = svgsIn(hub.html)
+    expect(svg).toContain('viewBox="0 0 600 800"')
+    expect(svg).toContain(`xlink:href="data:image/jpeg;base64,${JPEG.toString('base64')}"`)
+    expect(hub.html).toContain('width="600" height="800"')
+    expect(hub.html).toContain('Chapter text.')
+  })
+
+  it('takes the pictures an SVG file in the package names from beside that file', async () => {
+    const plan = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><image width="16" height="16" href="photos/desk.png"/></svg>'
+    const hub = await readEpub({
+      bytes: await book('<p><img src="../images/plan.svg" alt="plan"/></p>', {
+        'OEBPS/images/plan.svg': plan,
+        'OEBPS/images/photos/desk.png': PNG,
+      }),
+    })
+    expect(svgsIn(hub.html)[0]).toContain(`href="data:image/png;base64,${PNG.toString('base64')}"`)
+  })
+
+  it('a picture the package does not have is left for the read step (its description)', async () => {
+    const hub = await readEpub({
+      bytes: await book('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20"/><image width="16" height="16" href="missing.png"/></svg>'),
+    })
+    expect(svgsIn(hub.html)).toHaveLength(1)
+    expect(svgsIn(hub.html)[0]).toContain('href="missing.png"')
+  })
+})
+

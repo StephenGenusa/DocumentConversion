@@ -8,6 +8,7 @@ import {
   type ImageFetcher,
 } from './inline-images'
 import { sanitizeToHub } from './allowlist'
+import { inlineSvgElements, sanitizeSvgImages } from './svg-images'
 import { guessCodeLanguages } from './code-language'
 import { tagPastedCodeBlocks } from './readers/html'
 import type { ReadContext, SourceFormat } from './types'
@@ -85,6 +86,11 @@ export async function withoutFetching(
  * again after, so the result carries the same guarantee `sanitizeToHub` gives.
  * Clipboard HTML has no base URL: a relative source cannot be resolved and
  * becomes a placeholder, which still says more than an invisible box.
+ *
+ * A drawing copied from a page arrives as inline `<svg>`: it becomes an SVG
+ * picture first (inlineSvgElements), its pictures by address fetched with
+ * the rest, and the result is cleaned (B6) as a read document's is, since
+ * the editor shows it without passing read().
  */
 export async function pastedHtmlToHub(
   html: string,
@@ -94,13 +100,13 @@ export async function pastedHtmlToHub(
 ): Promise<string> {
   // A copied code block keeps (or is given) its language here, so the edit
   // pane holds it and every writer highlights it (code-language.ts).
-  const clean = guessCodeLanguages(sanitizeToHub(tagPastedCodeBlocks(html)))
-  if (!/<img\b[^>]*\bsrc="(?!data:)/i.test(clean)) return clean
-  if (fetchingOff(ctx)) return sanitizeToHub(await withoutFetching(clean, 'about:blank', ctx))
+  const clean = guessCodeLanguages(sanitizeToHub(tagPastedCodeBlocks(inlineSvgElements(html))))
+  if (!/<img\b[^>]*\bsrc="(?!data:)/i.test(clean) && !hasRemoteImages(clean)) return sanitizeSvgImages(clean)
+  if (fetchingOff(ctx)) return sanitizeSvgImages(sanitizeToHub(await withoutFetching(clean, 'about:blank', ctx)))
   // Aborting `signal` is "skip the rest", not "cancel the paste": the images
   // not yet fetched fail at once, become placeholders, and the paste opens.
   const fetcher = guardedImageFetcher(deps, ctx, imageTimeoutMs)
-  return sanitizeToHub(await inlineImages(clean, 'about:blank', fetcher, MAX_FETCHED_IMAGE_BYTES, ctx?.onProgress))
+  return sanitizeSvgImages(sanitizeToHub(await inlineImages(clean, 'about:blank', fetcher, MAX_FETCHED_IMAGE_BYTES, ctx?.onProgress)))
 }
 
 /**

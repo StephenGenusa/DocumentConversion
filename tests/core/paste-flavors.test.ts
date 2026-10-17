@@ -62,6 +62,10 @@ describe('shouldUseHtmlFlavor', () => {
     expect(shouldUseHtmlFlavor(wrapped, '')).toBe(true)
   })
 
+  it('uses the HTML flavor for a copied drawing (an inline SVG), whose plain flavor is only its labels', () => {
+    expect(shouldUseHtmlFlavor('<svg viewBox="0 0 4 4"><text>Desk</text></svg>', 'Desk')).toBe(true)
+  })
+
   it('declines an empty HTML flavor', () => {
     expect(shouldUseHtmlFlavor('', 'plain words')).toBe(false)
     expect(shouldUseHtmlFlavor('   ', 'plain words')).toBe(false)

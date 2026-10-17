@@ -1,0 +1,24 @@
+From: Nils Ashcombe <nils.ashcombe@example.com>
+To: Odile Larkspur <odile.larkspur@example.com>
+Subject: The plan for the volunteer handbook
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Here is the reading room plan, drawn straight into this message.</p>
+<svg width="480" height="300" viewBox="0 0 480 300" font-family="Arial, 'Liberation Sans', Helvetica, sans-serif">
+  <title>Reading room plan</title>
+  <rect x="2" y="2" width="476" height="296" fill="#ffffff" stroke="#333" stroke-width="3"/>
+  <rect x="30" y="40" width="160" height="60" rx="6" fill="#dbe8f5" stroke="#2f5d8a" stroke-width="2"/>
+  <text x="110" y="76" text-anchor="middle" font-size="16">Fiction</text>
+  <rect x="30" y="130" width="160" height="60" rx="6" fill="#dbe8f5" stroke="#2f5d8a" stroke-width="2"/>
+  <text x="110" y="166" text-anchor="middle" font-size="16">Periodicals</text>
+  <rect x="290" y="40" width="160" height="60" rx="6" fill="#dbe8f5" stroke="#2f5d8a" stroke-width="2"/>
+  <text x="370" y="76" text-anchor="middle" font-size="16">Media</text>
+  <rect x="290" y="170" width="110" height="50" rx="6" fill="#dbe8f5" stroke="#2f5d8a" stroke-width="2"/>
+  <text x="345" y="201" text-anchor="middle" font-size="16">Desk</text>
+  <path d="M 200 296 L 280 296" stroke="#c0392b" stroke-width="8"/>
+  <text x="240" y="282" text-anchor="middle" font-size="14" fill="#c0392b">Entrance</text>
+  <image x="210" y="120" width="24" height="24" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAABHNCSVQICAgIfAhkiAAAAAFzUkdCAK7OHOkAAAA5SURBVEiJYzxgqf2fgYaAiZaGj1owagF1AAshBfbHruCVP2ilg1d+6AfRqAUjwALG0fpg1IJRCxgAcSYHdzHKwksAAAAASUVORK5CYII="/>
+  <image x="40" y="230" width="60" height="40" href="http://127.0.0.1:9/photo.png"><title>Morning light across the periodicals</title></image>
+</svg>
+<p>The photograph is on the volunteer site and will not load in mail.</p></body></html>

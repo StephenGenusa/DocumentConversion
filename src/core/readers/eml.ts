@@ -5,6 +5,7 @@ const PostalMime = ((PostalMimeImport as unknown as { default?: unknown }).defau
   PostalMimeImport) as typeof PostalMimeImport
 import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
+import { inlineSvgElements } from '../svg-images'
 import { renderAttachmentList, renderEmailHeader, textToParagraphs } from './email-common'
 import type { HubDocument, SourceInput } from '../types'
 
@@ -46,7 +47,9 @@ export async function readEml(src: SourceInput): Promise<HubDocument> {
       const cid = att.contentId.replace(/[<>]/g, '')
       html = html.split(`cid:${cid}`).join(`data:${att.mimeType};base64,${toBase64(att.content)}`)
     }
-    body = sanitizeToHub(html)
+    // An SVG drawn in the body is kept as an SVG image; mail never fetches
+    // the pictures it names by address, which become their descriptions.
+    body = sanitizeToHub(inlineSvgElements(html))
   } else {
     body = textToParagraphs(parsed.text ?? '')
   }

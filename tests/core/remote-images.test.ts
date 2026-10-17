@@ -4,6 +4,7 @@ import { inlineImages } from '../../src/core/inline-images'
 import { createConverter } from '../../src/core/convert'
 import { sanitizeSvgImages } from '../../src/core/svg-images'
 import { loadUrl } from '../../src/core/readers/url'
+import { msgToHub } from '../../src/core/readers/msg'
 import type { GuardedFetchDeps } from '../../src/core/net/guarded-fetch'
 
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex')
@@ -462,6 +463,72 @@ describe('pictures inside a fetched SVG, or an SVG nested as a data URI', () => 
     })
     expect(d.fetch).not.toHaveBeenCalled()
     expect(seen).toEqual(['1 web picture was not fetched (Settings → Web)'])
+  })
+})
+
+describe('an SVG drawn inline in a fetched page, a paste or an email (an SVG picture, not dropped)', () => {
+  const render = vi.fn(async () => Buffer.from('%PDF'))
+  const pngUri = `data:image/png;base64,${PNG.toString('base64')}`
+  /** As pages write it: no xmlns, a mixed-case viewBox, a title, a picture by address. */
+  const inline = (href: string): string =>
+    `<svg width="40" height="20" viewBox="0 0 40 20"><title>Reading room</title><rect width="40" height="20" fill="#eee"/><image width="16" height="16" href="${href}"><title>Desk photo</title></image></svg>`
+  const svgsIn = (html: string): string[] =>
+    [...html.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)].map((m) => Buffer.from(m[1], 'base64').toString('utf8'))
+  const prose = `<p>${'The reading room plan shows where each collection stands, by the windows and the desk. '.repeat(6)}</p>`
+
+  it('a fetched web page keeps it, its picture fetched against the page', async () => {
+    const page = `<html><head><title>Plan</title></head><body><nav><a href="/">Home</a></nav><article><h1>Plan</h1>${prose}${inline('photo.png')}${prose}</article></body></html>`
+    const d: GuardedFetchDeps = {
+      fetch: vi.fn(async (url: string) =>
+        url === 'https://e.example/rooms/plan'
+          ? new Response(page, { headers: { 'content-type': 'text/html' } })
+          : url === 'https://e.example/rooms/photo.png'
+            ? new Response(new Uint8Array(PNG), { headers: { 'content-type': 'image/png' } })
+            : new Response('missing', { status: 404 }),
+      ),
+      lookup: vi.fn(async () => ['93.184.216.34']),
+    }
+    const res = await loadUrl('https://e.example/rooms/plan', d)
+    expect(res.kind).toBe('html')
+    const html = res.kind === 'html' ? res.html : ''
+    expect(html).toContain('alt="Reading room"')
+    const [svg] = svgsIn(html)
+    expect(svg).toContain('viewBox="0 0 40 20"')
+    expect(svg).toContain(`href="${pngUri}"`)
+  })
+
+  it('a paste keeps it, fetches its picture, and leaves no address behind', async () => {
+    const PHOTO = 'https://example.com/photo.png'
+    const out = await pastedHtmlToHub(`<p>Plan</p>${inline(PHOTO)}`, deps({ [PHOTO]: PNG }))
+    expect(out).toContain('alt="Reading room"')
+    expect(svgsIn(out)[0]).toContain(`href="${pngUri}"`)
+    // One that cannot be fetched is its description, already in the editor.
+    const failed = await pastedHtmlToHub(`<p>Plan</p>${inline(PHOTO)}`, deps({}))
+    expect(svgsIn(failed)[0]).toContain('[image: Desk photo]')
+    expect(svgsIn(failed)[0]).not.toContain('example.com')
+    // With nothing to fetch, it is still kept.
+    const plain = await pastedHtmlToHub(`<p>Plan</p>${inline(pngUri)}`, deps({}))
+    expect(svgsIn(plain)[0]).toContain(`href="${pngUri}"`)
+  })
+
+  it('an email keeps it, and never fetches its web picture: it is its description', async () => {
+    const PHOTO = 'https://example.com/photo.png'
+    const mail = `From: a@example.com\r\nSubject: Plan\r\nContent-Type: text/html\r\n\r\n<p>Plan</p>${inline(PHOTO)}${inline(pngUri)}`
+    const d = deps({ [PHOTO]: PNG })
+    const hub = await createConverter(render, { fetchImages: d }).read({ bytes: Buffer.from(mail) }, 'eml')
+    expect(d.fetch).not.toHaveBeenCalled()
+    expect(d.lookup).not.toHaveBeenCalled()
+    const svgs = svgsIn(hub.html)
+    expect(svgs).toHaveLength(2)
+    expect(svgs[0]).toContain('[image: Desk photo]')
+    expect(svgs[0]).not.toContain('example.com')
+    expect(svgs[1]).toContain(`href="${pngUri}"`)
+  })
+
+  it('an Outlook message keeps it too', async () => {
+    const hub = await msgToHub({ subject: 'Plan', recipients: [], attachments: [], bodyHtml: `<p>Plan</p>${inline(pngUri)}` })
+    expect(hub.html).toContain('alt="Reading room"')
+    expect(svgsIn(hub.html)[0]).toContain(`href="${pngUri}"`)
   })
 })
 

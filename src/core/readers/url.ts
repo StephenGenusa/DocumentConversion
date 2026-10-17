@@ -4,6 +4,7 @@ import { guardedFetch, type GuardedFetchDeps } from '../net/guarded-fetch'
 import { inlineImages, MAX_FETCHED_IMAGE_BYTES } from '../inline-images'
 import { fetchingOff, withoutFetching } from '../remote-images'
 import { sanitizeToHub } from '../allowlist'
+import { inlineSvgElements, sanitizeSvgImages } from '../svg-images'
 import { MAX_SPAN } from '../table-grid'
 import type { ReadContext } from '../types'
 
@@ -214,14 +215,18 @@ function unwrapDeadLinks(html: string): string {
 
 /** Readability article extraction with a raw-body fallback. */
 export function extractArticle(pageHtml: string, url: string): { html: string; title?: string } {
-  const { document } = parseHTML(pageHtml)
+  // An SVG drawn in the page becomes an SVG image (svg-images.ts) before
+  // anything parses it as HTML, which would lower-case its names; the read
+  // step fetches the pictures it names, against the page.
+  const page = inlineSvgElements(pageHtml)
+  const { document } = parseHTML(page)
   const title = document.querySelector('title')?.textContent?.trim() || undefined
   // Links are repaired last, so both the article and the raw-body fallback get
   // it, and so a rescued table's own links are covered too.
   const withLinks = (html: string): string => unwrapDeadLinks(absolutizeLinks(html, url))
   try {
     // Readability mutates its document — parse a fresh copy for it.
-    const { document: copy } = parseHTML(pageHtml)
+    const { document: copy } = parseHTML(page)
     const article = new Readability(copy as unknown as Document, { charThreshold: 250 }).parse()
     if (article?.content && article.content.replace(/<[^>]+>/g, '').trim().length > 0) {
       return {
@@ -233,7 +238,7 @@ export function extractArticle(pageHtml: string, url: string): { html: string; t
     // fall through to the raw body
   }
   const body = document.querySelector('body')
-  return { html: withLinks(body ? body.innerHTML : pageHtml), title }
+  return { html: withLinks(body ? body.innerHTML : page), title }
 }
 
 function filenameFromUrl(url: string): string {
@@ -265,7 +270,7 @@ export async function loadUrl(url: string, deps: GuardedFetchDeps, ctx?: ReadCon
   ctx?.onProgress?.('Extracting article')
   const { html, title } = extractArticle(page.bytes.toString('utf8'), page.finalUrl)
   if (fetchingOff(ctx)) {
-    return { kind: 'html', html: sanitizeToHub(await withoutFetching(html, page.finalUrl, ctx)), title, sourceName: url }
+    return { kind: 'html', html: sanitizeSvgImages(sanitizeToHub(await withoutFetching(html, page.finalUrl, ctx))), title, sourceName: url }
   }
   const inlined = await inlineImages(
     html,
@@ -281,5 +286,6 @@ export async function loadUrl(url: string, deps: GuardedFetchDeps, ctx?: ReadCon
     MAX_FETCHED_IMAGE_BYTES,
     ctx?.onProgress,
   )
-  return { kind: 'html', html: sanitizeToHub(inlined), title, sourceName: url }
+  // The editor shows the page without passing read(): its SVG images are cleaned (B6) here.
+  return { kind: 'html', html: sanitizeSvgImages(sanitizeToHub(inlined)), title, sourceName: url }
 }

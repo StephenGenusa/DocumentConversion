@@ -306,6 +306,7 @@ doesn
 doesn't
 dot
 down
+draw
 drawing
 drawings
 drawn
@@ -316,6 +317,7 @@ dsorrel
 dust
 duty
 dx
+e-books
 each
 early
 east
@@ -577,6 +579,7 @@ links
 list
 lists
 live
+load
 loaded
 loading
 loan
@@ -588,6 +591,7 @@ looking
 lower
 lr
 made
+mail
 mainly
 makes
 making
@@ -628,6 +632,7 @@ memorable
 memory
 mended
 menu
+message
 messages
 metafile
 mezzanine
@@ -712,6 +717,7 @@ only
 onto
 open
 opening
+opens
 openterminalhere
 operations
 operatorname
@@ -1052,6 +1058,7 @@ stock
 storage
 stored
 stores
+straight
 strip
 strives
 struck

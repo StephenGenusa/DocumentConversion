@@ -2,6 +2,9 @@ import JSZip from 'jszip'
 import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import { escapeHtml } from '../shell'
+import { inlineSvgElements } from '../svg-images'
+import { decodeSvgDataUri, MAX_NESTING, svgDataUri, svgImageRefs, withSvgImagePictures } from '../svg-sanitize'
+import { svgText } from './image'
 import type { HubDocument, SourceInput } from '../types'
 
 /**
@@ -65,11 +68,61 @@ const IMAGE_MIME: Record<string, string> = {
   svg: 'image/svg+xml',
 }
 
+/** The file in the package an href names, resolved against `base` (the file it is written in). */
+function packageEntry(base: string, href: string, zip: JSZip): { target: string; entry: JSZip.JSZipObject } | undefined {
+  for (const candidate of pathCandidates(href)) {
+    const target = resolveRelative(base, candidate)
+    const entry = zip.files[target]
+    if (entry) return { target, entry }
+  }
+  return undefined
+}
+
+/** A reference with a scheme (data:, https:), protocol-relative, or a fragment: not a file in the package. */
+const NOT_IN_PACKAGE = /^\s*(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i
+
+/**
+ * The SVG with the pictures it names by a path in the package as data URIs,
+ * resolved against `svgPath`: the chapter it is drawn in, or the SVG file it
+ * is. This is the usual EPUB cover, `<svg><image xlink:href="cover.jpg"/></svg>`.
+ * An SVG file it names gets its own pictures the same way (against its own
+ * path), and so does an SVG nested in it as a data URI, as deep as the SVG
+ * sanitizer keeps nested SVGs; a file is not read again inside itself. A
+ * picture the package does not have keeps its path, and becomes its
+ * description when the SVG is sanitized.
+ */
+async function svgWithPackagePictures(svg: string, svgPath: string, zip: JSZip, depth: number, within: ReadonlySet<string>): Promise<string> {
+  const pictures = new Map<string, string>()
+  for (const ref of new Set(svgImageRefs(svg))) {
+    const nested = decodeSvgDataUri(ref)
+    if (nested !== null) {
+      if (depth + 1 > MAX_NESTING) continue
+      const full = await svgWithPackagePictures(nested, svgPath, zip, depth + 1, within)
+      if (full !== nested) pictures.set(ref, svgDataUri(full))
+      continue
+    }
+    if (NOT_IN_PACKAGE.test(ref)) continue
+    const found = packageEntry(svgPath, ref, zip)
+    const mime = found ? IMAGE_MIME[/\.([a-z0-9]+)$/i.exec(found.target)?.[1]?.toLowerCase() ?? ''] : undefined
+    if (!found || !mime || within.has(found.target)) continue
+    const bytes = Buffer.from(await found.entry.async('nodebuffer'))
+    if (mime !== 'image/svg+xml') {
+      pictures.set(ref, `data:${mime};base64,${bytes.toString('base64')}`)
+    } else if (depth + 1 <= MAX_NESTING) {
+      const inner = svgText(bytes)
+      pictures.set(ref, svgDataUri(await svgWithPackagePictures(inner, found.target, zip, depth + 1, new Set([...within, found.target]))))
+    }
+  }
+  return pictures.size > 0 ? withSvgImagePictures(svg, pictures) : svg
+}
+
 /**
  * Chapter images are zip-relative (`../images/fig.png`), which nothing
  * downstream can resolve: they were lost in every target, and html-to-docx
  * choked on them badly enough to truncate a whole book to its table of
  * contents. Embed them as data URIs, resolved against the chapter's path.
+ * An SVG, as a file or drawn in the chapter (already an SVG image, see
+ * readEpub), gets the pictures it names in the package too.
  */
 async function inlineChapterImages(html: string, chapterPath: string, zip: JSZip): Promise<string> {
   if (!html.includes('<img')) return html
@@ -77,21 +130,28 @@ async function inlineChapterImages(html: string, chapterPath: string, zip: JSZip
   const SRC = /(<img\b[^>]*?\bsrc=")([^"]+)(")/gi
   for (const match of html.matchAll(SRC)) {
     const src = match[2]
-    if (replacements.has(src) || /^(data|https?):/i.test(src)) continue
-    let resolved: { target: string; entry: JSZip.JSZipObject } | undefined
-    for (const candidate of pathCandidates(src)) {
-      const target = resolveRelative(chapterPath, candidate)
-      const entry = zip.files[target]
-      if (entry) {
-        resolved = { target, entry }
-        break
-      }
+    if (replacements.has(src) || /^https?:/i.test(src)) continue
+    if (/^data:/i.test(src)) {
+      const svg = decodeSvgDataUri(src)
+      if (svg === null) continue
+      const full = await svgWithPackagePictures(svg, chapterPath, zip, 0, new Set())
+      if (full !== svg) replacements.set(src, svgDataUri(full))
+      continue
     }
+    const resolved = packageEntry(chapterPath, src, zip)
     if (!resolved) continue
     const ext = /\.([a-z0-9]+)$/i.exec(resolved.target)?.[1]?.toLowerCase() ?? ''
     const mime = IMAGE_MIME[ext]
     if (!mime) continue
     const bytes = Buffer.from(await resolved.entry.async('nodebuffer'))
+    if (mime === 'image/svg+xml') {
+      const svg = svgText(bytes)
+      const full = await svgWithPackagePictures(svg, resolved.target, zip, 0, new Set([resolved.target]))
+      if (full !== svg) {
+        replacements.set(src, svgDataUri(full))
+        continue
+      }
+    }
     replacements.set(src, `data:${mime};base64,${bytes.toString('base64')}`)
   }
   // Rewrite the src attribute itself, not every quoted string that happens to
@@ -195,8 +255,10 @@ export async function readEpub(src: SourceInput): Promise<HubDocument> {
     const file = zip.files[path]
     const raw = await file.async('string')
     const body = /<body[^>]*>([\s\S]*)<\/body>/i.exec(raw)?.[1] ?? raw
-    // After sanitizing, so attribute quoting is already normalized.
-    const clean = dropUnresolvableLinks(sanitizeToHub(await inlineChapterImages(body, path, zip)))
+    // An SVG drawn in the chapter (a cover, a figure) becomes an SVG image
+    // first (svg-images.ts), as in an HTML page, its pictures then taken from
+    // the package. Links after sanitizing, so attribute quoting is already normalized.
+    const clean = dropUnresolvableLinks(sanitizeToHub(await inlineChapterImages(inlineSvgElements(body), path, zip)))
     if (clean.trim()) {
       sections.push(clean)
       chapters++
