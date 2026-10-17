@@ -40,7 +40,8 @@ describe('html: markup inside a <pre>', () => {
 
   it('still flattens a paste into the editor', async () => {
     const hub = await pastedHtmlToHub('<pre>$ <b>npm</b> install <a href="https://example.com/pkg">it</a></pre>', {} as GuardedFetchDeps)
-    expect(hub).toBe('<pre><code>$ npm install it</code></pre>')
+    // Flat text, so the one-line guess may name it: a `$` prompt is Bash.
+    expect(hub).toBe('<pre><code class="language-bash">$ npm install it</code></pre>')
   })
 
   it('does not guess a language over a block the author formatted', () => {
