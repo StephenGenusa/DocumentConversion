@@ -1,4 +1,4 @@
-import { renderDocumentShell, escapeHtml, type ShellOptions } from '../shell'
+import { renderDocumentShell, escapeHtml, markTaskLists, type ShellOptions } from '../shell'
 import { colorizeStatusEmoji } from '../emoji'
 import {
   chunkHtmlForPrinting,
@@ -38,7 +38,8 @@ export function createPdfWriter(render: RenderHtmlToPdf, shellOpts?: Pick<ShellO
     if (pdfOpts?.headerFooter) {
       pdfOpts = { ...pdfOpts, headerText: escapeHtml(doc.title ?? doc.sourceName ?? '') }
     }
-    const html = colorizeStatusEmoji(doc.html)
+    // Task lists are found by their ballot boxes, before ☑ becomes a green check.
+    const html = colorizeStatusEmoji(markTaskLists(doc.html))
     const shell = (body: string): string =>
       renderDocumentShell({ ...doc, html: body }, { ...shellOpts, target: 'pdf', codeColor: opts?.codeColor })
 

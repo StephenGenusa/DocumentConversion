@@ -133,6 +133,8 @@ const BASE_CSS = `
   }
   h1, h2, h3, h4 { line-height: 1.25; margin: 1.6em 0 0.5em; }
   h1 { font-size: 1.9rem; } h2 { font-size: 1.5rem; } h3 { font-size: 1.25rem; }
+  /* A heading printed last on a page, its section starting on the next. */
+  h1, h2, h3, h4, h5, h6 { break-after: avoid; page-break-after: avoid; }
   p { margin: 0 0 1em; }
   code, pre { font-family: "SFMono-Regular", Consolas, monospace; }
   /* pre-wrap is load-bearing: with overflow alone, printToPDF CLIPS every
@@ -203,6 +205,40 @@ const PDF_PRINT_CSS = `
   body > hr:first-child + :not(hr) { break-before: auto; page-break-before: auto; }
 `
 
+/**
+ * A task list (GitHub's `- [ ] item`) reaches the hub as items opening with a
+ * ballot box, ☐ or ☑ (md.ts). Printed under its bullets as well, each item
+ * read "• ☐ Call the movers": the box is the marker. A list whose every item
+ * opens with one (as a character or, once serialized, its reference), and
+ * holds no list of its own, is drawn without bullets. The PDF writer marks
+ * them before it recolors status symbols (emoji.ts turns ☑ into a green ✓).
+ */
+const TASK_LIST = /<ul>((?:\s*<li>(?:<p>)?(?:[☐☑]|&#(?:x261[01]|974[45]);) (?:(?!<[uo]l[\s>]|<\/li>)[\s\S])*<\/li>)+\s*)<\/ul>/gi
+const TASK_LIST_CSS = `
+  ul.task-list { list-style: none; margin-left: 0.2em; }
+`
+
+/** Each task list marked as one (TASK_LIST). */
+export function markTaskLists(html: string): string {
+  if (!/[☐☑]|&#(?:x261[01]|974[45]);/i.test(html)) return html
+  return html.replace(TASK_LIST, (_, items: string) => `<ul class="task-list">${items}</ul>`)
+}
+
+/** Table rows, across the document, up to which tables are laid out by their content. */
+export const AUTO_TABLE_ROWS = 500
+/** The longest word a table may hold and still be laid out by its content. */
+export const AUTO_TABLE_WORD = 28
+
+/** Whether the document's tables are small enough, in rows and in words, to be laid out by their content. */
+function autoTables(body: string): boolean {
+  if ((body.match(/<tr[\s>]/g)?.length ?? 0) > AUTO_TABLE_ROWS) return false
+  for (const table of body.match(/<table[\s>][\s\S]*?<\/table>/g) ?? []) {
+    const text = table.replace(/<[^>]*>/g, ' ').replace(/&[#\w]+;/g, 'x')
+    for (const word of text.matchAll(/\S+/g)) if (word[0].length > AUTO_TABLE_WORD) return false
+  }
+  return true
+}
+
 export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): string {
   const title = escapeHtml(doc.title?.trim() || 'Document')
   let body = doc.html
@@ -210,11 +246,22 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
   // The reading-width cage is right for prose and wrong for data: a wide
   // table needs the whole page, and anything past the edge is clipped away.
   if (body.includes('<table')) css += '\n  body { max-width: none; }\n'
+  // Columns sized by what they hold, not shared out evenly: a "#" column or a
+  // two-letter code took as much of the page as a column of sentences, and a
+  // path in code broke in the middle beside it. Only where that can still fit
+  // the page with words kept whole: no word in any table longer than
+  // AUTO_TABLE_WORD (a long address or code path needs the even, fixed
+  // columns, which may break it anywhere), and only for a document of modest
+  // tables: laying out by content measures every cell first, and a
+  // 300,000-cell workbook keeps the fixed layout.
+  if (body.includes('<table') && autoTables(body)) css += '\n  table { table-layout: auto; }\n  th, td { overflow-wrap: break-word; word-break: normal; }\n'
   // Notebook cell styling costs nothing on a document that has no cells. A
   // figure carries no class, so it is matched on its alt: a cell whose only
   // output is a plot would otherwise leave the block unstyled.
   if (/class="nb-|alt="output image"/.test(body)) css += NB_CSS + notebookPromptCss(body) + '\n'
   if (opts?.target === 'pdf' && body.includes('<hr')) css += PDF_PRINT_CSS
+  body = markTaskLists(body)
+  if (body.includes('<ul class="task-list">')) css += TASK_LIST_CSS
   if (opts?.target === 'pdf' || opts?.target === 'html') {
     // Linked notes: the anchors are made here, from labels the hub owns.
     body = footnotesForOutput(body, 'links')
