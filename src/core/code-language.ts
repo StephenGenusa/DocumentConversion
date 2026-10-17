@@ -142,7 +142,7 @@ function codeText(el: Element): string {
 }
 
 /** The author's inline markup a code block keeps when a file is read (see keepMarkup). */
-const KEPT_IN_CODE = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'a', 'sup', 'sub'])
+export const KEPT_IN_CODE: ReadonlySet<string> = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'a', 'sup', 'sub'])
 
 /**
  * The code's content with only the author's inline markup left in it: bold,
@@ -366,7 +366,8 @@ export function guessLanguage(text: string): string | undefined {
   return result.relevance >= MIN_RELEVANCE ? result.language : undefined
 }
 
-function decodeEntities(s: string): string {
+/** The entities hub HTML and highlight.js write, decoded. */
+export function decodeEntities(s: string): string {
   return s
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')

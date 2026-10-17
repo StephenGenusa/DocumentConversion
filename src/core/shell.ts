@@ -1,5 +1,5 @@
 import hljs, { EREADER_HLJS_CSS, HLJS_CSS } from './hljs'
-import { codeBlockText } from './code-language'
+import { highlightMarkup } from './code-markup'
 import { footnotesForOutput } from './footnotes'
 import type { HubDocument, TargetFormat } from './types'
 
@@ -103,16 +103,16 @@ function notebookPromptCss(html: string): string {
  * Each code block whose language highlight.js knows, colored. The class may
  * carry `hljs` beside the language (a page that was highlighted already), and
  * the body may hold markup a source left in it; the text is what is colored,
- * so neither is printed literally. `skip` names languages left exactly as
- * they came (the epub writer's plaintext).
+ * so no tag is printed literally, and the author's bold, italic and links
+ * stay around the colors (code-markup.ts). `skip` names languages left
+ * exactly as they came (the epub writer's plaintext).
  */
 export function highlightCodeBlocks(html: string, opts?: { skip?: readonly string[] }): { html: string; any: boolean } {
   let any = false
   const out = html.replace(/<code class="(?:hljs )?language-([\w+-]+)(?: hljs)?">([\s\S]*?)<\/code>/g, (match, lang, body) => {
     if (!hljs.getLanguage(lang) || opts?.skip?.includes(lang)) return match
-    const { value } = hljs.highlight(codeBlockText(body), { language: lang })
     any = true
-    return `<code class="language-${lang} hljs">${value}</code>`
+    return `<code class="language-${lang} hljs">${highlightMarkup(body, lang)}</code>`
   })
   return { html: out, any }
 }

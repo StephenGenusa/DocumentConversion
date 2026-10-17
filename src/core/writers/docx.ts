@@ -10,7 +10,7 @@ import { replaceImages } from '../inline-images'
 import { ownRows } from '../table-grid'
 import { footnotesForOutput } from '../footnotes'
 import hljs, { highlightedRuns } from '../hljs'
-import { codeBlockText } from '../code-language'
+import { highlightMarkup } from '../code-markup'
 import type { ConvertOptions, HubDocument } from '../types'
 import { DOCX_OWN_LINE } from '../draw-blocks'
 import { pictureType, wordTakes } from '../pictures'
@@ -730,7 +730,7 @@ function breakCodeLines(source: string): string {
 function colorCode(source: string): string {
   if (!/<code class="language-/.test(source)) return source
   return source.replace(/(<pre(?:\s[^>]*)?>\s*<code class="language-([\w+-]+)">)([\s\S]*?)(<\/code>)/g, (match, open: string, lang: string, body: string, close: string) =>
-    hljs.getLanguage(lang) ? `${open}${highlightedRuns(codeBlockText(body), lang)}${close}` : match,
+    hljs.getLanguage(lang) ? `${open}${highlightedRuns(highlightMarkup(body, lang))}${close}` : match,
   )
 }
 

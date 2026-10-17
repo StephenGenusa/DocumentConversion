@@ -107,9 +107,11 @@ export const EREADER_HLJS_CSS = `${EREADER_TOKEN_COLORS.map(
 const COLOR_OF = new Map(TOKEN_COLORS.flatMap(([scopes, color]) => scopes.map((s) => [s, color] as const)))
 
 /**
- * Code highlighted as flat runs: each piece of text in a span with an inline
- * `color`, the color of the innermost token that has one, and uncolored text
- * bare. For a writer that can color a run but not apply a stylesheet.
+ * Highlighted code (highlight.js's HTML, perhaps with the author's markup
+ * around its spans: code-markup.ts) as flat runs: each piece of text in a
+ * span with an inline `color`, the color of the innermost token that has one,
+ * and uncolored text bare. For a writer that can color a run but not apply a
+ * stylesheet. The author's tags are left where they stand, between the runs.
  *
  * Lines are separated by a bare newline, and no piece is only white space:
  * html-to-docx drops a whitespace-only run, which printed `def total` as
@@ -117,16 +119,17 @@ const COLOR_OF = new Map(TOKEN_COLORS.flatMap(([scopes, color]) => scopes.map((s
  * the one after it on its line (white space shows no color), and white space
  * that ends a line is dropped.
  */
-export function highlightedRuns(code: string, language: string): string {
-  const { value } = hljs.highlight(code, { language })
+export function highlightedRuns(value: string): string {
   const stack: (string | undefined)[] = []
-  const lines: { color?: string; text: string }[][] = [[]]
-  for (const m of value.matchAll(/<span class="([^"]*)">|<\/span>|[^<]+/g)) {
+  const lines: { color?: string; text: string; tag?: boolean }[][] = [[]]
+  for (const m of value.matchAll(/<span class="([^"]*)">|<\/span>|<[^>]*>|[^<]+/g)) {
     if (m[1] !== undefined) {
       const scope = /(?:^|\s)hljs-([\w-]+)/.exec(m[1])?.[1]
       stack.push((scope && COLOR_OF.get(scope)) ?? stack[stack.length - 1])
     } else if (m[0] === '</span>') {
       stack.pop()
+    } else if (m[0].startsWith('<')) {
+      lines[lines.length - 1].push({ text: m[0], tag: true })
     } else {
       m[0].split('\n').forEach((text, i) => {
         if (i) lines.push([])
@@ -141,8 +144,13 @@ export function highlightedRuns(code: string, language: string): string {
       let out = ''
       let pending = ''
       for (const piece of pieces) {
+        // White space before an author's tag stays outside it, bare.
+        if (piece.tag) {
+          out += pending + piece.text
+          pending = ''
+        }
         // hljs escapes &, < and >, so an entity is never white space.
-        if (piece.text.trim() === '') pending += piece.text
+        else if (piece.text.trim() === '') pending += piece.text
         else {
           out += run({ color: piece.color, text: pending + piece.text })
           pending = ''
