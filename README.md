@@ -89,6 +89,16 @@ The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
   `--code-color`/`--no-code-color` and `--header-footer`/`--no-header-footer`,
   so a flag can turn back on what a settings file turns off. See
   [Command line](#command-line).
+- **Large drawings and workbooks take less time and memory.** A 12 MB SVG
+  file converts to Word in about 3 seconds, was 18, and no longer needs more
+  than a gigabyte of memory to be cleaned. Excel output is written as it goes and
+  compressed: a million rows take about 3 seconds and 300 MB, were 10 seconds
+  and 3 GB, and the file is a sixth of the size. An empty cell is now empty
+  in Excel, not empty text.
+- **A SQLite view cannot take the app down.** A view that would need more
+  memory than a database is given (a quarter of the computer's, at most
+  1.5 GB) is stopped with a message, and the rest of the database is still
+  converted.
 
 ## What's new in 1.3
 
@@ -249,7 +259,8 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
 
 - **csv** — one file per table found in the document.
 - **json** — one file per table, keyed by the header row when there is one.
-- **xlsx** — one workbook, one sheet per table.
+- **xlsx** — one workbook, one sheet per table. A table longer than Excel's
+  1,048,576 rows continues on a second sheet, its header row repeated.
 
 No output refers to the network: every image is embedded in the file, or
 replaced by its description.
