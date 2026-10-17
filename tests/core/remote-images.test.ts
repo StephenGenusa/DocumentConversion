@@ -525,6 +525,25 @@ describe('an SVG drawn inline in a fetched page, a paste or an email (an SVG pic
     expect(svgs[1]).toContain(`href="${pngUri}"`)
   })
 
+  it('an invitation keeps it in its description, newlines and all, and never fetches its web picture', async () => {
+    const PHOTO = 'https://example.com/photo.png'
+    // ICS escapes the description's newlines and commas; the SVG has newlines of its own.
+    const fold = (html: string): string => html.replace(/,/g, '\\,').replace(/\n/g, '\\n')
+    const description = `<p>Plan</p>\n${inline(PHOTO).replace('><', '>\n<')}\n${inline(pngUri)}`
+    const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'BEGIN:VEVENT', 'UID:1', 'DTSTAMP:20260101T000000Z', 'DTSTART:20260301T090000Z', 'SUMMARY:Plan', `DESCRIPTION:${fold(description)}`, 'END:VEVENT', 'END:VCALENDAR'].join('\r\n')
+    const d = deps({ [PHOTO]: PNG })
+    const hub = await createConverter(render, { fetchImages: d }).read({ bytes: Buffer.from(ics) }, 'ics')
+    expect(d.fetch).not.toHaveBeenCalled()
+    expect(d.lookup).not.toHaveBeenCalled()
+    const svgs = svgsIn(hub.html)
+    expect(svgs).toHaveLength(2)
+    expect(svgs[0]).toContain('[image: Desk photo]')
+    expect(svgs[0]).not.toContain('example.com')
+    expect(svgs[0]).not.toContain('<br')
+    expect(svgs[1]).toContain(`href="${pngUri}"`)
+    expect(hub.html).toContain('alt="Reading room"')
+  })
+
   it('an Outlook message keeps it too', async () => {
     const hub = await msgToHub({ subject: 'Plan', recipients: [], attachments: [], bodyHtml: `<p>Plan</p>${inline(pngUri)}` })
     expect(hub.html).toContain('alt="Reading room"')

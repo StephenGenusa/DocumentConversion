@@ -1,10 +1,11 @@
 import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import { escapeHtml } from '../shell'
+import { inlineSvgElements } from '../svg-images'
 import type { HubDocument, SourceInput } from '../types'
 
 function looksLikeHtml(text: string): boolean {
-  return /<(a|p|br|div|span|ul|ol|li|strong|em|b|i|table)\b[^>]*>/i.test(text)
+  return /<(a|p|br|div|span|ul|ol|li|strong|em|b|i|table|img|svg)\b[^>]*>/i.test(text)
 }
 
 /**
@@ -163,10 +164,13 @@ export async function readIcs(src: SourceInput): Promise<HubDocument> {
     const description = e.description?.trim()
     if (description) {
       // Invite descriptions from Outlook/Google routinely contain real HTML;
-      // escaping it showed users raw <span> and &amp;amp; markup.
+      // escaping it showed users raw <span> and &amp;amp; markup. An SVG
+      // drawn in one is kept as an SVG image, as in mail, before its
+      // newlines become breaks (inside an SVG they are not); like mail, a
+      // calendar never fetches the pictures it names by address.
       parts.push(
         looksLikeHtml(description)
-          ? sanitizeToHub(newlinesToBreaks(description))
+          ? sanitizeToHub(newlinesToBreaks(inlineSvgElements(description)))
           : plainDescriptionToHtml(description),
       )
     }
