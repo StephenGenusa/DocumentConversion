@@ -496,7 +496,16 @@ async function main() {
         if (reader || azw3Html !== undefined) {
           // Round-trip: read the output back with the app's reader (an AZW3
           // with mobi-parser, above) and check probe words survive.
-          const backHtml = reader ? (await reader({ bytes: out, filename: outName })).html : azw3Html
+          let backHtml
+          try {
+            backHtml = reader ? (await reader({ bytes: out, filename: outName })).html : azw3Html
+          } catch (e) {
+            // A source with no words (a photograph, a picture of words) makes a PDF
+            // with none: reading it back says so, which is the right answer.
+            if (!(e.code === 'scanned-pdf' && probes.length === 0)) throw e
+            backHtml = ''
+            rec.note = `${rec.note ? rec.note + ', ' : ''}no text to read back`
+          }
           const backText = backHtml.replace(/<[^>]+>/g, ' ').toLowerCase()
           // Table extraction keeps only table cells, so document prose is expected to be absent.
           const missing = TABLE_TARGETS.includes(target)

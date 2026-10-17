@@ -29,7 +29,7 @@ async function pdfWithPicture(): Promise<Buffer> {
   const picture = await pdf.embedPng(await readFile(SAMPLE_PNG))
   const page = pdf.addPage([612, 792])
   page.drawText(ABOVE, { x: 55, y: 700, size: 11, font })
-  page.drawImage(picture, { x: 55, y: 400, width: 240, height: 240 })
+  page.drawImage(picture, { x: 55, y: 400, width: 240, height: 48 })
   page.drawText(BELOW, { x: 55, y: 340, size: 11, font })
   return Buffer.from(await pdf.save())
 }

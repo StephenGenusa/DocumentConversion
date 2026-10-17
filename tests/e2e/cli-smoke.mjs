@@ -476,17 +476,8 @@ run('--no-header-footer for html exit 2', [code, '--to', 'html', '--no-header-fo
 })
 
 // OCR language: needs --ocr, an image or PDF, and an installed pack (English ships).
-// tests/fixtures/sample.png fails libpng's CRC check, so a picture of words is drawn here.
-const { createCanvas } = createRequire(import.meta.url)('@napi-rs/canvas')
-const canvas = createCanvas(600, 120)
-const pen = canvas.getContext('2d')
-pen.fillStyle = '#fff'
-pen.fillRect(0, 0, 600, 120)
-pen.fillStyle = '#000'
-pen.font = '56px sans-serif'
-pen.fillText('Hello smoke test', 20, 80)
-const sample = join(work, 'words.png')
-writeFileSync(sample, canvas.toBuffer('image/png'))
+// tests/fixtures/sample.png is a picture of the words "Hello smoke test" (gen-fixtures.mjs).
+const sample = join(root, 'tests', 'fixtures', 'sample.png')
 run('--ocr --ocr-lang eng', [sample, '--to', 'txt', '--ocr', '--ocr-lang', 'eng', '--out', join(work, 'sample.txt')], {
   expectCode: 0,
   expectFiles: [join(work, 'sample.txt')],

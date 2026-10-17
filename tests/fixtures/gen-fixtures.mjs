@@ -47,14 +47,20 @@ await writeFile(
   `export function grantWindow(initial: number): number {\n  const replenish = 16\n  return initial + replenish\n}\n`,
 )
 
-// sample.png — 3x1 image (embed-mode fixture)
-await writeFile(
-  join(here, 'sample.png'),
-  Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAMAAAABCAYAAACczIWkAAAAEklEQVR4nGNgYGD4z8DA8B8ABQ0CAmXEU2sAAAAASUVORK5CYII=',
-    'base64',
-  ),
-)
+// sample.png — a picture of words: the embed-mode fixture, and the OCR one
+// (cli-smoke reads "Hello smoke test" back from it). Drawn, so it is a valid
+// PNG; the 3x1 one written here before failed libpng's CRC check.
+{
+  const { createCanvas } = await import('@napi-rs/canvas')
+  const canvas = createCanvas(600, 120)
+  const pen = canvas.getContext('2d')
+  pen.fillStyle = '#fff'
+  pen.fillRect(0, 0, 600, 120)
+  pen.fillStyle = '#000'
+  pen.font = '56px sans-serif'
+  pen.fillText('Hello smoke test', 20, 80)
+  await writeFile(join(here, 'sample.png'), canvas.toBuffer('image/png'))
+}
 
 // sample.ipynb — markdown + code cells with stream output
 await writeFile(
