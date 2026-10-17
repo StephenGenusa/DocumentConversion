@@ -45,8 +45,8 @@ export function fetchingOff(ctx: PictureFetchContext | undefined): boolean {
 }
 
 /** The one notice a read with fetching off gives (spec principle 3: nothing is dropped silently). */
-export function notFetchedNotice(count: number): string {
-  return `${count} web picture${count === 1 ? ' was' : 's were'} not fetched (Settings → Web)`
+export function notFetchedNotice(count: number, offBy = 'Settings → Web'): string {
+  return `${count} web picture${count === 1 ? ' was' : 's were'} not fetched (${offBy})`
 }
 
 /**
@@ -68,7 +68,7 @@ export async function withoutFetching(
     throw new Error('not fetched')
   }
   const out = await inlineImages(html, baseUrl, refuse, MAX_FETCHED_IMAGE_BYTES, undefined, select)
-  if (count > 0) ctx?.onAdvice?.('pictures-not-fetched', notFetchedNotice(count))
+  if (count > 0) ctx?.onAdvice?.('pictures-not-fetched', notFetchedNotice(count, ctx?.web?.offBy))
   return out
 }
 

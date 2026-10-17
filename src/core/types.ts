@@ -201,6 +201,12 @@ export interface ReadOptions {
 export interface WebPolicy {
   fetchPictures: boolean
   allowLocalNetwork: boolean
+  /**
+   * What turned fetching off, as the not-fetched notice names it. The
+   * window's "Settings → Web" when not given; the command line names its flag
+   * or the settings file, since it has no Settings.
+   */
+  offBy?: string
 }
 
 /** Options, cancellation, and progress threaded into readers. */

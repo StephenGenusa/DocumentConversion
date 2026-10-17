@@ -3,6 +3,10 @@ import { BUNDLED_LANGUAGE } from '../ocr/languages'
 import type { ConvertOptions } from '../core/types'
 import type { CliRequest } from './args'
 
+/** What the not-fetched notice names on the command line, which has no Settings → Web. */
+export const FETCH_OFF_BY_FLAG = '--no-fetch'
+export const FETCH_OFF_BY_FILE = 'the settings file turns fetching off; --fetch turns it on'
+
 /**
  * The options a command-line conversion runs with (settings spec 5.7): the
  * settings - the built-in DEFAULT_SETTINGS, or a file given with --settings -
@@ -67,6 +71,11 @@ export function cliConvertOptions(
       web: {
         fetchPictures: req.fetch ? true : req.noFetch ? false : merged.fetchPictures,
         allowLocalNetwork: req.localNetwork ? true : req.noLocalNetwork ? false : merged.allowLocalNetwork,
+        ...(req.noFetch
+          ? { offBy: FETCH_OFF_BY_FLAG }
+          : !req.fetch && !merged.fetchPictures
+            ? { offBy: FETCH_OFF_BY_FILE }
+            : {}),
       },
       ocr: req.ocr,
       ocrLanguage: merged.ocrLanguage,

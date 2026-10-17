@@ -337,6 +337,15 @@ describe('Settings → Web (spec 4.2, 8.1)', () => {
     expect(n.seen.map((s) => s.message)).toEqual(['1 web picture was not fetched (Settings → Web)'])
   })
 
+  it('fetch off: the notice names what turned fetching off, when the policy says (the CLI)', async () => {
+    const n = notices()
+    await resolveRemoteImages('<img src="https://example.com/a.png" alt="a">', 'md', deps({}), {
+      web: { ...OFF, offBy: '--no-fetch' },
+      onAdvice: n.onAdvice,
+    })
+    expect(n.seen.map((s) => s.message)).toEqual(['1 web picture was not fetched (--no-fetch)'])
+  })
+
   it('fetch off: no notice for a document with no web pictures', async () => {
     const n = notices()
     await resolveRemoteImages('<p>no pictures</p>', 'html', deps({}), { web: OFF, onAdvice: n.onAdvice })

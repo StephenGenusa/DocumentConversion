@@ -50,9 +50,11 @@ describe('cliConvertOptions: built-in defaults (settings spec 5.7)', () => {
     expect(o.renderedFormat).toBe('png')
     expect(o.read).toEqual({ transcriptTimestamps: false, sqliteViews: true, jsonAs: 'text' })
     expect(o.slides).toEqual({ splitOn: 'h2' })
+    // The notice names the flag, not the window's Settings → Web.
     expect(options(DEFAULT_SETTINGS, ['a.md', '--to', 'pdf', '--no-fetch']).options.web).toEqual({
       fetchPictures: false,
       allowLocalNetwork: true,
+      offBy: '--no-fetch',
     })
   })
 })
@@ -72,7 +74,11 @@ describe('cliConvertOptions: a settings file', () => {
   it('applies every value', () => {
     const { options: o } = options(saved, ['a.png', '--to', 'pdf', '--ocr'])
     expect(o.pictureFormat).toBe('png')
-    expect(o.web).toEqual({ fetchPictures: false, allowLocalNetwork: true })
+    expect(o.web).toEqual({
+      fetchPictures: false,
+      allowLocalNetwork: true,
+      offBy: 'the settings file turns fetching off; --fetch turns it on',
+    })
     expect(o.codeColor).toBe(false)
     expect(o.renderedFormat).toBe('png')
     expect(o.pdf).toEqual({ pageSize: 'A4', scale: 1.1, headerFooter: true, landscape: false })

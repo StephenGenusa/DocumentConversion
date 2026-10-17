@@ -306,10 +306,12 @@ run('--pictures needs jpg or png', [photo, '--to', 'epub', '--pictures', 'gif'],
 // Web: --no-fetch leaves web pictures as their description, with a note.
 const remote = join(work, 'remote.md')
 writeFileSync(remote, '# Remote\n\n![chart](https://example.invalid/chart.png)\n')
+// The note names the flag: the command line has no Settings → Web.
 run('--no-fetch', [remote, '--to', 'html', '--no-fetch', '--out', join(work, 'remote.html')], {
   expectCode: 0,
   expectFiles: [join(work, 'remote.html')],
-  expectStderr: 'NOTE remote.md: 1 web picture was not fetched',
+  expectStderr: 'NOTE remote.md: 1 web picture was not fetched (--no-fetch).',
+  rejectStderr: 'Settings →',
 })
 if (existsSync(join(work, 'remote.html')) && !readFileSync(join(work, 'remote.html'), 'utf8').includes('[image: chart]')) {
   failures++
@@ -337,7 +339,8 @@ run('--no-fetch for mail only exit 2', [mail, '--to', 'html', '--no-fetch'], {
 const noWeb = settingsFile('no-web-settings.json', { version: 1, web: { fetchPictures: false, allowLocalNetwork: false } })
 run('--settings with fetching off', [remote, '--to', 'html', '--settings', noWeb, '--out', join(work, 'remote-off.html')], {
   expectCode: 0,
-  expectStderr: 'NOTE remote.md: 1 web picture was not fetched',
+  expectStderr: 'NOTE remote.md: 1 web picture was not fetched (the settings file turns fetching off; --fetch turns it on).',
+  rejectStderr: 'Settings →',
 })
 run('--fetch wins over --settings', [remote, '--to', 'html', '--settings', noWeb, '--fetch', '--out', join(work, 'remote-on.html')], {
   expectCode: 0,
