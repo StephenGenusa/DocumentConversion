@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createCanvas } from '@napi-rs/canvas'
 import { targetPictures, pictureType, vectorMime } from '../../src/core/pictures'
+import { tiffPages } from '../../src/core/picture-headers'
 import { createConverter } from '../../src/core/convert'
 import type { RenderBlocks, RenderRequest, RenderResult } from '../../src/core/rendered-blocks'
 import type { TargetFormat } from '../../src/core/types'
@@ -158,6 +159,52 @@ describe('targetPictures: what each target holds', () => {
     const fine = `<p>${img('image/png', png())}${img('image/webp', webp())}</p>`
     expect(await targetPictures(fine, 'pdf', { renderBlocks: render })).toBe(fine)
     expect(render).not.toHaveBeenCalled()
+  })
+
+  it('a multi-page TIFF becomes one picture per page, in order, where it stood, alt text numbered', async () => {
+    const pages = [
+      { width: 30, height: 20, pixel: (x: number) => [x * 8, 90, 40], compression: 'lzw' },
+      { width: 12, height: 9, pixel: (x: number) => [x * 20, 0, 0], kind: 'bilevel', compression: 'packbits' },
+      { width: 4, height: 4, pixel: () => [0, 0, 0], thumbnail: true },
+      { width: 8, height: 8, pixel: () => [50, 50, 50], kind: 'gray' },
+    ]
+    const fax: Buffer = makeTiff({ pages })
+    for (const target of ['pdf', 'epub', 'azw3', 'md', 'docx'] as TargetFormat[]) {
+      const { render, calls } = host()
+      const out = await targetPictures(`<p>Before ${img('image/tiff', fax, 'Signed lease')} after</p>`, target, { renderBlocks: render })
+      // Three pages (the preview is not one), each a one-page TIFF of its own.
+      const sources = calls.map((c) => Buffer.from(c.source.slice(c.source.indexOf(',') + 1), 'base64'))
+      expect(sources.map((b) => tiffPages(b)?.map((p) => [p.width, p.height]))).toEqual([[[30, 20]], [[12, 9]], [[8, 8]]])
+      expect(calls.every((c) => c.page === undefined)).toBe(true)
+      expect([...out.matchAll(/alt="([^"]*)"/g)].map((m) => m[1])).toEqual([
+        'Signed lease (page 1 of 3)',
+        'Signed lease (page 2 of 3)',
+        'Signed lease (page 3 of 3)',
+      ])
+      expect(out).toMatch(/^<p>Before <img [^>]+><br><img [^>]+><br><img [^>]+> after<\/p>$/)
+    }
+  })
+
+  it('a page with no alt text is named by its number; without a renderer each page is its description', async () => {
+    const fax: Buffer = makeTiff({ pages: [{ width: 4, height: 4, pixel: () => [0, 0, 0] }, { width: 4, height: 4, pixel: () => [9, 9, 9] }] })
+    const notices: string[] = []
+    const out = await targetPictures(`<p><img src="${uri('image/tiff', fax)}"></p>`, 'epub', { onAdvice: (_k, m) => notices.push(m) })
+    expect(out).toContain('[image: Page 1 of 2]')
+    expect(out).toContain('[image: Page 2 of 2]')
+    expect(notices).toHaveLength(2)
+  })
+
+  it('a page whose data cannot be taken out alone is asked for by its place in the whole file', async () => {
+    const fax: Buffer = makeTiff({ pages: [{ width: 4, height: 4, pixel: () => [0, 0, 0] }, { width: 6, height: 4, pixel: () => [9, 9, 9] }] })
+    // The second page's strip byte counts (279) said to run past the end of the file.
+    const be = (at: number) => fax.readUInt16LE(at)
+    let ifd = fax.readUInt32LE(4)
+    ifd = fax.readUInt32LE(ifd + 2 + be(ifd) * 12)
+    for (let e = 0; e < be(ifd); e++) if (be(ifd + 2 + e * 12) === 279) fax.writeUInt32LE(fax.length * 2, ifd + 2 + e * 12 + 8)
+    const { render, calls } = host()
+    await targetPictures(`<p>${img('image/tiff', fax)}</p>`, 'pdf', { renderBlocks: render })
+    expect(calls.map((c) => c.page)).toEqual([undefined, 1])
+    expect(calls[1].source).toBe(uri('image/tiff', fax))
   })
 
   it('the same picture twice is converted once', async () => {

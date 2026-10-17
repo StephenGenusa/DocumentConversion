@@ -584,6 +584,10 @@ export const READING_ROOM = {
   lineScanAlt: 'Scanned line drawing of the shelving',
   drawingAlt: 'Shelf diagram drawn in an old word processor',
   scansAfter: 'Volunteers hope to redraw the shelf diagram one day.',
+  faxTitle: 'The reading room lease, as it came by fax',
+  faxIntro: 'The lease arrived by fax as one picture of three pages. Every page should come through, in order.',
+  faxAlt: 'Faxed lease for the reading room',
+  faxAfter: 'The signed copy is kept at the desk.',
 }
 
 /**

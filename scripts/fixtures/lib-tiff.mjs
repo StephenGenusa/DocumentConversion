@@ -4,6 +4,7 @@
  * made than committed.
  *
  *   tiff({ width, height, pixel, ... })   a one-page baseline TIFF
+ *   tiff({ pages: [{ ... }, { ... }] })   a multi-page one (a fax, a scanned letter)
  *   emf({ width, height })                a small EMF: a framed, filled box
  *
  * TIFF options:
@@ -13,6 +14,7 @@
  *   bigEndian      MM byte order instead of II
  *   rowsPerStrip   rows in each strip (default 16), so most pictures have several
  *   claim          { width, height } written in place of the real size: a hostile file
+ *   dpi            the resolution written (default 72)
  */
 import { deflateSync } from 'node:zlib'
 
@@ -104,7 +106,39 @@ function lzw(data) {
   return Buffer.from(bytes)
 }
 
-export function tiff({ width, height, pixel, kind = 'rgb', compression = 'none', bigEndian = false, rowsPerStrip = 16, claim }) {
+/**
+ * A baseline TIFF. One page from the options above; several with `pages`,
+ * an array of the same options for each page (byte order from the outer
+ * options), chained in order. A page with `thumbnail: true` is marked as a
+ * reduced-resolution copy (NewSubfileType 1), as cameras and scanners write
+ * a preview; one with `pageNumber` carries the PageNumber tag (297).
+ */
+export function tiff(opts) {
+  const bigEndian = opts.bigEndian ?? false
+  const pages = opts.pages ?? [opts]
+  const u16 = (b, v, at) => (bigEndian ? b.writeUInt16BE(v, at) : b.writeUInt16LE(v, at))
+  const u32 = (b, v, at) => (bigEndian ? b.writeUInt32BE(v, at) : b.writeUInt32LE(v, at))
+  const header = Buffer.alloc(8)
+  header.write(bigEndian ? 'MM' : 'II', 0, 'latin1')
+  u16(header, 42, 2)
+  const parts = [header]
+  const ifdAts = []
+  let at = 8
+  for (const page of pages) {
+    const block = tiffPage(page, at, u16, u32)
+    parts.push(block.bytes)
+    ifdAts.push(block.ifdAt)
+    at += block.bytes.length
+  }
+  const out = Buffer.concat(parts)
+  u32(out, ifdAts[0], 4)
+  // Each page's IFD ends with the offset of the next one (0 after the last).
+  ifdAts.forEach((ifdAt, i) => u32(out, ifdAts[i + 1] ?? 0, ifdAt + 2 + out[bigEndian ? ifdAt + 1 : ifdAt] * 12))
+  return out
+}
+
+/** One page's strips, IFD and the arrays it points at, laid out from `base` in the file. */
+function tiffPage({ width, height, pixel, kind = 'rgb', compression = 'none', rowsPerStrip = 16, claim, thumbnail, pageNumber, dpi = 72 }, base, u16, u32) {
   const packed = rows(width, height, pixel, kind)
   const strips = []
   for (let y = 0; y < height; y += rowsPerStrip) {
@@ -121,14 +155,9 @@ export function tiff({ width, height, pixel, kind = 'rgb', compression = 'none',
   const bps = kind === 'bilevel' ? 1 : 8
   const photometric = kind === 'rgb' || kind === 'rgba' ? 2 : 1
 
-  // Layout: header, strip data, then the IFD and the arrays it points at.
-  const u16 = (b, v, at) => (bigEndian ? b.writeUInt16BE(v, at) : b.writeUInt16LE(v, at))
-  const u32 = (b, v, at) => (bigEndian ? b.writeUInt32BE(v, at) : b.writeUInt32LE(v, at))
-  const header = Buffer.alloc(8)
-  header.write(bigEndian ? 'MM' : 'II', 0, 'latin1')
-  u16(header, 42, 2)
+  // Layout: strip data, then the IFD and the arrays it points at.
   const offsets = []
-  let at = 8
+  let at = base
   for (const s of strips) {
     offsets.push(at)
     at += s.length + (s.length % 2)
@@ -138,6 +167,7 @@ export function tiff({ width, height, pixel, kind = 'rgb', compression = 'none',
   const LONG = 4
   const RATIONAL = 5
   const entries = [
+    ...(thumbnail ? [[254, LONG, [1]]] : pageNumber !== undefined ? [[254, LONG, [2]]] : []),
     [256, LONG, [claim?.width ?? width]],
     [257, LONG, [claim?.height ?? height]],
     [258, SHORT, Array(spp).fill(bps)],
@@ -147,13 +177,14 @@ export function tiff({ width, height, pixel, kind = 'rgb', compression = 'none',
     [277, SHORT, [spp]],
     [278, LONG, [rowsPerStrip]],
     [279, LONG, strips.map((s) => s.length)],
-    [282, RATIONAL, [72, 1]],
-    [283, RATIONAL, [72, 1]],
+    [282, RATIONAL, [dpi, 1]],
+    [283, RATIONAL, [dpi, 1]],
     [284, SHORT, [1]],
     [296, SHORT, [2]],
+    ...(pageNumber !== undefined ? [[297, SHORT, pageNumber]] : []),
     ...(kind === 'rgba' ? [[338, SHORT, [2]]] : []),
   ]
-  const ifdAt = 8 + data.length
+  const ifdAt = base + data.length
   const ifd = Buffer.alloc(2 + entries.length * 12 + 4)
   u16(ifd, entries.length, 0)
   const extra = []
@@ -174,8 +205,7 @@ export function tiff({ width, height, pixel, kind = 'rgb', compression = 'none',
       extraAt += bytes.length
     }
   })
-  u32(header, ifdAt, 4)
-  return Buffer.concat([header, data, ifd, ...extra])
+  return { bytes: Buffer.concat([data, ifd, ...extra]), ifdAt }
 }
 
 /**

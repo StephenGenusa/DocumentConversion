@@ -91,6 +91,8 @@ interface HarnessResult {
   pictureWebpPng: Picture
   pictureAlphaJpeg: Picture
   pictureTiffLoop: Picture
+  pictureTiffPage2: Picture
+  pictureTiffPage3: Picture
   pictureTiffPixels: string[] | string
   pictureTiffVast: Picture
   pictureAfter: Picture
@@ -378,6 +380,8 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     expect(result.pictureWebpPng).toMatchObject({ type: 'png', width: 300, height: 200, magicOk: true })
     expect(result.pictureAlphaJpeg).toMatchObject({ type: 'png', width: 200, height: 200, magicOk: true })
     expect(result.pictureTiffLoop.error).toBe('the TIFF could not be read')
+    expect(result.pictureTiffPage2).toMatchObject({ type: 'png', width: 17, height: 11, magicOk: true })
+    expect(result.pictureTiffPage3.error).toBe('the TIFF has no page 3')
     expect(result.pictureTiffPixels).toEqual(['#ff0000', '#0000ff'])
   })
 

@@ -212,6 +212,12 @@ async function main() {
     out.pictureTiffBilevelPng = await picture(uri('image/tiff', tiff({ width: 97, height: 31, pixel: shade, kind: 'bilevel', compression: 'packbits', bigEndian: true })), 5 * 1024 * 1024, 'png')
     out.pictureWebpPng = await picture(uri('image/webp', opaque.toBuffer('image/webp')), 5 * 1024 * 1024, 'png')
     out.pictureAlphaJpeg = await picture(uri('image/png', canvas(200, 200, true).toBuffer('image/png')), 5 * 1024 * 1024, 'jpeg')
+    // A page of a multi-page TIFF, by its place in the file's chain (core asks so when it cannot take the page out alone).
+    {
+      const fax = tiff({ pages: [{ width: 30, height: 20, pixel: shade, compression: 'lzw' }, { width: 17, height: 11, pixel: shade, kind: 'bilevel', compression: 'packbits' }] })
+      out.pictureTiffPage2 = await picture(uri('image/tiff', fax), 5 * 1024 * 1024, 'png', 1)
+      out.pictureTiffPage3 = await picture(uri('image/tiff', fax), 5 * 1024 * 1024, 'png', 2)
+    }
     // A TIFF whose chain of pages loops back on itself: refused, not followed forever.
     {
       const t = tiff({ width: 4, height: 4, pixel: shade, kind: 'gray' })

@@ -63,6 +63,7 @@ areas
 arithmetic
 around
 arrive
+arrived
 arrows
 as
 ashcombe
@@ -146,6 +147,7 @@ calculate
 calculations
 calendar
 called
+came
 can
 cancel
 cancelled
@@ -223,6 +225,7 @@ continuing
 converted
 coordinate
 copies
+copy
 corner
 correction
 corrections
@@ -365,6 +368,8 @@ fading
 false
 family
 fast
+fax
+faxed
 ferrow
 few
 fiction
@@ -531,6 +536,7 @@ law
 layout
 le
 leaning
+lease
 leather
 leave
 left
@@ -750,6 +756,7 @@ phantom
 photograph
 photographs
 photography
+picture
 piece
 pieces
 pin
@@ -953,6 +960,7 @@ sick
 sigma
 sign
 signal
+signed
 signs
 simply
 sin

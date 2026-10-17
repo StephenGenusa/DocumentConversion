@@ -164,6 +164,30 @@ function probeWords(text) {
   return out
 }
 
+/**
+ * How many pages a TIFF holds: the IFDs in its chain, less previews
+ * (NewSubfileType bit 0), read independently of the app's own reader.
+ */
+function tiffPageCount(buf) {
+  const be = buf.toString('latin1', 0, 2) === 'MM'
+  const u16 = (at) => (be ? buf.readUInt16BE(at) : buf.readUInt16LE(at))
+  const u32 = (at) => (be ? buf.readUInt32BE(at) : buf.readUInt32LE(at))
+  let pages = 0
+  const seen = new Set()
+  for (let at = u32(4); at !== 0 && !seen.has(at) && at + 2 <= buf.length; ) {
+    seen.add(at)
+    const n = u16(at)
+    if (at + 6 + n * 12 > buf.length) break
+    let preview = false
+    for (let e = at + 2; e < at + 2 + n * 12; e += 12) {
+      if (u16(e) === 254) preview = ((u16(e + 2) === 3 ? u16(e + 8) : u32(e + 8)) & 1) === 1
+    }
+    if (!preview) pages++
+    at = u32(at + 2 + n * 12)
+  }
+  return Math.max(pages, 1)
+}
+
 /** The targets whose output is text (or an EPUB of it) a picture's type can be read from. */
 const PICTURE_TEXT_TARGETS = ['html', 'revealjs', 'md', 'epub']
 
@@ -241,8 +265,12 @@ async function main() {
     const addressedPictures = addressedIn(hubText)
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
     const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp|tiff)[;,]/i.test(hubText)
-    // TIFF pictures, which a Kindle book gets as JPEG or PNG (decoded in the render host).
-    const tiffImages = (hubText.match(/src="data:image\/tiff[;,]/gi) ?? []).length
+    // TIFF pictures, by page (each page of a multi-page TIFF becomes its own picture),
+    // which a Kindle book gets as JPEG or PNG (decoded in the render host).
+    const tiffImages = [...hubText.matchAll(/src="data:image\/tiff;base64,([A-Za-z0-9+/=]+)"/gi)].reduce(
+      (n, m) => n + tiffPageCount(Buffer.from(m[1], 'base64')),
+      0,
+    )
     // EMF and WMF pictures (Word's vector pictures): kept by Word only, their alt text elsewhere.
     const vectorImages = (hubText.match(/src="data:image\/x-[ew]mf[;,]/gi) ?? []).length
     // Code highlight.js finds tokens in (a shell prompt line may hold none).

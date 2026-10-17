@@ -1,12 +1,13 @@
 import { parseDocument } from 'htmlparser2'
 import { Element, type ChildNode } from 'domhandler'
-import { replaceElement } from 'domutils'
+import { append, replaceElement } from 'domutils'
 import serialize from 'dom-serializer'
 import { imageMime } from './readers/image'
 import { imagePlaceholder } from './inline-images'
 import { MAX_PICTURE_BYTES, type PictureFormat, type RenderRequest, type RenderResult } from './rendered-blocks'
 import type { DrawContext } from './draw-blocks'
 import type { TargetFormat } from './types'
+import { tiffPage, tiffPages } from './picture-headers'
 
 /*
  * The pictures each target can hold (spec D10's raster half), made right
@@ -213,6 +214,50 @@ function oneLine(text: string): string {
 const BASE64 = /^[A-Za-z0-9+/]+=*$/
 
 /**
+ * A TIFF of several pages (a fax, a scanned letter) becomes one picture per
+ * page, in order, where the TIFF stood, each alt text the TIFF's with its
+ * page number: no target shows more than a TIFF's first page (Word and
+ * every viewer included), so a page kept inside one picture is a page
+ * lost. Each page is taken out as a one-page TIFF of its own, its data byte
+ * for byte (picture-headers.ts), and is then held or converted like any
+ * one-page picture. A page whose data cannot be taken out on its own is
+ * given to the render host as the whole file and its place in it
+ * (`pageOf`). A preview (reduced-resolution copy) is not a page. Answers
+ * whether anything changed.
+ */
+function splitTiffPages(dom: ReturnType<typeof parseDocument>, pageOf: Map<Element, number>): boolean {
+  let changed = false
+  for (const el of images(dom.children)) {
+    const data = dataBytes(el.attribs.src ?? '')
+    if (!data || pictureMime(data.bytes) !== 'image/tiff') continue
+    const pages = tiffPages(data.bytes)
+    if (!pages || pages.length === 0 || (pages.length === 1 && pages[0].index === 0)) continue
+    const alt = el.attribs.alt?.trim()
+    let last: Element = el
+    pages.forEach((page, i) => {
+      const own = tiffPage(data.bytes, page.index)
+      const label = pages.length > 1 ? `page ${i + 1} of ${pages.length}` : ''
+      const attribs: Record<string, string> = { ...el.attribs, src: `data:image/tiff;base64,${(own ?? data.bytes).toString('base64')}` }
+      const text = alt && label ? `${alt} (${label})` : alt || (label && label[0].toUpperCase() + label.slice(1))
+      if (text) attribs.alt = text
+      else delete attribs.alt
+      const img = new Element('img', attribs)
+      if (!own) pageOf.set(img, page.index)
+      if (i === 0) replaceElement(el, img)
+      else {
+        // Each page on a line of its own.
+        const br = new Element('br', {})
+        append(last, br)
+        append(br, img)
+      }
+      last = img
+    })
+    changed = true
+  }
+  return changed
+}
+
+/**
  * Make every data: picture one `target` can hold. Pictures it holds as they
  * are stay untouched; the others go to the render host, in `ctx.pictureFormat`
  * (PNG unless chosen) - except a picture the target holds but not at its
@@ -229,13 +274,14 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
   if (!profile || !/<img/i.test(html)) return html
   const format = ctx.pictureFormat ?? DEFAULT_PICTURE_FORMAT
   const dom = parseDocument(html)
+  const pageOf = new Map<Element, number>()
+  let changed = splitTiffPages(dom, pageOf)
   interface Job {
     el: Element
     number: number
     request: RenderRequest
   }
   const jobs: Job[] = []
-  let changed = false
   const failed = (n: number, why: string): void =>
     ctx.onAdvice?.('render-failed', `Picture ${n} could not be stored for ${profile.name}: ${why}`)
   const describe = (el: Element, n: number, why: string): void => {
@@ -277,7 +323,9 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
     }
     // Held, but too large: made smaller in the kind that shrinks best.
     const as: PictureFormat = profile.holds.has(mime) ? 'jpeg' : format
-    jobs.push({ el, number, request: picture(`data:${mime};base64,${data.bytes.toString('base64')}`, as) })
+    const request = picture(`data:${mime};base64,${data.bytes.toString('base64')}`, as)
+    const page = pageOf.get(el)
+    jobs.push({ el, number, request: page === undefined ? request : { ...request, page } })
   }
   const { max, eachMs } = PICTURE_LIMITS
   for (const job of jobs.slice(max)) {
