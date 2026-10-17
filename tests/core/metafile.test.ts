@@ -4,7 +4,7 @@ import { DOMParser } from 'linkedom'
 import { drawMetafile, type MetafileDrawing, type MetafileResult } from '../../src/core/metafile'
 import { sanitizeSvg } from '../../src/core/svg-sanitize'
 // @ts-expect-error: plain .mjs fixture libraries, no types.
-import { EmfWriter, PlusWriter, WmfWriter, png } from '../../scripts/fixtures/lib-metafile.mjs'
+import { EmfWriter, PlusWriter, WmfWriter, dib1, dib24, png } from '../../scripts/fixtures/lib-metafile.mjs'
 // @ts-expect-error: plain .mjs fixture libraries, no types.
 import * as corpus from '../../scripts/fixtures/metafile-corpus.mjs'
 // @ts-expect-error: plain .mjs fixture libraries, no types.
@@ -158,8 +158,9 @@ describe('metafile corpus: each drawing as SVG', () => {
   })
 
   it('EMF+ dual: drawn from its EMF records', () => {
-    const { root } = svgOf(corpus.dualEmf())
+    const { r, root } = svgOf(corpus.dualEmf())
     expect(fills(root)).toEqual(['#3a6ea5', '#e8a33d'])
+    expect(r.bitmap).toBeUndefined()
   })
 
   it('EMF+ only: drawn from its EMF+ records, its EMF records (not the picture) left out', () => {
@@ -179,6 +180,39 @@ describe('metafile corpus: each drawing as SVG', () => {
     expect(all(root, 'text').map((t) => [t.textContent, t.getAttribute('font-size'), t.getAttribute('transform')])).toEqual([
       [READING_ROOM.signs[1], '210', `matrix(${+(1 / 15).toFixed(6)} 0 0 ${+(1 / 15).toFixed(6)} 100 75)`],
     ])
+  })
+})
+
+describe('metafile corpus: a metafile that is one bitmap is that bitmap', () => {
+  it('a STRETCHDIBITS covering the frame: its pixels as PNG, exactly', () => {
+    const r = drawn(drawMetafile(corpus.scanEmf()))
+    expect(r.bitmap).toMatchObject({ mime: 'image/png', width: 100, height: 75 })
+    const pixel = (x: number, y: number) => [Math.round((x * 255) / 99), Math.round((y * 255) / 74), 160]
+    for (const [x, y] of [[0, 0], [99, 0], [0, 74], [57, 31], [99, 74]]) expect(pngPixel(r.bitmap!.bytes, x, y)).toEqual(pixel(x, y))
+  })
+
+  it("an EMF+ dual file's picture: the PNG it was made from, byte for byte", () => {
+    const { emf, png: original } = corpus.plusPhoto()
+    const r = drawn(drawMetafile(emf))
+    expect(r.bitmap?.bytes.equals(original)).toBe(true)
+  })
+
+  it('a WMF STRETCHDIB covering the window', () => {
+    const r = drawn(drawMetafile(corpus.scanWmf()))
+    expect(r.bitmap).toMatchObject({ mime: 'image/png', width: 80, height: 50 })
+  })
+
+  it('not when anything else shows: a caption over it, a bitmap covering half, or one drawn mirrored', () => {
+    const pic = dib24(20, 10, () => [10, 20, 30])
+    const caption = new EmfWriter({ width: 200, height: 100 }).stretchDIBits(0, 0, 200, 100, pic).font(1, {}).select(1).text(10, 20, READING_ROOM.signs[0]).bytes()
+    expect(drawn(drawMetafile(caption)).bitmap).toBeUndefined()
+    const half = new EmfWriter({ width: 200, height: 100 }).stretchDIBits(0, 0, 100, 100, pic).bytes()
+    expect(drawn(drawMetafile(half)).bitmap).toBeUndefined()
+    const mirrored = new EmfWriter({ width: 200, height: 100 }).stretchDIBits(200, 0, -200, 100, pic).bytes()
+    expect(drawn(drawMetafile(mirrored)).bitmap).toBeUndefined()
+    // A white background under an opaque bitmap does not show: still the bitmap.
+    const under = new EmfWriter({ width: 200, height: 100 }).stock(8).stock(0).rectangle(0, 0, 200, 100).stretchDIBits(0, 0, 200, 100, pic).bytes()
+    expect(drawn(drawMetafile(under)).bitmap).toMatchObject({ width: 20, height: 10 })
   })
 })
 
@@ -257,6 +291,40 @@ describe('metafile records', () => {
     expect(fills(emf((e) => e.stock(8).stock(4).rectangle(1, 1, 9, 9)).root)).toEqual(['#000000'])
   })
 
+  it('a 1-bit DIB takes its own two colours; drawn by STRETCHDIBITS as a PNG', () => {
+    const r = drawn(drawMetafile(new EmfWriter({ width: 8, height: 8 }).stretchDIBits(0, 0, 8, 8, dib1(8, 8, (x: number) => x < 4)).bytes()))
+    // Set bits take the table's second colour (white), clear ones its first (black).
+    expect(pngPixel(r.bitmap!.bytes, 0, 0)).toEqual([255, 255, 255])
+    expect(pngPixel(r.bitmap!.bytes, 7, 7)).toEqual([0, 0, 0])
+  })
+
+  it("a mask and an image (SRCPAINT then SRCAND, or the XOR trick) are the one bitmap they mean, transparent where the page shows through", () => {
+    const white = [255, 255, 255]
+    const black = [0, 0, 0]
+    const red = [200, 0, 0]
+    // LibreOffice's order: the mask ORed (white where the image shows), the image ANDed.
+    const orMask = dib24(2, 1, (x: number) => (x === 0 ? white : black))
+    const image = dib24(2, 1, (x: number) => (x === 0 ? red : white))
+    const pair = drawn(drawMetafile(new EmfWriter({ width: 20, height: 10 }).stretchDIBits(0, 0, 20, 10, orMask, 0x00ee0086).stretchDIBits(0, 0, 20, 10, image, 0x008800c6).bytes()))
+    expect(pair.svg).not.toContain('mix-blend-mode')
+    expect((pair.svg.match(/<use /g) ?? []).length).toBe(1)
+    expect([pngPixel(pair.bitmap!.bytes, 0, 0), pngPixel(pair.bitmap!.bytes, 1, 0)[3]]).toEqual([[...red, 255], 0])
+    // The XOR trick: image XORed, mask ANDed (black where the image shows), image XORed again.
+    const andMask = dib24(2, 1, (x: number) => (x === 0 ? black : white))
+    const sprite = dib24(2, 1, (x: number) => (x === 0 ? red : black))
+    const trick = drawn(
+      drawMetafile(
+        new EmfWriter({ width: 20, height: 10 })
+          .stretchDIBits(0, 0, 20, 10, sprite, 0x00660046)
+          .stretchDIBits(0, 0, 20, 10, andMask, 0x008800c6)
+          .stretchDIBits(0, 0, 20, 10, sprite, 0x00660046)
+          .bytes(),
+      ),
+    )
+    expect((trick.svg.match(/<use /g) ?? []).length).toBe(1)
+    expect([pngPixel(trick.bitmap!.bytes, 0, 0), pngPixel(trick.bitmap!.bytes, 1, 0)[3]]).toEqual([[...red, 255], 0])
+  })
+
   it('EMF+ DrawString and FillRects in an EMF+-only file; a semi-transparent brush keeps its alpha', () => {
     const p = new PlusWriter().header(false).fillRects(0x80ff0000, [[0, 0, 50, 50]]).font(1, 12, 'Calibri').drawString(1, 0xff000000, [0, 60, 100, 20], READING_ROOM.signs[2]).eof()
     const { root } = svgOf(new EmfWriter({ width: 100, height: 100 }).comment(p.bytes()).bytes())
@@ -269,7 +337,8 @@ describe('metafile records', () => {
   it('an EMF+ picture inside a metafile is drawn from the PNG it carries', () => {
     const picture = png(4, 4, () => [0, 128, 255])
     const p = new PlusWriter().header(false).image(1, picture, 4, 4).drawImage(1, [0, 0, 4, 4], [10, 10, 40, 40]).eof()
-    const { root } = svgOf(new EmfWriter({ width: 100, height: 100 }).comment(p.bytes()).bytes())
+    const { r, root } = svgOf(new EmfWriter({ width: 100, height: 100 }).comment(p.bytes()).bytes())
+    expect(r.bitmap).toBeUndefined()
     expect(root.querySelector('image')!.getAttribute('xlink:href')).toBe(`data:image/png;base64,${picture.toString('base64')}`)
     expect(root.querySelector('use')!.getAttribute('transform')).toBe('matrix(10 0 0 10 10 10)')
   })

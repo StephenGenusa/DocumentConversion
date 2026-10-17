@@ -1,10 +1,10 @@
 import { emfSize, wmfSize } from '../picture-headers'
 import { View } from './bytes'
-import { Budget } from './dib'
+import { Budget, type Picture } from './dib'
 import { EMR, EmfPlayer, emfRecords, readEmfHeader } from './emf'
 import { EmfPlusPlayer } from './emfplus'
 import { Gdi } from './gdi'
-import { intersect, SvgOut, TooLarge, type ImageData, type Rect } from './svg'
+import { area, axisAligned, intersect, SvgOut, TooLarge, type ImageData, type Rect } from './svg'
 import { embeddedEmf, META, readWmfHeader, WmfPlayer, wmfRecords } from './wmf'
 
 /*
@@ -14,9 +14,16 @@ import { embeddedEmf, META, readWmfHeader, WmfPlayer, wmfRecords } from './wmf'
  * app can ship. What it draws is in gdi.ts (the device context), emf.ts,
  * emfplus.ts and wmf.ts (the records).
  *
- * The SVG's viewBox is the metafile's frame in its own device pixels; its
- * width and height are the size the document shows it at (the frame, in
- * CSS px).
+ * Two answers, and the smart one first:
+ *
+ *   bitmap  a metafile that is only one bitmap covering its frame (a
+ *           screenshot pasted into Office, a scan) is that bitmap,
+ *           exactly: the JPEG or PNG it holds as it is (EMF+, a DIB that
+ *           is BI_JPEG or BI_PNG), or its pixels as PNG. Nothing is
+ *           redrawn or resampled.
+ *   svg     everything else, drawn: the SVG's viewBox is the metafile's
+ *           frame in its own device pixels; its width and height are the
+ *           size the document shows it at (the frame, in CSS px).
  *
  * A file whose drawing comes out empty, or lands wholly outside its
  * frame, or whose records mostly could not be read, gets an error (and
@@ -37,6 +44,8 @@ export interface MetafileDrawing {
   /** The size it is shown at, in CSS px. */
   width: number
   height: number
+  /** Set when the metafile is one bitmap covering its frame: that bitmap, exactly. */
+  bitmap?: Picture
   /** What the file asks for that is not drawn, once each. */
   lost: string[]
 }
@@ -83,6 +92,38 @@ function universe(vb: Rect | null): Rect {
   return { l: vb.l - 10 * w, t: vb.t - 10 * h, r: vb.r + 10 * w, b: vb.b + 10 * h }
 }
 
+/** Whether `inner` lies inside `outer`, give or take `slack`. */
+function inside(inner: Rect, outer: Rect, slack: number): boolean {
+  return inner.l >= outer.l - slack && inner.t >= outer.t - slack && inner.r <= outer.r + slack && inner.b <= outer.b + slack
+}
+
+/**
+ * The one bitmap a drawing is, when it is that: a single plain image
+ * (drawn as it is, not blended, mirrored, rotated or cropped by a clip),
+ * covering the frame and lying within it (3% either way), drawn last,
+ * with nothing visible before it (anything drawn earlier lies under it,
+ * and it is opaque).
+ */
+function singleBitmap(out: SvgOut, vb: Rect): Picture | null {
+  const images = out.drawn.filter((d) => d.kind === 'image')
+  if (images.length !== 1) return null
+  const img = images[0]
+  const at = out.drawn.indexOf(img)
+  const m = img.matrix
+  if (at !== out.drawn.length - 1 || !img.plain || !img.picture || !img.bounds || !m) return null
+  if (!(axisAligned(m) && m[0] > 0 && m[3] > 0)) return null
+  const slack = Math.max(1, 0.01 * Math.max(vb.r - vb.l, vb.b - vb.t))
+  for (const d of out.drawn.slice(0, at)) {
+    if (!img.opaque || !d.bounds || !inside(d.bounds, img.bounds, slack)) return null
+  }
+  const shown = intersect(img.bounds, vb)
+  if (!shown || area(shown) < 0.97 * area(vb) || area(shown) < 0.97 * area(img.bounds)) return null
+  if (img.clip) {
+    if (!img.clip.rects || img.clip.parent || !img.clip.rects.some((r) => inside(shown, r, slack))) return null
+  }
+  return img.picture
+}
+
 /** Why a finished drawing is no good, or null when it is. */
 function broken(out: SvgOut, vb: Rect, played: number, failed: number): string | null {
   if (out.empty) return 'it draws nothing this app can show'
@@ -97,6 +138,7 @@ function nestedFor(opts: Options): (bytes: Buffer) => ImageData | null {
     if (depth > METAFILE_LIMITS.maxDepth) return null
     const r = drawMetafile(bytes, { depth, maxChars: Math.floor((opts.maxChars ?? METAFILE_LIMITS.maxChars) / 4) })
     if ('error' in r) return null
+    if (r.bitmap) return r.bitmap
     return { mime: 'image/svg+xml', bytes: Buffer.from(r.svg, 'utf8'), width: r.width, height: r.height }
   }
 }
@@ -146,17 +188,24 @@ function drawEmf(file: View, bytes: Buffer, opts: Options): MetafileResult {
     if (!sane(width, height)) return { error: 'its size is not one this app can show' }
     const why = broken(r.out, viewBox, r.played, r.failed)
     if (why) return { error: why }
-    return { svg: r.out.finish(viewBox, width, height), width, height, lost: [...r.lost] }
+    const bitmap = singleBitmap(r.out, viewBox) ?? undefined
+    return { svg: r.out.finish(viewBox, width, height), width, height, bitmap, lost: [...r.lost] }
   }
 
   const cssWidth = size?.width ?? (vb ? ((vb.r - vb.l) / mx) * (96 / 25.4) : 0)
-  if (plus.present && !plus.dual) {
-    // An EMF+-only file is drawn from its EMF+ records (falling back on its
-    // EMF records if they draw nothing); a dual file's EMF records draw it.
+  if (plus.present) {
+    // EMF+: an EMF+-only file is drawn from its EMF+ records (falling back
+    // on its EMF records if they draw nothing). A dual file's EMF records
+    // draw it; its EMF+ records may still hold the original JPEG or PNG
+    // of a picture that is only that.
     const fromPlus = finish(run('plus', vb, cssWidth), vb)
-    if (!('error' in fromPlus)) return fromPlus
+    if (!plus.dual && !('error' in fromPlus)) return fromPlus
+    if (plus.dual && !('error' in fromPlus) && fromPlus.bitmap) {
+      const fromGdi = finish(run('gdi', vb, cssWidth), vb)
+      return 'error' in fromGdi ? fromPlus : { ...fromGdi, bitmap: fromPlus.bitmap }
+    }
     const fromGdi = finish(run('gdi', vb, cssWidth), vb)
-    return 'error' in fromGdi ? fromPlus : fromGdi
+    return 'error' in fromGdi && !plus.dual ? fromPlus : fromGdi
   }
   return finish(run('gdi', vb, cssWidth), vb)
 }
@@ -217,5 +266,6 @@ function drawWmf(file: View, bytes: Buffer, header: NonNullable<ReturnType<typeo
   if (!sane(width, height)) return { error: 'its size is not one this app can show' }
   const why = broken(out, viewBox, player.played, player.failed)
   if (why) return { error: why }
-  return { svg: out.finish(viewBox, width, height), width, height, lost: [...gdi.lost] }
+  const bitmap = singleBitmap(out, viewBox) ?? undefined
+  return { svg: out.finish(viewBox, width, height), width, height, bitmap, lost: [...gdi.lost] }
 }
