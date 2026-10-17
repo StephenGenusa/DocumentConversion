@@ -13,7 +13,7 @@ import { decodeTextBytes } from './txt'
 import { sanitizeToHub } from '../allowlist'
 import { inlineSvgElements } from '../svg-images'
 import { rtfStringToHubHtml } from './rtf'
-import { renderAttachmentList, renderEmailHeader, textToParagraphs } from './email-common'
+import { inlineCidPictures, renderAttachmentList, renderEmailHeader, textToParagraphs } from './email-common'
 import type { HubDocument, SourceInput } from '../types'
 
 export interface MsgAttachment {
@@ -54,15 +54,20 @@ export interface MsgFields {
  * both drops the image and made the docx writer throw on a src-less <img>.
  */
 function inlineMsgImages(html: string, attachments: MsgAttachment[]): string {
-  let out = html
-  for (const att of attachments) {
-    if (!att.content || att.content.length === 0) continue
+  const pictures = attachments.flatMap((att) => {
+    if (!att.content || att.content.length === 0) return []
     const mime = att.mimeType || guessMime(att.fileName)
-    if (!mime.startsWith('image/')) continue
-    const dataUri = `data:${mime};base64,${Buffer.from(att.content).toString('base64')}`
+    return mime.startsWith('image/') ? [{ att, mime, bytes: Buffer.from(att.content) }] : []
+  })
+  // cid: by Content-ID, then by filename (an <img>, and an SVG's <image>, email-common.ts).
+  let out = inlineCidPictures(html, [
+    ...pictures.map(({ att, mime, bytes }) => ({ contentId: att.contentId, mime, bytes })),
+    ...pictures.map(({ att, mime, bytes }) => ({ contentId: att.fileName, mime, bytes })),
+  ])
+  for (const { att, mime, bytes } of pictures) {
+    const dataUri = `data:${mime};base64,${bytes.toString('base64')}`
     for (const token of [att.contentId, att.fileName].filter(Boolean) as string[]) {
       const bare = token.replace(/[<>]/g, '')
-      out = out.split(`cid:${bare}`).join(dataUri)
       // De-encapsulated Outlook HTML often points straight at the filename.
       out = out.replace(
         new RegExp(`(<img[^>]*\\bsrc=")([^"]*${bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})(")`, 'gi'),
@@ -79,6 +84,7 @@ function guessMime(filename?: string): string {
   if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
   if (ext === 'gif') return 'image/gif'
   if (ext === 'webp') return 'image/webp'
+  if (ext === 'svg') return 'image/svg+xml'
   return 'application/octet-stream'
 }
 
@@ -122,14 +128,14 @@ export async function msgToHub(fields: MsgFields): Promise<HubDocument> {
   let body = ''
   if (fields.bodyHtml) {
     // An SVG drawn in the body is kept as an SVG image, as in an .eml.
-    body = sanitizeToHub(inlineMsgImages(inlineSvgElements(fields.bodyHtml), fields.attachments))
+    body = sanitizeToHub(inlineSvgElements(inlineMsgImages(fields.bodyHtml, fields.attachments)))
   } else if (fields.compressedRtf && fields.compressedRtf.length > 0) {
     // decompressRTF's types want number[], but any Uint8Array works at runtime.
     const compressed = Buffer.from(fields.compressedRtf) as unknown as number[]
     const rtf = Buffer.from(decompressRTF(compressed)).toString('latin1')
     if (/\\fromhtml1\b/.test(rtf)) {
       const res = deEncapsulateSync(rtf, { decode: iconv.decode, mode: 'html' })
-      body = sanitizeToHub(inlineMsgImages(inlineSvgElements(String(res.text)), fields.attachments))
+      body = sanitizeToHub(inlineSvgElements(inlineMsgImages(String(res.text), fields.attachments)))
     } else {
       body = await rtfStringToHubHtml(rtf)
     }

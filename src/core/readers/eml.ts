@@ -6,7 +6,8 @@ const PostalMime = ((PostalMimeImport as unknown as { default?: unknown }).defau
 import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import { inlineSvgElements } from '../svg-images'
-import { renderAttachmentList, renderEmailHeader, textToParagraphs } from './email-common'
+import { inlineCidPictures, renderAttachmentList, renderEmailHeader, textToParagraphs } from './email-common'
+import { pictureType } from '../pictures'
 import type { HubDocument, SourceInput } from '../types'
 
 function formatAddress(a?: { name?: string; address?: string }): string | undefined {
@@ -40,16 +41,15 @@ export async function readEml(src: SourceInput): Promise<HubDocument> {
 
   let body: string
   if (parsed.html) {
-    let html = parsed.html
-    // Resolve inline cid: references to data URIs before sanitizing.
-    for (const att of parsed.attachments ?? []) {
-      if (!att.contentId) continue
-      const cid = att.contentId.replace(/[<>]/g, '')
-      html = html.split(`cid:${cid}`).join(`data:${att.mimeType};base64,${toBase64(att.content)}`)
-    }
+    // Resolve inline cid: pictures (<img>, and an SVG's <image>) to data URIs before sanitizing.
+    const parts = (parsed.attachments ?? []).map((att) => {
+      const bytes = Buffer.from(toBase64(att.content), 'base64')
+      const mime = att.mimeType?.startsWith('image/') ? att.mimeType : (pictureType(bytes) ?? att.mimeType)
+      return { contentId: att.contentId, mime, bytes }
+    })
     // An SVG drawn in the body is kept as an SVG image; mail never fetches
     // the pictures it names by address, which become their descriptions.
-    body = sanitizeToHub(inlineSvgElements(html))
+    body = sanitizeToHub(inlineSvgElements(inlineCidPictures(parsed.html, parts)))
   } else {
     body = textToParagraphs(parsed.text ?? '')
   }
