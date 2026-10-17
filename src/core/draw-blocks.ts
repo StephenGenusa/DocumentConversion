@@ -115,16 +115,21 @@ export interface DrawContext {
  * the blocks over the limit. Called by `Converter.write()` before the
  * writer; this HTML exists only between there and the writer.
  *
- * Without a renderer (core used on its own), or for a target that does not
- * draw, the HTML is returned untouched and nothing is said.
+ * For a target that does not draw, the HTML is returned untouched. Without
+ * a renderer (core used on its own) diagrams stay source, and formulas, or
+ * when formulas are not among the kinds drawn, stand as one that could not
+ * be drawn does (undrawnHtml): display math on a centered line of its own.
+ * Nothing is said either way.
  */
 export async function drawBlocks(html: string, target: TargetFormat, ctx: DrawContext): Promise<string> {
+  if (!rendersBlocks(target)) return html
   const render = ctx.renderBlocks
-  if (!render || !rendersBlocks(target)) return html
   const features = hubFeatures(html)
   let out = html
-  if (features.diagrams) out = await drawDiagrams(out, target, ctx, render)
-  if (features.math && DRAWN_KINDS.has('math')) out = await drawFormulas(out, target, ctx, render)
+  if (features.diagrams && render) out = await drawDiagrams(out, target, ctx, render)
+  if (features.math) {
+    out = render && DRAWN_KINDS.has('math') ? await drawFormulas(out, target, ctx, render) : undrawn(out, findFormulas(out), target)
+  }
   return out
 }
 
@@ -244,17 +249,19 @@ const exs = (px: number): string => `${Math.round((px / PX_PER_EX) * 1000) / 100
  * not be drawn: Undefined control sequence \foo"). Numbered apart from
  * diagrams.
  */
-async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext, render: RenderBlocks): Promise<string> {
-  interface Formula {
-    start: number
-    end: number
-    display: boolean
-    placement: Placement
-    source: string
-    number: number
-    /** What is drawn: the source, after the definitions it uses from earlier formulas. */
-    drawn: string
-  }
+interface Formula {
+  start: number
+  end: number
+  display: boolean
+  placement: Placement
+  source: string
+  number: number
+  /** What is drawn: the source, after the definitions it uses from earlier formulas. */
+  drawn: string
+}
+
+/** The document's formulas, numbered in order; an empty one is left as it is. */
+function findFormulas(html: string): Formula[] {
   const formulas: Formula[] = []
   for (const m of html.matchAll(FORMULA_SOURCE)) {
     const placement: Placement = m[1] !== undefined ? 'block' : m[2] ? 'in-paragraph' : 'inline'
@@ -263,6 +270,11 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
     const display = placement !== 'inline'
     formulas.push({ start: m.index, end: m.index + m[0].length, display, placement, source, number: formulas.length + 1, drawn: source })
   }
+  return formulas
+}
+
+async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext, render: RenderBlocks): Promise<string> {
+  const formulas = findFormulas(html)
   if (formulas.length === 0) return html
 
   const { eachMs, batch } = RENDER_LIMITS.formulas
@@ -307,7 +319,7 @@ async function drawFormulas(html: string, target: TargetFormat, ctx: DrawContext
   return out + html.slice(at)
 }
 
-/** Every formula left undrawn (the renderer itself failed), each standing as undrawnHtml puts it. */
+/** Every formula left undrawn (the renderer failed, or there is none), each standing as undrawnHtml puts it. */
 function undrawn(html: string, formulas: { start: number; end: number; placement: Placement }[], target: TargetFormat): string {
   let out = ''
   let at = 0
