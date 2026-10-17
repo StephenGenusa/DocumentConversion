@@ -298,7 +298,8 @@ describe('bad files', () => {
 describe('memory', () => {
   const MB = 1048576
   // A view whose ORDER BY holds every row at once: 200,000 rows of 1,000 random bytes, about 200 MB to sort.
-  const HUNGRY = 'CREATE VIEW hungry AS WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c LIMIT 200000) SELECT x, randomblob(1000) AS b FROM c ORDER BY b'
+  const ROWS = 200_000
+  const HUNGRY = `CREATE VIEW hungry AS WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c LIMIT ${ROWS}) SELECT x, randomblob(1000) AS b FROM c ORDER BY b`
   const bytes = makeDb(`CREATE TABLE t(a); INSERT INTO t VALUES ('kept'); ${HUNGRY}; CREATE VIEW small AS SELECT a FROM t ORDER BY a;`)
   const small = (): ReturnType<typeof createSqliteHost> => createSqliteHost({ workerPath, assetDir: SQLJS, memoryLimit: 32 * MB })
 
@@ -328,7 +329,7 @@ describe('memory', () => {
       { onAdvice: (_k, m) => advice.push(m) },
     )
     expect(advice).toEqual([])
-    expect(out.parts.find((p) => p.suffix === '.hungry')!.bytes.toString('utf8').split('\r\n').length).toBe(200_002)
+    expect(out.parts.find((p) => p.suffix === '.hungry')!.bytes.toString('utf8').split('\r\n').length).toBe(ROWS + 2)
   })
 
   it('gives a database a quarter of the machine, from 256 MB to 1.5 GB', () => {
