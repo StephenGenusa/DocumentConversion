@@ -889,17 +889,18 @@ const UNTOUCHED = new Set(['svg', 'math', 'script', 'style'])
 
 /**
  * The stand-in color: `0D0C` and the formatting bits as two hex digits, or
- * `0D0B` and the index of a formatted run's real color and bits in the
- * document's ColoredLook list. Near black, so a run the post-pass somehow
+ * `0D0B` and the index of a formatted run's real color, background and bits
+ * in the document's ColoredLook list. Near black, so a run the post-pass somehow
  * misses still reads as text.
  */
 const STAND_IN = /<w:color w:val="0D0([BC])([0-9A-Fa-f]{2})"\/>/
 const STAND_IN_BITS = /0D0([BC])([0-9A-F]{2})/i
 
-/** A formatted run that also has a color: its bits and its color as Word's RRGGBB. */
+/** A formatted run that also has a color or a background: its bits, and each as Word's RRGGBB. */
 interface ColoredLook {
   bits: number
-  color: string
+  color?: string
+  background?: string
 }
 
 /** The most colored looks one document gives stand-ins to (two hex digits); the rest lose the color, as before. */
@@ -912,6 +913,8 @@ interface Look {
   color?: string
   /** The `color` of the paragraph, heading or cell around it, which html-to-docx gives its plain runs. */
   blockColor?: string
+  /** The run's own background, on its formatting tag or one around it. */
+  background?: string
   /** Inside a <pre>: a line break is kept in its span (see breakCodeLines). */
   pre?: boolean
 }
@@ -920,6 +923,34 @@ interface Look {
 const COLORED_BLOCK = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'td', 'th'])
 
 const colorIn = (el: Element): string | undefined => /(?:^|;)\s*color:\s*([^;]+)/i.exec(el.attribs.style ?? '')?.[1]?.trim()
+
+/**
+ * An element's own background as Word's RRGGBB: its `background-color`
+ * (normalizeColors has made it hex, or taken it out when it gives no color),
+ * else the color word of a `background` shorthand. None when it gives no
+ * color, so the background around it shows.
+ */
+function backgroundIn(el: Element): string | undefined {
+  const style = el.attribs.style ?? ''
+  const own = /(?:^|;)\s*background-color:\s*([^;]+)/i.exec(style)?.[1]
+  if (own) return wordHex(own.trim())
+  const shorthand = /(?:^|;)\s*background:\s*([^;]+)/i.exec(style)?.[1] ?? ''
+  const words = shorthand.match(/[^\s(]+\([^)]*\)|[^\s]+/g) ?? []
+  return words.map((w) => wordHex(w)).findLast(Boolean)
+}
+
+/**
+ * Word's 16 highlight colors (ST_HighlightColor) by their RRGGBB: the 16
+ * colors of HTML 4, one for one. A background that is exactly one of them is
+ * written as a highlight, which is what Word's own Text Highlight Color makes
+ * and what its highlight tools find and clear; any other is shading, which
+ * keeps the exact color.
+ */
+const WORD_HIGHLIGHTS: Record<string, string> = {
+  FFFF00: 'yellow', '00FF00': 'green', '00FFFF': 'cyan', FF00FF: 'magenta', '0000FF': 'blue', FF0000: 'red',
+  '000000': 'black', FFFFFF: 'white', '000080': 'darkBlue', '008080': 'darkCyan', '008000': 'darkGreen',
+  '800080': 'darkMagenta', '800000': 'darkRed', '808000': 'darkYellow', '808080': 'darkGray', C0C0C0: 'lightGray',
+}
 
 /** Declarations whose colors html-to-docx reads (a border's as one of its words). */
 const BORDER = new Set(['border', 'border-top', 'border-right', 'border-bottom', 'border-left'])
@@ -1029,6 +1060,11 @@ function normalizeColors(source: string): string {
  * from its paragraph, heading or cell, so the bold words of a red paragraph
  * came out black. A formatted run with a color, the paragraph's or its own
  * (which wins), is listed in `colored`, and its stand-in names the entry.
+ * So is one with a background of its own (`background-color`, or the color
+ * of a `background`), carried into the formatting inside it: the span held
+ * only color and font, so a background on formatted text was lost, and a
+ * <mark> was yellow whatever its color. styleRuns writes it as Word's
+ * highlight when it is one of Word's highlight colors, else as shading.
  */
 function flattenFormatting(source: string, colored: ColoredLook[] = []): string {
   if (!/<(strong|b|em|i|cite|var|dfn|u|ins|s|del|strike|sup|sub|mark|code|kbd|samp|tt|span|small|big|abbr|acronym|time|data|bdi|bdo|font|q|a|pre)\b/i.test(source)) {
@@ -1054,17 +1090,19 @@ function flattenFormatting(source: string, colored: ColoredLook[] = []): string 
   }
   const withOwnColor = (el: Element, look: Look): Look => {
     const color = colorIn(el)
-    return color ? { ...look, color } : look
+    const background = backgroundIn(el)
+    return { ...look, ...(color ? { color } : {}), ...(background ? { background } : {}) }
   }
 
   const index = new Map<string, number>()
   const standIn = (look: Look): string => {
     const color = wordHex(look.color ?? look.blockColor ?? '')
-    if (color) {
-      const key = `${look.bits}:${color}`
+    const background = look.background
+    if (color || background) {
+      const key = `${look.bits}:${color ?? ''}:${background ?? ''}`
       let at = index.get(key)
       if (at === undefined && colored.length < MAX_COLORED) {
-        at = colored.push({ bits: look.bits, color }) - 1
+        at = colored.push({ bits: look.bits, color, background }) - 1
         index.set(key, at)
       }
       if (at !== undefined) return `#0D0B${at.toString(16).toUpperCase().padStart(2, '0')}`
@@ -1072,9 +1110,9 @@ function flattenFormatting(source: string, colored: ColoredLook[] = []): string 
     return `#0D0C${look.bits.toString(16).toUpperCase().padStart(2, '0')}`
   }
 
-  // No bits: a run's own color goes as it is, and the block's is left to html-to-docx.
+  // No bits and no background: a run's own color goes as it is, and the block's is left to html-to-docx.
   const styleOf = (look: Look): string =>
-    [look.bits ? `color: ${standIn(look)}` : look.color ? `color: ${look.color}` : '', look.font ? `font-family: ${look.font}` : '']
+    [look.bits || look.background ? `color: ${standIn(look)}` : look.color ? `color: ${look.color}` : '', look.font ? `font-family: ${look.font}` : '']
       .filter(Boolean)
       .join('; ')
 
@@ -1082,7 +1120,7 @@ function flattenFormatting(source: string, colored: ColoredLook[] = []): string 
 
   const restyle = (node: AnyNode, look: Look): AnyNode[] => {
     if (node instanceof Text) {
-      if (node.data === '' || (!look.bits && !look.font && !look.color)) return [node]
+      if (node.data === '' || (!look.bits && !look.font && !look.color && !look.background)) return [node]
       return [new Element('span', { style: styleOf(look) }, [new Text(node.data)])]
     }
     if (!isElement(node) || UNTOUCHED.has(node.name)) return [node]
@@ -1131,14 +1169,14 @@ function leafText(node: AnyNode | null | undefined): Text | null {
   return null
 }
 
-/** A leaf whose formatting draws across its spaces too: strike, underline, highlight. */
+/** A leaf whose formatting draws across its spaces too: strike, underline, highlight, a background. */
 function drawsLine(node: AnyNode, colored: ColoredLook[]): boolean {
   if (!isElement(node)) return false
   const standIn = STAND_IN_BITS.exec(node.attribs.style ?? '')
   if (!standIn) return false
   const value = parseInt(standIn[2], 16)
-  const bits = standIn[1].toUpperCase() === 'B' ? (colored[value]?.bits ?? 0) : value
-  return (bits & (STRIKE | UNDERLINE | MARK)) !== 0
+  const look = standIn[1].toUpperCase() === 'B' ? colored[value] : { bits: value }
+  return ((look?.bits ?? 0) & (STRIKE | UNDERLINE | MARK)) !== 0 || !!look?.background
 }
 
 /**
@@ -1199,14 +1237,16 @@ const rank = (element: string): number => {
   return at < 0 ? RPR_ORDER.length : at
 }
 
-/** The run properties a stand-in color stands for. */
-function propertiesFor(bits: number, color?: string): string[] {
+/** The run properties a stand-in color stands for. A <mark>'s own background takes the place of its yellow. */
+function propertiesFor(bits: number, color?: string, background?: string): string[] {
   const out: string[] = []
   if (color) out.push(`<w:color w:val="${color}"/>`)
   if (bits & BOLD) out.push('<w:b/>')
   if (bits & ITALIC) out.push('<w:i/>')
   if (bits & STRIKE) out.push('<w:strike/>')
-  if (bits & MARK) out.push('<w:highlight w:val="yellow"/>')
+  const highlight = background ? WORD_HIGHLIGHTS[background] : bits & MARK ? 'yellow' : undefined
+  if (highlight) out.push(`<w:highlight w:val="${highlight}"/>`)
+  else if (background) out.push(`<w:shd w:val="clear" w:color="auto" w:fill="${background}"/>`)
   if (bits & UNDERLINE) out.push('<w:u w:val="single"/>')
   if (bits & SUPER) out.push('<w:vertAlign w:val="superscript"/>')
   else if (bits & SUB) out.push('<w:vertAlign w:val="subscript"/>')
@@ -1224,11 +1264,14 @@ function styleRuns(xml: string, colored: ColoredLook[] = []): string {
   return xml.replace(/<w:rPr>([\s\S]*?)<\/w:rPr>/g, (whole, inner: string) => {
     const standIn = STAND_IN.exec(inner)
     if (!standIn) return whole
-    const kept = (inner.match(/<w:\w+\b[^>]*?\/>|<w:(\w+)\b[^>]*>[\s\S]*?<\/w:\1>/g) ?? []).filter((e) => !STAND_IN.test(e))
-    const names = new Set(kept.map((e) => /^<w:(\w+)/.exec(e)?.[1]))
     const value = parseInt(standIn[2], 16)
-    const look = standIn[1].toUpperCase() === 'B' ? colored[value] : { bits: value, color: undefined }
-    const added = propertiesFor(look?.bits ?? 0, look?.color).filter((e) => !names.has(/^<w:(\w+)/.exec(e)?.[1]))
+    const look: ColoredLook | undefined = standIn[1].toUpperCase() === 'B' ? colored[value] : { bits: value }
+    // A run's own background wins over the paragraph's, which html-to-docx gave it as w:shd.
+    const kept = (inner.match(/<w:\w+\b[^>]*?\/>|<w:(\w+)\b[^>]*>[\s\S]*?<\/w:\1>/g) ?? []).filter(
+      (e) => !STAND_IN.test(e) && !(look?.background && /^<w:(?:shd|highlight)\b/.test(e)),
+    )
+    const names = new Set(kept.map((e) => /^<w:(\w+)/.exec(e)?.[1]))
+    const added = propertiesFor(look?.bits ?? 0, look?.color, look?.background).filter((e) => !names.has(/^<w:(\w+)/.exec(e)?.[1]))
     const all = [...kept, ...added].sort((a, b) => rank(a) - rank(b))
     return `<w:rPr>${all.join('')}</w:rPr>`
   })

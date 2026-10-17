@@ -643,3 +643,80 @@ describe('writeDocx reads every CSS color form', () => {
     expect((await bordersOf('1px solid transparent')).join(' ')).not.toContain('top:')
   })
 })
+
+/** The w:highlight of every run whose text holds `marker`, or '' for none. */
+async function highlightsOf(html: string, marker: string): Promise<string[]> {
+  const xml = await documentXml(html)
+  return [...xml.matchAll(/<w:r>[\s\S]*?<\/w:r>/g)]
+    .map((m) => m[0])
+    .filter((r) => [...r.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].some((t) => t[1].includes(marker)))
+    .map((r) => /<w:highlight w:val="([^"]*)"\/>/.exec(r)?.[1] ?? '')
+}
+
+/**
+ * flattenFormatting's spans carried a formatted run's color and font only, so
+ * `<strong style="background-color: …">` or a `<mark>` in a color of its own
+ * came out with no background, or yellow. A background that is exactly one
+ * of Word's 16 highlight colors is a highlight; any other is shading.
+ */
+describe('writeDocx keeps a background color on formatted text', () => {
+  it('shades a formatted run by its own background, in every CSS form', async () => {
+    for (const css of ['#ABCDEF', '#abcdef', '#abcdefff', 'rgb(171, 205, 239)', 'rgba(171,205,239,1)', 'rgb(171 205 239 / 100%)', 'hwb(210 67.06% 6.27%)']) {
+      const html = `<p>plain <strong style="background-color: ${css}">alpha</strong> <em style="background: no-repeat ${css}">beta</em></p>`
+      expect(await fillsOf(html, 'alpha'), css).toEqual(['ABCDEF'])
+      expect(await fillsOf(html, 'beta'), css).toEqual(['ABCDEF'])
+      expect(await fillsOf(html, 'plain'), css).toEqual([''])
+      expect(await formatsOf(html, 'alpha'), css).toEqual(['b'])
+      expect(await formatsOf(html, 'beta'), css).toEqual(['i'])
+    }
+    expect(await fillsOf('<p><small style="background-color: wheat">alpha</small> <code style="background-color: #eee">beta</code></p>', 'alpha')).toEqual(['F5DEB3'])
+    expect(await fillsOf('<p><small style="background-color: wheat">alpha</small> <code style="background-color: #eee">beta</code></p>', 'beta')).toEqual(['EEEEEE'])
+  })
+
+  it('makes a background that is one of Word\'s highlight colors a highlight', async () => {
+    const WORD = { yellow: 'yellow', lime: 'green', aqua: 'cyan', fuchsia: 'magenta', blue: 'blue', red: 'red', black: 'black', white: 'white', navy: 'darkBlue', teal: 'darkCyan', green: 'darkGreen', purple: 'darkMagenta', maroon: 'darkRed', olive: 'darkYellow', gray: 'darkGray', silver: 'lightGray' }
+    for (const [css, word] of Object.entries(WORD)) {
+      const html = `<p>plain <strong style="background-color: ${css}">alpha</strong></p>`
+      expect(await highlightsOf(html, 'alpha'), css).toEqual([word])
+      expect(await fillsOf(html, 'alpha'), css).toEqual([''])
+    }
+    expect(await highlightsOf('<p><em style="background-color: hsl(60 100% 50%)">alpha</em></p>', 'alpha')).toEqual(['yellow'])
+    // Near is not exact: shading keeps the color.
+    expect(await highlightsOf('<p><em style="background-color: #FFFF01">alpha</em></p>', 'alpha')).toEqual([''])
+    expect(await fillsOf('<p><em style="background-color: #FFFF01">alpha</em></p>', 'alpha')).toEqual(['FFFF01'])
+  })
+
+  it('gives a <mark> its own color in place of yellow', async () => {
+    expect(await highlightsOf('<p><mark>alpha</mark></p>', 'alpha')).toEqual(['yellow'])
+    expect(await highlightsOf('<p><mark style="background-color: aqua">alpha</mark></p>', 'alpha')).toEqual(['cyan'])
+    expect(await highlightsOf('<p><mark style="background-color: #FFE0A0">alpha</mark></p>', 'alpha')).toEqual([''])
+    expect(await fillsOf('<p><mark style="background-color: #FFE0A0">alpha</mark></p>', 'alpha')).toEqual(['FFE0A0'])
+    expect(await highlightsOf('<p><mark style="background-color: transparent">alpha</mark></p>', 'alpha')).toEqual(['yellow'])
+  })
+
+  it('carries the background into nested formatting, with the color and a paragraph background beside it', async () => {
+    const html = '<p style="color: #C00000; background-color: #E0E0FF">plain <mark style="background-color: #FFE0A0">alpha <strong>beta</strong> <s style="background-color: lime">gamma</s></mark> delta</p>'
+    expect(await fillsOf(html, 'plain')).toEqual(['E0E0FF'])
+    expect(await fillsOf(html, 'alpha')).toEqual(['FFE0A0'])
+    expect(await fillsOf(html, 'beta')).toEqual(['FFE0A0'])
+    expect(await fillsOf(html, 'delta')).toEqual(['E0E0FF'])
+    expect(await highlightsOf(html, 'gamma')).toEqual(['green'])
+    expect(await colorsOf(html, 'beta')).toEqual(['C00000'])
+    expect(await formatsOf(html, 'beta')).toEqual(['b'])
+    expect(await formatsOf(html, 'gamma')).toEqual(['mark+strike'])
+  })
+
+  it('leaves a semi-transparent background blended and a transparent one off', async () => {
+    expect(await fillsOf('<p><strong style="background-color: rgba(0, 0, 255, 0.25)">alpha</strong></p>', 'alpha')).toEqual(['BFBFFF'])
+    expect(await fillsOf('<p><strong style="background-color: transparent">alpha</strong></p>', 'alpha')).toEqual([''])
+    expect(await highlightsOf('<p><strong style="background-color: rgba(255, 255, 0, 0)">alpha</strong></p>', 'alpha')).toEqual([''])
+  })
+
+  it('shades the space between two shaded words, in a code block too', async () => {
+    const html = '<p><strong style="background-color: #ABCDEF">alpha</strong> <em style="background-color: #ABCDEF">beta</em></p>'
+    expect((await linesOf(html, 'alpha')).join('')).toBe('alpha beta')
+    const pre = '<pre><code>  <strong style="background-color: #ABCDEF">alpha</strong></code></pre>'
+    expect(await fillsOf(pre, 'alpha')).toEqual(['ABCDEF'])
+    expect(await fontsOf(pre, 'alpha')).toEqual(['Courier'])
+  })
+})
