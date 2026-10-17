@@ -55,7 +55,8 @@ export function pickerDom(view: EditorView, getPos: () => number | undefined, va
     if (at !== undefined) openPicker(view, button, at - 1, value, options)
   }
   openers.set(button, show)
-  button.addEventListener('click', show)
+  // The button opens its list, and closes it again.
+  button.addEventListener('click', () => (button.getAttribute('aria-expanded') === 'true' ? closePicker() : show()))
   button.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()

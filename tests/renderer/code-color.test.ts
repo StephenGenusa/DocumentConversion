@@ -460,6 +460,10 @@ describe('the language picker', () => {
     expect(document.querySelector('.code-lang-pop')).toBeNull()
     expect(document.activeElement).toBe(e.view.dom)
     expect(button(0).getAttribute('aria-expanded')).toBe('false')
+    // Its button closes it again.
+    button(0).click()
+    button(0).click()
+    expect(document.querySelector('.code-lang-pop')).toBeNull()
     button(0).click()
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     expect(document.querySelector('.code-lang-pop')).toBeNull()
