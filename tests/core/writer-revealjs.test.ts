@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { writeRevealJs } from '../../src/core/writers/revealjs'
+import { writeRevealJs, FIT_SLIDES_JS } from '../../src/core/writers/revealjs'
 import { HLJS_CSS } from '../../src/core/hljs'
 
 const deck = async (html: string, opts?: Parameters<typeof writeRevealJs>[1]): Promise<string> =>
@@ -138,5 +138,95 @@ describe('the reveal.js writer keeps text escaped', () => {
     expect(html).toContain('&amp;&amp;')
     expect(html).toContain('&lt;')
     expect(html).toContain('hljs-keyword')
+  })
+})
+
+/**
+ * The fit script run against a model of the slide's layout: a heading's
+ * lines follow from its font size, its letters (capitals are wider) and the
+ * slide's width, and the slide is as tall as what is on it. Coarse, but it
+ * answers what the script decides from: how many lines, and whether it fits.
+ */
+describe('the reveal.js fit script', () => {
+  const W = 960
+  const H = 700
+  interface Box { style: Record<string, string>; text: string; em: number; tag: string }
+  function heading(tag: string, text: string, em: number): Box {
+    return { style: {}, text, em, tag }
+  }
+  async function show(heads: Box[], bodyHeight = 0, deckCss = '') {
+    const slideFont = (slide: { style: Record<string, string> }): number => (40 * (slide.style.fontSize ? parseFloat(slide.style.fontSize) : 100)) / 100
+    const caps = (h: Box): boolean => (h.style.textTransform ?? (/text-transform:\s*none/.test(deckCss) && h.tag !== 'H1' ? 'none' : 'uppercase')) !== 'none'
+    const slide = {
+      style: {} as Record<string, string>,
+      attrs: {} as Record<string, string>,
+      getAttribute(n: string) { return this.attrs[n] ?? null },
+      setAttribute(n: string, v: string) { this.attrs[n] = v },
+      querySelectorAll(sel: string) { return sel === 'img' ? [] : heads.filter((h) => sel.toUpperCase().split(/,\s*/).includes(h.tag)) },
+      get scrollHeight() { return heads.reduce((sum, h) => sum + height(h), 0) + (bodyHeight * slideFont(slide)) / 40 },
+      get scrollWidth() { return W },
+    }
+    const fontPx = (h: Box): number => (h.style.fontSize ? parseFloat(h.style.fontSize) : h.em) * slideFont(slide)
+    const lines = (h: Box): number => Math.ceil((h.text.length * fontPx(h) * (caps(h) ? 0.68 : 0.52)) / W)
+    const height = (h: Box): number => lines(h) * fontPx(h) * 1.2
+    for (const h of heads) Object.defineProperty(h, 'offsetHeight', { get: () => height(h) })
+    const getComputedStyle = (el: unknown) =>
+      el === slide ? { fontSize: `${slideFont(slide)}px` } : { fontSize: `${fontPx(el as Box)}px`, lineHeight: `${fontPx(el as Box) * 1.2}px` }
+    const handlers: Record<string, (e: unknown) => void> = {}
+    const Reveal = { on: (n: string, f: (e: unknown) => void) => (handlers[n] = f), layout: () => {} }
+    new Function('Reveal', 'getComputedStyle', FIT_SLIDES_JS)(Reveal, getComputedStyle)
+    handlers.ready({ currentSlide: slide })
+    await new Promise((r) => setTimeout(r, 0))
+    return { slide, lines, fontPx, caps, H }
+  }
+
+  it('keeps a short title large and in the theme capitals', async () => {
+    const title = heading('H1', 'Field Notes', 2.5)
+    const { slide, caps } = await show([title], 200)
+    expect(title.style.fontSize).toBeUndefined()
+    expect(caps(title)).toBe(true)
+    expect(slide.style.fontSize).toBe('')
+  })
+
+  it('sets a long title as written, smaller, on at most two lines', async () => {
+    const title = heading('H1', 'Temperature and the Rate of Crystal Violet Fading', 2.5)
+    const { slide, caps, lines, fontPx } = await show([title], 120)
+    expect(caps(title)).toBe(false)
+    expect(lines(title)).toBeLessThanOrEqual(2)
+    // Still a title: well above the section headings' 1.6em.
+    expect(fontPx(title)).toBeGreaterThan(1.6 * 40)
+    expect(slide.style.fontSize).toBe('')
+  })
+
+  it('makes the title smaller when that alone makes the slide fit', async () => {
+    const title = heading('H1', 'Office Move Planning: Meeting Summary', 2.5)
+    const { slide, fontPx, lines, H } = await show([title], 500)
+    expect(slide.style.fontSize).toBe('')
+    expect(lines(title)).toBe(2)
+    // Smaller than two lines alone need (2.4em here), no smaller than a section heading.
+    expect(fontPx(title)).toBeLessThan(2.4 * 40)
+    expect(fontPx(title)).toBeGreaterThanOrEqual(1.6 * 40)
+    expect(slide.scrollHeight).toBeLessThanOrEqual(H)
+  })
+
+  it('keeps the title at its two-line size when the whole slide has to be made smaller', async () => {
+    const title = heading('H1', 'Office Move Planning: Meeting Summary', 2.5)
+    const { slide } = await show([title], 640)
+    expect(title.style.fontSize).toBe('2.40em')
+    expect(parseFloat(slide.style.fontSize)).toBeLessThan(100)
+  })
+
+  it('leaves a short section heading alone', async () => {
+    const h2 = heading('H2', 'Timeline', 1.6)
+    const { caps } = await show([h2], 300)
+    expect(h2.style.fontSize).toBeUndefined()
+    expect(caps(h2)).toBe(true)
+  })
+
+  it('sets section headings as written, deck-wide, when one of them is long', async () => {
+    const long = await deck('<h1>T</h1><h2>Bearings and the L2 gusset repair</h2><p>a</p><h2>Scope</h2><p>b</p>')
+    expect(long).toMatch(/\.reveal h2[^{]*\{[^}]*text-transform: none/)
+    const short = await deck('<h1>A long title that runs well past one line of capitals</h1><h2>Scope</h2><p>a</p><h2>Loads</h2><p>b</p>')
+    expect(short).not.toMatch(/\.reveal h2[^{]*\{[^}]*text-transform: none/)
   })
 })

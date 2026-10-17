@@ -5,6 +5,8 @@ import { DARK_CODE_GROUND, DARK_CODE_TEXT, HLJS_CSS, HLJS_DARK_CSS } from '../hl
 import { relativeLuminance } from '../css-color'
 import { REVEAL_CSS, REVEAL_JS, REVEAL_NOTES_PLUGIN, REVEAL_VERSION } from '../assets/reveal.generated'
 import type { ConvertOptions, HubDocument } from '../types'
+import { parseDocument } from 'htmlparser2'
+import { textContent } from 'domutils'
 
 /**
  * A reveal.js deck as one self-contained HTML file.
@@ -64,11 +66,37 @@ ${HLJS_CSS}`
  * still does not fit scrolls. A slide that fits is left as written. Pictures
  * are decoded first, so their height is counted.
  */
+/*
+ * A title is fitted first, so a title slide shows a smaller title rather
+ * than everything smaller. The theme sets headings in capitals, 2.5em for a
+ * title: a long title filled the slide in four lines of capitals, which are
+ * hard to read. A title that fits on one line keeps the theme's look; one that
+ * wraps is set as written and made smaller until it takes two lines, then
+ * smaller still if that alone makes the slide fit, but no smaller than a
+ * section heading (1.6em). A slide that needs more than that is made smaller
+ * as a whole, its title at its two-line size: shrunk to 1.6em first and then
+ * with the rest, a title ended up the size of the text under it.
+ */
 export const FIT_SLIDES_JS = `(function () {
-  var W = 960, H = 700
+  var W = 960, H = 700, TITLE_LEAST = 1.6
+  function lines(h) {
+    var cs = getComputedStyle(h)
+    return Math.round(h.offsetHeight / (parseFloat(cs.lineHeight) || 1.2 * parseFloat(cs.fontSize)))
+  }
+  function title(slide, h) {
+    if (lines(h) > 1) h.style.textTransform = 'none'
+    var em = parseFloat(getComputedStyle(h).fontSize) / parseFloat(getComputedStyle(slide).fontSize)
+    function smaller() { em = Math.max(TITLE_LEAST, em - 0.1); h.style.fontSize = em.toFixed(2) + 'em' }
+    while (lines(h) > 2 && em > TITLE_LEAST) smaller()
+    var kept = h.style.fontSize, keptEm = em
+    while (slide.scrollHeight > H && em > TITLE_LEAST) smaller()
+    if (slide.scrollHeight > H) { h.style.fontSize = kept; em = keptEm }
+  }
   function fit(slide) {
     if (!slide || slide.getAttribute('data-fitted')) return
     slide.setAttribute('data-fitted', '1')
+    var titles = slide.querySelectorAll('h1')
+    for (var t = 0; t < titles.length; t++) title(slide, titles[t])
     var imgs = slide.querySelectorAll('img')
     var size = 100
     function apply() {
@@ -103,6 +131,25 @@ export const DECK_CSS = `
   .reveal ul.task-list { list-style: none; }
   .reveal mark { background-color: #fef08a; color: #1a1a1a; padding: 0 0.08em; border-radius: 2px; }
 `
+
+/**
+ * Section headings are set as written, all through the deck, when one of
+ * them would not fit on one line in the theme's capitals: a heading of two
+ * lines of capitals is hard to read, and one heading in a different case from
+ * the rest looks like a mistake. These are about the letters one line holds
+ * at each level's size (h2 1.6em, h3 1.3em, the rest 1em). The title (h1)
+ * is fitted on its own slide by FIT_SLIDES_JS.
+ */
+const ONE_LINE_OF_CAPITALS: Record<string, number> = { h2: 22, h3: 27, h4: 35, h5: 35, h6: 35 }
+
+export function sectionHeadingsCss(slidesHtml: string[]): string {
+  const long = slidesHtml.some((html) =>
+    [...html.matchAll(/<(h[2-6])\b[^>]*>([\s\S]*?)<\/\1>/gi)].some(
+      (m) => textContent(parseDocument(m[2])).trim().length > ONE_LINE_OF_CAPITALS[m[1].toLowerCase()],
+    ),
+  )
+  return long ? '\n  .reveal h2, .reveal h3, .reveal h4, .reveal h5, .reveal h6 { text-transform: none; }\n' : ''
+}
 
 /** reveal expects `<aside class="notes">`; the hub carries a bare `<aside>`. */
 function notesMarkup(notes: string[]): string {
@@ -141,7 +188,7 @@ export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Pr
 <title>${escapeHtml(title)}</title>
 <!-- reveal.js ${REVEAL_VERSION}, MIT, (C) Hakim El Hattab and contributors -->
 <style>${REVEAL_CSS}</style>
-<style>${DECK_CSS}</style>
+<style>${DECK_CSS}${sectionHeadingsCss(slides.map((s) => s.html))}</style>
 ${colored ? `<style>${codeCss(REVEAL_CSS)}</style>\n` : ''}</head>
 <body>
 <div class="reveal"><div class="slides">
