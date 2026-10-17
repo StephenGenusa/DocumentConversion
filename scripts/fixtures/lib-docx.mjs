@@ -11,6 +11,14 @@ export const PIC = 'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/
 /** Office Math (OMML), the namespace of Word equations. */
 export const M = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"'
 
+/**
+ * The time every entry of a built .docx is stamped with. JSZip stamps each
+ * entry, the folders it adds too, with the time it was added, so a fixture
+ * built again was other bytes than the one committed; with one fixed time, a
+ * generator run reproduces its fixture exactly.
+ */
+export const FIXTURE_DATE = new Date(Date.UTC(2026, 0, 1))
+
 /** A trivial, valid 3x1 PNG — the same bytes used by tests/fixtures/gen-fixtures.mjs. */
 export const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAMAAAABCAYAAACczIWkAAAAEklEQVR4nGNgYGD4z8DA8B8ABQ0CAmXEU2sAAAAASUVORK5CYII=',
@@ -188,6 +196,7 @@ export async function buildDocx({ body, headers = {}, footers = {}, numberingXml
   for (const [name, xml] of parts) zip.file(name, xml)
   for (const [name, bytes] of mediaFiles) zip.file(name, bytes)
 
+  for (const entry of Object.values(zip.files)) entry.date = FIXTURE_DATE
   return zip.generateAsync({ type: 'nodebuffer' })
 }
 
