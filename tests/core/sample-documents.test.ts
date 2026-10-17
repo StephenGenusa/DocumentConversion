@@ -74,6 +74,8 @@ describe('the sample documents', () => {
     expect(lab).toMatch(/<img src="data:image\/png;base64,/)
     const meeting = await read(TEXT.SAMPLE_MEETING.file)
     expect(meeting).toContain('gantt')
+    // No line on today's date: the chart, and its screenshot, are the same every day.
+    expect(meeting).toMatch(/gantt\n(?:[^\n]*\n)*?\s*todayMarker off\n/)
     expect(meeting).toContain('mindmap')
     expect(meeting).toContain('<mark>Six action items are open</mark>')
     expect(meeting).toContain('☐')

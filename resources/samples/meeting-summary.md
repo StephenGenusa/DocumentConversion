@@ -40,6 +40,7 @@ gantt
     title Move to the fourth floor
     dateFormat YYYY-MM-DD
     axisFormat %b %d
+    todayMarker off
     section Planning
     Final floor plan        :done, plan, 2026-10-12, 2026-10-23
     Order furniture         :active, furn, 2026-10-19, 21d

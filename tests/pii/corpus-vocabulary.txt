@@ -736,7 +736,6 @@ hertz
 hidden
 high-temperature
 highest
-highlights
 hillcrest
 hire
 history
@@ -1729,6 +1728,7 @@ test
 tested
 tex
 text
+text-align
 th
 than
 thank
@@ -1767,6 +1767,7 @@ timestamptz
 title
 to
 today
+todaymarker
 together
 token
 tokens
