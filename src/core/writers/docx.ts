@@ -671,6 +671,60 @@ function joinItemParagraphs(li: Element): string | null {
     .join('')
 }
 
+/** How far a definition sits in from its term, per level of nesting: half an inch, Word's own step. */
+const DEFINITION_INDENT_PT = 36
+
+/**
+ * Word has no definition list, and html-to-docx writes a `<dl>`'s terms and
+ * definitions as plain paragraphs, alike. So each term becomes a paragraph of
+ * its own in bold, and each paragraph of a definition is indented below it
+ * (`margin-left`, which html-to-docx writes as the paragraph's indent),
+ * deeper for a list inside a definition. Text sitting loose in a definition
+ * is given a paragraph to indent; a list, table or code block in one is left
+ * as it is. Innermost first, so an inner list's indents are set before its
+ * outer one adds none over them.
+ */
+export function definitionListsForDocx(source: string): string {
+  if (!/<dl\b/i.test(source)) return source
+  const dom = parseDocument(source)
+  for (const dl of elementsOf(dom.children, 'dl').reverse()) {
+    let depth = 1
+    for (let p = dl.parent; p; p = p.parent) if (isElement(p) && p.name === 'dl') depth++
+    const indent = `margin-left: ${depth * DEFINITION_INDENT_PT}pt`
+    let out = ''
+    for (const item of dl.children) {
+      if (!isElement(item)) continue
+      if (item.name === 'dt') {
+        const term = serialize(item.children).trim()
+        if (term) out += `<p><strong>${term}</strong></p>`
+        continue
+      }
+      if (item.name !== 'dd') {
+        out += serialize(item)
+        continue
+      }
+      let inline: AnyNode[] = []
+      const flush = (): void => {
+        if (inline.length && textContent(inline).trim()) out += `<p style="${indent}">${serialize(inline).trim()}</p>`
+        inline = []
+      }
+      for (const node of item.children) {
+        if (!isBlock(node)) {
+          inline.push(node)
+          continue
+        }
+        flush()
+        const el = node as Element
+        if (el.name === 'p' && !/margin-left/.test(el.attribs.style ?? '')) el.attribs.style = indent
+        out += serialize(el)
+      }
+      flush()
+    }
+    replaceWith(dl, out)
+  }
+  return serialize(dom.children)
+}
+
 /**
  * html-to-docx writes NOTHING for some content inside table cells and list
  * items, and nothing says so: the page around it arrives and it does not.
@@ -1389,7 +1443,7 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
     {
       ...doc,
       html: flattenFormatting(
-        normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(pictures))))), languages))),
+        normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(definitionListsForDocx(pictures)))))), languages))),
         colored,
       ),
     },

@@ -17,6 +17,7 @@ import type { HubDocument, SourceInput } from '../types'
  *   - [ ] / - [x]       -> "☐ " / "☑ ", as GitHub task lists are read (A3)
  *   ::: divs, sections  -> unwrapped, contents kept
  *   {-struck-}          -> <s>
+ *   : term / definition -> <dl><dt><dd>, as @djot/djot writes it
  *
  * `^sup^` and `~sub~` are Djot's own syntax and already come out as <sup> and
  * <sub>. Raw HTML (`{=html}`) is passed through and sanitized with the rest.

@@ -35,6 +35,10 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85em; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #999; padding: 0.3em 0.5em; }
 `
+/** For a book with a definition list; others keep the stylesheet they had. */
+const DEFINITION_CSS = `dt { font-weight: bold; }
+dd { margin: 0 0 0.5em 1.5em; }
+`
 
 const IMAGE_EXT: Record<string, string> = {
   'image/png': 'png',
@@ -69,7 +73,7 @@ const TRANSPARENT = new Set(['div', 'section', 'article', 'main', 'body'])
 /** Elements that can never legitimately sit inside inline markup. */
 const BLOCK = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'p', 'div', 'table', 'ul', 'ol', 'blockquote', 'pre', 'hr', 'section', 'article',
+  'p', 'div', 'table', 'ul', 'ol', 'dl', 'blockquote', 'pre', 'hr', 'section', 'article',
 ])
 
 /**
@@ -346,7 +350,8 @@ export async function writeEpub(doc: HubDocument, opts: EpubOptions = {}): Promi
 <rootfiles><rootfile full-path="${OEBPS}/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
 </container>`,
   )
-  zip.file(`${OEBPS}/style.css`, highlighted.any ? STYLESHEET + EREADER_HLJS_CSS : STYLESHEET)
+  const css = STYLESHEET + (/<dl\b/.test(doc.html) ? DEFINITION_CSS : '') + (highlighted.any ? EREADER_HLJS_CSS : '')
+  zip.file(`${OEBPS}/style.css`, css)
   for (const part of parts) zip.file(`${OEBPS}/${part.file}`, chapterDocument(part.title, part.body))
   zip.file(`${OEBPS}/nav.xhtml`, navDocument(parts))
   zip.file(`${OEBPS}/toc.ncx`, ncxDocument(uid, title, parts))

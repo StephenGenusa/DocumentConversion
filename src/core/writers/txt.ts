@@ -7,7 +7,13 @@ interface ImgElement {
 }
 interface TextBuilder {
   addInline(text: string): void
+  openBlock(options: { leadingLineBreaks?: number; reservedLineLength?: number }): void
+  closeBlock(options: { trailingLineBreaks?: number; blockTransform?: (text: string) => string }): void
 }
+type Walk = (nodes: unknown, builder: TextBuilder) => void
+
+/** A definition's lines indented under its term, as a glossary is set. */
+const DEFINITION_INDENT = '    '
 
 const toText = compile({
   wordwrap: false,
@@ -20,6 +26,15 @@ const toText = compile({
     imageAlt: (elem: unknown, _walk: unknown, builder: unknown) => {
       const alt = (elem as ImgElement).attribs?.alt?.trim()
       if (alt) (builder as TextBuilder).addInline(`[${alt}]`)
+    },
+    definition: (elem: unknown, walk: unknown, builder: unknown) => {
+      const b = builder as TextBuilder
+      b.openBlock({ leadingLineBreaks: 1, reservedLineLength: DEFINITION_INDENT.length })
+      ;(walk as Walk)((elem as { children: unknown }).children, b)
+      b.closeBlock({
+        trailingLineBreaks: 1,
+        blockTransform: (text) => text.split('\n').map((l) => (l ? DEFINITION_INDENT + l : l)).join('\n'),
+      })
     },
   },
   selectors: [
@@ -42,6 +57,12 @@ const toText = compile({
     // unlimited render byte-identically, so the bound costs nothing real here.
     { selector: 'table', format: 'dataTable', options: { maxColumnWidth: 255 } },
     { selector: 'img', format: 'imageAlt' },
+    // A term on its line, its definition indented below, a blank line before the next term.
+    { selector: 'dl', format: 'block', options: { leadingLineBreaks: 2, trailingLineBreaks: 2 } },
+    { selector: 'dt', format: 'block', options: { leadingLineBreaks: 2, trailingLineBreaks: 1 } },
+    { selector: 'dd', format: 'definition' },
+    // Its first paragraph starts on the line after the term, not a blank one below.
+    { selector: 'dd > p:first-child', format: 'block', options: { leadingLineBreaks: 1, trailingLineBreaks: 2 } },
   ],
 })
 

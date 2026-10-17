@@ -41,6 +41,34 @@ const SpeakerNotes = Node.create({
 })
 
 /*
+ * Definition lists (dl, dt, dd are in HUB_TAGS): a list of terms, each a line
+ * of text, and definitions, each one or more blocks, in the order they came.
+ * Enter in a term makes the next term; a definition holds paragraphs like a
+ * list item.
+ */
+const DefinitionList = Node.create({
+  name: 'definitionList',
+  group: 'block',
+  content: '(definitionTerm | definitionDetails)+',
+  parseHTML: () => [{ tag: 'dl' }],
+  renderHTML: () => ['dl', 0],
+})
+const DefinitionTerm = Node.create({
+  name: 'definitionTerm',
+  content: 'inline*',
+  defining: true,
+  parseHTML: () => [{ tag: 'dt' }],
+  renderHTML: () => ['dt', 0],
+})
+const DefinitionDetails = Node.create({
+  name: 'definitionDetails',
+  content: 'block+',
+  defining: true,
+  parseHTML: () => [{ tag: 'dd' }],
+  renderHTML: () => ['dd', 0],
+})
+
+/*
  * Footnotes, in the hub's model (src/core/footnotes.ts):
  *
  *   <sup data-fn="label">n</sup>          footnoteRef: an inline atom
@@ -349,6 +377,9 @@ export const EDITOR_EXTENSIONS: Extensions = [
   Superscript,
   Subscript,
   SpeakerNotes,
+  DefinitionList,
+  DefinitionTerm,
+  DefinitionDetails,
   FootnoteRef,
   FootnoteItem,
   Footnotes,

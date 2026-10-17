@@ -242,6 +242,30 @@ td.addRule('footnoteList', {
   },
 })
 
+/**
+ * A definition list in the syntax pandoc, PHP Markdown Extra, kramdown and
+ * markdown-it-deflist share: the term on a line of its own, each definition
+ * opened by `:` and three spaces, its later lines and paragraphs indented
+ * four. A reader without the extension (GitHub's) shows the term and
+ * `: definition` as paragraphs, every word in place.
+ */
+td.addRule('definitionList', {
+  filter: 'dl',
+  replacement: (content) => `\n\n${content.replace(/^\n+|\n+$/g, '')}\n\n`,
+})
+td.addRule('definitionTerm', {
+  filter: 'dt',
+  // A term is one line: a line break in it would start the definition early.
+  replacement: (content) => `\n\n${content.trim().replace(/\s*\n\s*/g, ' ')}\n`,
+})
+td.addRule('definitionDetails', {
+  filter: 'dd',
+  replacement: (content) => {
+    const lines = content.replace(/^\n+|\n+$/g, '').split('\n')
+    return `\n:   ${lines.map((l, i) => (i === 0 || l === '' ? l : `    ${l}`)).join('\n')}\n`
+  },
+})
+
 /*
  * Diagrams and formulas (spec B1) back to the syntax the reader takes them
  * from. A diagram is already a fenced block with its language

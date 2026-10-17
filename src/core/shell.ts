@@ -172,6 +172,9 @@ const BASE_CSS = `
     break-inside: avoid;
   }
   ul, ol { margin: 0 0 1em 1.4em; }
+  dl { margin: 0 0 1em; }
+  dt { font-weight: 600; }
+  dd { margin: 0 0 0.5em 1.4em; }
   sup.fnref a { text-decoration: none; }
   .footnotes { margin-top: 2.5em; border-top: 1px solid #ddd; font-size: .92em; }
   .footnotes h2 { font-size: 1.1em; }

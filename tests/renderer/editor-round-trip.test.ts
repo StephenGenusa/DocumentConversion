@@ -45,6 +45,15 @@ describe('the editor round-trips what the hub allows', () => {
     expect(roundTrip(html)).toBe(html)
   })
 
+  it('keeps a definition list exactly: terms, definitions of several paragraphs, one inside another', () => {
+    const html =
+      '<dl><dt>Shelf <em>mark</em></dt><dd><p>Where a book stands.</p><p>On the spine.</p></dd><dt>Folio</dt><dt>Quarto</dt>' +
+      '<dd><p>Sizes:</p><dl><dt>Large</dt><dd><p>Folio.</p></dd></dl></dd></dl>'
+    expect(roundTrip(html)).toBe(html)
+    // A definition of bare text, as a web page writes one, is given its paragraph.
+    expect(roundTrip('<dl><dt>A</dt><dd>B</dd></dl>')).toBe('<dl><dt>A</dt><dd><p>B</p></dd></dl>')
+  })
+
   it('leaves an ordinary numbered list and plain superscript as they are', () => {
     expect(roundTrip('<ol><li><p>one</p></li></ol>')).toBe('<ol><li><p>one</p></li></ol>')
     expect(roundTrip('<p>x<sup>2</sup></p>')).toBe('<p>x<sup>2</sup></p>')
@@ -152,6 +161,9 @@ describe('the editor round-trips what the hub allows', () => {
       hr: '<hr>',
       code: '<p><code>x</code></p>',
       aside: `<${SPEAKER_NOTES_TAG}><p>n</p></${SPEAKER_NOTES_TAG}>`,
+      dl: '<dl><dt>t</dt><dd><p>d</p></dd></dl>',
+      dt: '<dl><dt>t</dt></dl>',
+      dd: '<dl><dd><p>d</p></dd></dl>',
     }
     const html = sample[tag] ?? `<${tag}>text</${tag}>`
     // Only assert against what the sanitizer would actually pass on.

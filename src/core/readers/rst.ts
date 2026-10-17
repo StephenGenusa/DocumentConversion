@@ -170,6 +170,12 @@ function render(node: RstNode, depth = 0): string {
       const single = inner.startsWith('<p>') && inner.endsWith('</p>') && inner.indexOf('</p>') === inner.length - 4
       return `<li>${single ? inner.slice(3, -4) : inner}</li>`
     }
+    case 'definition_list':
+      return `<dl>${kids()}</dl>`
+    case 'term':
+      return `<dt>${kids().trim()}</dt>`
+    case 'definition':
+      return `<dd>${kids()}</dd>`
     case 'block_quote':
       return `<blockquote>${kids()}</blockquote>`
     case 'transition':

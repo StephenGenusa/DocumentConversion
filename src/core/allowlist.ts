@@ -17,6 +17,11 @@ export const HUB_TAGS = [
   'ul',
   'ol',
   'li',
+  // A definition list: a glossary is terms and what they mean, not a run of
+  // paragraphs. Djot, AsciiDoc, Textile, reStructuredText and HTML have one.
+  'dl',
+  'dt',
+  'dd',
   'table',
   'thead',
   'tbody',

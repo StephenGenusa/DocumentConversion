@@ -148,6 +148,8 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .code-lang-pop__heading { margin: .35rem .5rem .15rem; color: #71717a; font-size: .72rem; }
 .code-lang-pop__empty { margin: .4rem .5rem; color: #71717a; }
 .code-lang-pop__empty[hidden] { display: none; }
+.clip-pane__editor dt { font-weight: 600; }
+.clip-pane__editor dd { margin: 0 0 .4rem 1.4rem; }
 .clip-pane__editor blockquote { border-left: 4px solid #d4d4d8; margin: .5rem 0; padding: .1rem .9rem; color: #52525b; }
 .clip-pane__editor img { max-width: 100%; }
 .input-list { list-style: none; margin: .75rem 0; padding: 0; display: flex; flex-direction: column; gap: .4rem; }
