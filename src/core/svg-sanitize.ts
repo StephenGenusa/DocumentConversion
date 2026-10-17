@@ -36,20 +36,34 @@ import { imageMime } from './readers/image'
  *   requires (PNG, JPEG) and the two every browser also shows. Its bytes must
  *   be the type it claims, and it is written back as base64 of that type.
  *
- * Any other <image> - a remote file, another raster type, something that is
- * not what it claims - is still dropped. A nested <svg> element is ordinary
- * SVG and is cleaned with the rest.
+ * A picture named by a web address (https, or a relative or protocol-relative
+ * one) is fetched when the document is read (remote-images.ts) and is a data
+ * URI by the time it is sanitised for good; one still naming an address then
+ * could not be fetched, and becomes its description in text, "[image: …]",
+ * as a failed <img> does. Any other <image> - another raster type, something
+ * that is not what it claims - is still dropped. A nested <svg> element is
+ * ordinary SVG and is cleaned with the rest.
  *
  * Returns null when the input is not an SVG document at all.
  */
-export function sanitizeSvg(svg: string): string | null {
-  return sanitizeAt(svg, 0)
+export function sanitizeSvg(svg: string, opts: SanitizeOptions = {}): string | null {
+  return sanitizeAt(svg, 0, opts)
+}
+
+export interface SanitizeOptions {
+  /**
+   * For a reader: keep an <image> of the outer SVG that names a web address,
+   * its description as its aria-label, for the read step to fetch. Everything
+   * else is cleaned as usual, and the SVG is sanitised again without this
+   * once its pictures are fetched.
+   */
+  keepImageUrls?: boolean
 }
 
 /** How many SVG images may be nested inside one another below the outer SVG. */
 const MAX_NESTING = 4
 
-function sanitizeAt(svg: string, depth: number): string | null {
+function svgRoot(svg: string): Element | null {
   let doc: Document
   try {
     doc = new DOMParser().parseFromString(svg, 'image/svg+xml') as unknown as Document
@@ -57,9 +71,14 @@ function sanitizeAt(svg: string, depth: number): string | null {
     return null
   }
   const root = doc.documentElement
-  if (!root || localName(root) !== 'svg') return null
+  return root && localName(root) === 'svg' ? root : null
+}
+
+function sanitizeAt(svg: string, depth: number, opts: SanitizeOptions = {}): string | null {
+  const root = svgRoot(svg)
+  if (!root) return null
   cleanAttributes(root)
-  clean(root, depth)
+  clean(root, depth, depth === 0 && opts.keepImageUrls === true)
   return root.toString()
 }
 
@@ -112,16 +131,126 @@ function rasterDataUri(src: string): string | null {
  * nested too deep.
  */
 function nestedImage(el: Element, depth: number): { name: string; src: string } | null {
-  const refs = [...el.attributes].filter((a) => attrLocalName(a.name) === 'href')
-  // Two references (href and xlink:href) could disagree on what is shown.
-  if (refs.length !== 1) return null
-  const value = refs[0].value ?? ''
+  const ref = imageRef(el)
+  if (!ref) return null
+  const value = ref.value ?? ''
   const raster = rasterDataUri(value)
-  if (raster) return { name: refs[0].name, src: raster }
+  if (raster) return { name: ref.name, src: raster }
   if (depth >= MAX_NESTING) return null
   const svg = decodeSvgDataUri(value)
   const clean = svg === null ? null : sanitizeAt(svg, depth + 1)
-  return clean === null ? null : { name: refs[0].name, src: svgDataUri(clean) }
+  return clean === null ? null : { name: ref.name, src: svgDataUri(clean) }
+}
+
+/**
+ * The one href of an <image> (href or xlink:href), or null when it has none
+ * or two: two references could disagree on what is shown.
+ */
+function imageRef(el: Element): Attr | null {
+  const refs = [...el.attributes].filter((a) => attrLocalName(a.name) === 'href')
+  return refs.length === 1 ? refs[0] : null
+}
+
+const XML_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+
+/**
+ * An attribute's value as text. linkedom hands an XML attribute back as it
+ * was written, entities and all (and escapes what it is given on the way
+ * out), so `a?b=1&amp;c=2` is the address `a?b=1&c=2`.
+ */
+function attrText(value: string | null | undefined): string {
+  return (value ?? '').replace(/&(?:#x([0-9a-f]+)|#(\d+)|(amp|lt|gt|quot|apos));/gi, (m, hex: string, dec: string, name: string) => {
+    if (name) return XML_ENTITIES[name.toLowerCase()] ?? m
+    const code = hex ? parseInt(hex, 16) : Number(dec)
+    return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m
+  })
+}
+
+/** A web address, as a page would load it: http(s), or relative to or with the scheme of one. */
+function isWebAddress(value: string): boolean {
+  if (/^\s*(?:#|data:)/i.test(value)) return false
+  try {
+    const url = new URL(value.trim(), 'https://unresolved.invalid/')
+    return url.protocol === 'https:' || url.protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+/** Every <image> below `el`, in document order. */
+function imagesIn(el: Element): Element[] {
+  const out: Element[] = []
+  for (const child of [...el.childNodes]) {
+    if (child.nodeType !== 1) continue
+    if (localName(child as Element) === 'image') out.push(child as Element)
+    else out.push(...imagesIn(child as Element))
+  }
+  return out
+}
+
+/**
+ * The web address each picture in an SVG names, as written, in document order:
+ * what the read step fetches. Only the outer SVG's; [] when it is not an SVG.
+ */
+export function svgImageUrls(svg: string): string[] {
+  const root = svgRoot(svg)
+  if (!root) return []
+  return imagesIn(root).flatMap((el) => {
+    const ref = imageRef(el)
+    const url = attrText(ref?.value)
+    return ref && isWebAddress(url) ? [url] : []
+  })
+}
+
+/**
+ * The SVG with each picture whose address is in `pictures` given that data
+ * URI instead, everything else as it was. Sanitised again afterwards, which
+ * checks each picture is what it claims.
+ */
+export function withSvgImagePictures(svg: string, pictures: ReadonlyMap<string, string>): string {
+  const root = svgRoot(svg)
+  if (!root) return svg
+  for (const el of imagesIn(root)) {
+    const ref = imageRef(el)
+    const picture = ref ? pictures.get(attrText(ref.value)) : undefined
+    if (ref && picture) el.setAttribute(ref.name, picture)
+  }
+  return root.toString()
+}
+
+/** A length attribute as a plain number of user units, or undefined. */
+function userUnits(el: Element, name: string): number | undefined {
+  const m = /^\s*([+-]?\d*\.?\d+)\s*(?:px)?\s*$/i.exec(el.getAttribute(name) ?? '')
+  return m ? Number(m[1]) : undefined
+}
+
+/**
+ * What a picture that could not be fetched becomes: its description (an
+ * aria-label or <title>) in text where the picture's top-left corner was,
+ * as `imagePlaceholder` (inline-images.ts) writes it for an <img>.
+ */
+function imagePlaceholderText(el: Element): Element {
+  const label = (el.hasAttribute('aria-label') ? attrText(el.getAttribute('aria-label')) : (childTitle(el) ?? '')).replace(/\s+/g, ' ').trim()
+  const colon = el.tagName.indexOf(':')
+  const text = el.ownerDocument.createElement(`${colon >= 0 ? el.tagName.slice(0, colon + 1) : ''}text`)
+  const height = userUnits(el, 'height')
+  const size = height && height > 0 ? Math.min(12, height) : 12
+  text.setAttribute('x', String(userUnits(el, 'x') ?? 0))
+  text.setAttribute('y', String((userUnits(el, 'y') ?? 0) + size))
+  text.setAttribute('font-size', String(size))
+  text.setAttribute('font-family', 'sans-serif')
+  text.setAttribute('fill', '#555')
+  const transform = el.getAttribute('transform')
+  if (transform) text.setAttribute('transform', transform)
+  text.textContent = `[image: ${label || 'not included'}]`
+  return text
+}
+
+function childTitle(el: Element): string | undefined {
+  for (const child of [...el.childNodes]) {
+    if (child.nodeType === 1 && localName(child as Element) === 'title') return child.textContent ?? undefined
+  }
+  return undefined
 }
 
 /** Elements removed with everything inside them. Lower-cased local names. */
@@ -169,7 +298,7 @@ function attrLocalName(name: string): string {
   return colon >= 0 ? lower.slice(colon + 1) : lower
 }
 
-function clean(el: Element, depth: number): void {
+function clean(el: Element, depth: number, keepImageUrls: boolean): void {
   for (const child of [...el.childNodes]) {
     if (child.nodeType === 1) {
       const element = child as Element
@@ -182,6 +311,20 @@ function clean(el: Element, depth: number): void {
         element.replaceChildren()
         continue
       }
+      const ref = name === 'image' ? imageRef(element) : null
+      if (ref && isWebAddress(attrText(ref.value))) {
+        if (keepImageUrls) {
+          const title = childTitle(element)?.replace(/\s+/g, ' ').trim()
+          if (title && !element.hasAttribute('aria-label')) element.setAttribute('aria-label', title)
+          cleanAttributes(element, ref.name)
+          element.replaceChildren()
+        } else {
+          const text = imagePlaceholderText(element)
+          element.replaceWith(text)
+          cleanAttributes(text)
+        }
+        continue
+      }
       if (DROPPED_ELEMENTS.has(name) || (ANIMATION.has(name) && animatesAReference(element))) {
         element.remove()
         continue
@@ -191,7 +334,7 @@ function clean(el: Element, depth: number): void {
         continue
       }
       cleanAttributes(element)
-      clean(element, depth)
+      clean(element, depth, keepImageUrls)
     } else if (child.nodeType !== 3 && child.nodeType !== 4) {
       // Comments, processing instructions: nothing an SVG needs.
       child.remove()

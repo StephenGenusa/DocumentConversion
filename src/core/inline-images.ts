@@ -3,6 +3,7 @@ import { append, removeElement, replaceElement } from 'domutils'
 import { Element } from 'domhandler'
 import render from 'dom-serializer'
 import { imageMime } from './readers/image'
+import { decodeSvgDataUri, svgDataUri, svgImageUrls, withSvgImagePictures } from './svg-sanitize'
 
 export interface ImageFetcher {
   (url: string): Promise<{ bytes: Buffer; contentType: string }>
@@ -229,6 +230,11 @@ export function imagePlaceholder(text?: string, display: 'block' | 'inline' = 'b
  * data URI. Over-budget or failed images degrade to alt-text placeholders;
  * when the TOTAL exceeds the budget, the largest images are evicted first.
  *
+ * The pictures an SVG <img> names by address (`<image href="https://…">`)
+ * are fetched the same way, in the same budget, and put in the SVG as data
+ * URIs. One that is not fetched keeps its address, and the SVG sanitiser,
+ * which every SVG passes after this, writes it as its description.
+ *
  * Fetches run FETCH_CONCURRENCY at a time, and eviction happens as each image
  * lands rather than after the last one: holding every image until the end
  * made peak memory maxImages × maxPerImage (200 MB at a hundred images) for a
@@ -244,40 +250,64 @@ export async function inlineImages(
   /** Which sources to touch; the rest are left exactly as they are. */
   select: (src: string) => boolean = () => true,
 ): Promise<string> {
-  interface Entry {
-    tag: string
-    alt?: string
+  /** One picture to fetch, in document order. */
+  interface Fetch {
     url?: string
     dataUri?: string
     size: number
   }
+  /** An <img> to fetch. */
+  interface Entry {
+    tag: string
+    alt?: string
+    fetch: Fetch
+  }
+  /** An SVG <img> naming pictures by address: each address as written, and its fetch. */
+  interface SvgEntry {
+    tag: string
+    svg: string
+    pictures: Map<string, Fetch>
+  }
+  const fetches: Fetch[] = []
   const entries: Entry[] = []
+  const svgEntries: SvgEntry[] = []
   let wanted = 0
-  for (const tag of new Set(html.match(IMG_TAG) ?? [])) {
-    const src = attr(tag, 'src')
-    if (!src || src.startsWith('data:') || !select(src)) continue
-    const entry: Entry = { tag, alt: attr(tag, 'alt'), size: 0 }
-    entries.push(entry)
-    if (wanted >= budget.maxImages) continue
+  const want = (src: string): Fetch => {
+    const fetch: Fetch = { size: 0 }
+    fetches.push(fetch)
+    if (wanted >= budget.maxImages) return fetch
     try {
-      entry.url = new URL(src, baseUrl).href
+      fetch.url = new URL(src, baseUrl).href
       wanted++
     } catch {
       // Unresolvable: stays a placeholder.
     }
+    return fetch
+  }
+  for (const tag of new Set(html.match(IMG_TAG) ?? [])) {
+    const src = attr(tag, 'src')
+    if (!src) continue
+    if (src.startsWith('data:')) {
+      const svg = decodeSvgDataUri(src)
+      const urls = svg === null ? [] : [...new Set(svgImageUrls(svg))].filter(select)
+      if (svg !== null && urls.length > 0) svgEntries.push({ tag, svg, pictures: new Map(urls.map((u) => [u, want(u)])) })
+      continue
+    }
+    if (!select(src)) continue
+    entries.push({ tag, alt: attr(tag, 'alt'), fetch: want(src) })
   }
 
-  const queue = entries.filter((e) => e.url)
+  const queue = fetches.filter((e) => e.url)
   let total = 0
   let done = 0
-  const admit = (e: Entry, dataUri: string, size: number): void => {
+  const admit = (e: Fetch, dataUri: string, size: number): void => {
     e.dataUri = dataUri
     e.size = size
     total += size
     // Largest-first, possibly the one just admitted.
     while (total > budget.maxTotal) {
-      let largest: Entry | undefined
-      for (const x of entries) if (x.dataUri && (!largest || x.size > largest.size)) largest = x
+      let largest: Fetch | undefined
+      for (const x of fetches) if (x.dataUri && (!largest || x.size > largest.size)) largest = x
       if (!largest) break
       total -= largest.size
       largest.dataUri = undefined
@@ -306,7 +336,12 @@ export async function inlineImages(
 
   let out = html
   for (const e of entries) {
-    out = out.split(e.tag).join(e.dataUri ? withSrc(e.tag, e.dataUri) : imagePlaceholder(e.alt))
+    out = out.split(e.tag).join(e.fetch.dataUri ? withSrc(e.tag, e.fetch.dataUri) : imagePlaceholder(e.alt))
+  }
+  for (const e of svgEntries) {
+    const fetched = new Map<string, string>()
+    for (const [src, f] of e.pictures) if (f.dataUri) fetched.set(src, f.dataUri)
+    if (fetched.size > 0) out = out.split(e.tag).join(withSrc(e.tag, svgDataUri(withSvgImagePictures(e.svg, fetched))))
   }
   return out
 }
@@ -393,12 +428,20 @@ export function replaceImages(html: string, replace: (src: string, alt: string |
   return changed ? render(dom, { encodeEntities: 'utf8' }) : html
 }
 
-/** Whether any <img> in the html points at the network, as a parser reads it. */
+/**
+ * Whether any <img> in the html points at the network, as a parser reads it,
+ * or is an SVG naming a picture there.
+ */
 export function hasRemoteImages(html: string): boolean {
   if (!/<img/i.test(html)) return false
   let found = false
   replaceImages(html, (src) => {
+    if (found) return null
     if (isRemoteImageSrc(src)) found = true
+    else {
+      const svg = decodeSvgDataUri(src)
+      if (svg !== null && svgImageUrls(svg).some(isRemoteImageSrc)) found = true
+    }
     return null
   })
   return found

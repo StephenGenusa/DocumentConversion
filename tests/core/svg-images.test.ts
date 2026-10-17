@@ -6,6 +6,7 @@ import { detect } from '../../src/core/detect'
 import { looksLikeSvg } from '../../src/core/readers/image'
 import { readSvg } from '../../src/core/readers/svg'
 import {
+  inlineSvgElements,
   decodeSvgDataUri,
   prepareSvgForRaster,
   rasterizeSvgImages,
@@ -115,7 +116,9 @@ describe('readSvg (spec D10, B6)', () => {
     expect(svg.startsWith('<svg')).toBe(true)
     expect(svg.toLowerCase()).not.toContain('script')
     expect(svg).not.toMatch(/\son\w+=/i)
-    expect(svg).not.toContain('127.0.0.1')
+    // The picture it names by address is kept for the read step to fetch, and only that.
+    expect(svg).toContain('<image href="http://127.0.0.1:9/picture.png" x="0" y="0" width="10" height="10" />')
+    expect(svg.replace('<image href="http://127.0.0.1:9/picture.png"', '')).not.toContain('127.0.0.1')
     expect(svg).not.toContain('javascript:')
     expect(svg).not.toContain('@import')
     expect(svg.toLowerCase()).not.toContain('foreignobject')
@@ -126,6 +129,11 @@ describe('readSvg (spec D10, B6)', () => {
     // The drawing itself is kept.
     expect(svg).toContain('Fiction')
     expect(svg).toContain('<rect')
+    // Read whole, with no network: the picture is its description, and no address is left.
+    const read = decodedSrc((await createConverter(vi.fn()).read({ bytes: fixture('reading-room-hostile.svg') }, 'svg')).html)
+    expect(read).not.toContain('127.0.0.1')
+    expect(read).not.toContain('<image')
+    expect(read).toContain('>[image: not included]</text>')
   })
 
   it('keeps the SVG images nested in a file, each cleaned, in every output that shows SVG', async () => {
@@ -521,5 +529,40 @@ describe('Word output of SVG images (the verified bug: image/svg+xml media Word 
     const svg = decodedSrc(hub.html)
     expect(svg).not.toContain('script')
     expect(svg).not.toContain('onload')
+  })
+})
+
+describe('inlineSvgElements: an SVG drawn inline in a page', () => {
+  const decoded = (html: string): string[] =>
+    [...html.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)].map((m) => Buffer.from(m[1], 'base64').toString('utf8'))
+
+  it('becomes an SVG image at its own size, its names as written, cleaned', () => {
+    const html =
+      '<p>Before</p><svg viewBox="0 0 80 40" width=80 preserveAspectRatio="xMidYMid meet" onload="alert(1)" class="figure" style="max-width:100%">' +
+      '<title>Reading &amp; room</title><linearGradient id="g" gradientUnits="userSpaceOnUse"/><use xlink:href="#g"/>' +
+      '<path d="M0 0L1 1"/><script>alert(2)</script><text>Desk</text></svg><p>After</p>'
+    const out = inlineSvgElements(html)
+    expect(out).toMatch(/^<p>Before<\/p><img src="data:image\/svg\+xml;base64,[^"]+" alt="Reading &amp; room" width="80" height="40" class="figure" style="max-width:100%"><p>After<\/p>$/)
+    const [svg] = decoded(out)
+    for (const kept of ['xmlns="http://www.w3.org/2000/svg"', 'xmlns:xlink="http://www.w3.org/1999/xlink"', 'viewBox="0 0 80 40"', 'preserveAspectRatio="xMidYMid meet"', 'gradientUnits="userSpaceOnUse"', '<text>Desk</text>']) {
+      expect(svg).toContain(kept)
+    }
+    expect(svg).not.toContain('alert')
+  })
+
+  it("reads HTML's named entities as the characters they stand for", () => {
+    const [svg] = decoded(inlineSvgElements('<svg width="4" height="4"><text>a&nbsp;b &copy; &lt;c&gt; &nosuch;</text></svg>'))
+    expect(svg).toContain('<text>a&#160;b \u00a9 &lt;c&gt; &amp;nosuch;</text>')
+  })
+
+  it('leaves alone an SVG marked as decoration, one that runs on to the end, and a page without one', () => {
+    for (const html of ['<svg aria-hidden="true" viewBox="0 0 4 4"><path d="M0 0"/></svg><p>x</p>', '<p>a</p><svg viewBox="0 0 4 4"><path d="M0 0"/><p>rest of page</p>', '<p>no svg</p>']) {
+      expect(inlineSvgElements(html)).toBe(html)
+    }
+  })
+
+  it('keeps a picture it names by address for the read step to fetch', () => {
+    const [svg] = decoded(inlineSvgElements('<svg width="4" height="4"><image href="https://example.invalid/a.png" width="4" height="4"/></svg>'))
+    expect(svg).toContain('href="https://example.invalid/a.png"')
   })
 })

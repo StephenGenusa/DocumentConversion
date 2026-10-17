@@ -1,6 +1,7 @@
 import { parseHTML } from 'linkedom'
 import type { HubDocument, SourceInput } from '../types'
 import { sanitizeToHub } from '../allowlist'
+import { inlineSvgElements } from '../svg-images'
 import { decodeTextBytes } from './txt'
 import { tagForeignCodeBlocks } from '../code-language'
 
@@ -226,7 +227,9 @@ function declaredCharset(bytes: Buffer): string | undefined {
 export async function readHtml(src: SourceInput): Promise<HubDocument> {
   const raw = decodeTextBytes(src.bytes, declaredCharset(src.bytes))
   const titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(raw)
-  const clean = sanitizeToHub(prepare(raw))
+  // An SVG drawn in the page becomes an SVG image (svg-images.ts) before
+  // anything else reads the markup: an HTML parser would lower-case its names.
+  const clean = sanitizeToHub(prepare(inlineSvgElements(raw)))
   const h1Match = /<h1[^>]*>([^<]*)<\/h1>/i.exec(clean)
   const title = (titleMatch?.[1] || h1Match?.[1] || '').trim() || undefined
   return { html: clean, title }

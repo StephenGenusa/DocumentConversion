@@ -20,6 +20,14 @@
  *                              as data URIs, one of each type an SVG may hold:
  *                              PNG, JPEG, GIF and WebP (one colour each, so a
  *                              drawing shows at a glance which were kept).
+ *   reading-room-inline-plan.html
+ *                              a page drawing the plan inline (an <svg>
+ *                              element, no xmlns, as pages write it) with a
+ *                              PNG placed on it as a data URI and a
+ *                              photograph named by address: 127.0.0.1 port
+ *                              9, which is never fetched (no network in the
+ *                              matrix, and the guarded fetcher refuses
+ *                              loopback), so it becomes its description.
  *   reading-room-page.html     a page showing the plan as an SVG <img> (a
  *                              base64 data URI) and a small marker as a
  *                              percent-encoded one: the shape that gave Word
@@ -150,6 +158,26 @@ const photoPlan = `<?xml version="1.0" encoding="UTF-8"?>\n${plan({
   ].join('\n'),
 })}\n`
 
+const inlinePlan = [
+  '<!doctype html>',
+  '<html lang="en">',
+  '<head><meta charset="utf-8"><title>' + R.pageTitle + '</title></head>',
+  '<body>',
+  `<h1>${R.pageTitle}</h1>`,
+  `<p>${R.pageIntro}</p>`,
+  plan({
+    root: '',
+    inside: [
+      `  <image x="210" y="120" width="24" height="24" href="data:image/png;base64,${swatch('#c0392b', 'png').toString('base64')}"/>`,
+      `  <image x="40" y="230" width="60" height="40" href="http://127.0.0.1:9/photo.png"><title>${R.photoAlt}</title></image>`,
+    ].join('\n'),
+  }).replace(' xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"', ''),
+  `<p>${R.pageAfter}</p>`,
+  '</body>',
+  '</html>',
+  '',
+].join('\n')
+
 const page = [
   '<!doctype html>',
   '<html lang="en">',
@@ -191,6 +219,7 @@ for (const [name, text] of [
   ['reading-room-page.html', page],
   ['reading-room-marked-plan.svg', markedPlan],
   ['reading-room-photo-plan.svg', photoPlan],
+  ['reading-room-inline-plan.html', inlinePlan],
   ['reading-room-seating.html', seating],
 ]) {
   writeFileSync(corpus(name), text)

@@ -7,6 +7,7 @@ import { safeLabel } from '../footnotes'
 import { BRACED_PLAIN, diagramLanguage, mathClose, TEX_SHAPED } from '../rendered-blocks'
 import { parseHTML } from 'linkedom'
 import { sanitizeToHub } from '../allowlist'
+import { inlineSvgElements } from '../svg-images'
 import { notesToHub } from '../speaker-notes'
 import type { HubDocument, SourceInput } from '../types'
 
@@ -447,7 +448,8 @@ export async function readMarkdown(src: SourceInput, _ctx?: unknown, opts: Markd
   const text = src.bytes.toString('utf8').replace(/^\uFEFF/, '')
   const { body: unfenced, title } = opts.frontMatter === false ? { body: text } : stripFrontMatter(text)
   const body = /\.(rmd|qmd)$/i.test(src.filename ?? '') ? quartoDivs(unfenced) : unfenced
-  const html = stripUnresolvableImageSrc(md.render(body, {}))
+  // Inline HTML may draw an SVG; it becomes an SVG image, as in a page.
+  const html = stripUnresolvableImageSrc(inlineSvgElements(md.render(body, {})))
   // Notes are lifted BEFORE sanitising: the sanitiser drops comments, so a
   // `<!-- notes: ... -->` left until after it would simply be gone.
   return { html: escapeQuotesInText(sanitizeToHub(notesToHub(html))), ...(title ? { title } : {}) }

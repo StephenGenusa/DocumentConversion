@@ -1,7 +1,7 @@
 import { DOMParser } from 'linkedom'
 import { parseDocument } from 'htmlparser2'
 import { Element, type ChildNode } from 'domhandler'
-import { removeElement, replaceElement } from 'domutils'
+import { removeElement, replaceElement, textContent } from 'domutils'
 import serialize from 'dom-serializer'
 import { decodeSvgDataUri, sanitizeSvg, svgDataUri } from './svg-sanitize'
 import { DOCX_MAX_WIDTH, rendersBlocks, type DrawContext } from './draw-blocks'
@@ -258,6 +258,88 @@ export function sanitizeSvgImages(html: string): string {
     }
   }
   return changed ? serialize(dom, { encodeEntities: 'utf8' }) : html
+}
+
+const escapeAttr = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/** Attributes an inline <svg> hands to its <img>, so the HTML reader's hidden-content rules still see them. */
+const CARRIED_ATTRIBUTES = ['class', 'style', 'hidden'] as const
+
+/**
+ * Each SVG drawn inline in an HTML page or a Markdown file (`<svg>…</svg>`
+ * in the markup), as an SVG image like any other: a base64 data URI of the
+ * SVG, sanitised (B6) with the pictures it names by address kept for the
+ * read step to fetch, at its own size, its aria-label or <title> as alt.
+ * Without this the hub sanitiser dropped the element and the drawing with it.
+ *
+ * The SVG is taken from the source as written: an HTML parser lower-cases
+ * names an SVG needs as they are (viewBox, preserveAspectRatio). It must end
+ * where an HTML parser ends it, at its own `</svg>`; one that runs on to the
+ * end of the page is left alone, for the sanitiser to drop as before. One
+ * marked aria-hidden="true" is decoration and is left alone too.
+ */
+export function inlineSvgElements(html: string): string {
+  if (!/<svg[\s>/]/i.test(html)) return html
+  const dom = parseDocument(html, { withStartIndices: true, withEndIndices: true })
+  const found: Array<{ start: number; end: number; img: string }> = []
+  const visit = (nodes: ChildNode[]): void => {
+    for (const node of nodes) {
+      if (!(node instanceof Element)) continue
+      if (node.name !== 'svg') {
+        visit(node.children)
+        continue
+      }
+      const start = node.startIndex
+      const end = node.endIndex
+      if (start === null || end === null || node.attribs['aria-hidden'] === 'true') continue
+      const raw = html.slice(start, end + 1)
+      if (!/(?:<\/(?:[\w-]+:)?svg\s*>|\/>)$/i.test(raw)) continue
+      const img = inlineSvgImage(raw, node)
+      if (img !== null) found.push({ start, end, img })
+    }
+  }
+  visit(dom.children)
+  let out = html
+  for (const { start, end, img } of found.reverse()) out = `${out.slice(0, start)}${img}${out.slice(end + 1)}`
+  return out
+}
+
+const XML_ENTITY_NAMES = new Set(['amp', 'lt', 'gt', 'quot', 'apos'])
+
+/**
+ * HTML's named entities (`&nbsp;`, `&copy;`) as character references, which
+ * XML reads: written in a page they mean a character, and XML has only five
+ * names of its own. A name HTML does not know is left as it is.
+ */
+function htmlEntitiesAsXml(svg: string): string {
+  return svg.replace(/&([a-z][a-z0-9]*);/gi, (m, name: string) => {
+    if (XML_ENTITY_NAMES.has(name)) return m
+    const text = textContent(parseDocument(m).children)
+    return text === m ? m : [...text].map((c) => `&#x${c.codePointAt(0)!.toString(16)};`).join('')
+  })
+}
+
+/** The <img> for one inline SVG, or null when it is not a readable one. */
+function inlineSvgImage(raw: string, el: Element): string | null {
+  // In a page the SVG namespace is implied; on its own an SVG must say so.
+  const open = /^<[^>]*>/.exec(raw)?.[0] ?? ''
+  let svgText = raw
+  if (!/\sxmlns\s*=/.test(open)) svgText = svgText.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"')
+  if (/\bxlink:/.test(raw) && !/\sxmlns:xlink\s*=/.test(open)) svgText = svgText.replace(/^<svg\b/i, '<svg xmlns:xlink="http://www.w3.org/1999/xlink"')
+  const clean = sanitizeSvg(htmlEntitiesAsXml(svgText), { keepImageUrls: true })
+  const size = clean ? svgIntrinsicSize(clean) : null
+  if (!clean || !size) return null
+  const title = el.children.find((c): c is Element => c instanceof Element && c.name === 'title')
+  const alt = (el.attribs['aria-label'] ?? (title ? textContent(title) : '')).replace(/\s+/g, ' ').trim()
+  const attrs = [
+    `src="${svgDataUri(clean)}"`,
+    ...(alt ? [`alt="${escapeAttr(alt)}"`] : []),
+    `width="${Math.max(1, Math.round(size.width))}"`,
+    `height="${Math.max(1, Math.round(size.height))}"`,
+    ...CARRIED_ATTRIBUTES.filter((a) => el.attribs[a] !== undefined).map((a) => `${a}="${escapeAttr(el.attribs[a])}"`),
+  ]
+  return `<img ${attrs.join(' ')}>`
 }
 
 /** An <img> width or height attribute as whole px, or undefined. */

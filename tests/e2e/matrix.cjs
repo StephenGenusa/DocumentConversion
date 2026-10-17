@@ -229,6 +229,13 @@ async function main() {
         0,
       )
     const nestedRasters = rastersIn(hubText)
+    // Pictures an SVG image names by address (<image href="http…">): with no network here, each becomes its description.
+    const addressedIn = (text) =>
+      [...text.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)].reduce(
+        (n, m) => n + (Buffer.from(m[1], 'base64').toString('utf8').match(/<image\b[^>]*href="(?!data:|#)/g) ?? []).length,
+        0,
+      )
+    const addressedPictures = addressedIn(hubText)
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
     const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp|tiff)[;,]/i.test(hubText)
     // TIFF pictures, which a Kindle book gets as JPEG or PNG (decoded in the render host).
@@ -396,6 +403,15 @@ async function main() {
           }
           if (found < nestedRasters) throw new Error(`${target} kept ${found} of the ${nestedRasters} pictures placed in an SVG image`)
           rec.note = `${rec.note ? rec.note + ', ' : ''}${found} pictures in SVG kept`
+        }
+        if (addressedPictures > 0 && target === 'html') {
+          const html = out.toString('utf8')
+          if (addressedIn(html) > 0) throw new Error('html still has an SVG picture named by address')
+          const described = [...html.matchAll(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g)].filter((m) =>
+            Buffer.from(m[1], 'base64').toString('utf8').includes('>[image: '),
+          ).length
+          if (described === 0) throw new Error('html lost the description of an SVG picture it could not fetch')
+          rec.note = `${rec.note ? rec.note + ', ' : ''}SVG picture by address described`
         }
         const reader = readerFor(target)
         if (reader || azw3Html !== undefined) {

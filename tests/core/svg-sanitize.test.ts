@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeSvg } from '../../src/core/svg-sanitize'
+import { sanitizeSvg, svgImageUrls, withSvgImagePictures } from '../../src/core/svg-sanitize'
 
 const SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">'
 const wrap = (inner: string): string => `${SVG_OPEN}${inner}</svg>`
@@ -213,6 +213,55 @@ describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
     // Two references could disagree on what is shown.
     const png = `data:image/png;base64,${PNG.toString('base64')}`
     expect(clean(`<image href="${png}" xlink:href="${png}"/>`)).not.toContain('<image')
+  })
+
+  it('shows a picture named by a web address as its description in text, as a failed <img> is shown', () => {
+    const out = clean('<g transform="translate(2 0)"><image x="1" y="2" width="6" height="4" transform="rotate(5)" href="https://example.invalid/desk.png"><title>Desk photo</title></image></g>')
+    expect(out).not.toContain('<image')
+    expect(out).not.toContain('example.invalid')
+    const text = /<text ([^>]*)>\[image: Desk photo\]<\/text>/.exec(out)
+    expect(text, out).not.toBeNull()
+    // At the picture's corner, the line no taller than the picture, turned with it.
+    for (const a of ['x="1"', 'y="6"', 'font-size="4"', 'transform="rotate(5)"']) expect(text![1]).toContain(a)
+    // A relative or protocol-relative address too; with no description, "not included".
+    for (const href of ['photos/desk.png', '//cdn.example.invalid/desk.png', 'http://example.invalid/desk.png']) {
+      expect(clean(`<image xlink:href="${href}"/>`), href).toContain('>[image: not included]</text>')
+    }
+    expect(clean('<image aria-label="Shelf &amp; desk" href="https://example.invalid/a.png"/>')).toContain('>[image: Shelf &amp; desk]</text>')
+    // What is not a web address is dropped as before, with nothing in its place.
+    for (const href of ['javascript:alert(1)', 'file:///etc/passwd', '#local', 'data:image/bmp;base64,Qk0=']) {
+      const dropped = clean(`<image href="${href}"/><rect width="1"/>`)
+      expect(dropped, href).not.toContain('<image')
+      expect(dropped, href).not.toContain('<text')
+    }
+  })
+
+  it('keeps a picture named by a web address for the read step to fetch, when asked, and nothing else', () => {
+    const svg = wrap(
+      '<image x="1" width="4" height="4" onload="alert(1)" href="https://example.invalid/a.png"><title>Desk photo</title><script>alert(2)</script></image>' +
+        '<image xlink:href="photos/b.png"/><image href="javascript:alert(3)"/><script>alert(4)</script>',
+    )
+    const out = sanitizeSvg(svg, { keepImageUrls: true })!
+    expect(out).toContain('<image aria-label="Desk photo" x="1" width="4" height="4" href="https://example.invalid/a.png" />')
+    expect(out).toContain('<image xlink:href="photos/b.png" />')
+    expect(out).not.toContain('alert')
+    expect(out).not.toContain('javascript')
+    // Sanitised again without asking (as every SVG is once its pictures are fetched), they become text.
+    expect(sanitizeSvg(out)).toContain('>[image: Desk photo]</text>')
+  })
+
+  it('lists the web addresses an SVG\'s pictures name, and puts fetched pictures in their place', () => {
+    const png = `data:image/png;base64,${PNG.toString('base64')}`
+    const svg = wrap(`<image href="https://example.invalid/a.png"/><g><image xlink:href="//example.invalid/b.png"/></g><image href="${png}"/><image href="#x"/>`)
+    expect(svgImageUrls(svg)).toEqual(['https://example.invalid/a.png', '//example.invalid/b.png'])
+    const out = withSvgImagePictures(svg, new Map([['https://example.invalid/a.png', png]]))
+    expect(out).toContain(`<image href="${png}" />`)
+    expect(out).toContain('<image xlink:href="//example.invalid/b.png" />')
+    expect(svgImageUrls('not an svg')).toEqual([])
+    // An address is read as text: `&amp;` in the markup is `&` in the address.
+    const query = wrap('<image href="https://example.invalid/p?w=4&amp;h=4"/>')
+    expect(svgImageUrls(query)).toEqual(['https://example.invalid/p?w=4&h=4'])
+    expect(withSvgImagePictures(query, new Map([['https://example.invalid/p?w=4&h=4', png]]))).toContain(`<image href="${png}" />`)
   })
 
   it('refuses what is not an SVG', () => {

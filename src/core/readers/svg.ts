@@ -11,13 +11,15 @@ import { imageMime, readImage, svgText } from './image'
  * B6 sanitising (svg-sanitize.ts: no script, handlers, external references,
  * prolog or doctype). Its size is written on the <img>, so every target
  * shows it at the size the file gives. The editor shows it as an ordinary
- * image. Its text is not extracted: it is a picture.
+ * image. Its text is not extracted: it is a picture. A picture it names by
+ * a web address is fetched where the document is read, like an <img>'s.
  *
  * A raster image saved with an .svg name is read as the image it is.
  */
 export async function readSvg(src: SourceInput): Promise<HubDocument> {
   if (imageMime(src.bytes)) return readImage(src)
-  const svg = sanitizeSvg(svgText(src.bytes))
+  // Pictures it names by address are kept for the read step to fetch.
+  const svg = sanitizeSvg(svgText(src.bytes), { keepImageUrls: true })
   const size = svg ? svgIntrinsicSize(svg) : null
   if (!svg || !size) throw new ConversionError('image-unsupported', 'This is not a readable SVG image')
   const name = src.filename?.split(/[\\/]/).pop()
