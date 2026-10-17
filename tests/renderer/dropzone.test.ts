@@ -4,6 +4,7 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DropZone } from '../../src/renderer/src/components/DropZone'
 import { SAMPLES } from '../../src/core/samples'
+import { inputFormatHint } from '../../src/core/input-formats'
 import type { Intake } from '../../src/renderer/src/lib/intake-types'
 
 /** The start screen's Sample documents link: a menu button offering the Help menu's samples. */
@@ -31,6 +32,12 @@ const key = (el: Element, k: string): void =>
   act(() => {
     el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
   })
+
+describe('start screen', () => {
+  it('lists what the app reads from the detector\'s own table', () => {
+    expect([...host.querySelectorAll('.dropzone__hint')].map((p) => p.textContent)).toContain(inputFormatHint())
+  })
+})
 
 describe('start screen: Sample documents', () => {
   it('sits beside Settings and About, closed', () => {

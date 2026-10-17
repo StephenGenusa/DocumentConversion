@@ -20,7 +20,7 @@ const HOSTILE = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valu
 
 const text = (s: string) => Buffer.from(s, 'utf8')
 
-describe('EXT_MAP: the key is a file extension', () => {
+describe('EXTENSION_FORMATS: the key is a file extension', () => {
   it('returns null for a prototype member used as an extension', () => {
     for (const key of HOSTILE) expect(detectByExtension(`report.${key}`)).toBeNull()
   })

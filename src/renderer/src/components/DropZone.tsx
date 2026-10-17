@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Intake } from '../lib/intake-types'
 import { SAMPLES } from '../../../core/samples'
+import { inputFormatHint } from '../../../core/input-formats'
 
 export type { LoadedPayload } from '../lib/intake'
 
@@ -44,17 +45,8 @@ export function DropZone({
     >
       <div className="dropzone__icon" aria-hidden="true">📄</div>
       <p className="dropzone__title">Drop files or text here</p>
-      {/*
-        Ordered by how often each is actually wanted, not alphabetically or by
-        the order of SOURCE_FORMATS: pdf and Word lead because that is what
-        people come here to convert. Aliases are listed where the app accepts
-        them (see EXT_MAP in src/core/detect.ts) so nobody has to guess whether
-        .htm or .pptm will be taken.
-      */}
-      <p className="dropzone__hint">
-        pdf · docx/doc/docm · md · html/htm · txt · xlsx/xls/ods · pptx/pptm · eml/msg/mbox · epub · odt/odp ·
-        rtf · csv/tsv · images · ipynb · source code · ics/ical · adoc/rst · zip
-      </p>
+      {/* Built from the detector's own extension table: see src/core/input-formats.ts. */}
+      <p className="dropzone__hint">{inputFormatHint()}</p>
       <p className="dropzone__hint">
         Ctrl+V pastes with formatting · paste a URL to fetch the page · scanned PDFs and images use offline OCR
       </p>

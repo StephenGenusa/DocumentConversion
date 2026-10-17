@@ -1,6 +1,6 @@
 # Document Converter
 
-Convert documents between 22 input formats and 12 output formats on your own
+Convert documents between 30 input formats and 12 output formats on your own
 machine. Your documents are never uploaded, there is no account and no
 telemetry. The app goes to the network for three things: a web page you ask it
 to fetch, the images a document or a paste refers to by web address (so they
@@ -181,24 +181,48 @@ converting. Pasted Markdown arrives as formatted text, not as raw syntax.
 The internal names are in `SOURCE_FORMATS` in `src/core/types.ts`:
 
 ```
-txt, md, docx, pdf, html, eml, msg, csv, xlsx, rtf, image, code,
-ipynb, pptx, doc, epub, mbox, odt, odp, ics, asciidoc, rst
+txt, md, docx, pdf, html, eml, msg, csv, xlsx, rtf, image, svg, code,
+ipynb, pptx, doc, epub, mbox, odt, odp, ics, asciidoc, rst, json,
+subtitles, opml, vcard, djot, textile, sqlite
 ```
 
-Some of those names cover more than one file extension.
+Some of those names cover more than one file extension. The extensions are in
+`EXTENSION_FORMATS` in `src/core/extensions.ts`, and the start screen lists
+them from there.
 
 - **Word.** `.docx` and `.docm` are read fully. `.doc` (Word 97 to 2003) is read
   for its text only, and the app tells you what it could not recover.
-- **Spreadsheets.** `xlsx` covers `.xlsx`, `.xls` and `.ods`.
-- **Presentations.** `pptx` covers PowerPoint, `odp` covers OpenDocument slides.
+- **Spreadsheets.** `xlsx` covers `.xlsx`, `.xls` and `.ods`. `.csv` and `.tsv`
+  are tables too.
+- **Presentations.** `pptx` covers `.pptx` and `.pptm`, `odp` covers
+  OpenDocument slides (`.odp`). `.odt` is OpenDocument text.
+- **Web pages.** `.html` and `.htm`.
+- **Text and Markdown.** `.txt` and `.text`; Markdown as `.md`, `.markdown`,
+  `.mdown`, `.mkd`, `.mkdn`, `.mdwn` and `.markdn`, and R Markdown and Quarto
+  (`.rmd`, `.qmd`) with their code chunks.
+- **Other documents.** `.pdf`, `.rtf` and `.epub`.
 - **Email.** `.eml`, `.msg` (Outlook) and `.mbox` archives.
-- **Images.** `.png`, `.jpg`, `.gif` and `.webp`. Embed the image in the output,
-  or run text recognition on it.
-- **Source code.** 32 extensions, listed in `EXT_TO_LANG` in
-  `src/core/code-langs.ts`, syntax highlighted in the output.
+- **Calendars and contacts.** `.ics` and `.ical` invitations; vCard contacts
+  (`.vcf`, `.vcard`), one row per contact. A `.vcf` that is not a vCard is
+  the genomics Variant Call Format and is read as text.
+- **Images.** `.png`, `.jpg`, `.jpeg`, `.gif` and `.webp`. Embed the image in
+  the output, or run text recognition on it. `.svg` drawings are kept as
+  drawings where the output allows it.
+- **Source code.** More than 80 extensions, and names such as `Dockerfile` and
+  `Makefile`, listed in `EXT_TO_LANG` in `src/core/code-langs.ts`, syntax
+  highlighted in the output.
 - **Notebooks.** `.ipynb` rendered with `In [n]:` / `Out[n]:` prompts, with
   code, output and errors styled differently.
-- **Markup.** `.adoc` / `.asciidoc`, and `.rst`.
+- **Data.** JSON (`.json`) and JSON Lines (`.jsonl`, `.ndjson`): an array of
+  flat records reads as a table, anything else as formatted JSON. SQLite
+  databases (`.sqlite`, `.sqlite3`, `.db3`, and a `.db` or any other name that
+  starts with the SQLite header): the schema and every table, and the views'
+  rows if you ask for them.
+- **Subtitles and transcripts.** WebVTT (`.vtt`) and SubRip (`.srt`), and
+  Teams meeting transcripts: who said what, and when.
+- **Markup and outlines.** AsciiDoc (`.adoc`, `.asciidoc`, `.asc`),
+  reStructuredText (`.rst`), Djot (`.djot`, `.dj`), Textile (`.textile`) and
+  OPML outlines (`.opml`).
 
 Three inputs are not file formats:
 
