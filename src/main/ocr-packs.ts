@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { guardedFetch } from '../core/net/guarded-fetch'
 import { installPack, packPathIn, type PackFetch } from '../ocr/pack-install'
-import { installedLanguages, packIsGzipped, resolvePack } from '../ocr/resolve-pack'
+import { installedLanguages, modelsIn, packIsGzipped, resolveLanguage } from '../ocr/resolve-pack'
 import { LANGUAGES, downloadUrl, findLanguage, type ModelSet } from '../ocr/languages'
 import { digestFor } from '../ocr/checksums.generated'
 import { ocrLangDir } from './ocr-host'
@@ -50,7 +50,12 @@ export interface PackListing {
   script: string
   installed: boolean
   source?: 'bundled' | 'downloaded'
+  /** The model OCR reads this language with (see `resolveLanguage`). */
   set?: ModelSet
+  /** The models downloaded for it, which Remove deletes together. */
+  downloaded: ModelSet[]
+  /** What those downloads take on disk; absent when nothing is downloaded. */
+  onDisk?: number
   size: { fast: number; best: number }
   downloadSize?: number
 }
@@ -58,22 +63,24 @@ export interface PackListing {
 export function listPacks(): PackListing[] {
   const shared = { bundledDir: ocrLangDir(), userDir: userPackDir(), exists: existsSync }
   return LANGUAGES.map((language) => {
-    const fast = resolvePack({ ...shared, language: language.code, set: 'fast' })
-    const best = resolvePack({ ...shared, language: language.code, set: 'best' })
-    const found = fast ?? best
+    const found = resolveLanguage({ ...shared, language: language.code })
+    const downloaded = modelsIn(shared.userDir, language.code, existsSync)
+    // The recorded size is the file's actual length; the catalog's figure
+    // is an estimate, kept only for a language the table does not know.
+    const size = {
+      fast: digestFor(language.code, 'fast')?.size ?? language.size.fast,
+      best: digestFor(language.code, 'best')?.size ?? language.size.best,
+    }
     return {
       code: language.code,
       name: language.name,
       script: language.script,
       installed: found !== null,
       source: found?.source,
-      set: fast ? 'fast' : best ? 'best' : undefined,
-      // The recorded size is the file's actual length; the catalog's figure
-      // is an estimate, kept only for a language the table does not know.
-      size: {
-        fast: digestFor(language.code, 'fast')?.size ?? language.size.fast,
-        best: digestFor(language.code, 'best')?.size ?? language.size.best,
-      },
+      set: found?.set,
+      downloaded,
+      ...(downloaded.length > 0 && { onDisk: downloaded.reduce((sum, set) => sum + size[set], 0) }),
+      size,
       // The app downloads only the fast model; no recorded size, no estimate.
       downloadSize: digestFor(language.code, 'fast')?.size,
     }
@@ -81,25 +88,24 @@ export function listPacks(): PackListing[] {
 }
 
 /**
- * Where the pipeline should look for a language, and whether that file is
- * gzipped. Both travel together because getting the second wrong is an ENOENT
- * on the first.
+ * Where the pipeline should look for a language, whether that file is
+ * gzipped, and which model it is. They travel together because getting the
+ * second wrong is an ENOENT on the first, and the third names the file.
  */
-export function langPathFor(language: string, set: ModelSet = 'fast'): { dir: string; gzip: boolean } {
-  const resolved = resolvePack({
+export function langPathFor(language: string): { dir: string; gzip: boolean; set: ModelSet } {
+  const resolved = resolveLanguage({
     language,
-    set,
     bundledDir: ocrLangDir(),
     userDir: userPackDir(),
     exists: existsSync,
   })
-  if (!resolved) return { dir: ocrLangDir(), gzip: true }
-  return { dir: resolved.dir, gzip: packIsGzipped(resolved.file) }
+  if (!resolved) return { dir: ocrLangDir(), gzip: true, set: 'fast' }
+  return { dir: resolved.dir, gzip: packIsGzipped(resolved.file), set: resolved.set }
 }
 
+/** Installed with either model: what the default language and `--ocr-lang` may name. */
 export function installedCodes(): Array<{ code: string; source: 'bundled' | 'downloaded' }> {
   return installedLanguages(LANGUAGES.map((l) => l.code), {
-    set: 'fast',
     bundledDir: ocrLangDir(),
     userDir: userPackDir(),
     exists: existsSync,
@@ -142,16 +148,23 @@ export async function downloadPack(
   )
 }
 
-/** Remove a downloaded pack. A bundled one is part of the installation. */
-export async function removePack(code: string, set: ModelSet): Promise<{ ok: boolean; message?: string }> {
+/**
+ * Remove a downloaded language: one model when `set` names it, otherwise every
+ * downloaded model of it. Settings' Remove takes the whole language away;
+ * removing only the model in use would quietly swap in the other one and
+ * leave the language listed. A bundled pack is part of the installation.
+ */
+export async function removePack(code: string, set?: ModelSet): Promise<{ ok: boolean; message?: string }> {
   // packPathIn refuses a code that is not in the catalog. Building the path
   // directly here is what made this an arbitrary-file-delete: the code comes
   // from the renderer and a traversal resolved outside the pack directory.
-  const path = packPathIn(userPackDir(), code, set)
-  if (path === null) return { ok: false, message: `Unknown OCR language "${code}".` }
-  if (!existsSync(path)) return { ok: false, message: 'That pack is not installed as a download.' }
+  const paths = (set ? [set] : (['fast', 'best'] as const)).map((s) => packPathIn(userPackDir(), code, s))
+  if (paths.some((p) => p === null)) return { ok: false, message: `Unknown OCR language "${code}".` }
+  // A placed pack may be gzipped; the listing counts that spelling, so Remove does too.
+  const present = (paths as string[]).flatMap((p) => [p, `${p}.gz`]).filter((p) => existsSync(p))
+  if (present.length === 0) return { ok: false, message: 'That pack is not installed as a download.' }
   try {
-    await unlink(path)
+    for (const path of present) await unlink(path)
     return { ok: true }
   } catch (err) {
     return { ok: false, message: (err as Error).message }

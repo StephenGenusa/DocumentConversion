@@ -317,12 +317,13 @@ function OcrPacks({
 
   async function remove(code: string): Promise<void> {
     const language = installed.find((l) => l.code === code)
-    if (!language?.set) return
+    if (language?.source !== 'downloaded') return
     const wasDefault = code === defaultLanguage
     setBusy(code)
     onStatus('')
     try {
-      const res = await window.api.removeOcrLanguage(code, language.set)
+      // Every downloaded model of it, so the language really goes.
+      const res = await window.api.removeOcrLanguage(code)
       if (!res.ok) {
         onStatus(`Not removed: ${res.message ?? 'the pack could not be deleted'}`)
         return
@@ -356,7 +357,7 @@ function OcrPacks({
           <li key={l.code} className="ocr-packs__item" data-language={l.code}>
             <span className="ocr-packs__name">{l.name}</span>
             <span className="ocr-packs__size">
-              {l.source === 'bundled' ? 'Included' : megabytes(l.size[l.set ?? 'fast'])}
+              {l.source === 'bundled' ? 'Included' : megabytes(l.onDisk ?? l.size[l.set ?? 'fast'])}
             </span>
             {l.source === 'downloaded' && asking === l.code && (
               <div

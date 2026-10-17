@@ -88,7 +88,7 @@ const api = {
   listOcrLanguages: () => ipcRenderer.invoke('ocr:list-languages'),
   downloadOcrLanguage: (code: string, set: 'fast' | 'best', sha256?: string) =>
     ipcRenderer.invoke('ocr:download-language', { code, set, sha256 }),
-  removeOcrLanguage: (code: string, set: 'fast' | 'best') =>
+  removeOcrLanguage: (code: string, set?: 'fast' | 'best') =>
     ipcRenderer.invoke('ocr:remove-language', { code, set }),
   resizeContent: (req: { height?: number; reset?: boolean }) => ipcRenderer.invoke('app:resize-content', req),
   convertAndCopy: (req: {

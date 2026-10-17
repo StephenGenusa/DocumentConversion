@@ -473,7 +473,8 @@ function registerIpc(settings: SettingsStore): void {
   })
 
   ipcMain.handle('ocr:remove-language', async (_e, { code, set }: { code: string; set?: unknown }) => {
-    const result = await removePack(String(code), set === 'best' ? 'best' : 'fast')
+    // No model named: the whole language goes, whichever models it has.
+    const result = await removePack(String(code), set === 'best' || set === 'fast' ? set : undefined)
     settings.packsChanged()
     return result
   })

@@ -17,7 +17,7 @@ let saved: Settings
 let raw: Record<string, unknown>
 let changed: ((s: Settings) => void) | null
 /** The OCR languages, as `listOcrLanguages` gives them: English bundled, German downloaded, French not installed. */
-let packs: { code: string; name: string; script: string; installed: boolean; source?: string; set?: string; size: { fast: number; best: number }; downloadSize?: number }[]
+let packs: { code: string; name: string; script: string; installed: boolean; source?: string; set?: string; downloaded?: string[]; onDisk?: number; size: { fast: number; best: number }; downloadSize?: number }[]
 const freshPacks = (): typeof packs => [
   { code: 'eng', name: 'English', script: 'Latin', installed: true, source: 'bundled', set: 'fast', size: { fast: 4_000_000, best: 12_000_000 } },
   { code: 'deu', name: 'German', script: 'Latin', installed: true, source: 'downloaded', set: 'fast', size: { fast: 1_520_000, best: 8_000_000 }, downloadSize: 1_520_000 },
@@ -319,6 +319,24 @@ describe('the OCR section', () => {
     expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('Installed languages')
   })
 
+  it('shows a language with both models at their combined size, and Remove takes both', async () => {
+    Object.assign(packs[1], { set: 'best', downloaded: ['fast', 'best'], onDisk: 9_520_000 })
+    await ocrTab()
+    expect(items()[1].textContent).toBe('German9.5 MBRemove')
+    await removeGerman()
+    // No model named: main removes every downloaded model of the language.
+    expect(api.removeOcrLanguage).toHaveBeenCalledWith('deu')
+    expect(items().map((i) => i.dataset.language)).toEqual(['eng'])
+  })
+
+  it('removes a language installed only as the best model', async () => {
+    Object.assign(packs[1], { set: 'best', downloaded: ['best'], onDisk: 8_000_000 })
+    await ocrTab()
+    expect(items()[1].textContent).toBe('German8 MBRemove')
+    await removeGerman()
+    expect(api.removeOcrLanguage).toHaveBeenCalledWith('deu')
+  })
+
   it('asks before removing a language, with what getting it back costs', async () => {
     await ocrTab()
     act(() => panel().querySelector<HTMLButtonElement>('button[aria-label="Remove German"]')!.click())
@@ -375,7 +393,7 @@ describe('the OCR section', () => {
     saved = { ...saved, ocr: { language: 'deu' } }
     await ocrTab()
     await removeGerman()
-    expect(api.removeOcrLanguage).toHaveBeenCalledWith('deu', 'fast')
+    expect(api.removeOcrLanguage).toHaveBeenCalledWith('deu')
     expect(items().map((i) => i.dataset.language)).toEqual(['eng'])
     expect(status()).toBe('German is removed. The default language is now English.')
     expect(onOcrPackRemoved).toHaveBeenCalledWith('deu')

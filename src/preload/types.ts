@@ -84,7 +84,12 @@ export interface OcrLanguageListing {
   script: string
   installed: boolean
   source?: 'bundled' | 'downloaded'
+  /** The model OCR reads it with: a bundled pack, else best over fast. */
   set?: 'fast' | 'best'
+  /** The models downloaded for it, which Remove deletes together. */
+  downloaded?: Array<'fast' | 'best'>
+  /** What those downloads take on disk. */
+  onDisk?: number
   size: { fast: number; best: number }
   /** What installing it downloads (the fast model), when the recorded table knows; `size` may be an estimate. */
   downloadSize?: number
@@ -268,7 +273,8 @@ export interface Api {
     set: 'fast' | 'best',
     sha256?: string,
   ): Promise<{ kind: 'ok'; path: string } | { kind: 'error'; message: string } | { kind: 'canceled' }>
-  removeOcrLanguage(code: string, set: 'fast' | 'best'): Promise<{ ok: boolean; message?: string }>
+  /** Without `set`, removes every downloaded model of the language. */
+  removeOcrLanguage(code: string, set?: 'fast' | 'best'): Promise<{ ok: boolean; message?: string }>
   resizeContent(req: { height?: number; reset?: boolean }): Promise<void>
   convertAndCopy(req: {
     base64: string

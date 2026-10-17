@@ -4,7 +4,8 @@ import { describe, it, expect, afterAll } from 'vitest'
 // terminate(); exiting the vitest fork immediately races them and the pool
 // reports "Worker forks emitted error" intermittently.
 afterAll(() => new Promise((resolve) => setTimeout(resolve, 750)))
-import { existsSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ocrPdf, ocrImage } from '../../src/ocr/pipeline'
 
@@ -62,5 +63,20 @@ describe.skipIf(!haveAssets)('ocr pipeline (slow, offline assets)', () => {
     const { text } = await ocrImage(png, { langPath: LANG_DIR })
     expect(text.toLowerCase()).toContain('hello')
     expect(text.toLowerCase()).toContain('converter')
+  })
+
+  it('reads with a best model, which is stored under its own name', { timeout: 300000 }, async () => {
+    // The bundled English data copied under the best model's name, with no
+    // fast file beside it: a pass means the pipeline loaded `eng.best`.
+    const dir = mkdtempSync(join(tmpdir(), 'ocr-best-'))
+    try {
+      copyFileSync(join(LANG_DIR, 'eng.traineddata.gz'), join(dir, 'eng.best.traineddata.gz'))
+      const png = await renderTextPng(['HELLO CONVERTER'])
+      const { text } = await ocrImage(png, { langPath: dir, language: 'eng', set: 'best' })
+      expect(text.toLowerCase()).toContain('hello')
+      expect(text.toLowerCase()).toContain('converter')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

@@ -110,9 +110,10 @@ export function runOcr(
       kind,
       base64: bytes.toString('base64'),
       // The directory depends on the language: bundled English lives in the
-      // installation, a downloaded pack in userData.
+      // installation, a downloaded pack in userData, under the name of the
+      // model it is.
       ...(language
-        ? { langPath: langPathFor(language).dir, gzip: langPathFor(language).gzip }
+        ? (({ dir, gzip, set }) => ({ langPath: dir, gzip, set }))(langPathFor(language))
         : { langPath: ocrLangDir(), gzip: true }),
       language,
     })

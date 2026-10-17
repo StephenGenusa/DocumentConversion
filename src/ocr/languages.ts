@@ -127,7 +127,15 @@ export function downloadUrl(code: string, set: ModelSet): string {
   return `https://raw.githubusercontent.com/tesseract-ocr/${repo}/${TESSDATA_TAG}/${code}.traineddata`
 }
 
+/**
+ * The name tesseract loads a pack by: it reads `<name>.traineddata`, so the
+ * best model's stem carries the set.
+ */
+export function tesseractName(code: string, set: ModelSet): string {
+  return set === 'best' ? `${code}.best` : code
+}
+
 /** The filename a pack is stored under, keeping the two model sets apart. */
 export function packFilename(code: string, set: ModelSet): string {
-  return set === 'best' ? `${code}.best.traineddata` : `${code}.traineddata`
+  return `${tesseractName(code, set)}.traineddata`
 }

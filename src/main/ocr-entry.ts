@@ -12,6 +12,7 @@ interface OcrRequest {
   langPath: string
   language?: string
   gzip?: boolean
+  set?: 'fast' | 'best'
 }
 
 process.parentPort.on('message', (e) => {
@@ -21,10 +22,11 @@ process.parentPort.on('message', (e) => {
     onProgress: (stage: string, percent?: number) => post({ type: 'progress', stage, percent }),
   }
   const bytes = Buffer.from(req.base64, 'base64')
+  const assets = { langPath: req.langPath, language: req.language, gzip: req.gzip, set: req.set }
   const run =
     req.kind === 'pdf'
-      ? ocrPdf(bytes, { langPath: req.langPath, language: req.language, gzip: req.gzip }, ctx)
-      : ocrImage(bytes, { langPath: req.langPath, language: req.language, gzip: req.gzip }, ctx).then((page) => [page])
+      ? ocrPdf(bytes, assets, ctx)
+      : ocrImage(bytes, assets, ctx).then((page) => [page])
   run
     .then((pages) => post({ type: 'done', pages }))
     .catch((err) =>

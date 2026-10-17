@@ -3,7 +3,7 @@ import { ConversionError } from '../core/errors'
 import { groupIntoRows, inferColumns, inferGrid, type PositionedText } from '../core/grid-infer'
 import { loadPdfjs } from '../core/pdfjs-loader'
 import type { ReadContext } from '../core/types'
-import { BUNDLED_LANGUAGE, confidenceFloorFor } from './languages'
+import { BUNDLED_LANGUAGE, confidenceFloorFor, tesseractName, type ModelSet } from './languages'
 
 /**
  * OCR pipeline — Electron-independent by design (spec F4): unit tests run it
@@ -34,6 +34,12 @@ export interface OcrAssets {
    * this app has always shipped.
    */
   gzip?: boolean
+  /**
+   * Which model the pack is. A best model is stored as `deu.best.traineddata`
+   * so the two can sit side by side, and tesseract finds a pack by name, so
+   * it is asked for `deu.best`. Defaults to fast, the model the app downloads.
+   */
+  set?: ModelSet
 }
 
 /**
@@ -75,7 +81,7 @@ function throwIfAborted(signal?: AbortSignal): void {
 
 async function newWorker(assets: OcrAssets, signal?: AbortSignal): Promise<Worker> {
   throwIfAborted(signal)
-  const worker = await createWorker(assets.language ?? BUNDLED_LANGUAGE, undefined, {
+  const worker = await createWorker(tesseractName(assets.language ?? BUNDLED_LANGUAGE, assets.set ?? 'fast'), undefined, {
     langPath: assets.langPath,
     gzip: assets.gzip ?? true,
     cacheMethod: 'none',

@@ -56,7 +56,45 @@ export function resolvePack(input: ResolveInput): ResolvedPack | null {
 }
 
 /**
- * Every language that can be selected right now, bundled or downloaded.
+ * Which pack OCR reads a language with, whichever model it is.
+ *
+ * A language counts as installed with either model on disk. When there is a
+ * choice the rule is, in order:
+ *
+ * - The bundled pack wins, for the reason `resolvePack` gives: nothing in the
+ *   writable directory may shadow what came with the installer.
+ * - Otherwise the best model beats the fast one. The app only ever downloads
+ *   fast, so a best file is there because someone put it there on purpose,
+ *   accepting slower recognition for better accuracy. Choosing per document
+ *   (by page count, say) would make the same file read differently from one
+ *   day to the next, which is worse than either model.
+ */
+export interface ResolvedModel extends ResolvedPack {
+  set: ModelSet
+}
+
+export function resolveLanguage(input: Omit<ResolveInput, 'set'>): ResolvedModel | null {
+  for (const [source, dir] of [
+    ['bundled', input.bundledDir],
+    ['downloaded', input.userDir],
+  ] as const) {
+    for (const set of ['best', 'fast'] as const) {
+      for (const file of candidates(input.language, set)) {
+        if (input.exists(`${dir}/${file}`)) return { dir, file, source, set }
+      }
+    }
+  }
+  return null
+}
+
+/** The models of a language present in one directory, fast first. */
+export function modelsIn(dir: string, language: string, exists: (path: string) => boolean): ModelSet[] {
+  return (['fast', 'best'] as const).filter((set) => candidates(language, set).some((f) => exists(`${dir}/${f}`)))
+}
+
+/**
+ * Every language that can be selected right now, bundled or downloaded, with
+ * either model.
  *
  * The bundled language is always reported even if the file check fails: a
  * missing English pack is a broken installation, and offering an empty list
@@ -65,10 +103,10 @@ export function resolvePack(input: ResolveInput): ResolvedPack | null {
  */
 export function installedLanguages(
   codes: string[],
-  input: Omit<ResolveInput, 'language'>,
+  input: Omit<ResolveInput, 'language' | 'set'>,
 ): Array<{ code: string; source: 'bundled' | 'downloaded' }> {
   const found = codes
-    .map((code) => ({ code, resolved: resolvePack({ ...input, language: code }) }))
+    .map((code) => ({ code, resolved: resolveLanguage({ ...input, language: code }) }))
     .filter((r) => r.resolved !== null)
     .map((r) => ({ code: r.code, source: r.resolved!.source }))
   if (!found.some((f) => f.code === BUNDLED_LANGUAGE)) {

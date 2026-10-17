@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { ConversionError } from '../../src/core/errors'
 import type { OcrPage } from '../../src/ocr/pipeline'
 
@@ -30,12 +33,14 @@ class FakeChild extends EventEmitter {
   }
 }
 
+let userData = join(tmpdir(), 'ocr-host-unused')
 const children: FakeChild[] = []
 const forkCalls: { modulePath: string; args?: string[]; opts?: Record<string, unknown> }[] = []
 
 vi.mock('electron', () => ({
   BrowserWindow: class {},
-  app: { getAppPath: () => process.cwd() },
+  // userData is a temporary folder (see the model test), never this machine's.
+  app: { getAppPath: () => process.cwd(), getPath: () => userData },
   utilityProcess: {
     fork: (modulePath: string, args?: string[], opts?: Record<string, unknown>) => {
       forkCalls.push({ modulePath, args, opts })
@@ -255,5 +260,23 @@ describe('runOcr — cancellation', () => {
     await pending
 
     expect(removed).toHaveBeenCalledWith('abort', expect.any(Function))
+  })
+})
+
+describe('runOcr — which model', () => {
+  it('tells the child to read with a best model when that is what is installed', async () => {
+    userData = mkdtempSync(join(tmpdir(), 'ocr-host-'))
+    try {
+      mkdirSync(join(userData, 'ocr'))
+      writeFileSync(join(userData, 'ocr', 'deu.best.traineddata'), 'model')
+      const { runOcr } = await host()
+      const pending = runOcr('image', Buffer.from('PNG'), undefined, 'deu')
+      const child = await nextChild()
+      expect(child.posted[0]).toMatchObject({ language: 'deu', set: 'best', gzip: false, langPath: join(userData, 'ocr') })
+      child.emit('message', { type: 'done', pages: PAGE_A })
+      await expect(pending).resolves.toEqual(PAGE_A)
+    } finally {
+      rmSync(userData, { recursive: true, force: true })
+    }
   })
 })

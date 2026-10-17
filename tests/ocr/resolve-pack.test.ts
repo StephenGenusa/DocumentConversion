@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { installedLanguages, resolvePack } from '../../src/ocr/resolve-pack'
+import { installedLanguages, resolveLanguage, resolvePack } from '../../src/ocr/resolve-pack'
 
 const on = (...paths: string[]) => (p: string) => paths.includes(p)
 const base = { bundledDir: '/app/ocr', userDir: '/user/ocr', set: 'fast' as const }
@@ -42,7 +42,65 @@ describe('resolvePack', () => {
   })
 })
 
+describe('resolveLanguage (which model OCR reads with)', () => {
+  const dirs = { bundledDir: '/app/ocr', userDir: '/user/ocr' }
+
+  it('uses the fast model the app downloads', () => {
+    expect(resolveLanguage({ ...dirs, language: 'deu', exists: on('/user/ocr/deu.traineddata') })).toEqual({
+      dir: '/user/ocr',
+      file: 'deu.traineddata',
+      source: 'downloaded',
+      set: 'fast',
+    })
+  })
+
+  it('uses a best model that is the only one there', () => {
+    expect(resolveLanguage({ ...dirs, language: 'deu', exists: on('/user/ocr/deu.best.traineddata') })).toEqual({
+      dir: '/user/ocr',
+      file: 'deu.best.traineddata',
+      source: 'downloaded',
+      set: 'best',
+    })
+  })
+
+  it('prefers best over fast when both are downloaded, since the app never fetches best itself', () => {
+    const exists = on('/user/ocr/deu.traineddata', '/user/ocr/deu.best.traineddata')
+    expect(resolveLanguage({ ...dirs, language: 'deu', exists })?.set).toBe('best')
+  })
+
+  it('still lets nothing in the writable directory shadow the bundled pack', () => {
+    const exists = on('/app/ocr/eng.traineddata.gz', '/user/ocr/eng.best.traineddata')
+    expect(resolveLanguage({ ...dirs, language: 'eng', exists })).toEqual({
+      dir: '/app/ocr',
+      file: 'eng.traineddata.gz',
+      source: 'bundled',
+      set: 'fast',
+    })
+  })
+
+  it('finds a gzipped best model too', () => {
+    const exists = on('/user/ocr/deu.best.traineddata.gz')
+    expect(resolveLanguage({ ...dirs, language: 'deu', exists })?.file).toBe('deu.best.traineddata.gz')
+  })
+
+  it('reports nothing when neither model is there', () => {
+    expect(resolveLanguage({ ...dirs, language: 'deu', exists: () => false })).toBeNull()
+  })
+})
+
 describe('installedLanguages', () => {
+  it('counts a language installed only as the best model', () => {
+    const list = installedLanguages(['eng', 'deu', 'fra'], {
+      bundledDir: '/app/ocr',
+      userDir: '/user/ocr',
+      exists: on('/app/ocr/eng.traineddata.gz', '/user/ocr/deu.best.traineddata'),
+    })
+    expect(list).toEqual([
+      { code: 'eng', source: 'bundled' },
+      { code: 'deu', source: 'downloaded' },
+    ])
+  })
+
   it('lists what is actually present, with where it came from', () => {
     const list = installedLanguages(['eng', 'deu', 'jpn'], {
       ...base,
