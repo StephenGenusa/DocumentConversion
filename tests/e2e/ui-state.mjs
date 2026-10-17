@@ -1202,7 +1202,7 @@ try {
   await waitFor(`innerWidth === 560`, 'the window to be 560 wide')
   await openFromGear()
   const narrow = []
-  for (const name of ['Pictures', 'Web', 'Formulas & diagrams', 'Code', 'PDF', 'Reading', 'OCR']) {
+  for (const name of ['Pictures', 'Web', 'Formulas & diagrams', 'Code', 'Pages', 'Reading', 'OCR']) {
     await openTab(name)
     narrow.push(
       await inDialog(
@@ -1223,7 +1223,7 @@ try {
   // A change in the dialog is saved at once; the toolbar, left alone, follows.
   await openFromGear()
   await clickRadio('PNG (exact)')
-  await openTab('PDF')
+  await openTab('Pages')
   await setInDialog('pdf.pageSize', 'Legal')
   check('the dialog saves each change to the file', saved().pictures?.format === 'png' && saved().pdf?.pageSize === 'Legal', JSON.stringify(saved()))
   await closeDialog()
@@ -1231,8 +1231,11 @@ try {
   // A toolbar change is this session's: not saved, and kept while its control is hidden.
   await choose('Page', 'Tabloid')
   check('a toolbar change is not saved', saved().pdf?.pageSize === 'Legal', JSON.stringify(saved()))
+  // Word has the page size too (owner, 2026-10-17): the same session choice, without Zoom.
   await click('Word')
-  check('the page size is not offered for Word', (await choice('Page')) === null, 'shown for Word')
+  check('Word offers the page size, the same session choice as PDF', (await choice('Page'))?.value === 'Tabloid' && (await choice('Zoom')) === null, JSON.stringify(await choice('Page')))
+  await click('Markdown')
+  check('the page size is not offered for Markdown', (await choice('Page')) === null, 'shown for Markdown')
   await click('PDF')
   check('a hidden toolbar control keeps its session value', (await choice('Page'))?.value === 'Tabloid', JSON.stringify(await choice('Page')))
   // Orientation starts at Automatic (orientation.ts) and has no setting: a toolbar change is this session's.
@@ -1328,7 +1331,7 @@ try {
   await waitFor(dialogOpen, 'the Settings dialog to open after a restart')
   await waitFor(`!!document.querySelector('dialog.settings input[type=radio]')`, 'the dialog to show the settings')
   const pictures = await inDialog(`d.querySelector('input[type=radio]:checked')?.value`)
-  await openTab('PDF')
+  await openTab('Pages')
   const pageSetting = await inDialog(`d.querySelector('select[data-setting="pdf.pageSize"]').value`)
   check('a change in the dialog survives a restart', pictures === 'png' && pageSetting === 'Legal', JSON.stringify({ pictures, pageSetting }))
   await closeDialog()

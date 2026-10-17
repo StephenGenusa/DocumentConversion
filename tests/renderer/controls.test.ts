@@ -25,14 +25,14 @@ describe('output controls', () => {
     for (const t of TARGET_FORMATS) expect(showsOutput('pdfOptions', t, [doc]), t).toBe(t === 'pdf')
   })
 
-  it('shows the orientation for pdf and for Word, which has it on its own', () => {
-    for (const t of TARGET_FORMATS) expect(showsOutput('orientation', t, [doc]), t).toBe(t === 'pdf' || t === 'docx')
+  it('shows the page (size and orientation) for pdf and for Word, which has it on its own', () => {
+    for (const t of TARGET_FORMATS) expect(showsOutput('page', t, [doc]), t).toBe(t === 'pdf' || t === 'docx')
   })
 
-  it('sends Word the orientation alone', () => {
-    const values = { pdf: { scale: 1.2, pageSize: 'A4', landscape: true as boolean | 'auto' }, slides: { splitOn: 'h2' as const } }
-    expect(appliedOptions('docx', [doc], values)).toEqual({ pdf: { landscape: true } })
-    expect(appliedOptions('docx', [doc], { ...values, pdf: { ...values.pdf, landscape: 'auto' } })).toEqual({ pdf: { landscape: 'auto' } })
+  it('sends Word the page size and orientation alone', () => {
+    const values = { pdf: { scale: 1.2, pageSize: 'A4', landscape: true as boolean | 'auto', headerFooter: true }, slides: { splitOn: 'h2' as const } }
+    expect(appliedOptions('docx', [doc], values)).toEqual({ pdf: { pageSize: 'A4', landscape: true } })
+    expect(appliedOptions('docx', [doc], { ...values, pdf: { ...values.pdf, landscape: 'auto' } })).toEqual({ pdf: { pageSize: 'A4', landscape: 'auto' } })
     expect(appliedOptions('pdf', [doc], values)).toEqual({ pdf: values.pdf })
     expect(appliedOptions('html', [doc], values)).toEqual({})
   })

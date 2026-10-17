@@ -104,6 +104,11 @@ describe('cliConvertOptions: a settings file', () => {
     expect(turnedOff.options.web.allowLocalNetwork).toBe(false)
   })
 
+  it('a page size, flag or file, is a Word file\'s page too', () => {
+    expect(options(DEFAULT_SETTINGS, ['a.md', '--to', 'docx', '--page', 'A4']).options.pdf.pageSize).toBe('A4')
+    expect(options(file({ pdf: { pageSize: 'Legal' } }), ['a.md', '--to', 'docx']).options.pdf.pageSize).toBe('Legal')
+  })
+
   it('--fetch and --code-color turn back on what the file turned off', () => {
     const { options: o } = options(saved, ['a.md', '--to', 'pdf', '--fetch', '--code-color'])
     expect(o.web).toEqual({ fetchPictures: true, allowLocalNetwork: true })

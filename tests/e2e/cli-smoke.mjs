@@ -589,6 +589,20 @@ if (existsSync(join(work, 'lease.docx')) && (readFileSync(join(work, 'lease.docx
     failures++
     console.log(`FAIL  lease-portrait.docx pages are ${await wordShapes(join(work, 'lease-portrait.docx'))}, not PPP`)
   }
+  // The Page setting is Word's paper too (owner, 2026-10-17): A4 (210 x 297 mm, in twips) every section.
+  run('tiff->docx --page A4: every section on A4', [lease, '--to', 'docx', '--page', 'A4', '--out', join(work, 'lease-a4.docx')], {
+    expectCode: 0,
+    expectFiles: [join(work, 'lease-a4.docx')],
+  })
+  if (existsSync(join(work, 'lease-a4.docx'))) {
+    const xml = await (await JSZip.loadAsync(readFileSync(join(work, 'lease-a4.docx')))).file('word/document.xml').async('string')
+    const sizes = [...xml.matchAll(/<w:pgSz w:w="(\d+)" w:h="(\d+)"/g)].map((m) => [m[1], m[2]].sort().join('x')).join(' ')
+    const a4 = [210, 297].map((mm) => String(Math.round((mm / 25.4) * 1440))).sort().join('x')
+    if (sizes !== [a4, a4, a4].join(' ')) {
+      failures++
+      console.log(`FAIL  lease-a4.docx sections are ${sizes}, not A4 three times`)
+    }
+  }
 }
 // A picture named as text is read by its bytes, and the command line says so (owner, 2026-10-17).
 writeFileSync(join(work, 'lease-scan.txt'), readFileSync(lease))

@@ -63,7 +63,7 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--diagrams <svg|png>]  diagrams sharp (svg, default) or as images (png): pdf, html, revealjs, epub, azw4
   [--table N]           csv/json target: extract only table N
   [--scale X]           pdf zoom factor 0.1-2.0 (default 0.9)
-  [--page <size>]       pdf page size (Letter, A4, Legal, A3, Tabloid)
+  [--page <size>]       pdf and docx page size (Letter, A4, Legal, A3, Tabloid)
   [--orientation <auto|portrait|landscape>]  pdf and docx page orientation: auto (default) turns the
                         page for wide pictures and mostly-wide tables; portrait or landscape for every page
   [--landscape]         the same as --orientation landscape
@@ -117,7 +117,8 @@ export const FLAG_SCOPES: FlagScope[] = [
   { flag: '--table', targets: ['csv', 'json'], strict: false },
   { flag: '--split', targets: ['revealjs'], strict: false },
   { flag: '--scale', targets: ['pdf'], strict: false },
-  { flag: '--page', targets: ['pdf'], strict: false },
+  // The paper is Word's too (writers/docx.ts wordPages).
+  { flag: '--page', targets: ['pdf', 'docx'], strict: false },
   { flag: '--landscape', targets: ['pdf', 'docx'], strict: false },
   { flag: '--header-footer', targets: ['pdf'], strict: false },
   // Flags from 1.4 on are strict.

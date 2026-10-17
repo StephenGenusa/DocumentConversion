@@ -63,6 +63,7 @@ export function targetList(targets: readonly TargetFormat[]): string {
 const PICTURE_TARGETS: TargetFormat[] = ['html', 'revealjs', 'pdf', 'azw4', 'epub', 'azw3', 'md', 'docx']
 const DRAWING_TARGETS: TargetFormat[] = ['pdf', 'html', 'revealjs', 'epub', 'azw4']
 const CODE_TARGETS: TargetFormat[] = ['pdf', 'html', 'revealjs', 'epub', 'azw3', 'azw4', 'docx']
+const PAGE_TARGETS: TargetFormat[] = ['pdf', 'docx']
 
 interface Choice {
   value: string | number
@@ -193,8 +194,10 @@ export const SETTINGS_PAGES: SettingsPage[] = [
     ],
   },
   {
-    id: 'pdf',
-    label: 'PDF',
+    // Pages, not PDF: the page size is Word's too. The settings keep their
+    // `pdf.` names, so a settings file written before reads the same.
+    id: 'pages',
+    label: 'Pages',
     section: 'pdf',
     settings: [
       {
@@ -202,8 +205,8 @@ export const SETTINGS_PAGES: SettingsPage[] = [
         title: 'Page size',
         kind: 'select',
         choices: () => PDF_PAGE_SIZES.map((s) => ({ value: s, label: s })),
-        help: 'The page size new PDFs start with. You can still change it on the conversion screen.',
-        affects: 'PDF',
+        help: 'The paper new PDFs and Word files start with. You can still change it on the conversion screen.',
+        affects: targetList(PAGE_TARGETS),
       },
       {
         key: 'pdf.scale',
@@ -211,7 +214,7 @@ export const SETTINGS_PAGES: SettingsPage[] = [
         kind: 'select',
         // A saved zoom off the toolbar's steps (any from 10% to 200% is valid) is listed too.
         choices: (value) => zoomLevels(value as number).map((z) => ({ value: z, label: percent(z) })),
-        help: 'How large the content is printed on the page. You can still change it on the conversion screen.',
+        help: 'How large the content is printed on a PDF page. You can still change it on the conversion screen.',
         affects: 'PDF',
       },
       {

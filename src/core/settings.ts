@@ -33,7 +33,9 @@ export interface Settings {
   /** Code blocks colored by language in the outputs (not the editor). */
   code: { color: boolean }
   /**
-   * What a new PDF starts with. Orientation has no setting: Automatic
+   * What a new PDF starts with; the page size is a new Word file's too
+   * (Settings → Pages; the key stays `pdf` so older files read the same).
+   * Orientation has no setting: Automatic
    * (orientation.ts) is the right start for everyone, and Portrait or
    * Landscape is a choice for one document, made on the toolbar.
    */

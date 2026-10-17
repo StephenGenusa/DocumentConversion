@@ -79,25 +79,40 @@ export function OutputPicker({
 }): React.JSX.Element {
   const copyable = !copyHidden && isClipboardTarget(target)
   const isAllowed = (f: TargetFormat): boolean => !allowed || allowed.includes(f)
-  // Shown with the PDF's page options, and on its own for Word (controls.ts).
-  const orientation = (
-    <label>
-      Orientation
-      <select
-        value={pdfOptions.landscape === true ? 'landscape' : pdfOptions.landscape === false ? 'portrait' : 'auto'}
-        title="Automatic turns the page for a wide picture or a document of wide tables"
-        onChange={(e) =>
-          onPdfOptionsChange({
-            ...pdfOptions,
-            landscape: e.target.value === 'auto' ? 'auto' : e.target.value === 'landscape',
-          })
-        }
-      >
-        <option value="auto">Automatic</option>
-        <option value="portrait">Portrait</option>
-        <option value="landscape">Landscape</option>
-      </select>
-    </label>
+  // The page: shown with the PDF's other options, and on its own for Word (controls.ts).
+  const page = (
+    <>
+      <label>
+        Page
+        <select
+          value={pdfOptions.pageSize ?? 'Letter'}
+          onChange={(e) => onPdfOptionsChange({ ...pdfOptions, pageSize: e.target.value as PdfPageSize })}
+        >
+          {PAGE_SIZES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Orientation
+        <select
+          value={pdfOptions.landscape === true ? 'landscape' : pdfOptions.landscape === false ? 'portrait' : 'auto'}
+          title="Automatic turns the page for a wide picture or a document of wide tables"
+          onChange={(e) =>
+            onPdfOptionsChange({
+              ...pdfOptions,
+              landscape: e.target.value === 'auto' ? 'auto' : e.target.value === 'landscape',
+            })
+          }
+        >
+          <option value="auto">Automatic</option>
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select>
+      </label>
+    </>
   )
   return (
     <div className="card">
@@ -142,8 +157,8 @@ export function OutputPicker({
           </span>
         </div>
       )}
-      {!showsOutput('pdfOptions', target, inputs) && showsOutput('orientation', target, inputs) && (
-        <div className="pdf-options">{orientation}</div>
+      {!showsOutput('pdfOptions', target, inputs) && showsOutput('page', target, inputs) && (
+        <div className="pdf-options">{page}</div>
       )}
       {showsOutput('pdfOptions', target, inputs) && (
         <div className="pdf-options">
@@ -161,20 +176,7 @@ export function OutputPicker({
               ))}
             </select>
           </label>
-          <label>
-            Page
-            <select
-              value={pdfOptions.pageSize ?? 'Letter'}
-              onChange={(e) => onPdfOptionsChange({ ...pdfOptions, pageSize: e.target.value as PdfPageSize })}
-            >
-              {PAGE_SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          {orientation}
+          {page}
           <label>
             <input
               type="checkbox"

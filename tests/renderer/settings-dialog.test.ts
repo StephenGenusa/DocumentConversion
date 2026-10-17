@@ -100,7 +100,7 @@ describe('the Settings dialog', () => {
     expect(dialog().open).toBe(true)
     const title = document.getElementById(dialog().getAttribute('aria-labelledby')!)
     expect(title?.textContent).toBe('Settings')
-    expect(tabs().map((t) => t.textContent)).toEqual(['Pictures', 'Web', 'Formulas & diagrams', 'Code', 'PDF', 'Reading', 'OCR'])
+    expect(tabs().map((t) => t.textContent)).toEqual(['Pictures', 'Web', 'Formulas & diagrams', 'Code', 'Pages', 'Reading', 'OCR'])
     expect(host.querySelector('[role="tablist"]')?.getAttribute('aria-label')).toBe('Settings sections')
     // One tab stop: the selected tab; the panel is labeled by it.
     expect(tabs().map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1, -1, -1])
@@ -165,7 +165,7 @@ describe('the Settings dialog', () => {
     expect((labeled('PNG') as HTMLInputElement).checked).toBe(true)
     expect(host.querySelector('[role="status"]')?.textContent).toBe('Saved')
 
-    act(() => tab('PDF').click())
+    act(() => tab('Pages').click())
     const page = labeled('Page size') as HTMLSelectElement
     act(() => {
       page.value = 'A4'
@@ -178,7 +178,7 @@ describe('the Settings dialog', () => {
   it('shows a saved zoom that is off the steps', async () => {
     saved = { ...saved, pdf: { ...saved.pdf, scale: 0.8 } }
     await mount()
-    act(() => tab('PDF').click())
+    act(() => tab('Pages').click())
     const zoom = labeled('Zoom') as HTMLSelectElement
     expect(zoom.value).toBe('0.8')
     expect(zoom.selectedOptions[0].textContent).toBe('80%')
@@ -443,5 +443,9 @@ describe('the Affects lines', () => {
     expect(affects['pictures.format']).toBe(targetList(PICTURE_TARGET_FORMATS))
     expect(affects['rendered.format']).toBe(targetList([...SVG_TARGETS]))
     expect(affects['code.color']).toBe(targetList(CODE_COLOR_TARGETS))
+    // The page size is Word's page too (writers/docx.ts wordPages); zoom and the header and footer are the PDF's.
+    expect(affects['pdf.pageSize']).toBe('PDF, Word')
+    expect(affects['pdf.scale']).toBe('PDF')
+    expect(affects['pdf.headerFooter']).toBe('PDF')
   })
 })

@@ -5,7 +5,7 @@ import JSZip from 'jszip'
 import { createConverter } from '../../src/core/convert'
 import { writeDocx, wordPages } from '../../src/core/writers/docx'
 import { encodePng } from '../../src/core/metafile/png'
-import type { ConvertOptions, PdfLandscape } from '../../src/core/types'
+import type { ConvertOptions, PdfLandscape, PdfPageSize } from '../../src/core/types'
 
 // Word's pages: Word's own 1-inch margins, and the PDF's Automatic orientation
 // (orientation.ts), a section a picture for a document of pictures a page.
@@ -21,7 +21,7 @@ async function documentXml(docx: Buffer): Promise<string> {
 const W = 8.5 * 1440
 const H = 11 * 1440
 
-const opts = (landscape: PdfLandscape): ConvertOptions => ({ pdf: { scale: 1, pageSize: 'Letter', landscape, headerFooter: false } })
+const opts = (landscape: PdfLandscape, pageSize: PdfPageSize = 'Letter'): ConvertOptions => ({ pdf: { scale: 1, pageSize, landscape, headerFooter: false } })
 
 /** Each section's page, in order: 'P' or 'L' by its w:pgSz, with its size. */
 function sections(xml: string): Array<{ shape: 'P' | 'L'; w: number; h: number; orient?: string }> {
@@ -93,6 +93,58 @@ describe('Word page orientation', () => {
   it('a wide drawing (the EMF floor plan) is a landscape page', async () => {
     const r = await conv.convert({ bytes: corpus('reading-room-floor-plan.emf'), filename: 'plan.emf' }, 'metafile', 'docx', opts('auto'))
     expect(sections(await documentXml(r.parts[0].bytes)).map((s) => s.shape)).toEqual(['L'])
+  })
+})
+
+describe('Word page size', () => {
+  // The Page setting (Settings → Pages, the toolbar) is Word's too: twips, portrait.
+  const inch = (n: number): number => n * 1440
+  const mm = (n: number): number => Math.round((n / 25.4) * 1440)
+  const sizes: Array<[PdfPageSize, number, number]> = [
+    ['Letter', inch(8.5), inch(11)],
+    ['A4', mm(210), mm(297)],
+    ['Legal', inch(8.5), inch(14)],
+    ['A3', mm(297), mm(420)],
+    ['Tabloid', inch(11), inch(17)],
+  ]
+
+  it('is the page asked for, portrait or turned', async () => {
+    for (const [size, w, h] of sizes) {
+      expect(sections(await documentXml(await writeDocx({ html: '<p>Hello</p>' }, opts(false, size)))), size).toEqual([{ shape: 'P', w, h, orient: 'portrait' }])
+      expect(sections(await documentXml(await writeDocx({ html: '<p>Hello</p>' }, opts(true, size)))), size).toEqual([{ shape: 'L', w: h, h: w, orient: 'landscape' }])
+    }
+  })
+
+  it('is Letter when none is given, or when the page is in inches (the Kindle\'s)', async () => {
+    expect(sections(await documentXml(await writeDocx({ html: '<p>Hello</p>' })))[0]).toMatchObject({ w: W, h: H })
+    const inches: ConvertOptions = { pdf: { scale: 1, pageSize: { width: 3.6, height: 4.8 }, landscape: false, headerFooter: false } }
+    expect(sections(await documentXml(await writeDocx({ html: '<p>Hello</p>' }, inches)))[0]).toMatchObject({ w: W, h: H })
+  })
+
+  it('is every section\'s, for a fax of pictures a page', async () => {
+    const r = await conv.convert({ bytes: corpus('reading-room-lease.tiff'), filename: 'lease.tiff' }, 'image', 'docx', opts('auto', 'A4'))
+    // A4 in twips: 210 by 297 millimeters.
+    const [w, h] = [Math.round((210 / 25.4) * 1440), Math.round((297 / 25.4) * 1440)]
+    expect(sections(await documentXml(r.parts[0].bytes))).toEqual([
+      { shape: 'P', w, h, orient: 'portrait' },
+      { shape: 'L', w: h, h: w, orient: 'landscape' },
+      { shape: 'P', w, h, orient: 'portrait' },
+    ])
+  })
+
+  it('decides Automatic on the page asked for: wide tables that need Letter turned fit A3 upright', async () => {
+    const row = (cell: string): string => `<tr>${Array.from({ length: 11 }, (_, i) => `<td>${cell} ${i} value</td>`).join('')}</tr>`
+    const html = `<table><thead>${row('Heading')}</thead><tbody>${Array.from({ length: 12 }, () => row('Some')).join('')}</tbody></table>`
+    expect(wordPages(html, 'auto', 'Letter').landscape).toBe(true)
+    expect(wordPages(html, 'auto', 'A3').landscape).toBe(false)
+  })
+
+  it('narrows a table sized by content to the page\'s text width (A4: 8.27 inches less 2)', async () => {
+    const html = '<table><tr><td>' + 'word '.repeat(200) + '</td><td>short</td></tr></table>'
+    const xml = await documentXml(await writeDocx({ html }, opts(false, 'A4')))
+    const widths = [...xml.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((m) => Number(m[1]))
+    expect(widths.length).toBeGreaterThan(0)
+    expect(widths.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(Math.round((210 / 25.4) * 1440) - 2 * 1440)
   })
 })
 

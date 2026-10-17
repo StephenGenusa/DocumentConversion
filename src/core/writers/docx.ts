@@ -11,7 +11,7 @@ import { ownRows } from '../table-grid'
 import { footnotesForOutput } from '../footnotes'
 import hljs, { highlightedRuns } from '../hljs'
 import { highlightMarkup } from '../code-markup'
-import type { ConvertOptions, HubDocument, PdfLandscape } from '../types'
+import type { ConvertOptions, HubDocument, PdfLandscape, PdfPageInches, PdfPageSize } from '../types'
 import { chooseOrientation } from '../orientation'
 import { picturePages } from '../lone-picture'
 import { DOCX_OWN_LINE } from '../draw-blocks'
@@ -811,11 +811,34 @@ function contentWidths(inner: string, textWidth: number): string {
  */
 export const WORD_MARGINS = { top: 1440, right: 1440, bottom: 1440, left: 1440, header: 720, footer: 720, gutter: 0 } as const
 
-/** The page html-to-docx writes, and Word's own in the US: Letter, portrait, in twips. */
-const LETTER_TWIPS = { width: 8.5 * 1440, height: 11 * 1440 } as const
+/**
+ * The Page setting's paper (Settings → Pages, the toolbar, --page) in twips,
+ * portrait: the PDF's sizes, which Word's page takes too. Letter is Word's
+ * own in the US, and the page when none is asked for or the page is given
+ * in inches (the Kindle's, which is not a Word page).
+ */
+export const WORD_PAGE_TWIPS: Record<PdfPageSize, { width: number; height: number }> = {
+  Letter: inches(8.5, 11),
+  A4: millimeters(210, 297),
+  Legal: inches(8.5, 14),
+  A3: millimeters(297, 420),
+  Tabloid: inches(11, 17),
+}
 
-/** How a Word file's pages are turned: the document's orientation, and for pictures a page, each page's. */
+/** A page given in inches, in twips (1,440 an inch). */
+function inches(width: number, height: number): { width: number; height: number } {
+  return { width: width * 1440, height: height * 1440 }
+}
+
+/** A page given in millimeters, in whole twips, as Word writes an ISO page. */
+function millimeters(width: number, height: number): { width: number; height: number } {
+  return { width: Math.round((width / 25.4) * 1440), height: Math.round((height / 25.4) * 1440) }
+}
+
+/** How a Word file's pages are laid: the paper, the document's orientation, and for pictures a page, each page's. */
 export interface WordPages {
+  /** The paper every section is on. */
+  size: PdfPageSize
   /** The document's orientation (html-to-docx's section, the one every page has unless `pages` says otherwise). */
   landscape: boolean
   /** A document of pictures a page (a TIFF of several pages): each picture's page, landscape or not, in order. */
@@ -823,27 +846,29 @@ export interface WordPages {
 }
 
 /**
- * The PDF's Automatic orientation (orientation.ts), for Word: Portrait and
- * Landscape exactly, Automatic from the document (a wide picture, a document
- * mostly of wide tables), on Letter paper, Word's page. A document of
- * several pictures, a picture a page as the PDF prints it, is given one
- * section a picture (pictureSections), so each starts a page of its own,
- * turned as its picture is.
+ * The PDF's page for Word: its paper (Letter unless another is asked for)
+ * and its Automatic orientation (orientation.ts), Portrait and Landscape
+ * exactly, Automatic from the document (a wide picture, a document mostly
+ * of wide tables, measured on this paper). A document of several pictures,
+ * a picture a page as the PDF prints it, is given one section a picture
+ * (pictureSections), so each starts a page of its own, turned as its
+ * picture is.
  */
-export function wordPages(html: string, landscape: PdfLandscape = 'auto'): WordPages {
-  const chosen = chooseOrientation(html, landscape, 'Letter')
+export function wordPages(html: string, landscape: PdfLandscape = 'auto', pageSize?: PdfPageSize | PdfPageInches): WordPages {
+  const size: PdfPageSize = typeof pageSize === 'string' && pageSize in WORD_PAGE_TWIPS ? pageSize : 'Letter'
+  const chosen = chooseOrientation(html, landscape, size)
   const pictures = picturePages(html)
   if (pictures && pictures.sizes.length > 1) {
-    return { landscape: chosen.landscape, pages: chosen.pages ?? pictures.sizes.map(() => chosen.landscape) }
+    return { size, landscape: chosen.landscape, pages: chosen.pages ?? pictures.sizes.map(() => chosen.landscape) }
   }
-  return { landscape: chosen.landscape }
+  return { size, landscape: chosen.landscape }
 }
 
-/** A section's properties (as the body's, `section`) with the page turned as asked. */
-function turnedSection(section: string, landscape: boolean): string {
-  const { width, height } = LETTER_TWIPS
-  const size = landscape ? `<w:pgSz w:w="${height}" w:h="${width}" w:orient="landscape"/>` : `<w:pgSz w:w="${width}" w:h="${height}" w:orient="portrait"/>`
-  return section.replace(/<w:pgSz\b[^>]*\/>/, size)
+/** A section's properties (as the body's, `section`) with the page `size`, turned as asked. */
+function turnedSection(section: string, size: PdfPageSize, landscape: boolean): string {
+  const { width, height } = WORD_PAGE_TWIPS[size]
+  const pgSz = landscape ? `<w:pgSz w:w="${height}" w:h="${width}" w:orient="landscape"/>` : `<w:pgSz w:w="${width}" w:h="${height}" w:orient="portrait"/>`
+  return section.replace(/<w:pgSz\b[^>]*\/>/, pgSz)
 }
 
 /**
@@ -854,7 +879,7 @@ function turnedSection(section: string, landscape: boolean): string {
  * picture is a page of its own. Left as it is when the pictures written
  * are not the pictures counted.
  */
-function pictureSections(xml: string, pages: boolean[] | undefined): string {
+function pictureSections(xml: string, { size, pages }: WordPages): string {
   if (!pages) return xml
   const body = /<w:sectPr\b(?:(?!<w:sectPr\b)[\s\S])*?<\/w:sectPr>(?=\s*<\/w:body>)/.exec(xml)
   if (!body) return xml
@@ -863,12 +888,12 @@ function pictureSections(xml: string, pages: boolean[] | undefined): string {
   let out = ''
   let at = 0
   paragraphs.slice(0, -1).forEach((m, i) => {
-    const section = turnedSection(body[0], pages[i])
+    const section = turnedSection(body[0], size, pages[i])
     const p = m[0].includes('</w:pPr>') ? m[0].replace('</w:pPr>', `${section}</w:pPr>`) : m[0].replace('<w:p>', `<w:p><w:pPr>${section}</w:pPr>`)
     out += xml.slice(at, m.index) + p
     at = m.index + m[0].length
   })
-  out += xml.slice(at, body.index) + turnedSection(body[0], pages[pages.length - 1]) + xml.slice(body.index + body[0].length)
+  out += xml.slice(at, body.index) + turnedSection(body[0], size, pages[pages.length - 1]) + xml.slice(body.index + body[0].length)
   return out
 }
 
@@ -928,7 +953,7 @@ async function recompress(
   languages: string[] = [],
   bordered: CellBorders[] = [],
   tables: { layouts: TableLayout[]; byContent: boolean } = { layouts: [], byContent: false },
-  pages: WordPages = { landscape: false },
+  pages: WordPages = { size: 'Letter', landscape: false },
 ): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
@@ -940,7 +965,7 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(fitPictures(pictureSections(sizeTables(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), tables.layouts, tables.byContent), pages.pages))), languages))
+    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(fitPictures(pictureSections(sizeTables(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), tables.layouts, tables.byContent), pages))), languages))
     for (const name of ['word/styles.xml', 'word/numbering.xml']) {
       const part = zip.file(name)
       if (part) zip.file(name, schemaOrder(await part.async('string')))
@@ -2039,9 +2064,13 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
     },
     { target: 'docx' },
   )
-  // The page: Word's margins, turned as the PDF's would be (wordPages).
-  const pages = wordPages(doc.html, opts?.pdf?.landscape)
-  const result = await HTMLtoDOCX(html, null, { orientation: pages.landscape ? 'landscape' : 'portrait', margins: { ...WORD_MARGINS } })
+  // The page: the PDF's paper with Word's margins, turned as the PDF's would be (wordPages).
+  const pages = wordPages(doc.html, opts?.pdf?.landscape, opts?.pdf?.pageSize)
+  const result = await HTMLtoDOCX(html, null, {
+    orientation: pages.landscape ? 'landscape' : 'portrait',
+    pageSize: { ...WORD_PAGE_TWIPS[pages.size] },
+    margins: { ...WORD_MARGINS },
+  })
   // Columns sized by content where the PDF sizes them so: decided on the hub's HTML, as there.
   const tables = { layouts: tableLayouts(html), byContent: doc.html.includes('<table') && autoTables(doc.html) }
   return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages, bordered, tables, pages)

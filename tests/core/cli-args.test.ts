@@ -208,6 +208,15 @@ describe('--orientation', () => {
   })
 })
 
+/** --page: the paper of a pdf and, since the owner's decision (2026-10-17), a docx. */
+describe('--page', () => {
+  it('is for pdf and docx', () => {
+    expect(FLAG_SCOPES.find((s) => s.flag === '--page')?.targets).toEqual(['pdf', 'docx'])
+    expect(ok(['a.md', '--to', 'docx', '--page', 'a4']).page).toBe('A4')
+    expect(USAGE).toMatch(/--page <size>\]\s+pdf and docx page size/)
+  })
+})
+
 /** Spec B4: --diagrams <svg|png>, strict, for the outputs that take SVG. */
 describe('--diagrams', () => {
   it('takes svg or png', () => {

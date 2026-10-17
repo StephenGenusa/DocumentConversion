@@ -337,11 +337,12 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
 
 - **txt** — plain text.
 - **md** — Markdown with GitHub-style pipe tables.
-- **docx** — a Word document, on Word's own page: Letter with 1-inch margins.
+- **docx** — a Word document, on the page size you choose for pdf (Letter, A4,
+  Legal, A3, Tabloid; Letter by default) with Word's own 1-inch margins.
   Orientation is chosen as for pdf: Automatic unless you choose Portrait or
-  Landscape. A
-  document of pictures a page (a TIFF) gets a page, and a section, a picture,
-  each turned as its picture is. A picture larger than its page is made to fit.
+  Landscape. A document of pictures a page (a TIFF) gets a page, and a
+  section, a picture, each turned as its picture is and on the same paper. A
+  picture larger than its page is made to fit.
 - **pdf** — rendered by Chromium. Zoom 50–200% (90% by default), page size
   (Letter, A4, Legal, A3, Tabloid), orientation, and an optional header and
   footer with the title, date and page numbers. A horizontal rule (`---` in
@@ -582,7 +583,7 @@ says which outputs it affects.
 | Web | Allow pictures from your local network | on | Off, intranet addresses are refused too (pictures, and web pages opened from an address). Shown only while fetching is on |
 | Formulas & diagrams | Draw diagrams and formulas as | Sharp (SVG) | Or Image (PNG). Word and Kindle (AZW3) always get images |
 | Code | Color code by language | on | Off, code blocks are written plain black, for example for printing. The editor's colors stay either way |
-| PDF | Page size; zoom; header and footer | Letter; 90%; off | What a new PDF starts with. On first run, unless the system's region uses Letter paper (US, CA, MX or PH), the page size is saved as A4. Orientation has no setting: it starts at Automatic every time, and Portrait or Landscape is chosen on the conversion screen for the document at hand |
+| Pages | Page size; zoom; header and footer | Letter; 90%; off | What a new PDF starts with; the page size is a new Word file's too. On first run, unless the system's region uses Letter paper (US, CA, MX or PH), the page size is saved as A4. Orientation has no setting: it starts at Automatic every time, and Portrait or Landscape is chosen on the conversion screen for the document at hand |
 | Reading | Transcripts: show times | on | Subtitle and transcript paragraphs start with their time |
 | Reading | SQLite: include view results | off | Adds the rows each view returns; views are always listed in the schema |
 | OCR | Default language | English | The language OCR reads in. One that isn't installed is downloaded first, after showing its size |
@@ -633,6 +634,7 @@ checkout, run `npm run cli -- <args>`.
   `--no-clobber` refuses instead.
 - `--scale` must be between 0.1 and 2.0; a value outside that is rejected rather
   than clamped. The default is 0.9.
+- `--page` sets the paper of a pdf or a docx (Letter by default).
 - `--orientation` sets the PDF page's orientation. `auto`, the default,
   chooses as the app's Automatic does: landscape for a wide picture on its
   own (page by page for a TIFF) and for a document that is mostly wide
