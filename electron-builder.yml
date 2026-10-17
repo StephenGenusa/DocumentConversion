@@ -16,6 +16,12 @@ files:
   #
   # Name what the app needs; nothing else can leak in by omission.
   - 'out/**'
+  # Under out/ but not the app: out/e2e is the e2e matrix's own bundle of core
+  # (npm run build:e2e-core, loaded only by tests/e2e/matrix.cjs), and
+  # out/bundled-packages is the build's record of what each bundle inlined,
+  # read only by scripts/build-notices.mjs (its result is resources/notices).
+  - '!out/e2e/**'
+  - '!out/bundled-packages/**'
   - 'resources/**'
   - 'package.json'
   - 'node_modules/**'
