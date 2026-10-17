@@ -1297,7 +1297,10 @@ function flattenFormatting(source: string, colored: ColoredLook[] = []): string 
     const formatted = lookOf(node, look)
     const own = formatted && withOwnColor(node, formatted)
     const blockColor = COLORED_BLOCK.has(node.name) ? colorIn(node) : undefined
-    const inner = own ?? (blockColor ? { ...look, blockColor, color: undefined } : look)
+    // A link stays a link (html-to-docx makes the hyperlink); its own
+    // background goes to the text in it, which html-to-docx would drop.
+    const linkBackground = node.name === 'a' ? backgroundIn(node) : undefined
+    const inner = own ?? (blockColor ? { ...look, blockColor, color: undefined } : linkBackground ? { ...look, background: linkBackground } : look)
     let kids = node.children.flatMap((child) => restyle(child, inner))
     if (node.name === 'q') kids = [new Text('\u201C'), ...kids, new Text('\u201D')]
     if (own) return kids

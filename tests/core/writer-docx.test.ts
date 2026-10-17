@@ -738,3 +738,30 @@ describe('writeDocx keeps a background color on formatted text', () => {
     expect(await fontsOf(pre, 'alpha')).toEqual(['Courier'])
   })
 })
+
+/**
+ * A link's own background was lost: flattenFormatting carried a background
+ * only on formatting tags, and an <a> is not one.
+ */
+describe('writeDocx keeps a background color on a link', () => {
+  it('shades or highlights the link text, and it is still a link', async () => {
+    const html =
+      '<p>See <a href="https://example.com/a" style="background-color: #FFE0A0">alpha</a>, ' +
+      '<a href="https://example.com/b" style="background: yellow">beta</a> and <a href="https://example.com/c">gamma</a>.</p>'
+    expect(await fillsOf(html, 'alpha')).toEqual(['FFE0A0'])
+    expect(await highlightsOf(html, 'beta')).toEqual(['yellow'])
+    expect(await fillsOf(html, 'gamma')).toEqual([''])
+    expect(await highlightsOf(html, 'gamma')).toEqual([''])
+    const xml = await documentXml(html)
+    expect(xml.match(/<w:hyperlink\b/g)).toHaveLength(3)
+    expect(/<w:hyperlink\b(?:(?!<\/w:hyperlink>)[\s\S])*alpha/.test(xml)).toBe(true)
+  })
+
+  it('carries it into formatting inside the link, which keeps its own', async () => {
+    const html = '<p><a href="https://example.com/a" style="background-color: #E0E0FF">plain <strong>alpha</strong> <em style="background-color: #FFE0A0">beta</em></a></p>'
+    expect(await fillsOf(html, 'plain')).toEqual(['E0E0FF'])
+    expect(await fillsOf(html, 'alpha')).toEqual(['E0E0FF'])
+    expect(await formatsOf(html, 'alpha')).toEqual(['b+link'])
+    expect(await fillsOf(html, 'beta')).toEqual(['FFE0A0'])
+  })
+})
