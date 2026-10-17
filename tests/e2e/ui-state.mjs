@@ -521,6 +521,13 @@ try {
   await click('PDF')
   check('a Graphviz-only file offers "Diagrams and formulas" for PDF', (await choice('Diagrams and formulas')) !== null, 'not shown')
   await startOver()
+  // A file past the 2 MB the hint reads whole is scanned instead, so it offers the choice too.
+  const large = join(work, 'large-notes.md')
+  writeAt(large, 'The reading room opens at nine, and the quiet tables are upstairs.\n\n'.repeat(40_000) + '```mermaid\ngraph LR\n  A --> B\n```\n')
+  await dropFile(large, 'large-notes.md')
+  await click('PDF')
+  check('a 2.6 MB file with a diagram near its end, never opened, offers "Diagrams and formulas"', (await choice('Diagrams and formulas')) !== null, 'not shown')
+  await startOver()
 
   // Diagrams drawn in the editor (spec B11): edit one, see the live preview,
   // close it, and convert to the clipboard as HTML, where it is drawn too.

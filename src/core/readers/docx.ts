@@ -12,6 +12,7 @@ import {
 import type { HubDocument, ReadContext, SourceInput } from '../types'
 import { MATH_NAMESPACES, ommlLinearText, ommlToTex } from '../omml-tex'
 import { codeBookmarkLanguage } from '../code-bookmark'
+import { zipPartsMatch } from '../zip-scan'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode, type ParentNode } from 'domhandler'
 import render from 'dom-serializer'
@@ -1117,7 +1118,8 @@ export interface WordEquation {
 const MATH_PARTS = ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']
 
 /** Whether a part may hold an equation, under any prefix: a quick test before the real scan. */
-const mayHoldMath = (xml: string): boolean => /<(?:[\w-]+:)?oMath[\s/>P]/.test(xml)
+const MATH_TAG = /<(?:[\w-]+:)?oMath[\s/>P]/
+const mayHoldMath = (xml: string): boolean => MATH_TAG.test(xml)
 
 /**
  * The namespaces a part declares, by prefix ('' for the default namespace):
@@ -1204,10 +1206,15 @@ function safeLinear(fragment: string, namespaces: Record<string, string>): strin
 /**
  * Whether a Word file holds equations, without converting it: the add-time
  * features hint (src/core/features-hint.ts) for a docx. Only the three XML
- * parts are inflated, so this is cheap even for a file full of pictures.
- * Undefined when the bytes are not a readable package.
+ * parts are inflated, found through the zip's central directory and searched
+ * as they inflate (zip-scan.ts), so this is cheap whatever the file's size.
+ * A package that reader cannot take (ZIP64) is opened with JSZip instead, if
+ * there is time left before `deadline`. Undefined when the bytes are not a
+ * readable package, or time ran out.
  */
-export async function docxHasEquations(bytes: Buffer): Promise<boolean | undefined> {
+export async function docxHasEquations(bytes: Buffer, deadline = Infinity): Promise<boolean | undefined> {
+  const scanned = await zipPartsMatch(bytes, MATH_PARTS, MATH_TAG, deadline)
+  if (scanned !== undefined || performance.now() > deadline) return scanned
   try {
     const zip = await JSZip.loadAsync(bytes)
     for (const name of MATH_PARTS) {
