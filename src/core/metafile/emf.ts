@@ -19,7 +19,7 @@ import { axisAligned, compose, IDENTITY, TooLarge, type Matrix, type Rect } from
  * EMF records ([MS-EMF] 2.3), played into a Gdi device context. Each
  * record is read through a View bounded by its own size, so one that
  * claims more than it holds is skipped (ShortRecord), not read into its
- * neighbour; record sizes must be whole, at least 8 bytes, a multiple of
+ * neighbor; record sizes must be whole, at least 8 bytes, a multiple of
  * 4 and inside the file, and at most MAX_RECORDS are played. Records this
  * file does not draw are passed over.
  *
@@ -139,7 +139,7 @@ export interface EmfHeader {
   bounds: Rect
   /** The picture's frame, in 0.01 mm (inclusive). */
   frame: Rect
-  /** The reference device's pixels per millimetre. */
+  /** The reference device's pixels per millimeter. */
   pxPerMm: [number, number]
 }
 
@@ -150,7 +150,7 @@ export function readEmfHeader(file: View): EmfHeader | null {
   const box = (at: number): Rect => ({ l: file.i32(at), t: file.i32(at + 4), r: file.i32(at + 8), b: file.i32(at + 12) })
   const dev: [number, number] = [file.i32(72), file.i32(76)]
   let mm: [number, number] = [file.i32(80), file.i32(84)]
-  // Micrometres, when the header has them (its third extension), are the exact size.
+  // Micrometers, when the header has them (its third extension), are the exact size.
   if (size >= 108 && file.has(100, 8) && file.i32(100) > 0 && file.i32(104) > 0) mm = [file.i32(100) / 1000, file.i32(104) / 1000]
   const per = (d: number, m: number): number => (d > 0 && m > 0 && d / m > 0.01 && d / m < 1000 ? d / m : 96 / 25.4)
   return { bounds: box(8), frame: box(24), pxPerMm: [per(dev[0], mm[0]), per(dev[1], mm[1])] }

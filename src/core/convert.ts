@@ -97,7 +97,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       const hub = await (bound[source]?.read ?? getReader(source))(src, ctx)
       if (!hub.sourceName && src.filename) hub.sourceName = src.filename
       // The hub contract every writer relies on, applied where every reader's
-      // output passes. Most readers do not sanitise, and the docx and epub
+      // output passes. Most readers do not sanitize, and the docx and epub
       // writers emit XML, which refuses these characters outright.
       hub.html = stripXmlIllegal(hub.html)
       if (hub.title) hub.title = stripXmlIllegal(hub.title)
@@ -160,10 +160,10 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       const drawn = await drawBlocks(notesFree, target, drawCtx)
       // PNG copies of the document's SVG images for Word and Kindle (spec
       // D10), and for HTML that is to be pasted (FOR_PASTING).
-      const rasterised = await rasterizeSvgImages(drawn, target, drawCtx)
+      const rasterized = await rasterizeSvgImages(drawn, target, drawCtx)
       // Pictures the target cannot hold (a TIFF in a PDF, a WebP in a Kindle
       // book), converted, once, for every writer (pictures.ts).
-      const html = await targetPictures(rasterised, target, drawCtx)
+      const html = await targetPictures(rasterized, target, drawCtx)
       return await writers[target](html === hub.html ? hub : { ...hub, html }, opts)
     } catch (err) {
       if (err instanceof ConversionError) throw err

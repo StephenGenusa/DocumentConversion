@@ -270,7 +270,7 @@ export class EmfWriter {
     h.writeUInt32LE(0x464d4520, 32)
     h.writeUInt32LE(0x00010000, 36)
     h.writeUInt16LE(Math.max(2, this.handles), 48)
-    // A 96 px-an-inch reference device: 1920 by 1080 px over 508 by 285.75 mm (micrometres exact).
+    // A 96 px-an-inch reference device: 1920 by 1080 px over 508 by 285.75 mm (micrometers exact).
     h.writeInt32LE(1920, 64)
     h.writeInt32LE(1080, 68)
     h.writeInt32LE(508, 72)

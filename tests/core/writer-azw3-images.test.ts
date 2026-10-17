@@ -351,7 +351,7 @@ describe('AZW3 through the converter', () => {
     const conv = createConverter(pdf, { renderBlocks: render })
     const big = noisePng(1500, 1300)
     const kept = png(41, 31)
-    // Two TIFFs, one labelled as a PNG: the bytes say what a picture is.
+    // Two TIFFs, one labeled as a PNG: the bytes say what a picture is.
     const scan = tiffPicture(true)
     const page = Buffer.from(
       `<p>${imgTag('image/webp', webp())}${imgTag('image/bmp', bmp())}${imgTag('image/png', big)}${imgTag('image/png', kept)}` +

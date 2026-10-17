@@ -38,7 +38,7 @@ describe('readEpub', () => {
     expect(hub.html.indexOf('Chapter One')).toBeLessThan(hub.html.indexOf('Chapter Two'))
   })
 
-  it('honours a reordered spine', async () => {
+  it('honors a reordered spine', async () => {
     const hub = await readEpub({ bytes: await makeEpub({ spineOrder: ['ch2', 'ch1'] }) })
     expect(hub.html.indexOf('Chapter Two')).toBeLessThan(hub.html.indexOf('Chapter One'))
   })

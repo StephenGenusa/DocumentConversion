@@ -16,7 +16,7 @@ export interface TiffPage {
   index: number
   width: number
   height: number
-  /** Pixels per inch, when the file says (ResolutionUnit inch or centimetre). */
+  /** Pixels per inch, when the file says (ResolutionUnit inch or centimeter). */
   dpi?: { x: number; y: number }
 }
 
@@ -241,7 +241,7 @@ export function tiffSize(bytes: Buffer): PictureSize | null {
 
 /**
  * An EMF's size, from its header record (EMR_HEADER): rclFrame, the
- * picture's frame in hundredths of a millimetre, which is the size Word
+ * picture's frame in hundredths of a millimeter, which is the size Word
  * shows it at; rclBounds (device pixels) when the frame is empty.
  */
 export function emfSize(bytes: Buffer): PictureSize | null {

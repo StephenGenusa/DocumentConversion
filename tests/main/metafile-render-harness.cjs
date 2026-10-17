@@ -1,8 +1,8 @@
 /* eslint-disable */
 /**
- * Rasterises SVGs through the real render host inside Electron, for
+ * Rasterizes SVGs through the real render host inside Electron, for
  * tests/main/metafile-render.test.ts: the drawings the metafile code made,
- * as the conversion would rasterise them (kind `svg`, PNG at twice the size).
+ * as the conversion would rasterize them (kind `svg`, PNG at twice the size).
  *
  *   electron metafile-render-harness.cjs <bundled render-host.js> <resources/render> <input.json>
  *

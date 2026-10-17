@@ -204,7 +204,7 @@ function isTitlePlaceholder(shapeXml: string): boolean {
   return type === 'title' || type === 'ctrTitle'
 }
 
-/** A DrawingML table: <a:tbl> → rows of <a:tc>, honouring gridSpan/rowSpan. */
+/** A DrawingML table: <a:tbl> → rows of <a:tc>, honoring gridSpan/rowSpan. */
 function renderTable(tableXml: string): string | null {
   const rows: string[] = []
   let any = false

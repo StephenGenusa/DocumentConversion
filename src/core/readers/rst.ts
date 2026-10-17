@@ -529,7 +529,7 @@ function runSpans(line: string): Array<[number, number]> {
   return out
 }
 
-/** A column-span underline: one or more runs of '-'. Also every border, once normalised. */
+/** A column-span underline: one or more runs of '-'. Also every border, once normalized. */
 const SPAN_UNDERLINE = /^-[ -]*$/
 /** A rule drawn with '=': either the head/body separator or a stray border. */
 const EQUALS_RULE = /^=[ =]*=$/

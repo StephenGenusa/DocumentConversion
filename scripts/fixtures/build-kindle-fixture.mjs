@@ -8,7 +8,7 @@
  *                  in for a camera picture: the first picture, so the cover
  *   a WebP image   a format a Kindle does not show, converted on writing
  *   a diagram      a Mermaid flowchart, drawn as PNG for Kindle and Word
- *   an SVG image   the reading room plan, rasterised to PNG for Kindle and Word
+ *   an SVG image   the reading room plan, rasterized to PNG for Kindle and Word
  *
  * The pictures are generated, never committed by hand. Every word comes from
  * vocabulary.mjs (READING_ROOM).

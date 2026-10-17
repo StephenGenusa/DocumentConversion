@@ -93,7 +93,7 @@ describe('markdown math is passed through unaltered', () => {
     expect(html).toContain('$ pip install fbprophet')
   })
 
-  it('still emphasises normal prose', async () => {
+  it('still emphasizes normal prose', async () => {
     expect(await render('a _b_ c and **d**')).toContain('<em>b</em>')
   })
 

@@ -39,15 +39,15 @@ import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderReques
  *               closed (a stuck engine cannot be interrupted any other way);
  *               the next block opens a fresh one.
  *
- * Every SVG an engine returns is sanitised here (svg-sanitize.ts, spec B6)
- * before it is cached, rasterised or handed back. Arguments reach the page
+ * Every SVG an engine returns is sanitized here (svg-sanitize.ts, spec B6)
+ * before it is cached, rasterized or handed back. Arguments reach the page
  * only as JSON literals in executeJavaScript.
  */
 
 /**
  * Engine versions, part of every cache key. Keep in step with
  * scripts/build-render-assets.mjs. `svg` has no engine: an SVG image is only
- * rasterised by the page (spec D10); bump its version if that changes.
+ * rasterized by the page (spec D10); bump its version if that changes.
  */
 export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
   mermaid: '11.12.0',
@@ -130,7 +130,7 @@ export interface RenderHostOptions {
   partition?: string
   /** Every request the window makes, allowed or not (the host test's request log). */
   onRequest?: (url: string, allowed: boolean) => void
-  /** The raw answer from the page, before sanitising (tests: what a directive could change). */
+  /** The raw answer from the page, before sanitizing (tests: what a directive could change). */
   onDrawn?: (req: RenderRequest, raw: { svg: string; config?: Record<string, unknown>; mathjax?: Record<string, number> }) => void
 }
 
@@ -358,7 +358,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
     ]).finally(() => clearTimeout(timer))
   }
 
-  /** Draw one block in the page: the engine's SVG, sanitised, and for PNG rasterised. */
+  /** Draw one block in the page: the engine's SVG, sanitized, and for PNG rasterized. */
   async function draw(job: Job): Promise<{ result: RenderResult; cacheable: boolean }> {
     const { req } = job
     let w: BrowserWindow
@@ -434,7 +434,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
         return { result: mime === 'image/png' ? { png: data, width, height } : { jpeg: data, width, height }, cacheable: true }
       }
       if (req.kind === 'svg') {
-        // An SVG image (spec D10): no engine, only the rasteriser. Sanitised
+        // An SVG image (spec D10): no engine, only the rasterizer. Sanitized
         // here too, whatever core did, and sized from its own root.
         draws++
         const svg = sanitizeSvg(req.source)

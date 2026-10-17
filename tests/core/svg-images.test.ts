@@ -36,7 +36,7 @@ const decodedSrc = (html: string): string => {
   return decodeSvgDataUri(m[1])!
 }
 
-/** A rasteriser that answers every SVG with a PNG at its given size, except sources containing BROKEN. */
+/** A rasterizer that answers every SVG with a PNG at its given size, except sources containing BROKEN. */
 function fakeRenderer(): { render: RenderBlocks; calls: RenderRequest[][] } {
   const calls: RenderRequest[][] = []
   const render: RenderBlocks = async (requests) => {
@@ -81,7 +81,7 @@ describe('SVG detection (spec D10)', () => {
 
   it('does not take generic XML, or XML that merely holds an <svg> somewhere, as SVG', () => {
     for (const text of [
-      '<?xml version="1.0"?>\n<catalogue><item>Fiction</item></catalogue>',
+      '<?xml version="1.0"?>\n<catalog><item>Fiction</item></catalog>',
       '<?xml version="1.0"?>\n<root><svg xmlns="http://www.w3.org/2000/svg"/></root>',
       '<!-- <svg> --><note/>',
       '<svgfont/>',
@@ -207,7 +207,7 @@ describe('svgIntrinsicSize', () => {
 })
 
 describe('prepareSvgForRaster', () => {
-  it('sanitises, and sizes the root in px at the size the picture will be shown', () => {
+  it('sanitizes, and sizes the root in px at the size the picture will be shown', () => {
     const out = prepareSvgForRaster(SVG.replace('<rect', '<script>alert(1)</script><rect'), {})!
     expect(out).toMatchObject({ width: 200, height: 100 })
     expect(out.svg).not.toContain('script')
@@ -288,7 +288,7 @@ describe('sanitizeSvgImages (spec B6 for every SVG image a document carries)', (
 })
 
 describe('rasterizeSvgImages (spec D10): PNG copies of SVG images for Word and Kindle', () => {
-  it('rasterises for Word and Kindle (AZW3) only', () => {
+  it('rasterizes for Word and Kindle (AZW3) only', () => {
     for (const t of TARGET_FORMATS) expect(rasterizesSvgImages(t), t).toBe(t === 'docx' || t === 'azw3')
   })
 
@@ -403,7 +403,7 @@ describe('rasterizeSvgImages (spec D10): PNG copies of SVG images for Word and K
     expect(onAdvice).not.toHaveBeenCalled()
   })
 
-  it('one notice when the rasteriser is down, every picture its alt text', async () => {
+  it('one notice when the rasterizer is down, every picture its alt text', async () => {
     const onAdvice = vi.fn()
     const render: RenderBlocks = async () => {
       throw new Error('the render window could not start')
@@ -430,13 +430,13 @@ describe('Convert to clipboard: SVG images go as PNG, which Word and Outlook sho
     const { render, calls } = fakeRenderer()
     const conv = createConverter(pdf, { renderBlocks: render })
     const hub = await conv.read({ bytes: fixture('reading-room-page.html'), filename: 'reading-room-page.html' }, 'html')
-    // What clipboardFlavors writes: the rich flavour and the plain one.
+    // What clipboardFlavors writes: the rich flavor and the plain one.
     const rich = (await conv.write(hub, 'html', { ...FOR_PASTING })).parts[0].bytes.toString('utf8')
     const plain = (await conv.write(hub, 'txt', { ...FOR_PASTING })).parts[0].bytes.toString('utf8')
     expect((rich.match(/<img[^>]+src="data:image\/png;base64,/g) ?? []).length).toBe(2)
     expect(rich).not.toContain('svg+xml')
     expect(plain).not.toContain('<img')
-    // Two pictures, asked for once each; the txt flavour asked for nothing.
+    // Two pictures, asked for once each; the txt flavor asked for nothing.
     expect(calls.flat().map((r) => `${r.kind}:${r.format}`)).toEqual(['svg:png', 'svg:png'])
     const file = (await conv.write(hub, 'html')).parts[0].bytes.toString('utf8')
     expect(file).toContain('src="data:image/svg+xml;base64,')
@@ -492,7 +492,7 @@ describe('Word output of SVG images (the verified bug: image/svg+xml media Word 
     expect(doc).toContain('Shelf map')
   })
 
-  it('the other picture targets keep the SVG (sanitised), and never ask for a PNG', async () => {
+  it('the other picture targets keep the SVG (sanitized), and never ask for a PNG', async () => {
     const { render, calls } = fakeRenderer()
     const conv = createConverter(pdf, { renderBlocks: render })
     const hostile = fixture('reading-room-hostile.svg')

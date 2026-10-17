@@ -44,7 +44,7 @@ const INSPECT = 9229
 
 /**
  * Content width of the window. The app column is `max-width: 640px` and
- * centred, so this leaves a deliberate ~30px gutter either side rather than
+ * centered, so this leaves a deliberate ~30px gutter either side rather than
  * pinning the layout hard against the frame.
  */
 const WINDOW_WIDTH = 1000

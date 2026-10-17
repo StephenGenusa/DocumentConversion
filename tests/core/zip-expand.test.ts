@@ -19,7 +19,7 @@ async function makeZip(entries: Record<string, string | Buffer>): Promise<Buffer
  * A zip bomb's whole point is that the declared size is enormous and the bytes
  * on disk are not, so the only honest test is one that fakes the declared size
  * and then asserts we never asked for the plaintext. Patching loadAsync lets us
- * do both without materialising gigabytes.
+ * do both without materializing gigabytes.
  */
 function forgeDeclaredSizes(sizes: Record<string, number>): { asyncCalls: string[] } {
   const asyncCalls: string[] = []
@@ -110,7 +110,7 @@ describe('expandZipArchive', () => {
   })
 
   it('still refuses a dot-dot segment on its own account', () => {
-    // Defence in depth: JSZip's own path resolution is not a guarantee we own.
+    // Defense in depth: JSZip's own path resolution is not a guarantee we own.
     expect(isUnsafeArchivePath('../secret.txt')).toBe(true)
     expect(isUnsafeArchivePath(`..${BS}secret.txt`)).toBe(true)
     expect(isUnsafeArchivePath('notes/plan.txt')).toBe(false)

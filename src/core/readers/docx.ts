@@ -226,7 +226,7 @@ export function mergeInterruptedOrderedLists(html: string, numIds: string[]): st
  * to survive the targets that have no stylesheet at all — txt, md, docx, csv —
  * and a run of U+00A0 is the one thing that comes through every writer intact
  * while still being nothing but whitespace. Four of them is a gap no reader can
- * mistake for a word space; Word's own tab stop width cannot be honoured here,
+ * mistake for a word space; Word's own tab stop width cannot be honored here,
  * since the hub has no way to carry it.
  */
 const TAB_GAP = '\u00a0'.repeat(4)

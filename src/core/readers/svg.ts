@@ -8,7 +8,7 @@ import { imageMime, readImage, svgText } from './image'
 /**
  * An .svg file (spec D10): the picture becomes the document, as with any
  * other image, embedded as a base64 `image/svg+xml` data URI of the SVG after
- * B6 sanitising (svg-sanitize.ts: no script, handlers, external references,
+ * B6 sanitizing (svg-sanitize.ts: no script, handlers, external references,
  * prolog or doctype). Its size is written on the <img>, so every target
  * shows it at the size the file gives. The editor shows it as an ordinary
  * image. Its text is not extracted: it is a picture. A picture it names by

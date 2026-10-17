@@ -54,7 +54,7 @@ describe('writeMarkdown performance', () => {
    * count. Four 4k-row sheets are timed against one 16k-row sheet: the same
    * rows, so the same time when the cost is linear and four times it when
    * quadratic. The bound, 2x, sits between the two. Both sides doing the same
-   * work for the same time is what keeps load from favouring either: a short
+   * work for the same time is what keeps load from favoring either: a short
    * run is likelier to fit in a quiet moment than a long one.
    */
   it('scales close to linearly with row count', async () => {

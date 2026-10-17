@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { collectNotices, declaredLicense, isAllowed, holderOf } from '../../scripts/notices/lib.mjs'
 
-describe('licence expressions', () => {
+describe('license expressions', () => {
   it('allows what the allowlist names, and nothing else', () => {
     expect(isAllowed('MIT')).toBe(true)
     expect(isAllowed('GPL-3.0-only')).toBe(false)
@@ -78,14 +78,14 @@ describe('collecting notices', () => {
     expect(entries[0].note).toMatch(/standard text/)
   })
 
-  it('fails on a licence off the allowlist', () => {
+  it('fails on a license off the allowlist', () => {
     const { errors } = collectNotices({ root, lock: lockOf('gpl'), templates })
-    expect(errors.join('\n')).toMatch(/gpl@1.0.0: licence "GPL-3.0-only" is not on the allowlist/)
+    expect(errors.join('\n')).toMatch(/gpl@1.0.0: license "GPL-3.0-only" is not on the allowlist/)
   })
 
-  it('fails when there is no text and no standard text for the licence', () => {
+  it('fails when there is no text and no standard text for the license', () => {
     const { errors } = collectNotices({ root, lock: lockOf('isc-textless'), templates })
-    expect(errors.join('\n')).toMatch(/ships no licence text/)
+    expect(errors.join('\n')).toMatch(/ships no license text/)
   })
 
   it('applies an override, and fails on one that matches nothing', () => {
@@ -107,7 +107,7 @@ describe('collecting notices', () => {
 
 /**
  * The real tree: every package this checkout would ship passes the policy.
- * A new dependency with an unlisted licence fails here, in `npm test`, and not
+ * A new dependency with an unlisted license fails here, in `npm test`, and not
  * first at release time.
  */
 describe('this project', () => {

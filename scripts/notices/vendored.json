@@ -1,5 +1,5 @@
 {
-  "//": "Components that ship without being a production npm package or a bundled import. Each entry is reviewed by hand. `package` reads version and licence files from node_modules/<package>; `licenseFrom` names one file instead.",
+  "//": "Components that ship without being a production npm package or a bundled import. Each entry is reviewed by hand. `package` reads version and license files from node_modules/<package>; `licenseFrom` names one file instead.",
   "components": [
     {
       "name": "Mermaid",
@@ -12,7 +12,7 @@
       "package": "@viz-js/viz",
       "license": "MIT",
       "licenseFrom": "scripts/notices/texts/viz-js-3.31.0-LICENSE",
-      "note": "The Graphviz engine (viz-global.js), shipped in resources/render to draw Graphviz diagrams offline. The file carries Graphviz and Expat compiled to WebAssembly; those are listed separately. The npm package ships no licence file; this text is the project's own (github.com/mdaines/viz-js)."
+      "note": "The Graphviz engine (viz-global.js), shipped in resources/render to draw Graphviz diagrams offline. The file carries Graphviz and Expat compiled to WebAssembly; those are listed separately. The npm package ships no license file; this text is the project's own (github.com/mdaines/viz-js)."
     },
     {
       "name": "Graphviz",
@@ -77,7 +77,7 @@
       "version": "4.0.0",
       "license": "Apache-2.0",
       "licenseFrom": "node_modules/tesseract.js-core/LICENSE",
-      "note": "Trained data from the Tesseract OCR project (github.com/tesseract-ocr/tessdata), distributed by tessdata.projectnaptha.com; shipped in resources/ocr. Language packs downloaded later are the same data set under the same licence."
+      "note": "Trained data from the Tesseract OCR project (github.com/tesseract-ocr/tessdata), distributed by tessdata.projectnaptha.com; shipped in resources/ocr. Language packs downloaded later are the same data set under the same license."
     },
     {
       "name": "@braintree/sanitize-url",

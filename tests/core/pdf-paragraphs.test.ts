@@ -64,7 +64,7 @@ describe('a pdf line takes its geometry from its own glyphs', () => {
     const bytes = await readFile(HANDBOOK)
     const pages = await extractPdfPageLines({ bytes, filename: 'handbook.pdf' })
     const heading = pages[1].find((l) => l.text.startsWith('I N T R O D U C T I O N'))
-    expect(heading, 'the centred INTRODUCTION heading').toBeDefined()
+    expect(heading, 'the centered INTRODUCTION heading').toBeDefined()
     expect(heading!.y).toBeCloseTo(706.0, 1)
     expect(heading!.height).toBeCloseTo(18, 1)
   }, 60_000)
@@ -81,7 +81,7 @@ describe('handbook paragraphs and headings', () => {
     expect(html).toContain('<p>Elmwood Libraries strives to provide a welcoming environment')
   }, 60_000)
 
-  it('lifts a large centred heading out of the prose that follows it', async () => {
+  it('lifts a large centered heading out of the prose that follows it', async () => {
     if (!existsSync(HANDBOOK)) return
     const bytes = await readFile(HANDBOOK)
     const { html } = await readPdf({ bytes, filename: 'handbook.pdf' })

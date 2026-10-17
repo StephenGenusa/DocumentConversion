@@ -8,7 +8,7 @@ import { DRAWN_KINDS, MAX_SOURCE_BYTES, type BlockKind, type RenderRequest, type
  * source is a string of at most 100 KB, display is a boolean and the
  * priority one of the two the editor uses. The editor always gets SVG, and
  * gets it back as an `<img>`-ready data URI of the SVG the host has already
- * sanitised (B6), so no engine markup is ever handled as markup in the main
+ * sanitized (B6), so no engine markup is ever handled as markup in the main
  * window.
  */
 

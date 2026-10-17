@@ -179,7 +179,7 @@ async function textOf(html: string, marker: string): Promise<string> {
 }
 
 /**
- * html-to-docx 1.8.0 honours <i> but not <em>, ignores <s>/<del>/<strike>,
+ * html-to-docx 1.8.0 honors <i> but not <em>, ignores <s>/<del>/<strike>,
  * and keeps only the innermost of nested tags, so ***both*** came out bold
  * only and ~~struck~~ plain, whatever reader the document came from.
  */

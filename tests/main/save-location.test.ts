@@ -12,7 +12,7 @@ import {
  *
  * The rule is: the input's own folder if it has one, otherwise wherever the
  * last save landed, otherwise leave it to the OS. That last case matters —
- * returning a bogus directory would be worse than the old behaviour.
+ * returning a bogus directory would be worse than the old behavior.
  */
 beforeEach(() => resetSaveLocation())
 

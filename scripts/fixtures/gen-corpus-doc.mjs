@@ -14,7 +14,7 @@
 // word-extractor's getBody() maps to "\t", exactly like the real corpus
 // file this replaces, and (b) embeds an inline <img> as a real OfficeArt
 // BLIP picture record that countEmbeddedPictures (src/core/readers/doc.ts)
-// recognises by its record header and image signature — not merely a zip
+// recognizes by its record header and image signature — not merely a zip
 // media entry, which is what a .docx would produce instead.
 //
 // Run with: node scripts/fixtures/gen-corpus-doc.mjs
@@ -199,7 +199,7 @@ if (!(await hasSoffice())) {
 /* -------------------------------------------------------------------------- */
 {
   const html = `<html><body>
-    ${quizHtml(V.QUIZ_CATALOGUING)}
+    ${quizHtml(V.QUIZ_CATALOGING)}
   </body></html>`
   const n = await toLegacyDoc(html, 'cataloguing-questions.doc')
   console.log('cataloguing-questions.doc', n, 'bytes')

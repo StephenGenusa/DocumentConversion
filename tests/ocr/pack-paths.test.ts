@@ -4,7 +4,7 @@ import { packPathIn } from '../../src/ocr/pack-install'
 
 /**
  * Any language code that reaches a filesystem path is attacker-controlled from
- * the renderer's point of view. `installPack` checked it against the catalogue;
+ * the renderer's point of view. `installPack` checked it against the catalog;
  * `removePack` did not, and built a path straight from the string - so
  * `removeOcrLanguage('../../../../tmp/victim', 'fast')` resolved outside the
  * pack directory and unlinked whatever was there.
@@ -26,7 +26,7 @@ describe('packPathIn', () => {
     expect(packPathIn(DIR, '/etc/passwd', 'fast')).toBeNull()
   })
 
-  it('refuses anything not in the catalogue, however innocent it looks', () => {
+  it('refuses anything not in the catalog, however innocent it looks', () => {
     expect(packPathIn(DIR, 'xyz', 'fast')).toBeNull()
     expect(packPathIn(DIR, '', 'fast')).toBeNull()
   })

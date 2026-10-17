@@ -7,7 +7,7 @@ import type { Reply, Request } from './sqlite-worker'
 
 /**
  * The SQLite host (spec D13): sql.js in a `worker_threads` Worker, one worker
- * per open database. Modelled on ocr-host.ts: the engine lives outside the
+ * per open database. Modeled on ocr-host.ts: the engine lives outside the
  * main thread, and stopping it means ending that thread.
  *
  *   a view over its time limit   the worker is terminated, the call rejects

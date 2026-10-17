@@ -88,7 +88,7 @@ describe('reStructuredText grid tables', () => {
     expect(html).toContain('<td>Produce hub HTML for every format</td>')
   })
 
-  it('honours a cell that spans columns', async () => {
+  it('honors a cell that spans columns', async () => {
     const html = (
       await readRst(
         src(`+------------+------------+-----------+

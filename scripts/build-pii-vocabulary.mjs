@@ -15,7 +15,7 @@ import * as V from './fixtures/vocabulary.mjs'
 
 /**
  * Words the READERS add, not the fixtures: mail headers, attachment tables,
- * calendar labels and the bracketed alt text the sanitiser writes. They appear
+ * calendar labels and the bracketed alt text the sanitizer writes. They appear
  * in extracted text without appearing in any document, so they are authored
  * here rather than inferred.
  */

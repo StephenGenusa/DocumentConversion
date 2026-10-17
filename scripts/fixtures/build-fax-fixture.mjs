@@ -5,7 +5,7 @@
  *
  *   page 1   one bit a pixel, PackBits: lines of type
  *   page 2   a preview (reduced-resolution copy), which is not a page
- *   page 2   eight-bit grey, LZW: a shaded plan
+ *   page 2   eight-bit gray, LZW: a shaded plan
  *   page 3   one bit a pixel, PackBits: a closing line and a signature
  *
  * Word, and every viewer, shows only a TIFF's first page; the converter
@@ -40,7 +40,7 @@ function typed(x, y) {
   return inLine && x > 30 && x < end && (x + line * 7) % 41 > 4 ? BLACK : WHITE
 }
 
-/** A shaded plan: grey floor, darker shelves, a light aisle. */
+/** A shaded plan: gray floor, darker shelves, a light aisle. */
 function plan(x, y) {
   let v = 200 - Math.round((y / H) * 40)
   if (x > 40 && x < W - 40 && y > 60 && y < H - 60 && Math.floor((y - 60) / 40) % 2 === 0) v = 90

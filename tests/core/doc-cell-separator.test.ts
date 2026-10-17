@@ -3,7 +3,7 @@
  *
  * word-extractor maps the Word cell mark AND the row mark to "\t", and the doc
  * reader deliberately refuses to rebuild a grid out of that (see
- * DOC_TABLES_ADVICE). But refusing to rebuild the grid is not a licence to hide
+ * DOC_TABLES_ADVICE). But refusing to rebuild the grid is not a license to hide
  * where one cell ended and the next began: dropped into a `<p>`, HTML collapses
  * the tab to a single space and "28.0 MAX" + "21.0 EXC" arrive glued together
  * as "28.0 MAX 21.0 EXC".

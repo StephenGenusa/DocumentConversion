@@ -27,7 +27,7 @@ type Html5Converter = new (...args: never[]) => {
  * listing. These come out in the hub's tagged form instead (spec B1):
  *
  *   [mermaid] / [graphviz] on a listing or literal block, and a source block
- *   whose language is one of those (graphviz normalised to dot)
+ *   whose language is one of those (graphviz normalized to dot)
  *   latexmath:[…] and a [latexmath] block; stem:[…] and [stem] only under
  *   `:stem: latexmath`, since asciidoctor resolves the stem type itself
  *

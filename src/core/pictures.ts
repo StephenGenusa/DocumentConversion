@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto'
  * PictureFormat). Chromium has no TIFF decoder, so the page decodes TIFF
  * with UTIF.js (vendored in resources/render). What cannot be converted
  * becomes its alt text, with a notice, so no output holds a picture its
- * reader shows as a broken icon: anything unrecognised, and an EMF or WMF
+ * reader shows as a broken icon: anything unrecognized, and an EMF or WMF
  * the metafile drawing code cannot draw. SVG images do not reach here as
  * pictures to convert: svg-images.ts made PNG copies for the targets
  * without SVG.
@@ -41,10 +41,10 @@ import { createHash } from 'node:crypto'
  *                 pages, slides, PDF, AZW4, EPUB, Markdown): a drawing
  *                 stays a drawing - sharp at any zoom, printed as vectors
  *                 by Chromium, its text still text - and is usually far
- *                 smaller than a picture of it. Sanitised like any SVG.
+ *                 smaller than a picture of it. Sanitized like any SVG.
  *   PNG           where SVG images become PNG (Kindle's AZW3, Word for a
  *                 metafile whose header gives no size, HTML for pasting):
- *                 the SVG rasterised by the render host, fitted to Word's
+ *                 the SVG rasterized by the render host, fitted to Word's
  *                 page and drawn at twice that, like an SVG image. PNG,
  *                 not JPEG, whatever pictureFormat says: lines and text
  *                 stay crisp and colors flat.
@@ -61,7 +61,7 @@ import { createHash } from 'node:crypto'
  * calibre's KF8 writer allows 10 MB. We take Amazon's 5 MB: under it a
  * picture is stored as given; over it, it is re-encoded - JPEG at falling
  * quality, then scaled down; PNG (transparency) scaled down - until it fits.
- * A drawing (an EMF or WMF) rasterised to PNG over the limit is made smaller
+ * A drawing (an EMF or WMF) rasterized to PNG over the limit is made smaller
  * the same way, after it is drawn.
  */
 
@@ -95,7 +95,7 @@ const BROWSER_HOLDS = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/we
 /**
  * What a target can hold, and what it is called in a notice. `holds` is by
  * the picture's bytes (pictureType), never the type it claims. A picture of
- * a type nothing recognises is kept where `unknown` is 'keep' (a web page
+ * a type nothing recognizes is kept where `unknown` is 'keep' (a web page
  * or Markdown file may be read by something that knows it) and otherwise
  * becomes its alt text.
  */
@@ -212,7 +212,7 @@ export function vectorMime(bytes: Buffer): string | null {
   return null
 }
 
-/** Every picture type this app recognises, by its bytes. */
+/** Every picture type this app recognizes, by its bytes. */
 export function pictureType(bytes: Buffer): string | null {
   return pictureMime(bytes) ?? vectorMime(bytes)
 }
@@ -237,7 +237,7 @@ type VectorPlan =
 /**
  * EMF and WMF, for a target that cannot hold them: drawn (metafile/), and
  * then given as the bitmap it is, as SVG (`raster` false), or as the
- * render request that rasterises that SVG (`raster`, with a renderer).
+ * render request that rasterizes that SVG (`raster`, with a renderer).
  * See the top of this file for which and why.
  */
 function vectorRequest(mime: string, drawn: MetafileResult, opts: { raster: boolean; render: boolean }): VectorPlan {
@@ -530,7 +530,7 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
   if (render && jobs.length > 0) {
     changed = true
     const results = await convertAll(jobs.map((j) => j.request), render, ctx, profile.name)
-    // A drawing rasterised over the target's limit (a Kindle's 5 MB): made
+    // A drawing rasterized over the target's limit (a Kindle's 5 MB): made
     // smaller to fit, as any picture held but too large is, rather than
     // left to become its alt text in the writer.
     const shrink = new Map<Job, RenderRequest>()

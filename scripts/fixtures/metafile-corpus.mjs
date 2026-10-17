@@ -13,7 +13,7 @@ const BLUE = 0x3a6ea5
 const ORANGE = 0xe8a33d
 const GREEN = 0x4f9a52
 const RED = 0xc0392b
-const GREY = 0x777777
+const GRAY = 0x777777
 
 /** A soft two-way gradient, for the pictures. */
 const photo = (w, h) => (x, y) => [Math.round((x * 255) / (w - 1)), Math.round((y * 255) / (h - 1)), 160]
@@ -84,7 +84,7 @@ export function hatchEmf() {
   e.brush(2, 2, RED, 2).select(2).rectangle(120, 0, 240, 80)
   e.setBkMode(2).setBkColor(0xfff2cc)
   e.brush(3, 2, GREEN, 4).select(3).rectangle(0, 80, 120, 160)
-  e.brush(4, 2, GREY, 5).select(4).rectangle(120, 80, 180, 160)
+  e.brush(4, 2, GRAY, 5).select(4).rectangle(120, 80, 180, 160)
   // A monochrome checked pattern brush.
   e.setTextColor(0x000000).setBkColor(0xffffff)
   e.patternBrush(5, dib1(8, 8, (x, y) => ((x >> 2) + (y >> 2)) % 2 === 0), true).select(5).rectangle(180, 80, 240, 160)
@@ -110,7 +110,7 @@ export function dualEmf() {
   return e.bytes()
 }
 
-/** EMF+ only: the EMF records are not the picture (a grey box that must not show). */
+/** EMF+ only: the EMF records are not the picture (a gray box that must not show). */
 export function plusOnlyEmf() {
   const [quiet] = R.signs
   const e = new EmfWriter({ width: 240, height: 160 })
@@ -124,7 +124,7 @@ export function plusOnlyEmf() {
     .drawString(2, 0xff000000, [10, 110, 220, 40], quiet)
     .eof()
   e.comment(p.bytes())
-  e.stock(8).brush(1, 0, GREY).select(1).rectangle(0, 0, 240, 160)
+  e.stock(8).brush(1, 0, GRAY).select(1).rectangle(0, 0, 240, 160)
   return e.bytes()
 }
 

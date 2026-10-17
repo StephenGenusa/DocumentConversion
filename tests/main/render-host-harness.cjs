@@ -118,7 +118,7 @@ async function main() {
     })
   }
 
-  // SVG images (spec D10): rasterised at twice their size; a hostile one sanitised before the page sees it.
+  // SVG images (spec D10): rasterized at twice their size; a hostile one sanitized before the page sees it.
   const pngSize = (r) => {
     if (!r.png) return { error: r.error }
     const bytes = Buffer.from(r.png, 'base64')
@@ -133,7 +133,7 @@ async function main() {
     '<script>fetch("http://127.0.0.1:9/script")</script></svg>'
   out.svgHostile = pngSize(await host.render({ kind: 'svg', source: HOSTILE_SVG, display: true, format: 'png' }))
   out.svgNotOne = (await host.render({ kind: 'svg', source: '<note/>', display: true, format: 'png' })).error ?? null
-  // An SVG image nested in one (an icon placed in a plan): drawn, after the host's own sanitising.
+  // An SVG image nested in one (an icon placed in a plan): drawn, after the host's own sanitizing.
   {
     const ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><script>fetch("http://127.0.0.1:9/nested")</script><rect width="4" height="4" fill="#ff0000"/></svg>'
     const NESTED =
@@ -238,7 +238,7 @@ async function main() {
   const broken = await png('flowchart TD\n  A -->')
   out.broken = broken.error ?? null
 
-  // TeX (step 18): MathJax, the same page, sanitiser and rasteriser.
+  // TeX (step 18): MathJax, the same page, sanitizer and rasterizer.
   {
     const math = (source, display = false, format = 'svg') => host.render({ kind: 'math', source, display, format })
     const raw = (source) => drawn.filter((d) => d.source === source).pop()
@@ -313,7 +313,7 @@ async function main() {
     }
   }
 
-  // Graphviz (step 17): its own engine, the same page, sanitiser and rasteriser.
+  // Graphviz (step 17): its own engine, the same page, sanitizer and rasterizer.
   {
     const dot = (source, format = 'svg') => host.render({ kind: 'dot', source, display: true, format })
     const fonts = (svg) => [...svg.matchAll(/font-family="([^"]*)"/g)].map((m) => m[1].replace(/&quot;/g, '"'))

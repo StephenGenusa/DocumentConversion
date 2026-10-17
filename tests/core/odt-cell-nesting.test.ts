@@ -45,13 +45,13 @@ describe('odt table cells with nested paragraphs', () => {
     expect(value).toBe('first second')
   })
 
-  it('still honours number-columns-repeated', () => {
+  it('still honors number-columns-repeated', () => {
     const xml = '<table:table-row><table:table-cell table:number-columns-repeated="3"><text:p>x</text:p></table:table-cell></table:table-row>'
     expect(odfRowCells(xml)).toEqual(['x', 'x', 'x'])
   })
 
   it('drops trailing blank cells, which pad ODF rows to the sheet width', () => {
-    // Documented behaviour of the trailing-blank trim, pinned here because the
+    // Documented behavior of the trailing-blank trim, pinned here because the
     // scanElements change runs immediately before it.
     expect(odfRowCells(cell(''))).toEqual([])
     expect(odfRowCells('<table:table-row><table:table-cell/></table:table-row>')).toEqual([])

@@ -19,7 +19,7 @@ export interface NoticeComponent {
 export interface AboutInputs {
   name: string
   version: string
-  /** The app's own licence text, or null when notices were never generated. */
+  /** The app's own license text, or null when notices were never generated. */
   appLicense: string | null
   components: NoticeComponent[]
   electronVersion: string
@@ -64,7 +64,7 @@ export function chromiumBody(html: string): string {
 }
 
 /**
- * One page, one scroll: the app and its licence, then every third-party
+ * One page, one scroll: the app and its license, then every third-party
  * component in its own <details>, then Electron, then Chromium's notices
  * COLLAPSED. That file is 20 MB, and a closed <details> skips laying it out;
  * measured at ~110 ms to load in a JS-off window. Anchors in the contents
@@ -78,20 +78,20 @@ export function buildAboutHtml(a: AboutInputs): string {
   parts.push('<p class="muted">Converts documents on your own computer. Your documents are never uploaded.</p>')
   parts.push(
     '<nav><ul>' +
-      '<li><a href="#app">Licence</a></li>' +
+      '<li><a href="#app">License</a></li>' +
       `<li><a href="#third-party">Third-party software (${a.components.length})</a></li>` +
       '<li><a href="#electron">Electron</a></li>' +
       '<li><a href="#chromium">Chromium</a></li>' +
       '</ul></nav>',
   )
-  parts.push('<h2 id="app">Licence</h2>')
+  parts.push('<h2 id="app">License</h2>')
   parts.push(
     a.appLicense
       ? `<pre>${escapeHtml(a.appLicense)}</pre>`
-      : '<p>The licence notices were not generated for this build. Run <code>npm run build</code>.</p>',
+      : '<p>The license notices were not generated for this build. Run <code>npm run build</code>.</p>',
   )
   parts.push(`<h2 id="third-party">Third-party software</h2>`)
-  parts.push(`<p class="muted">${a.components.length} components ship with this application. Each is listed with the licence it is used under and its licence text.</p>`)
+  parts.push(`<p class="muted">${a.components.length} components ship with this application. Each is listed with the license it is used under and its license text.</p>`)
   for (const c of a.components) {
     parts.push(
       `<details><summary>${escapeHtml(c.name)} ${escapeHtml(c.version)} <span class="license">${escapeHtml(c.license)}</span></summary>` +
@@ -101,7 +101,7 @@ export function buildAboutHtml(a: AboutInputs): string {
     )
   }
   parts.push(`<h2 id="electron">Electron ${escapeHtml(a.electronVersion)}</h2>`)
-  parts.push(a.electronLicense ? `<pre>${escapeHtml(a.electronLicense)}</pre>` : '<p>Electron\'s licence file was not found beside the application.</p>')
+  parts.push(a.electronLicense ? `<pre>${escapeHtml(a.electronLicense)}</pre>` : '<p>Electron\'s license file was not found beside the application.</p>')
   parts.push('<h2 id="chromium">Chromium</h2>')
   parts.push(
     a.chromiumHtml

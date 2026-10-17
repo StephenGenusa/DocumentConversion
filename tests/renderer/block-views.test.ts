@@ -482,7 +482,7 @@ describe('a 500-formula notebook', () => {
     '<h1>Exercises</h1>' +
     Array.from({ length: 500 }, (_, i) => `<p>Step ${i}: <code class="language-math">x_{${i}}^2 + ${i}</code> holds.</p>` + (i % 5 === 0 ? `<pre><code class="language-math">\\sum_{k=0}^{${i}} k</code></pre>` : '')).join('')
 
-  it('opens without drawing anything, then draws what scrolls into view and prefetches its neighbours', async () => {
+  it('opens without drawing anything, then draws what scrolls into view and prefetches its neighbors', async () => {
     configureBlockViews({ watch, drawable: () => true })
     const t0 = performance.now()
     make(notebook)

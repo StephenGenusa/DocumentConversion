@@ -64,7 +64,7 @@ function bomlessUtf16(bytes: Buffer): string | null {
  * can never fail.
  *
  * Valid UTF-8 outranks the declaration on purpose. A UTF-8 page whose
- * `<meta charset="windows-1252">` lies is routine on legacy sites, and honouring
+ * `<meta charset="windows-1252">` lies is routine on legacy sites, and honoring
  * the lie produced `CafÃ© â€” â€œqâ€` where the old `toString('utf8')` was right.
  * Single-byte text is almost never valid multi-byte UTF-8 by accident, so when
  * the two witnesses disagree the bytes are the better one. Valid UTF-8 comes
@@ -130,7 +130,7 @@ function isCellLine(line: string): boolean {
 
 /**
  * Syntax that source code is full of and tabular data has no reason to carry.
- * This is the last line of defence after the structural tests: tab-aligned
+ * This is the last line of defense after the structural tests: tab-aligned
  * declarations ("int\tcount;") and two statements separated by a tab keep
  * their text in front of the tab, so `isCellLine` waves them through.
  *

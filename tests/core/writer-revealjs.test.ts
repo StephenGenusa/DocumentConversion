@@ -37,7 +37,7 @@ describe('the reveal.js writer', () => {
     expect(html).toContain('<aside class="notes"><p>say this</p></aside>')
   })
 
-  it('honours an explicit split rule', async () => {
+  it('honors an explicit split rule', async () => {
     const html = await deck('<h2>A</h2><p>1</p><h2>B</h2><p>2</p>', { slides: { splitOn: 'h2' } })
     expect(html.match(/<section>/g)).toHaveLength(2)
   })

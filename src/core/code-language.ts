@@ -15,7 +15,7 @@
  *     names it.
  *
  * So two steps, in this order. `tagForeignCodeBlocks` runs on the source DOM
- * before sanitising and turns whatever the page called the language into the
+ * before sanitizing and turns whatever the page called the language into the
  * hub's `language-X`. `guessCodeLanguages` runs on hub HTML and asks
  * highlight.js for a block that still has no class at all — never one a
  * reader deliberately marked `language-plaintext`, and never a diagram or
@@ -170,7 +170,7 @@ function codeWithMarkup(from: Element, into: Element): void {
 /**
  * Give every `<pre>` in `root` exactly one `<code>` holding its text, classed
  * `language-X` when the page named a language anywhere it is conventionally
- * named. Runs before sanitising, while the classes and attributes are there.
+ * named. Runs before sanitizing, while the classes and attributes are there.
  *
  * A highlighter's spans go: they are color the writers will redraw, and left
  * in, they made the write-time highlighter print `<span>` literally. With
@@ -214,7 +214,7 @@ export function tagForeignCodeBlocks(root: Element, opts?: { keepMarkup?: boolea
  * highlight.js's own detection is not enough on its own here: its relevance
  * counts only the distinctive matches, and `def`, `for … in` and `return` are
  * not — a plain eight-line Python function scored 3 and lost to SQL. So the
- * common languages are recognised by their shape first, and highlight.js
+ * common languages are recognized by their shape first, and highlight.js
  * decides only what these do not.
  *
  * A pattern belongs here only when it is rare in every other language: a
@@ -279,7 +279,7 @@ const TYPESCRIPT = [/^\s*(?:export\s+)?(?:interface|type)\s+\w+\b/, /\w\??:\s*(?
 /**
  * The fallback, for what the tells do not cover. Languages highlight.js tells
  * apart well enough to be worth it; `markdown` competes so that a block of
- * markdown is recognised as such and left alone. Left out on purpose: `ini`,
+ * markdown is recognized as such and left alone. Left out on purpose: `ini`,
  * `perl`, `makefile` and the like, which match logs and prose at a relevance
  * that beats real code.
  */
@@ -290,7 +290,7 @@ const GUESS_SUBSET = [
 
 /** highlight.js relevance its guess must reach when no tell decided. */
 const MIN_RELEVANCE = 7
-/** Enough to recognise a language; the rest only costs time. */
+/** Enough to recognize a language; the rest only costs time. */
 const SAMPLE_CHARS = 6000
 
 /** A sentence: eight words or more ending as prose does, or two sentences run together. */

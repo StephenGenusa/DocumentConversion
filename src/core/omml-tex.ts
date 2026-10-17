@@ -587,7 +587,7 @@ function eqArrRows(el: Element, ctx: Ctx): string[] {
 
 function eqArr(el: Element, ctx: Ctx): string {
   const rows = eqArrRows(el, ctx)
-  // Rows with alignment marks line up on them; rows without are centred.
+  // Rows with alignment marks line up on them; rows without are centered.
   const env = rows.some((r) => alignMarks(r) > 0) ? 'aligned' : 'gathered'
   return `\\begin{${env}}${rows.join('\\\\')}\\end{${env}}`
 }

@@ -4,7 +4,7 @@
  * can LOOK at the result instead of asserting on strings.
  *
  * String assertions cannot see a `<img src=...>` tag rendered as visible text,
- * a title glued to its subtitle, or code and output drawn as identical grey
+ * a title glued to its subtitle, or code and output drawn as identical gray
  * boxes. Every one of those shipped. Pair this with `scripts/print-pdf.cjs` to
  * get a PDF and read it.
  *

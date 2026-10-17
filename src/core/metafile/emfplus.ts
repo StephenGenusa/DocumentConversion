@@ -128,7 +128,7 @@ export class EmfPlusPlayer implements PlusHook {
 
   constructor(
     private readonly out: SvgOut,
-    /** The EMF's device pixels per millimetre (its reference device). */
+    /** The EMF's device pixels per millimeter (its reference device). */
     private readonly pxPerMm: [number, number],
     private readonly budget: Budget,
     private readonly universe: Rect,
@@ -268,7 +268,7 @@ export class EmfPlusPlayer implements PlusHook {
         return { kind: 'linear', rect, stops, transform, wrap }
       }
       case 3:
-        // A path gradient: its centre color.
+        // A path gradient: its center color.
         return { kind: 'solid', argb: v.u32(16) }
       default:
         this.lost.add('texture brushes')

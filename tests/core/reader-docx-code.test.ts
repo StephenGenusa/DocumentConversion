@@ -6,7 +6,7 @@ import { createConverter } from '../../src/core/convert'
 /*
  * mammoth reads a paragraph's text and none of its fonts, so a code block in
  * a Word file came back as ordinary paragraphs with its indentation gone. The
- * reader recognises the code paragraphs — our own docx writer's (every run in
+ * reader recognizes the code paragraphs — our own docx writer's (every run in
  * Courier, lines split by breaks), Word's "HTML Preformatted"-style ones, and
  * runs of paragraphs set wholly in a monospace font — and makes them a code block.
  */

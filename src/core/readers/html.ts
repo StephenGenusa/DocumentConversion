@@ -141,7 +141,7 @@ const RESOLVABLE_IMAGE_SRC = /^\s*(?:data|https?):/i
  * it" — that is where the idiom lives, and a wider container would start
  * swallowing alt text that happens to recur in a paragraph.
  */
-function altRepeatsNeighbouringLabel(img: DomElement, alt: string): boolean {
+function altRepeatsNeighboringLabel(img: DomElement, alt: string): boolean {
   const control = img.closest('a,button')
   if (!control) return false
   const label = (control.textContent ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
@@ -157,7 +157,7 @@ function dropUnresolvableImages(root: DomElement): void {
   for (const img of Array.from(root.querySelectorAll('img'))) {
     if (RESOLVABLE_IMAGE_SRC.test(img.getAttribute('src') ?? '')) continue
     const alt = (img.getAttribute('alt') ?? '').trim()
-    if (alt && altRepeatsNeighbouringLabel(img, alt)) img.remove()
+    if (alt && altRepeatsNeighboringLabel(img, alt)) img.remove()
     else img.removeAttribute('src')
   }
 }

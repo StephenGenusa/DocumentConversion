@@ -9,7 +9,7 @@ images in email and calendar invitations are never fetched. See
 [Images and the network](#images-and-the-network).
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
+![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgray.svg)
 ![Electron 43](https://img.shields.io/badge/electron-43-47848F.svg)
 
 ![The start screen](docs/screenshots/01-start.png)
@@ -35,7 +35,7 @@ locally, and the code that does it is in this repository.
 - [Command line](#command-line)
 - [Development](#development)
 - [Project layout](#project-layout)
-- [Licence](#licence)
+- [License](#license)
 
 ## Install
 
@@ -376,7 +376,7 @@ update endpoint is written into the packaged app.
 
 **macOS ships as an unsigned zip only.** The `.app` is cross-built from Linux,
 which is enough for the zip target but not for a `.dmg` (`hdiutil` is macOS-only)
-and not for signing or notarisation (`codesign` likewise). There is no Apple
+and not for signing or notarization (`codesign` likewise). There is no Apple
 Developer certificate and no macOS build machine, so Gatekeeper will always
 challenge it. An arm64 build would need `@napi-rs/canvas-darwin-arm64` installed
 before packaging, for the reason given under Packaging.
@@ -462,7 +462,7 @@ docconv convert <inputs...> --to <txt|md|docx|pdf|html|epub|revealjs|azw3|azw4|c
 The launcher is installed at `<install>/resources/cli/docconv`. In a development
 checkout, run `npm run cli -- <args>`.
 
-- `--out` names a file, and its extension is honoured. Given a directory, names
+- `--out` names a file, and its extension is honored. Given a directory, names
   are derived from the inputs. Given no extension, the target's is appended.
 - Output files are overwritten by default so a script gets a predictable path.
   `--no-clobber` refuses instead.
@@ -587,7 +587,7 @@ npm run build:mac     # zip            -> dist/Document Converter-<version>-mac.
   - `merge.ts`, `pdf-merge.ts` — join documents, and join PDFs page for page.
   - `net/guarded-fetch.ts` — the fetcher that refuses loopback, link-local and
     reserved addresses.
-- `src/ocr/` — the recognition pipeline, the language catalogue, and
+- `src/ocr/` — the recognition pipeline, the language catalog, and
   checksum-gated pack installation. No Electron dependency.
 - `src/cli/` — argument parsing and output-path resolution. No side effects.
 - `src/main/` — the Electron main process: IPC handlers, dialogs, conversion
@@ -601,10 +601,10 @@ npm run build:mac     # zip            -> dist/Document Converter-<version>-mac.
     editor: edits are written back to it before a result is shown.
 - `docs/superpowers/` — design specs and implementation plans.
 
-## Licence
+## License
 
 [MIT](LICENSE) © Stephen Genusa
 
 reveal.js is MIT © Hakim El Hattab and contributors. OCR language data is from
 the [tesseract-ocr](https://github.com/tesseract-ocr) project under the Apache
-2.0 licence.
+2.0 license.

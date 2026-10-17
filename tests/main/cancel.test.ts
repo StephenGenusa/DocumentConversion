@@ -178,7 +178,7 @@ describe('runConversion cancellation', () => {
 })
 
 /**
- * "Copy as HTML" wants two clipboard flavours, rich and plain. It used to run
+ * "Copy as HTML" wants two clipboard flavors, rich and plain. It used to run
  * two whole conversions to get them — the second with an EMPTY context, so a
  * cancel during it was ignored, the clipboard was overwritten, and the reply
  * said "copied". One read, two writes, one signal.

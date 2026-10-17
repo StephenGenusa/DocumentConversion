@@ -70,13 +70,13 @@ function pngPixel(bytes: Buffer, x: number, y: number): number[] {
 }
 
 describe('metafile corpus: each drawing as SVG', () => {
-  it('draws every picture in the corpus, at the size its header gives, and the sanitiser keeps it whole', () => {
+  it('draws every picture in the corpus, at the size its header gives, and the sanitizer keeps it whole', () => {
     for (const p of corpus.metafileCorpus()) {
       const r = drawn(drawMetafile(p.bytes))
       expect([p.name, Math.round(r.width), Math.round(r.height)]).toEqual([p.name, p.width, p.height])
       const clean = sanitizeSvg(r.svg)
       expect(clean, p.name).not.toBeNull()
-      // Nothing the drawing code writes is something the sanitiser takes out.
+      // Nothing the drawing code writes is something the sanitizer takes out.
       const count = (s: string) => (s.match(/<(path|text|use|image|clipPath|pattern|linearGradient)\b/g) ?? []).length
       expect(count(clean!), p.name).toBe(count(r.svg))
     }
@@ -92,7 +92,7 @@ describe('metafile corpus: each drawing as SVG', () => {
     expect(paths[2].getAttribute('stroke-dasharray')).toBe('18 6')
     // The rounded rectangle's corners are quarter ellipses of radius 15 (the corner ellipse is 30 wide).
     expect(paths[1].getAttribute('d')).toMatch(/^M145 10L215 10C/)
-    // The pie closes through its centre; the chord straight across.
+    // The pie closes through its center; the chord straight across.
     expect(paths[3].getAttribute('d')).toContain('L60 140Z')
     // A geometric pen 6 wide, round caps (EXTCREATEPEN's default).
     expect(paths[5].getAttribute('stroke-width')).toBe('6')
@@ -223,7 +223,7 @@ describe('metafile records', () => {
     return svgOf(e.bytes())
   }
 
-  it('MM_LOMETRIC: tenths of a millimetre, y up from the window origin', () => {
+  it('MM_LOMETRIC: tenths of a millimeter, y up from the window origin', () => {
     const { root } = emf((e) => e.setMapMode(2).setWindowOrg(0, 0).setViewportOrg(0, 100).stock(4).stock(8).rectangle(0, 0, 100, 100))
     // 10 mm at 96 px an inch is 37.8 px, drawn upwards from y = 100.
     expect(shapes(root)[0].getAttribute('d')).toBe('M0 100L37.8 100L37.8 62.2L0 62.2Z')

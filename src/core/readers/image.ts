@@ -52,7 +52,7 @@ export function svgText(bytes: Buffer, limit = bytes.length): string {
   return bytes.toString('utf8', 0, end).replace(/^﻿/, '')
 }
 
-/** How far into a file the SVG sniff looks for the root element: past a long licence comment. */
+/** How far into a file the SVG sniff looks for the root element: past a long license comment. */
 const SVG_SNIFF_BYTES = 64 * 1024
 
 /**

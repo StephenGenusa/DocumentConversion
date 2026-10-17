@@ -1,7 +1,7 @@
 /*
  * A bounded little-endian view of part of a metafile: every read is checked
  * against the view's own end, so a record that claims more than it holds
- * stops at its last byte (ShortRecord) instead of reading its neighbour's
+ * stops at its last byte (ShortRecord) instead of reading its neighbor's
  * bytes, or past the file.
  */
 

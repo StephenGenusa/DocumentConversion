@@ -129,7 +129,7 @@ describe('the editor round-trips what the hub allows', () => {
       aside: `<${SPEAKER_NOTES_TAG}><p>n</p></${SPEAKER_NOTES_TAG}>`,
     }
     const html = sample[tag] ?? `<${tag}>text</${tag}>`
-    // Only assert against what the sanitiser would actually pass on.
+    // Only assert against what the sanitizer would actually pass on.
     const sanitized = sanitizeToHub(html)
     if (!sanitized.includes('<')) return
     const out = roundTrip(sanitized)

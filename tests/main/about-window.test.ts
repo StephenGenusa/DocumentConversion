@@ -22,7 +22,7 @@ const base = {
 }
 
 describe('About page', () => {
-  it('shows name, version, the app licence and every component', () => {
+  it('shows name, version, the app license and every component', () => {
     const html = buildAboutHtml(base)
     expect(html).toContain('<title>About Document Converter 1.3.0</title>')
     expect(html).toContain('Copyright (c) 2026 Stephen Genusa')
@@ -54,7 +54,7 @@ describe('About page', () => {
   it('says so when a file is missing instead of failing', () => {
     const html = buildAboutHtml({ ...base, appLicense: null, components: [], electronLicense: null, chromiumHtml: null })
     expect(html).toContain('were not generated for this build')
-    expect(html).toContain("Electron's licence file was not found")
+    expect(html).toContain("Electron's license file was not found")
     expect(html).toContain('LICENSES.chromium.html) was not found')
   })
 })

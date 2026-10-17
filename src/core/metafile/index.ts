@@ -10,7 +10,7 @@ import { embeddedEmf, META, readWmfHeader, WmfPlayer, wmfRecords } from './wmf'
 /*
  * EMF and WMF pictures (Word's vector pictures) drawn as SVG, for every
  * target that cannot hold them (pictures.ts): our own drawing code, pure
- * TypeScript with no DOM, since no library does it under a licence this
+ * TypeScript with no DOM, since no library does it under a license this
  * app can ship. What it draws is in gdi.ts (the device context), emf.ts,
  * emfplus.ts and wmf.ts (the records).
  *
@@ -35,11 +35,11 @@ import { embeddedEmf, META, readWmfHeader, WmfPlayer, wmfRecords } from './wmf'
  * metafile, an EMF inside a WMF), each bitmap's size and all bitmaps'
  * pixels together (dib.ts), and the SVG's length (maxChars). Every loop
  * moves forward through the file, so none can run forever. The caller
- * sanitises the SVG (svg-sanitize.ts) like any other.
+ * sanitizes the SVG (svg-sanitize.ts) like any other.
  */
 
 export interface MetafileDrawing {
-  /** The picture as SVG (not yet sanitised). */
+  /** The picture as SVG (not yet sanitized). */
   svg: string
   /** The size it is shown at, in CSS px. */
   width: number

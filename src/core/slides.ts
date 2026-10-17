@@ -25,7 +25,7 @@ import { SPEAKER_NOTES_TAG } from './speaker-notes'
 export type SplitOn = 'auto' | 'hr' | 'h1' | 'h2'
 
 export interface Slide {
-  /** The slide body, already hub-sanitised, with notes removed. */
+  /** The slide body, already hub-sanitized, with notes removed. */
   html: string
   /** Speaker notes for this slide, in document order, inner HTML only. */
   notes: string[]
@@ -111,7 +111,7 @@ export function splitSlides(html: string, options: SlideOptions = {}): Slide[] {
  * Coerce an untrusted split rule from the IPC boundary.
  *
  * The renderer is the only caller today, but the boundary is a boundary: an
- * unrecognised value falls back to `auto` rather than reaching the splitter and
+ * unrecognized value falls back to `auto` rather than reaching the splitter and
  * silently producing a one-slide deck.
  */
 export function normalizeSlideOptions(value: unknown): { splitOn: SplitOn } {

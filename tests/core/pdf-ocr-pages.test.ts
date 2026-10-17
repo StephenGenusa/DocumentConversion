@@ -83,7 +83,7 @@ describe('a PDF with a text layer on some pages and an image on others', () => {
     expect(html).not.toContain('<p>Item Qty Price</p>')
   })
 
-  it('still analyses the native pages instead of flattening them to text', async () => {
+  it('still analyzes the native pages instead of flattening them to text', async () => {
     const html = await readMixed([{ text: '' }, { text: 'Item Qty Price', grid: SCANNED_TABLE }])
     expect(tableGrid(html)).toEqual([NATIVE_TABLE, SCANNED_TABLE])
     expect(html).toContain(INTRO)

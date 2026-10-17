@@ -371,7 +371,7 @@ async function main() {
         }
         if (target === 'azw4' && hasColoredCode) {
           // The embedded PDF, as printed: highlighted code is drawn in color
-          // (a fill that is not grey), and its keywords in a bold monospace
+          // (a fill that is not gray), and its keywords in a bold monospace
           // face, which is what a reader that reflows the page keeps.
           const pdf = azw4Pdf(out)
           const fills = pdfFillColors(pdf)

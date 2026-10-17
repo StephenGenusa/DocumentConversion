@@ -13,7 +13,7 @@ import type { GuardedFetchDeps } from '../../src/core/net/guarded-fetch'
  * The owner pasted Python into the main window: it showed as a code block, and
  * printed as plain monospace. Highlighting needs `language-X` on the block, and
  * a paste has no filename to take it from. These run each realistic clipboard
- * source through the functions the app uses — the flavour choice, then either
+ * source through the functions the app uses — the flavor choice, then either
  * the pasted-HTML or the pasted-text intake — and check the hub, the printed
  * HTML and the other writers.
  */
@@ -32,7 +32,7 @@ const PY = [
 
 const noFetch = {} as GuardedFetchDeps
 
-/** The app's paste: the HTML flavour when it is formatted, else the text one (intake.ts onPaste). */
+/** The app's paste: the HTML flavor when it is formatted, else the text one (intake.ts onPaste). */
 async function paste(html: string, plain: string): Promise<string> {
   if (shouldUseHtmlFlavor(html, plain)) return pastedHtmlToHub(html, noFetch)
   const d = detect(Buffer.from(plain, 'utf8'))
@@ -107,7 +107,7 @@ const SOURCES: Record<string, { html: string; plain: string }> = {
     plain: PY,
   },
   // The same copy as X11 hands it over on Linux: a <meta charset> before the
-  // document, and CRLF line ends in both flavours.
+  // document, and CRLF line ends in both flavors.
   'PyCharm on Linux: meta-prefixed HTML, CRLF line ends': {
     html: `<meta charset='utf-8'><html><body><!--StartFragment--><pre style="background-color:#1e1f22;color:#bcbec4;font-family:'JetBrains Mono',monospace;font-size:9.8pt;">${escaped(PY)
       .replace(/\b(def|import|for|in|if|return) /g, '<span style="color:#cf8e6d;">$1 </span>')
@@ -164,7 +164,7 @@ describe('a pasted Python snippet is highlighted, from wherever it was copied', 
     expect(await convertHub(hub, 'md')).toContain('```python\n')
   })
 
-  it('the path that showed a code block before: a <pre> in the HTML flavour, which lost its language', async () => {
+  it('the path that showed a code block before: a <pre> in the HTML flavor, which lost its language', async () => {
     // What the pane used to receive for the GitHub, JetBrains and docs pastes:
     // a code block with no class, which shell.ts never highlights.
     const { html } = SOURCES['GitHub: highlight-source-python on the wrapper']
@@ -294,7 +294,7 @@ describe('the names pages give a language', () => {
     },
   )
 
-  it('keeps only the normalised class, from data-lang too', async () => {
+  it('keeps only the normalized class, from data-lang too', async () => {
     const hub = await pastedHtmlToHub('<pre data-lang="py"><code class="hljs prism">x = 1\nprint(x)</code></pre>', noFetch)
     expect(hub).toBe('<pre><code class="language-python">x = 1\nprint(x)</code></pre>')
     expect(normalizeLanguage('graphviz')).toBeUndefined()

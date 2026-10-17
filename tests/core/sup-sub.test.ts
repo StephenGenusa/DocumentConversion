@@ -13,7 +13,7 @@ const bytes = (s: string) => ({ bytes: Buffer.from(s, 'utf8') })
 /**
  * Superscript and subscript are content: x² is not x2 and H₂O is not H2O, and
  * a footnote reference run into its word ("claim1") reads as a typo. The hub
- * did not allow either tag, so every sanitising reader kept the text and
+ * did not allow either tag, so every sanitizing reader kept the text and
  * dropped the meaning.
  */
 describe('superscript and subscript', () => {

@@ -1,19 +1,19 @@
 /**
- * Third-party licence notices: what ships, under which licence, with its text.
+ * Third-party license notices: what ships, under which license, with its text.
  *
  * Pure functions over a lockfile, a node_modules tree and a few hand-kept
  * lists, so the rules can be tested without a build. The driver is
  * scripts/build-notices.mjs.
  *
- * An ALLOWLIST, not a scan for known-bad licences, for the same reason
+ * An ALLOWLIST, not a scan for known-bad licenses, for the same reason
  * electron-builder.yml names its files positively: a denylist cannot report
- * what is not on it. A licence the list does not name fails the build until
+ * what is not on it. A license the list does not name fails the build until
  * someone reads it and decides.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** Licences the app may ship. Each is permissive or file-level copyleft (MPL, EPL). */
+/** Licenses the app may ship. Each is permissive or file-level copyleft (MPL, EPL). */
 export const ALLOWED = new Set([
   'MIT',
   'MIT-0',
@@ -33,7 +33,7 @@ export const ALLOWED = new Set([
 ])
 
 /**
- * The licence a package.json declares, as one SPDX expression.
+ * The license a package.json declares, as one SPDX expression.
  *
  * Old packages write `{ "type": "MIT", "url": … }` or a `licenses` array of
  * those instead of an SPDX string; an array offers its entries as
@@ -56,7 +56,7 @@ function tokens(expr) {
 /**
  * Whether an SPDX expression permits shipping under `allowed`.
  *
- * `A OR B` needs one side allowed (the app takes that licence: jszip's
+ * `A OR B` needs one side allowed (the app takes that license: jszip's
  * `MIT OR GPL-3.0-or-later` ships as MIT); `A AND B` needs both (pako's
  * `MIT AND Zlib`). `A WITH exception` is judged as A: an exception only adds
  * permissions. Anything malformed is not allowed.
@@ -73,7 +73,7 @@ export function isAllowed(expr, allowed = ALLOWED) {
       return v
     }
     const id = t[i++]
-    if (!id || /^(AND|OR|WITH|\))$/.test(id)) throw new Error('expected a licence')
+    if (!id || /^(AND|OR|WITH|\))$/.test(id)) throw new Error('expected a license')
     if (t[i] === 'WITH') i += 2
     return allowed.has(id.replace(/\+$/, ''))
   }
@@ -101,12 +101,12 @@ export function isAllowed(expr, allowed = ALLOWED) {
   }
 }
 
-/** The licence ids an expression names, for choosing a standard text. */
+/** The license ids an expression names, for choosing a standard text. */
 export function licenseIds(expr) {
   return tokens(expr ?? '').filter((x) => !/^(AND|OR|WITH|\(|\))$/.test(x))
 }
 
-/** The licence files a package directory ships, in a stable order. */
+/** The license files a package directory ships, in a stable order. */
 export function licenseTexts(dir) {
   if (!existsSync(dir)) return []
   return readdirSync(dir)
@@ -124,7 +124,7 @@ export function holderOf(pkg) {
 }
 
 /**
- * Every shipped component with the text of its licence.
+ * Every shipped component with the text of its license.
  *
  * Sources:
  *   - the lockfile's non-dev packages that are installed (what electron-builder
@@ -132,8 +132,8 @@ export function holderOf(pkg) {
  *   - `bundled`: packages the bundler inlined (devDependencies such as React);
  *   - `vendored`: things with no package at all, or copied in another way.
  *
- * A package that ships no licence file gets the standard text of its declared
- * licence with its author as the holder, and says so. Errors are collected,
+ * A package that ships no license file gets the standard text of its declared
+ * license with its author as the holder, and says so. Errors are collected,
  * not thrown, so one run reports every problem.
  */
 export function collectNotices({ root, lock, bundled = [], vendored = [], overrides = {}, templates = {}, allowed = ALLOWED }) {
@@ -155,15 +155,15 @@ export function collectNotices({ root, lock, bundled = [], vendored = [], overri
     const entry = { name: pkg.name, version: pkg.version, license: license ?? 'UNKNOWN', from: [from], texts: licenseTexts(dir) }
     if (override?.note) entry.note = override.note
     if (!isAllowed(license, allowed)) {
-      errors.push(`${id}: licence ${JSON.stringify(license ?? null)} is not on the allowlist (scripts/notices/lib.mjs ALLOWED)`)
+      errors.push(`${id}: license ${JSON.stringify(license ?? null)} is not on the allowlist (scripts/notices/lib.mjs ALLOWED)`)
     }
     if (entry.texts.length === 0) {
       const template = licenseIds(license).map((l) => templates[l]).find(Boolean)
       if (template) {
         entry.texts = [{ file: `${licenseIds(license).find((l) => templates[l])} (standard text)`, text: template.replace('{{holder}}', holderOf(pkg)).trim() }]
-        entry.note = entry.note ?? 'The package ships no licence file; this is the standard text of the licence it declares.'
+        entry.note = entry.note ?? 'The package ships no license file; this is the standard text of the license it declares.'
       } else {
-        errors.push(`${id}: ships no licence text, and there is no standard text for ${JSON.stringify(license)}`)
+        errors.push(`${id}: ships no license text, and there is no standard text for ${JSON.stringify(license)}`)
       }
     }
     byId.set(id, entry)
@@ -196,11 +196,11 @@ export function collectNotices({ root, lock, bundled = [], vendored = [], overri
     }
     if (v.licenseFrom) {
       const file = join(root, v.licenseFrom)
-      if (!existsSync(file)) errors.push(`${v.name}: licence text ${v.licenseFrom} is missing`)
+      if (!existsSync(file)) errors.push(`${v.name}: license text ${v.licenseFrom} is missing`)
       else texts = [{ file: v.licenseFrom.split('/').pop(), text: readFileSync(file, 'utf8').replace(/\r\n/g, '\n').trim() }]
     }
-    if (!isAllowed(v.license, allowed)) errors.push(`${v.name}: licence ${JSON.stringify(v.license)} is not on the allowlist`)
-    if (texts.length === 0) errors.push(`${v.name}: no licence text`)
+    if (!isAllowed(v.license, allowed)) errors.push(`${v.name}: license ${JSON.stringify(v.license)} is not on the allowlist`)
+    if (texts.length === 0) errors.push(`${v.name}: no license text`)
     byId.set(`${v.name}@${version}`, { name: v.name, version, license: v.license, from: ['vendored'], texts, note: v.note })
   }
   for (const name of Object.keys(overrides)) {
@@ -224,7 +224,7 @@ export function noticesText(app, entries) {
     rule,
   ]
   for (const e of entries) {
-    parts.push('', `${e.name} ${e.version}`, `Licence: ${e.license}`)
+    parts.push('', `${e.name} ${e.version}`, `License: ${e.license}`)
     if (e.note) parts.push(`Note: ${e.note}`)
     for (const t of e.texts) parts.push('', t.text)
     parts.push('', rule)

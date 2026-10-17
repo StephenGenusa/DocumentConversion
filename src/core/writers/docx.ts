@@ -352,7 +352,7 @@ const TCPR_ORDER = [
  * and w:vAlign in the order it meets them; the schema wants the span and the
  * merge before the borders. A strict reader may ignore an element out of
  * order, and Word may offer to repair the file (LibreOffice 7.3 happens to
- * honour the span either way). Each cell's properties are put back in order. A cell continuing a row span is also
+ * honor the span either way). Each cell's properties are put back in order. A cell continuing a row span is also
  * given `<w:gridSpan w:val="0"/>` when the span is one column wide: zero is
  * not a span, so it is dropped.
  */
@@ -623,14 +623,14 @@ export function flattenForDocx(source: string): string {
 /**
  * Display math that stood inside a paragraph (draw-blocks.ts marks its
  * picture DOCX_OWN_LINE, between two <br>s): a Word paragraph has one
- * alignment, so the paragraph is split around it, the formula centred in a
+ * alignment, so the paragraph is split around it, the formula centered in a
  * paragraph of its own and the text either side keeping the paragraph's
  * attributes, as pandoc writes display math to Word. In a list item or a
  * cell the paragraph is left whole (html-to-docx loses content there, and
  * an item's pieces would become items of their own), so the formula keeps
  * its line between the two breaks.
  */
-function centreOwnLineFormulas(source: string): string {
+function centerOwnLineFormulas(source: string): string {
   if (!source.includes(DOCX_OWN_LINE)) return source
   const dom = parseDocument(source)
   const ownLine = (n: AnyNode | undefined): n is Element => !!n && isElement(n) && n.name === 'img' && n.attribs[DOCX_OWN_LINE] !== undefined
@@ -748,7 +748,7 @@ const CODE_FONT = 'Courier'
  * text and the block share one paragraph, the <pre> is read as a run, and its
  * text came out in the body font. Inline <code> is never given a font at all.
  *
- * The one font the library honours on a run is a `font-family` on a <span>,
+ * The one font the library honors on a run is a `font-family` on a <span>,
  * so each piece of code text is wrapped in one. A span holding just text is
  * the shape breakCodeLines already relies on; the spans that lost content
  * (see unwrapSpans) are gone by now, so these are the only ones. Rewriting
@@ -868,7 +868,7 @@ function wordColor(css: string): string | undefined {
  * any depth of nesting; the formatting tags themselves are taken away. Once
  * the document is written, styleRuns turns each stand-in color back into
  * Word's own w:b, w:i, w:u, w:strike, w:vertAlign and w:highlight. The code
- * font travels as the span's font-family, which html-to-docx does honour.
+ * font travels as the span's font-family, which html-to-docx does honor.
  *
  * Taking the tags away also mends three other losses, measured:
  *  - a link inside formatting (`<strong><a>`) was written as plain text, as
@@ -1004,7 +1004,7 @@ function drawsLine(node: AnyNode, colored: ColoredLook[]): boolean {
 
 /**
  * Stand-ins for a space and a tab kept as a piece of their own (see
- * joinSpaces), written out as character references once serialised.
+ * joinSpaces), written out as character references once serialized.
  * Private-use, so never real content.
  */
 const KEPT_SPACE = '\uE003'
@@ -1014,11 +1014,11 @@ const KEPT = /[\uE003\uE004]/g
 /**
  * Join each whitespace-only piece of inline text to the text beside it, as
  * html-to-docx drops it otherwise: to plain text after it if there is some,
- * else to a neighbour that draws no line through a space (`~~a~~ b` must not
+ * else to a neighbor that draws no line through a space (`~~a~~ b` must not
  * strike the space), the one before first. Whitespace between blocks has no
  * text beside it and is left alone.
  *
- * With only a struck, underlined or highlighted neighbour (`~~a~~ __b__`, or
+ * With only a struck, underlined or highlighted neighbor (`~~a~~ __b__`, or
  * the indent in front of struck code), the piece stays apart, in its own
  * font, its spaces written as `&#32;`: html-to-docx drops white space between
  * two tags (its minifier), not a character reference.
@@ -1103,7 +1103,7 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
     {
       ...doc,
       html: flattenFormatting(
-        monospaceCode(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centreOwnLineFormulas(unwrapSpans(flattenForDocx(pictures)))))),
+        monospaceCode(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(pictures)))))),
         colored,
       ),
     },

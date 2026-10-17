@@ -87,7 +87,7 @@ function isRescuableTable(table: DomElement): boolean {
   if (table.querySelector('table')) return false
   const role = norm(table.getAttribute('role')).toLowerCase()
   if (role === 'presentation' || role === 'none') return false
-  // The explicit "this is not data" opt-outs authors and Readability both honour.
+  // The explicit "this is not data" opt-outs authors and Readability both honor.
   if (table.getAttribute('datatable') === '0') return false
   if (table.parentElement?.closest(FURNITURE)) return false
   if (!isTabularShape(table)) return false

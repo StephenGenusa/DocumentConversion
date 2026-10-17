@@ -333,7 +333,7 @@ describe('§2.5 rule 2: CFB disambiguation (+F14 .xls, +F19 .doc)', () => {
   it('treats .xls as an extension-pass mapping, ahead of any content sniff', () => {
     // RULING: F14's wording implied the magic pass owned .xls, contradicting
     // rule 1's "first match wins". The extension pass owns it, like every
-    // other known extension; a mislabelled file then fails in the reader with
+    // other known extension; a mislabeled file then fails in the reader with
     // a format-specific error rather than being silently read as something
     // else. Recorded in the round-3 spec addendum.
     expect(okFormat(detect(utf8('a,b\n1,2\n'), 'book.xls'))).toBe('xlsx')
@@ -738,7 +738,7 @@ describe('F17 expandZipArchive: skip rules', () => {
     expect(out[0]!.bytes.toString('utf8')).toBe('# hi')
   })
 
-  it('flattens in-archive paths to basenames (zip-slip defence)', async () => {
+  it('flattens in-archive paths to basenames (zip-slip defense)', async () => {
     // RULING: entries are addressed by basename so no archive path can steer
     // an output location; collisions are disambiguated instead (next test).
     const zip = new JSZip()

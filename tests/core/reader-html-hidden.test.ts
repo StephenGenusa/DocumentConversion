@@ -29,7 +29,7 @@ describe('readHtml hidden content', () => {
     expect(doc.html).not.toContain('Tab 1 of 3.')
   })
 
-  it('recognises the common visually-hidden class idioms', async () => {
+  it('recognizes the common visually-hidden class idioms', async () => {
     for (const cls of ['sr-only', 'visually-hidden', 'visuallyhidden', 'screen-reader-text', 'ms-hidden']) {
       const doc = await readHtml(page(`<p>Visible<span class="${cls}">Furniture</span></p>`))
       expect(doc.html, cls).toContain('Visible')
@@ -37,7 +37,7 @@ describe('readHtml hidden content', () => {
     }
   })
 
-  it('recognises the 1px clip-rect visually-hidden idiom written inline', async () => {
+  it('recognizes the 1px clip-rect visually-hidden idiom written inline', async () => {
     const style = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(1px,1px,1px,1px)'
     const doc = await readHtml(page(`<p>Visible<span style="${style}">Furniture</span></p>`))
     expect(doc.html).toContain('Visible')

@@ -48,7 +48,7 @@ vi.mock('electron', () => ({
 
 // ocr-host is imported dynamically so the 'electron' factory above runs after
 // this module's own bindings exist (a static import would run it during
-// hoisting, before `children` is initialised).
+// hoisting, before `children` is initialized).
 type OcrHost = typeof import('../../src/main/ocr-host')
 async function host(): Promise<OcrHost> {
   return import('../../src/main/ocr-host')

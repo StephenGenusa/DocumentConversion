@@ -55,7 +55,7 @@ describe('rtf table pre-pass error handling', () => {
     const out = segmentTables('body text', () => {
       throw new Error('some region was unreadable')
     })
-    // The document survives, tables dropped — the behaviour worth keeping.
+    // The document survives, tables dropped — the behavior worth keeping.
     expect(out).toEqual({ rtf: 'body text', tables: [] })
   })
 

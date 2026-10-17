@@ -3,7 +3,7 @@ import { collectOdfNotes, appendOdfList, loadOdfDocument, odfRich, withOdfStyles
 import type { HubDocument, SourceInput } from '../types'
 
 /**
- * One ODF table row as its cells, honouring repeated/covered cells.
+ * One ODF table row as its cells, honoring repeated/covered cells.
  *
  * Each cell is returned as ready HTML (escaped text, plus any nested table as
  * real <table> markup) rather than plain text, because a cell may hold a
@@ -73,7 +73,7 @@ export async function readOdt(src: SourceInput): Promise<HubDocument> {
     // Walk headings, paragraphs, lists and tables in document order. Tables and
     // lists are matched here so their inner paragraphs are consumed with them —
     // otherwise the same scan sweeps them up as loose top-level paragraphs. The
-    // scan must honour nesting: a lazy regex closes an outer <text:list> on its
+    // scan must honor nesting: a lazy regex closes an outer <text:list> on its
     // first nested </text:list>.
     let lastList: ListRun = null
     for (const block of scanElements(body, ['text:h', 'text:p', 'text:list', 'table:table'])) {

@@ -6,7 +6,7 @@
  * a denylist cannot report what is not on it. These functions invert that: they
  * ENUMERATE every value of each class, and the test compares the enumeration
  * against an explicit allowlist. Anything new fails until it is approved, so an
- * unrecognised name, address, number or word cannot enter unnoticed.
+ * unrecognized name, address, number or word cannot enter unnoticed.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -26,7 +26,7 @@ const SKIP_PATHS = new Set([
   // UTIF.js and pako's inflate, vendored byte for byte (scripts/build-render-assets.mjs).
   'resources/render/utif.js',
   'resources/render/pako-inflate.min.js',
-  // Third-party licence texts, copied word for word (scripts/notices/vendored.json).
+  // Third-party license texts, copied word for word (scripts/notices/vendored.json).
   'scripts/notices/texts/viz-js-3.31.0-LICENSE',
   'scripts/notices/texts/graphviz-16.1.0-LICENSE',
   'scripts/notices/texts/expat-2.8.5-COPYING',
@@ -168,12 +168,12 @@ export interface Hit {
 export function enumerate(
   sources: { path: string; text: string }[],
   re: RegExp,
-  normalise: (m: RegExpMatchArray) => string = (m) => m[0],
+  normalize: (m: RegExpMatchArray) => string = (m) => m[0],
 ): Map<string, Set<string>> {
   const found = new Map<string, Set<string>>()
   for (const { path, text } of sources) {
     for (const m of text.matchAll(re)) {
-      const v = normalise(m)
+      const v = normalize(m)
       if (!v) continue
       if (!found.has(v)) found.set(v, new Set())
       found.get(v)!.add(path)

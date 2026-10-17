@@ -67,7 +67,7 @@ describe('drawing formulas (step 18)', () => {
     expect(out).toContain('style="width:2ex;height:2ex"')
   })
 
-  it('centres a display formula on a line of its own, never wider than the page', async () => {
+  it('centers a display formula on a line of its own, never wider than the page', async () => {
     const { render, calls } = fakeRenderer()
     const out = await drawBlocks(display('\\sum_i i'), 'epub', { renderBlocks: render })
     expect(calls[0]).toEqual([{ kind: 'math', source: '\\sum_i i', display: true, format: 'svg' }])
@@ -267,7 +267,7 @@ describe('drawing formulas (step 18)', () => {
     expect(calls).toHaveLength(0)
   })
 
-  it('Word: formulas are PNG media, each inline one lowered onto the baseline (w:position), display ones centred', async () => {
+  it('Word: formulas are PNG media, each inline one lowered onto the baseline (w:position), display ones centered', async () => {
     const { render } = fakeRenderer()
     const conv = createConverter(async () => Buffer.from('%PDF-'), { renderBlocks: render })
     const md = Buffer.from('Let $x^2$ and $y_1$ be.\n\n$$\\sum_i i$$\n')

@@ -21,7 +21,7 @@ function diffPath(raw: string): string {
  * splits badly into e-book chapters. Git diffs are split on `diff --git`
  * lines; a plain unified diff on each `---` line followed by `+++`. Text
  * before the first file is a preamble: the mail header and diffstat of a
- * `git format-patch` file. Null when the text is not a recognisable diff.
+ * `git format-patch` file. Null when the text is not a recognizable diff.
  */
 export function diffSections(text: string): { preamble: string; files: DiffSection[] } | null {
   const lines = text.split('\n')
@@ -47,7 +47,7 @@ export function diffSections(text: string): { preamble: string; files: DiffSecti
 /**
  * A minified JSON or XML file re-indented so it can be read (spec D5). Only
  * when it cannot be read as written (see needsReformat): a file someone laid
- * out by hand is theirs. The re-indenting never re-serialises values, and a
+ * out by hand is theirs. The re-indenting never re-serializes values, and a
  * file it cannot make sense of is shown as it is.
  */
 function readable(text: string, language: string, ctx?: ReadContext): string {

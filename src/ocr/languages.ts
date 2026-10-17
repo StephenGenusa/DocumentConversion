@@ -1,5 +1,5 @@
 /**
- * The OCR language catalogue.
+ * The OCR language catalog.
  *
  * English ships in the installer. Everything else is downloaded on request,
  * never automatically: this app's claim is that nothing leaves the machine, and
@@ -7,7 +7,7 @@
  * axis the project sells on. A download has to be visible, refusable, and
  * absent unless asked for.
  *
- * Deliberately dependency-free and Electron-free, so the catalogue can be
+ * Deliberately dependency-free and Electron-free, so the catalog can be
  * tested, and reasoned about, without a network or a filesystem.
  */
 

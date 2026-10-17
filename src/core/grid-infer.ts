@@ -106,7 +106,7 @@ export function inferColumns(rows: PositionedText[][], tolerance: number): numbe
   for (const x of origins) {
     const last = clusters[clusters.length - 1]
     if (last && Math.abs(x - last.center) <= tolerance) {
-      // Running mean keeps the centre stable as members accumulate.
+      // Running mean keeps the center stable as members accumulate.
       last.center = (last.center * last.count + x) / (last.count + 1)
       last.count++
       continue
@@ -157,7 +157,7 @@ export function scoreGrid(grid: string[][]): number {
  * row above, not a row of its own. Folding matters twice over: the text ends
  * up in the right cell, and, because folding happens BEFORE scoring, the
  * half-empty visual rows stop dragging the confidence down. Measured on a
- * catalogue-code spreadsheet print where 62% of rows wrap: the raw score is
+ * catalog-code spreadsheet print where 62% of rows wrap: the raw score is
  * about 0.48 and the whole table is discarded; folded it is 1.0.
  *
  * Prose is untouched by this: every line of a paragraph starts at the left

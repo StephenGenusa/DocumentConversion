@@ -19,8 +19,8 @@ export interface OcrAssets {
    */
   langPath: string
   /**
-   * Which language to recognise. Defaults to the bundled English pack, so
-   * every existing caller keeps its behaviour unchanged.
+   * Which language to recognize. Defaults to the bundled English pack, so
+   * every existing caller keeps its behavior unchanged.
    */
   language?: string
   /**
@@ -86,7 +86,7 @@ async function newWorker(assets: OcrAssets, signal?: AbortSignal): Promise<Worke
 
 /**
  * Below this, tesseract is guessing at shapes rather than reading letters —
- * a stylised logo came back as "JECH Leroy" at exit 0. Confident nonsense is
+ * a stylized logo came back as "JECH Leroy" at exit 0. Confident nonsense is
  * worse than an honest failure, so the caller is told instead.
  *
  * The floor is per SCRIPT, not global. 55 is the number this pipeline was

@@ -148,7 +148,7 @@ const text = (p: Prop): string => unescape(rawValue(p)).trim()
 const QUIET_TYPES = new Set(['internet', 'pref', 'voice', 'x400', 'quoted-printable', 'uri', 'text'])
 
 /** "work: …" from TYPE, or from an Apple `itemN.X-ABLabel` in the same group. */
-function labelled(p: Prop, value: string, labels: Map<string, string>): string {
+function labeled(p: Prop, value: string, labels: Map<string, string>): string {
   const apple = p.group !== undefined ? labels.get(p.group) : undefined
   const label = apple ?? p.types.find((t) => !QUIET_TYPES.has(t) && !t.includes('='))
   return label ? `${label}: ${value}` : value
@@ -191,10 +191,10 @@ function cardRow(props: Prop[]): { row: string[]; photos: number } {
         title.push(text(p))
         break
       case 'EMAIL':
-        email.push(labelled(p, text(p).replace(/^mailto:/i, ''), labels))
+        email.push(labeled(p, text(p).replace(/^mailto:/i, ''), labels))
         break
       case 'TEL':
-        tel.push(labelled(p, text(p).replace(/^tel:/i, ''), labels))
+        tel.push(labeled(p, text(p).replace(/^tel:/i, ''), labels))
         break
       case 'ADR': {
         // PO box; extended; street; locality; region; postal code; country
@@ -203,7 +203,7 @@ function cardRow(props: Prop[]): { row: string[]; photos: number } {
         )
         const regionCode = [region, code].filter((s) => s !== '').join(' ')
         const parts = [po, ext, street, city, regionCode, country].filter((s) => s !== '')
-        if (parts.length > 0) adr.push(labelled(p, parts.join(', '), labels))
+        if (parts.length > 0) adr.push(labeled(p, parts.join(', '), labels))
         break
       }
       case 'BDAY': {

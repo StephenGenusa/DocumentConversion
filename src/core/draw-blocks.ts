@@ -67,7 +67,7 @@ export function rendersBlocks(target: TargetFormat): boolean {
 /**
  * Marks a picture this pass drew, for the writers that must tell it from the
  * document's own images: the EPUB writer never makes one the cover. It
- * exists only between write() and the writer; the sanitiser drops it, so it
+ * exists only between write() and the writer; the sanitizer drops it, so it
  * never comes back into a document read from this app's own output.
  */
 export const RENDERED_MARKER = 'data-rendered'
@@ -108,7 +108,7 @@ export interface DrawContext {
 
 /**
  * Draw the document's diagrams and formulas for `target` (spec B3): each B1
- * diagram that is drawn becomes a centred `<img>` of an SVG or PNG data URI
+ * diagram that is drawn becomes a centered `<img>` of an SVG or PNG data URI
  * (renderedFormatFor) with alt "Diagram", each formula an `<img>` whose alt
  * is its TeX (drawFormulas); a
  * block that is not stays source, with a notice for each failure and one for
@@ -211,7 +211,7 @@ type Placement = 'inline' | 'block' | 'in-paragraph'
 
 /**
  * Marks, for the docx writer, a picture of display math that stood inside a
- * paragraph: it is put in a centred paragraph of its own there.
+ * paragraph: it is put in a centered paragraph of its own there.
  */
 export const DOCX_OWN_LINE = 'data-docx-own-line'
 
@@ -232,7 +232,7 @@ const exs = (px: number): string => `${Math.round((px / PX_PER_EX) * 1000) / 100
 /**
  * Draw the document's formulas (spec B3, B7): inline ones become an `<img>`
  * in the line, lowered by the formula's depth below the baseline; display
- * ones a centred `<img>` of their own. Alt is the TeX. Sizes are in ex where
+ * ones a centered `<img>` of their own. Alt is the TeX. Sizes are in ex where
  * the target lays out CSS (so a formula follows the size of the text around
  * it: a heading, a slide, a reader's chosen size), in px at the text's size
  * for Word, with the lowering handed to the docx writer (`data-docx-lower`,
@@ -342,8 +342,8 @@ function formulaHtml(
   if (placement === 'inline') return img
   // Display math inside a paragraph: a line of its own, the paragraph going
   // on after it, as pandoc writes it. Word ignores display:block, so there
-  // it stands between two breaks, and the docx writer gives it a centred
-  // paragraph of its own where it can (centreOwnLineFormulas).
+  // it stands between two breaks, and the docx writer gives it a centered
+  // paragraph of its own where it can (centerOwnLineFormulas).
   return target === 'docx' ? `<br>${img}<br>` : `<span style="display:block;text-align:center;margin:0.5em 0">${img}</span>`
 }
 
@@ -352,7 +352,7 @@ function escapeAttr(text: string): string {
 }
 
 const BASE64 = /^[A-Za-z0-9+/]+=*$/
-/** An SVG document, as the host returns it (sanitised there, spec B6). */
+/** An SVG document, as the host returns it (sanitized there, spec B6). */
 const SVG_DOCUMENT = /^\s*(?:<\?xml[^>]*\?>\s*)?<svg[\s>][\s\S]*<\/svg>\s*$/
 
 /**

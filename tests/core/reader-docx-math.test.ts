@@ -18,7 +18,7 @@ import { buildDocx, noteRef } from '../../scripts/fixtures/lib-docx.mjs'
 const r = (t: string): string => `<m:r><m:t xml:space="preserve">${t}</m:t></m:r>`
 const t = (s: string): string => `<w:r><w:t xml:space="preserve">${s}</w:t></w:r>`
 const xSquared = `<m:oMath><m:sSup><m:e>${r('x')}</m:e><m:sup>${r('2')}</m:sup></m:sSup></m:oMath>`
-const mathPara = (...maths: string[]): string => `<m:oMathPara>${maths.join('')}</m:oMathPara>`
+const mathPara = (...math: string[]): string => `<m:oMathPara>${math.join('')}</m:oMathPara>`
 const unknown = `<m:oMath>${r('a')}<m:mystery><m:e>${r('b')}</m:e></m:mystery></m:oMath>`
 
 async function read(opts: { body: string; footnotes?: string[]; endnotes?: string[] }): Promise<{ html: string; notes: Array<[AdviceKind, string]> }> {

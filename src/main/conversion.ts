@@ -282,7 +282,7 @@ export async function runConversion(
 }
 
 /**
- * The two flavours "copy as HTML" puts on the clipboard: rich, for Word, Teams
+ * The two flavors "copy as HTML" puts on the clipboard: rich, for Word, Teams
  * and Outlook paste targets (FOR_PASTING), and plain, for editors. One read
  * serves both.
  * This used to be two full conversions, and the second ran with no signal at

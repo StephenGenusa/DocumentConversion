@@ -324,7 +324,7 @@ describe('rtf tables: nested tables keep their grid', () => {
     // GFM pipe tables cannot nest. writeMarkdown rebuilds every table from its
     // grid, which folds the inner table's text into the parent cell and drops
     // the inner grid: one flat table, no text lost. That is the only lossless
-    // shape available, so it is the recorded behaviour, not a defect.
+    // shape available, so it is the recorded behavior, not a defect.
     expect(md.trim()).toBe('| Widget 3 Gadget 7 | Ready |\n| --- | --- |')
     expect(md).not.toContain('Widget3')
 

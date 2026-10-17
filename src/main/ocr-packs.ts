@@ -67,7 +67,7 @@ export function listPacks(): PackListing[] {
       installed: found !== null,
       source: found?.source,
       set: fast ? 'fast' : best ? 'best' : undefined,
-      // The recorded size is the file's actual length; the catalogue's figure
+      // The recorded size is the file's actual length; the catalog's figure
       // is an estimate, kept only for a language the table does not know.
       size: {
         fast: digestFor(language.code, 'fast')?.size ?? language.size.fast,
@@ -141,7 +141,7 @@ export async function downloadPack(
 
 /** Remove a downloaded pack. A bundled one is part of the installation. */
 export async function removePack(code: string, set: ModelSet): Promise<{ ok: boolean; message?: string }> {
-  // packPathIn refuses a code that is not in the catalogue. Building the path
+  // packPathIn refuses a code that is not in the catalog. Building the path
   // directly here is what made this an arbitrary-file-delete: the code comes
   // from the renderer and a traversal resolved outside the pack directory.
   const path = packPathIn(userPackDir(), code, set)

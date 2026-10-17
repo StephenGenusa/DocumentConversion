@@ -12,7 +12,7 @@ import { resolveOutPath } from '../../src/cli/out-path'
  * "no such file" that points nowhere near the cause.
  *
  * `--out` naming a DIRECTORY is different and stays as it was: there is no
- * filename in it to honour, so one is derived from the input.
+ * filename in it to honor, so one is derived from the input.
  */
 const ext = '.pdf'
 
@@ -24,7 +24,7 @@ describe('resolveOutPath', () => {
     expect(resolveOutPath({ inputPath: '/docs/report.md', suffix: '', ext })).toBe(resolve('/docs/report.pdf'))
   })
 
-  it('honours an explicit filename exactly, even when the extension differs', () => {
+  it('honors an explicit filename exactly, even when the extension differs', () => {
     // This is the bug: the caller asked for report.dat and got report.pdf.
     expect(
       resolveOutPath({ out: '/tmp/report.dat', inputPath: '/docs/a.md', suffix: '', ext }),
@@ -38,7 +38,7 @@ describe('resolveOutPath', () => {
   })
 
   it('adds the target extension when the caller gave none', () => {
-    // `--out report --to pdf` plainly means report.pdf; there is nothing to honour.
+    // `--out report --to pdf` plainly means report.pdf; there is nothing to honor.
     expect(resolveOutPath({ out: '/tmp/report', inputPath: '/docs/a.md', suffix: '', ext })).toBe(
       '/tmp/report.pdf',
     )

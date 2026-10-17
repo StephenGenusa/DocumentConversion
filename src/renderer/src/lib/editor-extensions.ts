@@ -20,7 +20,7 @@ import { CodeColor } from './code-color'
 /**
  * Speaker notes.
  *
- * allowlist.ts states the invariant: anything the sanitiser passes must
+ * allowlist.ts states the invariant: anything the sanitizer passes must
  * round-trip this editor losslessly. `aside` is in HUB_TAGS, so without a node
  * for it ProseMirror would silently drop notes the moment a user opened the
  * edit pane - the exact data loss the invariant exists to prevent.
@@ -129,7 +129,7 @@ const Footnotes = Node.create({
     {
       tag: 'ol',
       priority: 100,
-      // A notes list is an <ol> whose every item is labelled; anything else
+      // A notes list is an <ol> whose every item is labeled; anything else
       // is an ordinary numbered list and is left to OrderedList.
       getAttrs: (el: HTMLElement) => {
         const items = Array.from(el.children)

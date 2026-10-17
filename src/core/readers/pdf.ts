@@ -81,7 +81,7 @@ export interface PdfLine {
   items?: PdfText[]
   /**
    * A table-of-contents entry, already rewritten as "title — page". Such a line
-   * joins its neighbours as a list item, never a paragraph or a table row; see
+   * joins its neighbors as a list item, never a paragraph or a table row; see
    * `markTocEntries`.
    */
   toc?: boolean
@@ -614,7 +614,7 @@ const LIST_MARKER = /^(?:[^\p{L}\p{N}]{1,2}|[oO]|\d{1,2}[.)]|[A-Za-z][.)])$/u
  * cells are a bare "o", but the other three are a "•" that pdfjs handed back
  * glued to the first word of its own line ("• Birthof"), and three impostors
  * were enough to let a page of prose through as a table. Two-thirds is well
- * above what a real table's column produces — catalogue codes, part numbers
+ * above what a real table's column produces — catalog codes, part numbers
  * and dates are none of them list markers — and well below a bulleted list's.
  */
 const MARKER_COLUMN_SHARE = 0.6
@@ -717,7 +717,7 @@ function lineSegments(items: PdfText[], lineHeight: number, boundaries: number[]
       continue
     }
     // Rejoin the way the glyphs sat. A space between two pieces reaches us two
-    // ways and BOTH have to be honoured: as empty page, when the items were set
+    // ways and BOTH have to be honored: as empty page, when the items were set
     // apart, and as `spaceBefore`, when the page drew the space too narrow for
     // that — see `PdfText`. Trimming the pieces here is what used to throw the
     // second kind away and hand back "CodeNumber".
@@ -850,7 +850,7 @@ function pageToText(lines: PdfLine[], bodyHeight: number): Block[] {
  * so reading order survives a page whose lines are not in y order.
  */
 function pageToContent(page: PdfLine[], bodyHeight: number, images: PdfImage[] = []): Block[] {
-  // Whether this page is a contents page is a judgement about the whole page,
+  // Whether this page is a contents page is a judgment about the whole page,
   // so it is made once, here, before the page is cut up by pictures or tables.
   const lines = markTocEntries(page)
   if (images.length === 0) return pageToText(lines, bodyHeight)
@@ -1208,7 +1208,7 @@ function textToLines(text: string): PdfLine[] {
  *
  * A mixed PDF has pages of different KINDS — some with a text layer whose
  * geometry proves its tables, some recovered by OCR as a grid, some recovered
- * only as text — and each must contribute its best representation. Modelling
+ * only as text — and each must contribute its best representation. Modeling
  * that per page (rather than flattening the document to one array of strings)
  * is what keeps a scanned table inside an otherwise-native PDF a table.
  */
@@ -1225,7 +1225,7 @@ export function pdfTextToHub(pageTexts: string[]): HubDocument {
 /**
  * Build hub HTML from pages of mixed provenance, in page order.
  *
- * Running-head removal and the body type size are document-wide judgements, so
+ * Running-head removal and the body type size are document-wide judgments, so
  * they are made here over every page that has lines; a page that arrives as a
  * finished grid has no lines to judge and passes straight through.
  */

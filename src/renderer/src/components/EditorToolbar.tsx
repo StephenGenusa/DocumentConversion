@@ -275,7 +275,7 @@ export function EditorToolbar({
   /*
    * Table editing appears only with the caret inside a table. Always-on it
    * would be six more controls for something most documents never contain —
-   * and these are labelled rather than drawn, because five variants of a grid
+   * and these are labeled rather than drawn, because five variants of a grid
    * with a plus or a minus on it are indistinguishable at 16 pixels.
    */
   if (state.inTable) {
@@ -527,7 +527,7 @@ function menu(label: string, content: React.ReactNode, items: MenuItem[]): Contr
   return { kind: 'menu', label, content, items }
 }
 
-/** A labelled control: no `aria-pressed`, because it is an action, not a state. */
+/** A labeled control: no `aria-pressed`, because it is an action, not a state. */
 function text(label: string, onClick: () => void): Control & { kind: 'button' } {
   return { kind: 'button', label, content: label, text: true, onClick }
 }

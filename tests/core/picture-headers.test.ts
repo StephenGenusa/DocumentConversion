@@ -107,7 +107,7 @@ describe('picture sizes Word is told (html-to-docx cannot read them)', () => {
     expect(tiffSize(makeTiff({ ...page(2, 2), claim: { width: 900000, height: 2 } }))).toBeNull()
   })
 
-  it('an EMF by its frame (hundredths of a millimetre)', () => {
+  it('an EMF by its frame (hundredths of a millimeter)', () => {
     expect(emfSize(emf({ width: 160, height: 120 }))).toEqual({ width: 160, height: 120 })
     expect(emfSize(Buffer.alloc(100))).toBeNull()
   })

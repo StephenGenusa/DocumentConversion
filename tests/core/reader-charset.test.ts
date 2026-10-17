@@ -29,7 +29,7 @@ describe('readTxt charset detection', () => {
     expect(doc.html).toContain('Café 你好 \u{1f600} — ok')
   })
 
-  it('honours a UTF-8 BOM without leaving it in the text', async () => {
+  it('honors a UTF-8 BOM without leaving it in the text', async () => {
     const doc = await readTxt({ bytes: utf8bom('Café') })
     expect(doc.html).toContain('Café')
     expect(doc.html).not.toContain('\uFEFF')
@@ -66,14 +66,14 @@ describe('readHtml charset detection', () => {
     expect(doc.html).toContain('Café — 你好')
   })
 
-  it('honours <meta charset="windows-1252">', async () => {
+  it('honors <meta charset="windows-1252">', async () => {
     const bytes = cp1252(`<html><head><meta charset="windows-1252"><title>T</title></head><body><p>${SMART}</p></body></html>`)
     const doc = await readHtml({ bytes })
     expect(doc.html).toContain(SMART)
     expect(doc.html).not.toContain('�')
   })
 
-  it('honours a legacy http-equiv Content-Type declaration', async () => {
+  it('honors a legacy http-equiv Content-Type declaration', async () => {
     const bytes = cp1252(
       `<html><head><meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"></head><body><p>café</p></body></html>`,
     )
@@ -119,7 +119,7 @@ describe('charset: declaration versus evidence', () => {
     expect(doc.html).not.toContain('Ã')
   })
 
-  it('still honours the declaration when the bytes are not valid UTF-8', async () => {
+  it('still honors the declaration when the bytes are not valid UTF-8', async () => {
     // Real Windows-1252: 0x93/0x94 are not a UTF-8 sequence, so the
     // declaration is the only witness and it is right.
     const bytes = cp1252('<html><head><meta charset="windows-1252"></head><body><p>“q”</p></body></html>')
@@ -127,7 +127,7 @@ describe('charset: declaration versus evidence', () => {
     expect(doc.html).toContain('“q”')
   })
 
-  it('honours a declared non-Latin single-byte charset when the bytes fit it', async () => {
+  it('honors a declared non-Latin single-byte charset when the bytes fit it', async () => {
     const bytes = iconv.encode('<html><head><meta charset="windows-1251"></head><body><p>Привет</p></body></html>', 'win1251')
     const doc = await readHtml({ bytes })
     expect(doc.html).toContain('Привет')

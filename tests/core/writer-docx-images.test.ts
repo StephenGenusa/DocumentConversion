@@ -117,20 +117,20 @@ describe('Word keeps TIFF, EMF and WMF pictures as they are (html-to-docx cannot
 
   it('embeds each as it is, with its own content type, at the size its header gives', async () => {
     const tiff = scan()
-    const mislabelled = scan(true)
+    const mislabeled = scan(true)
     const drawing: Buffer = emf({ width: 160, height: 120 })
     const old: Buffer = wmf({ width: 200, height: 80 })
     const html =
-      `<p>Before</p><p>${tag('image/tiff', tiff, 'Scan')}</p><p>${tag('image/png', mislabelled, 'Mislabelled')}</p>` +
+      `<p>Before</p><p>${tag('image/tiff', tiff, 'Scan')}</p><p>${tag('image/png', mislabeled, 'Mislabeled')}</p>` +
       `<p>${tag('image/x-emf', drawing, 'Drawing')}</p><p>${tag('image/x-wmf', old, 'Old drawing')}</p><p><img src="${red}" alt="Red"></p><p>After</p>`
     const { media, types, doc, bytes } = await parts(await writeDocx({ html }))
     for (const text of ['Before', 'After']) expect(doc).toContain(text)
-    expect(doc).not.toMatch(/\[(Scan|Mislabelled|Drawing|Old drawing)\]/)
+    expect(doc).not.toMatch(/\[(Scan|Mislabeled|Drawing|Old drawing)\]/)
     expect(media.dangling).toEqual([])
     expect(media.used.map((t) => t.replace(/^.*\./, ''))).toEqual(['tif', 'tif', 'emf', 'wmf', 'png'])
     const used = media.used.map((t) => `word/${t}`)
     expect((await bytes(used[0])).equals(tiff)).toBe(true)
-    expect((await bytes(used[1])).equals(mislabelled)).toBe(true)
+    expect((await bytes(used[1])).equals(mislabeled)).toBe(true)
     expect((await bytes(used[2])).equals(drawing)).toBe(true)
     expect((await bytes(used[3])).equals(old)).toBe(true)
     expect(types).toContain('<Default Extension="tif" ContentType="image/tiff"/>')

@@ -46,15 +46,15 @@ async function odt(body: string): Promise<Buffer> {
 
 describe('odfText footnotes and endnotes', () => {
   it('keeps the citation mark inline without fusing it to the preceding word', () => {
-    const text = odfText(`The catalogue record${note('1', 'See appendix B for ratings.')} is rated for 400 V.`)
-    expect(text).toContain('The catalogue record [1] is rated for 400 V.')
-    expect(text).not.toContain('catalogue record1')
-    expect(text).not.toContain('catalogue record [1]See')
+    const text = odfText(`The catalog record${note('1', 'See appendix B for ratings.')} is rated for 400 V.`)
+    expect(text).toContain('The catalog record [1] is rated for 400 V.')
+    expect(text).not.toContain('catalog record1')
+    expect(text).not.toContain('catalog record [1]See')
   })
 
   it('moves the note body out of the sentence to the end of the block', () => {
-    const text = odfText(`The catalogue record${note('1', 'See appendix B for ratings.')} is rated for 400 V.`)
-    expect(text).toBe('The catalogue record [1] is rated for 400 V. [1] See appendix B for ratings.')
+    const text = odfText(`The catalog record${note('1', 'See appendix B for ratings.')} is rated for 400 V.`)
+    expect(text).toBe('The catalog record [1] is rated for 400 V. [1] See appendix B for ratings.')
   })
 
   it('never splices a note body between two words', () => {
@@ -124,7 +124,7 @@ describe('odfText annotations', () => {
     expect(text).not.toContain('beforeafter')
   })
 
-  it('drops a lone annotation-end milestone without fusing its neighbours', () => {
+  it('drops a lone annotation-end milestone without fusing its neighbors', () => {
     expect(odfText('left<office:annotation-end office:name="__A1__"/>right')).toBe('left right')
     expect(odfText('left<office:annotation-end office:name="__A1__"></office:annotation-end>right')).toBe('left right')
   })
@@ -152,11 +152,11 @@ describe('odfText annotations', () => {
 describe('readOdt with notes and comments', () => {
   it('renders a footnote as a reference and a note, and drops the comment', async () => {
     const bytes = await odt(
-      `<text:p>The catalogue record${note('1', 'See appendix B for ratings.')} is rated for 400 V.</text:p>` +
+      `<text:p>The catalog record${note('1', 'See appendix B for ratings.')} is rated for 400 V.</text:p>` +
         `<text:p>Price is ${annotation('Bob', '2026-02-03T10:00:00', 'Check this with finance')}ten dollars.</text:p>`,
     )
     const hub = await readOdt({ bytes, filename: 'notes.odt' })
-    expect(hub.html).toContain('<p>The catalogue record<sup data-fn="1">1</sup> is rated for 400 V.</p>')
+    expect(hub.html).toContain('<p>The catalog record<sup data-fn="1">1</sup> is rated for 400 V.</p>')
     expect(hub.html).toContain('<li data-fn="1"><p>See appendix B for ratings.</p></li>')
     expect(hub.html).toContain('<p>Price is ten dollars.</p>')
     expect(hub.html).not.toContain('Bob')
@@ -165,13 +165,13 @@ describe('readOdt with notes and comments', () => {
 
   it('carries the same shape into the CSS-less targets', async () => {
     const bytes = await odt(
-      `<text:p>The catalogue record${note('1', 'See appendix B for ratings.')} is rated for 400 V.</text:p>` +
+      `<text:p>The catalog record${note('1', 'See appendix B for ratings.')} is rated for 400 V.</text:p>` +
         `<text:p>Price is ${annotation('Bob', '2026-02-03T10:00:00', 'Check this with finance')}ten dollars.</text:p>`,
     )
     const hub = await readOdt({ bytes, filename: 'notes.odt' })
 
     const txt = (await writeTxt(hub)).toString('utf8')
-    expect(txt).toContain('The catalogue record[1] is rated for 400 V.')
+    expect(txt).toContain('The catalog record[1] is rated for 400 V.')
     expect(txt).toMatch(/1\. See appendix B for ratings\./)
     expect(txt).toContain('Price is ten dollars.')
     expect(txt).not.toContain('Bob')
@@ -179,12 +179,12 @@ describe('readOdt with notes and comments', () => {
 
     // A real Markdown footnote now, not escaped brackets.
     const md = (await writeMarkdown(hub)).toString('utf8')
-    expect(md).toContain('The catalogue record[^1] is rated for 400 V.')
+    expect(md).toContain('The catalog record[^1] is rated for 400 V.')
     expect(md).toContain('[^1]: See appendix B for ratings.')
     expect(md).toContain('Price is ten dollars.')
     expect(md).not.toContain('Bob')
     expect(md).not.toContain('finance')
-    expect(md).not.toMatch(/catalogue record\S*1See/)
+    expect(md).not.toMatch(/catalog record\S*1See/)
   })
 
   it('handles notes and comments inside headings and list items', async () => {

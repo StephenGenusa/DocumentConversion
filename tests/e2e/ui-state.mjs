@@ -35,7 +35,7 @@ const MAIN_INSPECT_PORT = 9456
 // there, not in any page the DevTools protocol can see.
 const appArgs = [`--inspect=${MAIN_INSPECT_PORT}`, ROOT, `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`]
 const headless = process.platform === 'linux' && spawnSync('which', ['xvfb-run']).status === 0
-// Its own process group: xvfb-run is a shell script, and signalling only it
+// Its own process group: xvfb-run is a shell script, and signaling only it
 // leaves Electron and the X server behind.
 const spawnApp = () =>
   headless
@@ -262,7 +262,7 @@ const paste = (selector, text, html) =>
     `(() => { const dt=new DataTransfer(); dt.setData('text/plain', ${JSON.stringify(text)}); ${html ? `dt.setData('text/html', ${JSON.stringify(html)});` : ''} document.querySelector(${JSON.stringify(selector)}).dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true})) })()`,
   )
 
-/** The checkbox labelled `text`, as { checked } or null when it is not shown. */
+/** The checkbox labeled `text`, as { checked } or null when it is not shown. */
 const checkbox = (text) =>
   js(`(() => { const l=[...document.querySelectorAll('label')].find(l=>l.textContent.trim()===${JSON.stringify(text)}); const i=l?.querySelector('input[type=checkbox]'); return i ? { checked: i.checked } : null })()`)
 const toggle = async (text) => {
@@ -271,7 +271,7 @@ const toggle = async (text) => {
   await waitFor(`[...document.querySelectorAll('label')].find(l=>l.textContent.trim()===${JSON.stringify(text)})?.querySelector('input').checked === ${!before}`, `"${text}" to change`)
 }
 
-/** The select labelled `text`, as { value, text } or null when it is not shown. */
+/** The select labeled `text`, as { value, text } or null when it is not shown. */
 const choice = (text) =>
   js(`(() => { const l=[...document.querySelectorAll('label')].find(l=>l.firstChild?.textContent.trim()===${JSON.stringify(text)}); const s=l?.querySelector('select'); return s ? { value: s.value, text: s.selectedOptions[0]?.textContent } : null })()`)
 const choose = async (text, value) => {
@@ -343,7 +343,7 @@ try {
 
   // About opens from the start screen, in its own window, with Chromium's 20 MB of notices collapsed.
   const opened = Date.now()
-  await click('About and licences')
+  await click('About and licenses')
   let about
   for (let i = 0; i < 100 && !about; i++) {
     await sleep(100)
@@ -404,7 +404,7 @@ try {
   const made = spawnSync('python3', ['-I', '-c', [
     'import sqlite3, sys',
     'c = sqlite3.connect(sys.argv[1])',
-    "c.execute('CREATE TABLE jars (shelf TEXT, flavour TEXT, jars INTEGER)')",
+    "c.execute('CREATE TABLE jars (shelf TEXT, flavor TEXT, jars INTEGER)')",
     "c.executemany('INSERT INTO jars VALUES (?, ?, ?)', [('top', 'quincemarmalade', 3), ('top', 'gooseberryjam', 2), ('low', 'damsonjelly', 5)])",
     "c.execute('CREATE TABLE shelves (shelf TEXT, room TEXT)')",
     "c.execute(\"INSERT INTO shelves VALUES ('top', 'larder')\")",
@@ -547,7 +547,7 @@ try {
     range.setEnd(p.firstChild, 4)
     const text = range.getBoundingClientRect()
     const box = rm.getBoundingClientRect()
-    return { inline: svgOf(rm), display: svgOf(rb), align: rm.style.verticalAlign, inlineH: box.height, textH: text.height, belowText: box.bottom - text.bottom, alt: rm.alt, centred: rb ? Math.abs((rb.getBoundingClientRect().left + rb.getBoundingClientRect().right) / 2 - (rb.closest('.rb').getBoundingClientRect().left + rb.closest('.rb').getBoundingClientRect().right) / 2) : -1 }
+    return { inline: svgOf(rm), display: svgOf(rb), align: rm.style.verticalAlign, inlineH: box.height, textH: text.height, belowText: box.bottom - text.bottom, alt: rm.alt, centered: rb ? Math.abs((rb.getBoundingClientRect().left + rb.getBoundingClientRect().right) / 2 - (rb.closest('.rb').getBoundingClientRect().left + rb.closest('.rb').getBoundingClientRect().right) / 2) : -1 }
   })()`)
   console.log(`note  formula in the pane: ${JSON.stringify(mathShown)}`)
   check('the editor draws inline and display TeX as SVG <img>s, the inline one lowered onto the baseline', mathShown.inline && mathShown.display && /^-[0-9.]+ex$/.test(mathShown.align) && mathShown.alt === 'x_{0}^2 + 0' && mathShown.inlineH > mathShown.textH * 0.6 && mathShown.inlineH < mathShown.textH * 2, JSON.stringify(mathShown))
@@ -669,7 +669,7 @@ try {
   await waitFor(`!!${EDITOR}`, 'the edit pane to come back')
   await startOver()
 
-  // The owner's copy: PyCharm's rich-text flavour, one inline-styled <pre>
+  // The owner's copy: PyCharm's rich-text flavor, one inline-styled <pre>
   // naming no language, beside the plain text.
   const pyText = 'import math\n\ndef greet(name):\n    if name:\n        print(f"Hello, {name}")\n    return math.pi\n'
   // The shape PyCharm put on the X clipboard: a styled <div> round the <pre>, `<br>` line ends, `&#32;` spaces.

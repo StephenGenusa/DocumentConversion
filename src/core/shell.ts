@@ -18,7 +18,7 @@ export interface ShellOptions {
 
 /**
  * Notebook cells. A converted notebook used to be an undifferentiated dump:
- * the code and the thing it printed were the SAME grey box, with no execution
+ * the code and the thing it printed were the SAME gray box, with no execution
  * prompts and nothing marking where input ended and output began.
  *
  * The hub allowlist permits `class` on `pre`/`code` and no other attribute

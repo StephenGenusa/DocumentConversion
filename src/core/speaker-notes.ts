@@ -3,14 +3,14 @@
  * output.
  *
  * Markdown has no notes syntax, so every tool that supports them agrees on an
- * HTML comment. The hub sanitiser drops comments outright, so a note written
+ * HTML comment. The hub sanitizer drops comments outright, so a note written
  * that way is gone before any writer sees it — which is why the slides design
  * originally listed notes as out of scope.
  *
  * They are carried as `<aside>` instead. Two things had to be true for that to
  * be safe, and neither was:
  *
- *  1. `aside` had to join HUB_TAGS. Before that the sanitiser stripped the tag
+ *  1. `aside` had to join HUB_TAGS. Before that the sanitizer stripped the tag
  *     and KEPT ITS TEXT, so a note leaked into the converted body as a loose
  *     run of words with nothing marking it as a note. That is the silent
  *     gluing class section 0 of remaining_work.md calls the worst bug here.
@@ -50,7 +50,7 @@ function escape(text: string): string {
  * Lift notes comments into hub elements. Run BEFORE `sanitizeToHub`, which is
  * what drops the comments.
  *
- * Comments that are not notes are left exactly as they were, so the sanitiser
+ * Comments that are not notes are left exactly as they were, so the sanitizer
  * disposes of them as it always did.
  */
 export function notesToHub(html: string): string {

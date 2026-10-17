@@ -12,8 +12,8 @@ import { basename, dirname, extname, join, resolve } from 'node:path'
  * The rule now:
  *
  *   --out names a directory   derive the name from the input, as before -
- *                             there is no filename in it to honour
- *   --out has an extension    honour it exactly. The caller chose it; a
+ *                             there is no filename in it to honor
+ *   --out has an extension    honor it exactly. The caller chose it; a
  *                             converter has no business overriding it
  *   --out has none            append the target's, because `--out report
  *                             --to pdf` plainly means report.pdf

@@ -144,7 +144,7 @@ export interface SettingsStore {
 type Raw = Record<string, unknown>
 
 /** The JSON text written: pretty-printed, with a final newline. */
-function serialise(raw: Raw): string {
+function serialize(raw: Raw): string {
   return `${JSON.stringify(raw, null, 2)}\n`
 }
 
@@ -249,7 +249,7 @@ export function openSettings(options: SettingsStoreOptions): SettingsStore {
       try {
         await mkdir(options.dir, { recursive: true })
         const tmp = `${path}.tmp`
-        await fs.writeFile(tmp, serialise(nextRaw))
+        await fs.writeFile(tmp, serialize(nextRaw))
         await fs.rename(tmp, path)
       } catch (err) {
         return { ok: false, message: `Settings could not be saved: ${(err as Error).message}` }

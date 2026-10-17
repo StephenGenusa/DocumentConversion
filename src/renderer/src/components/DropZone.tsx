@@ -113,7 +113,7 @@ export function DropZone({
           </>
         )}
         <button type="button" className="link-button" onClick={() => void window.api.openAbout()}>
-          About and licences
+          About and licenses
         </button>
       </p>
     </div>

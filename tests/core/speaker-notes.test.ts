@@ -3,11 +3,11 @@ import { notesToHub, stripSpeakerNotes, SPEAKER_NOTES_TAG } from '../../src/core
 import { sanitizeToHub } from '../../src/core/allowlist'
 
 /**
- * Speaker notes have to survive the whole chain — reader, hub sanitiser,
+ * Speaker notes have to survive the whole chain — reader, hub sanitizer,
  * editor, and back — while never appearing in the body of an ordinary
  * conversion. Both halves are load-bearing:
  *
- * Before this existed, `<aside>note</aside>` was stripped by the sanitiser and
+ * Before this existed, `<aside>note</aside>` was stripped by the sanitizer and
  * its TEXT was kept and inlined, so a note leaked into the converted body as a
  * loose run of words with nothing to mark it. That is the silent-gluing class
  * section 0 calls the highest-value bug here.

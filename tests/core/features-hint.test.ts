@@ -17,7 +17,7 @@ describe('featuresHint (spec 2a: the Diagrams choice knows about a file never op
     expect(await featuresHint(b('<pre><code class="language-mermaid">graph LR</code></pre>'), 'html')).toEqual({ diagrams: true, math: false })
     // Graphviz alone counts: it is drawn too (step 17), so the Diagrams choice applies.
     expect(await featuresHint(b('.. digraph:: deps\n\n   a -> b\n'), 'rst')).toEqual({ diagrams: true, math: false })
-    expect(await featuresHint(b('# Plain\n\nNothing to draw, and $5 is not maths.\n'), 'md')).toEqual({ diagrams: false, math: false })
+    expect(await featuresHint(b('# Plain\n\nNothing to draw, and $5 is not math.\n'), 'md')).toEqual({ diagrams: false, math: false })
   })
 
   it('a Word file: formulas when it holds equations (spec B12), found without converting it', async () => {

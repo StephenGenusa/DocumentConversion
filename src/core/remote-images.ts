@@ -53,7 +53,7 @@ export function notFetchedNotice(count: number): string {
  * Every picture `inlineImages` would have fetched, left unfetched: each <img>
  * becomes its description, as a picture that failed to arrive does, and a
  * picture an SVG names by address is written as its description by the SVG
- * sanitiser. Nothing touches the network. The count, if any, goes out as one
+ * sanitizer. Nothing touches the network. The count, if any, goes out as one
  * notice.
  */
 export async function withoutFetching(

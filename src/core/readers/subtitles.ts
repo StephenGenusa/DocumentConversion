@@ -59,7 +59,7 @@ const KEPT_TAGS = new Set(['b', 'i', 'u'])
  * A cue's text as hub HTML, and the speaker its first voice tag names. Every
  * tag but <b>, <i> and <u> is dropped and its text kept: <c.class>, <ruby>,
  * <lang>, timestamp tags, SRT's <font>, and anything that only looks like a
- * tag. The result is sanitised, so an unclosed <b> cannot run on.
+ * tag. The result is sanitized, so an unclosed <b> cannot run on.
  */
 function cueText(lines: string[]): { html: string; speaker?: string } {
   let speaker: string | undefined

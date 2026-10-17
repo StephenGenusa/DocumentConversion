@@ -22,7 +22,7 @@ function layout(rows: string[][], columnX: number[], opts: { y0?: number; step?:
 
 const COLUMNS = [50, 200, 400]
 const TABLE = [
-  ['Catalogue', 'Description', 'Group'],
+  ['Catalog', 'Description', 'Group'],
   ['0302', 'Abrasives and grinding wheels', '03'],
   ['0318', 'Rope and twine', '03'],
   ['0304', 'Adhesives', '03'],
@@ -58,7 +58,7 @@ describe('inferGrid on a clean table', () => {
 describe('inferGrid row ordering', () => {
   it('reads top-to-bottom when y grows downward (OCR)', () => {
     const grid = inferGrid(layout(TABLE, COLUMNS), { yIncreasesDownward: true })
-    expect(grid!.rows[0][0]).toBe('Catalogue')
+    expect(grid!.rows[0][0]).toBe('Catalog')
     expect(grid!.rows[3][0]).toBe('0304')
   })
 
@@ -66,7 +66,7 @@ describe('inferGrid row ordering', () => {
     // PDF origin is bottom-left, so the first row has the LARGEST y.
     const flipped = layout(TABLE, COLUMNS).map((i) => ({ ...i, y: 1000 - i.y }))
     const grid = inferGrid(flipped, { yIncreasesDownward: false })
-    expect(grid!.rows[0][0]).toBe('Catalogue')
+    expect(grid!.rows[0][0]).toBe('Catalog')
     expect(grid!.rows[3][0]).toBe('0304')
   })
 })
@@ -111,7 +111,7 @@ describe('grid building blocks', () => {
   it('groups items into rows by vertical proximity', () => {
     const rows = groupIntoRows(layout(TABLE, COLUMNS), true)
     expect(rows).toHaveLength(4)
-    expect(rows[0].map((i) => i.text)).toEqual(['Catalogue', 'Description', 'Group'])
+    expect(rows[0].map((i) => i.text)).toEqual(['Catalog', 'Description', 'Group'])
   })
 
   it('ignores a column that appears on only one row', () => {
@@ -135,7 +135,7 @@ describe('inferGrid folds wrapped cells before it judges the layout', () => {
    */
   const WRAPPED: PositionedText[] = layout(
     [
-      ['Catalogue', 'Description', 'Group'],
+      ['Catalog', 'Description', 'Group'],
       ['0302', 'Abrasives and grinding', '03'],
       ['', 'wheels', ''],
       ['0318', 'Rope, twine and banding', '03'],
@@ -156,7 +156,7 @@ describe('inferGrid folds wrapped cells before it judges the layout', () => {
     const grid = inferGrid(WRAPPED, { minConfidence: 0.75, foldContinuationRows: true })
     expect(grid!.confidence).toBe(1)
     expect(grid!.rows).toEqual([
-      ['Catalogue', 'Description', 'Group'],
+      ['Catalog', 'Description', 'Group'],
       ['0302', 'Abrasives and grinding wheels', '03'],
       ['0318', 'Rope, twine and banding material', '03'],
       ['0304', 'Adhesive, caulk and joint compound', '03'],

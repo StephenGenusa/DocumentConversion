@@ -1057,7 +1057,7 @@ describe('ipynb reader (spec F13)', () => {
     // RULING: this was written as "resolves or rejects, either is fine", with
     // a branch apiece — which is not a test: whichever branch runs, its
     // assertion holds, and the branch that does not run costs nothing. The
-    // shipped behaviour is a refusal, and the refusal is what is pinned.
+    // shipped behavior is a refusal, and the refusal is what is pinned.
     const bytes = buf(JSON.stringify({ hello: 'world' }))
     await expect(readIpynb({ bytes, filename: 'x.ipynb' })).rejects.toMatchObject({
       code: 'read-failed',

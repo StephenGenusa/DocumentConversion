@@ -44,7 +44,7 @@ describe('pptx slide tables', () => {
     expect(hub.html).not.toContain('<p>Widget</p>')
   })
 
-  it('honours merged cells', async () => {
+  it('honors merged cells', async () => {
     const merged = `<p:graphicFrame><a:graphic><a:graphicData><a:tbl>
       <a:tr><a:tc gridSpan="2"><a:txBody>${para('Wide')}</a:txBody></a:tc><a:tc hMerge="1"><a:txBody>${para('')}</a:txBody></a:tc></a:tr>
     </a:tbl></a:graphicData></a:graphic></p:graphicFrame>`
@@ -64,9 +64,9 @@ describe('pptx titles', () => {
   })
 
   it('keeps the whole title shape, not just its first paragraph', async () => {
-    const slide = sp(para('Autumn Reading Programme') + para('Branch Opening Hours'), 'title')
+    const slide = sp(para('Autumn Reading Program') + para('Branch Opening Hours'), 'title')
     const hub = await readPptx({ bytes: await deck([slide]) })
-    expect(hub.html).toContain('<h2>Autumn Reading Programme Branch Opening Hours</h2>')
+    expect(hub.html).toContain('<h2>Autumn Reading Program Branch Opening Hours</h2>')
   })
 
   it('falls back to the first text when there is no title placeholder', async () => {

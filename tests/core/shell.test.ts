@@ -35,7 +35,7 @@ describe('renderDocumentShell', () => {
 
   /**
    * A notebook shipped as an undifferentiated dump: code and output drawn as
-   * identical grey boxes, no execution prompts, nothing marking where input
+   * identical gray boxes, no execution prompts, nothing marking where input
    * ended. The reader tags each pre; the shell has to draw them.
    */
   describe('notebook styling', () => {
@@ -76,7 +76,7 @@ describe('renderDocumentShell', () => {
       for (const sel of ['pre.nb-in', 'pre.nb-output', 'pre.nb-stream', 'pre.nb-error']) {
         expect(css).toContain(sel)
       }
-      // An error must not be another grey box: it reads as an error.
+      // An error must not be another gray box: it reads as an error.
       expect(css).toMatch(/pre\.nb-error\s*\{[^}]*(#b|#c|#d|#f)[0-9a-f]{2}/i)
     })
 

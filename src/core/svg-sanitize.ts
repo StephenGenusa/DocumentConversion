@@ -2,8 +2,8 @@ import { DOMParser } from 'linkedom'
 import { imageMime } from './readers/image'
 
 /**
- * SVG sanitising (spec B6). Every SVG an engine draws passes through here
- * before it is embedded in a document, rasterised, or shown in the editor.
+ * SVG sanitizing (spec B6). Every SVG an engine draws passes through here
+ * before it is embedded in a document, rasterized, or shown in the editor.
  *
  * The SVG is only ever used as `<img src="data:…">`, where a browser runs no
  * script and loads nothing external, so this is the second line, not the
@@ -38,7 +38,7 @@ import { imageMime } from './readers/image'
  *
  * A picture named by a web address (https, or a relative or protocol-relative
  * one) is fetched when the document is read (remote-images.ts) and is a data
- * URI by the time it is sanitised for good; one still naming an address then
+ * URI by the time it is sanitized for good; one still naming an address then
  * could not be fetched, and becomes its description in text, "[image: …]",
  * as a failed <img> does. Any other <image> - another raster type, something
  * that is not what it claims - is still dropped. A nested <svg> element is
@@ -54,7 +54,7 @@ export interface SanitizeOptions {
   /**
    * For a reader: keep an <image> of the outer SVG that names a web address,
    * its description as its aria-label, for the read step to fetch. Everything
-   * else is cleaned as usual, and the SVG is sanitised again without this
+   * else is cleaned as usual, and the SVG is sanitized again without this
    * once its pictures are fetched.
    */
   keepImageUrls?: boolean
@@ -127,7 +127,7 @@ function rasterDataUri(src: string): string | null {
 /**
  * A nested picture's reference, cleaned: the attribute that holds it (href
  * or xlink:href, as written) and the picture as a base64 data URI - for an
- * SVG, the sanitised SVG. Null when the <image> is anything else, or an SVG
+ * SVG, the sanitized SVG. Null when the <image> is anything else, or an SVG
  * nested too deep.
  */
 function nestedImage(el: Element, depth: number): { name: string; src: string } | null {
@@ -204,7 +204,7 @@ export function svgImageUrls(svg: string): string[] {
 
 /**
  * The SVG with each picture whose address is in `pictures` given that data
- * URI instead, everything else as it was. Sanitised again afterwards, which
+ * URI instead, everything else as it was. Sanitized again afterwards, which
  * checks each picture is what it claims.
  */
 export function withSvgImagePictures(svg: string, pictures: ReadonlyMap<string, string>): string {

@@ -43,7 +43,7 @@ async function epubWithLinks(): Promise<Buffer> {
        <p>Jump to <a href="#local">a local anchor</a>.</p>
        <p>Read <a href="https://example.com/spec">the spec</a> online.</p>
        <p>Mail <a href="mailto:editor@example.com">the editor</a>.</p>
-       <p>An <a href="c2.xhtml#x"><em>emphasised</em> cross-reference</a> here.</p>
+       <p>An <a href="c2.xhtml#x"><em>emphasized</em> cross-reference</a> here.</p>
      </body></html>`,
   )
   zip.file('OPS/c2.xhtml', '<html><body><h1 id="sec-2">Chapter Two</h1><p>Body.</p></body></html>')
@@ -71,7 +71,7 @@ describe('epub internal links', () => {
 
   it('keeps markup inside an unwrapped cross-reference', async () => {
     const { html } = await readEpub({ bytes: await epubWithLinks() })
-    expect(html).toContain('<em>emphasised</em> cross-reference')
+    expect(html).toContain('<em>emphasized</em> cross-reference')
     expect(html).not.toContain('<a href="c2.xhtml#x"')
   })
 
@@ -116,7 +116,7 @@ describe.skipIf(!existsSync(join(CORPUS, 'inference-notes.epub')))('epub: chapte
   })
 
   /*
-   * Pins CURRENT behaviour, which is a known defect, not the desired one.
+   * Pins CURRENT behavior, which is a known defect, not the desired one.
    *
    * An <img> whose target is not in the archive keeps its relative src, so the
    * reader emits a path that resolves to nothing and the viewer draws a broken

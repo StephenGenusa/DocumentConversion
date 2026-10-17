@@ -3,7 +3,7 @@ Ashcombe, Nils
 Berlin, Germany
 Braddock, Sunil
 Brandt, Ilva
-Catalogue, Description
+Catalog, Description
 Element, Text
 Excel, Kindle
 Ferrow, Petra

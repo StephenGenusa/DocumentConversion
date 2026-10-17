@@ -49,7 +49,7 @@ describe('Textile', () => {
     expect(hub.html).toContain('<p>H<sub>2</sub>O and x<sup>2</sup></p>')
   })
 
-  it('sanitises raw HTML', async () => {
+  it('sanitizes raw HTML', async () => {
     const hub = await read(
       [
         '<script>alert(1)</script><img src="https://example.com/a.png" onerror="alert(2)">',

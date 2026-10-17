@@ -5,7 +5,7 @@ const SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://ww
 const wrap = (inner: string): string => `${SVG_OPEN}${inner}</svg>`
 const clean = (inner: string): string => sanitizeSvg(wrap(inner)) ?? 'NOT SVG'
 
-/** The opening bytes of each picture type: enough for the sniff, which is all the sanitiser reads. */
+/** The opening bytes of each picture type: enough for the sniff, which is all the sanitizer reads. */
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0])
 const GIF = Buffer.from('GIF89a\x01\0\x01\0\x80\0\0', 'latin1')
@@ -129,7 +129,7 @@ describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
     expect(out).toMatch(/<svg x="2" y="2" width="6" height="6" viewBox="0 0 6 6"><rect width="6" height="6" \/><\/svg><\/svg>$/)
   })
 
-  it('keeps an SVG image nested in an SVG, sanitised as the outer one is', () => {
+  it('keeps an SVG image nested in an SVG, sanitized as the outer one is', () => {
     const inner =
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4" onload="alert(1)"><script>alert(2)</script>' +
       '<foreignObject><div xmlns="http://www.w3.org/1999/xhtml">html</div></foreignObject>' +
@@ -152,7 +152,7 @@ describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
     }
   })
 
-  it('sanitises an SVG image nested several deep, and drops one nested too deep or not an SVG', () => {
+  it('sanitizes an SVG image nested several deep, and drops one nested too deep or not an SVG', () => {
     const svgUri = (svg: string): string => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
     const level = (inner: string): string => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><rect width="1"/><image href="${inner}"/><script>x()</script></svg>`
     let src = svgUri('<svg xmlns="http://www.w3.org/2000/svg"><script>deep()</script><circle r="1"/></svg>')
@@ -246,7 +246,7 @@ describe('sanitizeSvg (spec B6): hostile SVG corpus', () => {
     expect(out).toContain('<image xlink:href="photos/b.png" />')
     expect(out).not.toContain('alert')
     expect(out).not.toContain('javascript')
-    // Sanitised again without asking (as every SVG is once its pictures are fetched), they become text.
+    // Sanitized again without asking (as every SVG is once its pictures are fetched), they become text.
     expect(sanitizeSvg(out)).toContain('>[image: Desk photo]</text>')
   })
 

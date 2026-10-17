@@ -34,7 +34,7 @@ const SHEET = join(__dirname, '../corpus/catalogue-codes.xlsx')
 const FONT_SIZE = 9
 const LINE_HEIGHT = 13
 const ROWS_PER_PAGE = 21
-/** Catalogue, Description, Group — left edges in PDF points. */
+/** Catalog, Description, Group — left edges in PDF points. */
 const COLUMN_X = [36, 92, 240]
 const DESCRIPTION_WIDTH = 140
 
@@ -78,7 +78,7 @@ async function spreadsheetPrint(rows: Cells[]): Promise<Buffer> {
       page.drawText(text, { x, y, size: FONT_SIZE, font })
     }
     // Excel's "repeat header rows on every page".
-    put('Catalogue', COLUMN_X[0])
+    put('Catalog', COLUMN_X[0])
     put('Description', COLUMN_X[1])
     put('Group', COLUMN_X[2])
     y -= LINE_HEIGHT

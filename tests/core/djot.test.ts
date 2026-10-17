@@ -114,7 +114,7 @@ describe('Djot', () => {
     expect(hub.html).not.toContain('data-')
   })
 
-  it('sanitises raw HTML', async () => {
+  it('sanitizes raw HTML', async () => {
     const hub = await read(
       [
         'Raw `<script>alert(1)</script><img src="https://example.com/a.png" onerror="alert(2)">`{=html} inline.',

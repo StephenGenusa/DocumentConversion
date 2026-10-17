@@ -95,7 +95,7 @@ interpreter.finisher = function () {
  * token; the rest of the document takes exactly the path it took yesterday and
  * the rendered <table> is stitched back over the token afterwards. Anything the
  * table parser cannot read confidently is simply left in the stream, where the
- * old degraded-paragraph behaviour (below) still applies — a table can lose its
+ * old degraded-paragraph behavior (below) still applies — a table can lose its
  * shape, never its text.
  */
 /**
@@ -136,7 +136,7 @@ const CP1252_HIGH: Record<number, string> = lookup({
  */
 const BIN_CONTROL = /\\bin(?![a-zA-Z])(-?\d*)[ ]?/y
 
-/** Deepest `\itap` honoured. Word stops at a few; three is the most seen in the wild. */
+/** Deepest `\itap` honored. Word stops at a few; three is the most seen in the wild. */
 const MAX_NEST_DEPTH = 8
 
 /**
@@ -145,9 +145,9 @@ const MAX_NEST_DEPTH = 8
  * `\` normally escapes the single character after it. The one exception is
  * `\binN`, which declares N *raw* bytes following the control word: a `{` or
  * `}` in that payload is data, not structure. A brace walk that misses this
- * desynchronises on the first binary `{` and swallows the rest of the document
+ * desynchronizes on the first binary `{` and swallows the rest of the document
  * — Word emits `\bin` routinely for embedded objects, so it is reachable with
- * ordinary files. The main tokenizer has always honoured it (`cw === 'bin'`);
+ * ordinary files. The main tokenizer has always honored it (`cw === 'bin'`);
  * this is the same rule, shared by the three structural walks below.
  */
 function afterEscape(rtf: string, j: number): number {
@@ -175,7 +175,7 @@ function stripGroups(rtf: string, starters: RegExp): string {
       break
     }
     out += rtf.slice(i, match.index)
-    // Walk to the matching close brace, honouring nesting, \{ escapes and \bin.
+    // Walk to the matching close brace, honoring nesting, \{ escapes and \bin.
     let depth = 0
     let j = match.index
     while (j < rtf.length) {
@@ -1488,7 +1488,7 @@ function placeableWmf(meta: Buffer, twipsWide: number, twipsHigh: number): Buffe
  * One `{\\pict …}` group, from `open` to `end` (just past its `}`): its type
  * (the blip control word), its data (hex digits, or `\\binN` raw bytes), its
  * sizes (`\\picwgoal`/`\\pichgoal` in twips, scaled by `\\picscalex`/`y`
- * percent; `\\picw`/`\\pich`, a metafile's in hundredths of a millimetre)
+ * percent; `\\picw`/`\\pich`, a metafile's in hundredths of a millimeter)
  * and the description Word keeps in `\\picprop`. Null when it is of a type
  * not read here or its data is not that type (the bytes say, not the word).
  */

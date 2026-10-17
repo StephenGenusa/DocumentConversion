@@ -16,7 +16,7 @@ import { writeMarkdown } from '../../src/core/writers/md'
  *   General Information Mission ................... 5 Company History ...... 5
  *
  * which reads as though each page number belongs to the entry that FOLLOWS it,
- * and is unusable in every target. So a contents entry is recognised by its
+ * and is unusable in every target. So a contents entry is recognized by its
  * shape — text, a run of leader dots, a page number, end of line — the dots are
  * dropped, and the entries of a page become one list, so nothing can be glued
  * to anything.

@@ -52,7 +52,7 @@ describe('Markdown reads $$…$$ in a sentence as display math in the paragraph'
   })
 })
 
-describe('the sanitiser keeps the display marker, and only beside language-math', () => {
+describe('the sanitizer keeps the display marker, and only beside language-math', () => {
   it('keeps it, in one order', () => {
     expect(sanitizeToHub(`<p>a ${shown('x')} b</p>`)).toBe(`<p>a ${shown('x')} b</p>`)
     expect(sanitizeToHub('<p>a <code class="math-display language-math">x</code> b</p>')).toBe(`<p>a ${shown('x')} b</p>`)
@@ -84,7 +84,7 @@ describe('writers', () => {
     expect((await writeTxt({ html: `<p>The sum ${shown('x+y')} is big.</p>` })).toString('utf8')).toContain('The sum $$x+y$$ is big.')
   })
 
-  it('html, pdf, epub, azw3, revealjs: drawn as display, on a centred line of its own inside the paragraph', async () => {
+  it('html, pdf, epub, azw3, revealjs: drawn as display, on a centered line of its own inside the paragraph', async () => {
     for (const target of ['html', 'pdf', 'epub', 'revealjs'] as const) {
       const { render, calls } = fakeRenderer()
       const out = await drawBlocks(`<p>The sum ${shown('x+y')} is big.</p>`, target, { renderBlocks: render })
@@ -106,7 +106,7 @@ describe('writers', () => {
     expect(out).not.toContain('data-docx-lower')
   })
 
-  it('docx: a paragraph is split around it, the formula centred in a paragraph of its own', async () => {
+  it('docx: a paragraph is split around it, the formula centered in a paragraph of its own', async () => {
     const { render } = fakeRenderer()
     const html = await drawBlocks(`<p>The sum ${shown('x+y')} is big.</p><p>Next.</p>`, 'docx', { renderBlocks: render })
     const zip = await JSZip.loadAsync(await writeDocx({ html }))

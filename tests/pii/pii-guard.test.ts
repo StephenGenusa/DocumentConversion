@@ -4,7 +4,7 @@
  * Assurance here does not come from searching for known-bad values — a search
  * cannot report what is not in its pattern. It comes from the opposite
  * arrangement: every value of each class is ENUMERATED and checked against an
- * approved list, so anything unrecognised fails until a human approves it.
+ * approved list, so anything unrecognized fails until a human approves it.
  *
  * The approved lists in this directory are the review surface. They are short
  * on purpose: reviewing four hundred words is tractable, reviewing twenty-six
@@ -115,7 +115,7 @@ describe('PII guard', () => {
    * It is deliberately NOT in the repository. Naming a trade's vocabulary in a
    * public repository discloses the very association this guard exists to
    * remove, so the list is kept locally and git-ignored. When it is absent this
-   * check does nothing; the vocabulary allowlist above is the real defence and
+   * check does nothing; the vocabulary allowlist above is the real defense and
    * names no domain at all.
    */
   it('no vocabulary from the source domain appears anywhere', async () => {

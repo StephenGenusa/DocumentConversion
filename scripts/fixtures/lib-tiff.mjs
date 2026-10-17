@@ -212,7 +212,7 @@ function tiffPage({ width, height, pixel, kind = 'rgb', compression = 'none', ro
 /**
  * A small EMF (records written little-endian, as GDI does): the header, a
  * filled and framed rectangle, and the end-of-file record. Enough for a
- * reader or a converter to recognise it; this app does not draw EMF.
+ * reader or a converter to recognize it; this app does not draw EMF.
  */
 export function emf({ width = 64, height = 48 } = {}) {
   const rec = (type, body) => {

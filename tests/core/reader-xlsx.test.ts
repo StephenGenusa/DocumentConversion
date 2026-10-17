@@ -81,7 +81,7 @@ describe('readXlsx', () => {
   }, 60000)
 
   /**
-   * `sheet_to_json` materialises the whole `!ref` range, and Excel's saved
+   * `sheet_to_json` materializes the whole `!ref` range, and Excel's saved
    * range routinely runs 30-odd columns past the last thing anyone typed. With
    * the shell's `table-layout: fixed` those junk columns divide the page
    * evenly, so a two-column form drew one letter per line down a 20px column
@@ -188,7 +188,7 @@ describe('readXlsx', () => {
     })
 
     it('names the real format when a workbook is simply unreadable', async () => {
-      // A truncated OLE header: recognised as a container, unreadable as a book.
+      // A truncated OLE header: recognized as a container, unreadable as a book.
       const bytes = Buffer.concat([
         Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
         Buffer.alloc(64, 3),

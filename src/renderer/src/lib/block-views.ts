@@ -11,7 +11,7 @@ import { renderClient, type BlockAnswer, type BlockPicture, type BlockRequest, t
  *
  * The document holds only source (the B1 form); pictures exist only here, in
  * the node views, as <img> elements whose src is a data URI of SVG the main
- * process has sanitised. Engine markup is never put into this page's DOM.
+ * process has sanitized. Engine markup is never put into this page's DOM.
  *
  *   diagramBlock, mathBlock   the picture, or, while the cursor is inside
  *                             the block (edit mode), the source in monospace
@@ -24,7 +24,7 @@ import { renderClient, type BlockAnswer, type BlockPicture, type BlockRequest, t
  *                             Enter opens a small popover with the TeX and a
  *                             preview. Enter commits, Escape cancels. One
  *                             marked display (display math inside a
- *                             paragraph) is drawn as display, centred on a
+ *                             paragraph) is drawn as display, centered on a
  *                             line of its own, and edited the same way.
  *
  * A kind with no engine (none now: every hub kind is drawn)
@@ -139,10 +139,10 @@ function carriedSource(view: EditorView, pos: number | undefined, tex: string): 
 
 /* ---------------------------------- the views --------------------------------- */
 
-/** Every drawn view of one editor, for prefetching a visible block's neighbours. */
+/** Every drawn view of one editor, for prefetching a visible block's neighbors. */
 const viewsOf = new WeakMap<EditorView, Set<DrawnView>>()
-const NEIGHBOURS_AFTER = 6
-const NEIGHBOURS_BEFORE = 2
+const NEIGHBORS_AFTER = 6
+const NEIGHBORS_BEFORE = 2
 
 abstract class DrawnView {
   protected visible = false
@@ -177,7 +177,7 @@ abstract class DrawnView {
       this.visible = visible
       if (visible) {
         this.draw('visible')
-        this.prefetchNeighbours()
+        this.prefetchNeighbors()
       }
     })
   }
@@ -229,14 +229,14 @@ abstract class DrawnView {
     this.show()
   }
 
-  private prefetchNeighbours(): void {
+  private prefetchNeighbors(): void {
     const all = [...(viewsOf.get(this.view) ?? [])]
       .map((v) => ({ v, pos: v.getPos() }))
       .filter((e): e is { v: DrawnView; pos: number } => typeof e.pos === 'number')
       .sort((a, b) => a.pos - b.pos)
     const at = all.findIndex((e) => e.v === this)
     if (at < 0) return
-    for (const { v } of [...all.slice(at + 1, at + 1 + NEIGHBOURS_AFTER), ...all.slice(Math.max(0, at - NEIGHBOURS_BEFORE), at)]) {
+    for (const { v } of [...all.slice(at + 1, at + 1 + NEIGHBORS_AFTER), ...all.slice(Math.max(0, at - NEIGHBORS_BEFORE), at)]) {
       if (!v.visible && !v.answer) v.draw('prefetch')
     }
   }

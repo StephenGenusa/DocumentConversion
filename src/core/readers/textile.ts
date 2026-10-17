@@ -15,7 +15,7 @@ import type { HubDocument, SourceInput } from '../types'
  *             -> one item of the F1 notes list, which goes last
  *
  * `[^sup^]` and `[~sub~]` already come out as <sup> and <sub>. Raw HTML in the
- * source is passed through, and sanitised with the rest.
+ * source is passed through, and sanitized with the rest.
  */
 
 type JsonML = string | [string, ...JsonMLChild[]]

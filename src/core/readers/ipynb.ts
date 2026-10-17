@@ -128,7 +128,7 @@ function renderOutputs(outputs: NotebookOutput[], cellCount: number | null): str
     if (out.output_type === 'stream') {
       const text = joinSource(out.text)
       // stderr is a warning channel, not a result: it gets its own mark so the
-      // shell can tint it instead of drawing it as another anonymous grey box.
+      // shell can tint it instead of drawing it as another anonymous gray box.
       const stderr = out.name === 'stderr' ? ' nb-stderr' : ''
       if (text.trim()) parts.push(preBlock(text, `nb-output nb-stream${stderr}`))
       continue

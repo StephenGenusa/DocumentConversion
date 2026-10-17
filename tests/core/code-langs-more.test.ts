@@ -87,7 +87,7 @@ describe('diff and patch files', () => {
     expect(hub.html).toMatch(/<h2>src\/one\.ts<\/h2>/)
   })
 
-  it('keep a file that is not a recognisable diff as one block', async () => {
+  it('keep a file that is not a recognizable diff as one block', async () => {
     const hub = await read('just some text\n', 'notes.diff')
     expect(hub.html.match(/<pre>/g)).toHaveLength(1)
     expect(hub.html).not.toContain('<h2>')

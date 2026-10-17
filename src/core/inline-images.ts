@@ -126,7 +126,7 @@ const IMG_TAG = /<img\b(?:"[^"<]*"|'[^'<]*'|[^>"'])*>/gi
 /**
  * The attributes of a tag, in order, each with the span its value occupies.
  *
- * Tokenised left to right rather than searched for by name: a name-anchored
+ * Tokenized left to right rather than searched for by name: a name-anchored
  * regex, however careful its lookbehind, still finds `src=` in the middle of
  * an alt ("see src=evil.png here") and reads THAT as the source — the tracker
  * got fetched, the data URI went into the alt, and the real src stayed on the
@@ -226,7 +226,7 @@ export function imagePlaceholder(text?: string, display: 'block' | 'inline' = 'b
  *
  * The pictures an SVG <img> names by address (`<image href="https://…">`)
  * are fetched the same way and put in the SVG as data URIs. One that is not
- * fetched keeps its address, and the SVG sanitiser, which every SVG passes
+ * fetched keeps its address, and the SVG sanitizer, which every SVG passes
  * after this, writes it as its description.
  *
  * Fetches run FETCH_CONCURRENCY at a time, with progress after each.

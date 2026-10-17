@@ -144,7 +144,7 @@ export interface RasterSize {
 }
 
 /**
- * The SVG ready to be drawn as a PNG: sanitised (B6), with its root sized in
+ * The SVG ready to be drawn as a PNG: sanitized (B6), with its root sized in
  * whole px at the size the picture will be shown, and a viewBox so the
  * drawing scales with it. The size is part of the markup, so it is part of
  * the host's cache key. Null when it is not an SVG.
@@ -228,7 +228,7 @@ function svgImages(nodes: ChildNode[], out: Element[] = []): Element[] {
 }
 
 /**
- * B6 for every SVG image in a document: each SVG <img> gets the sanitised
+ * B6 for every SVG image in a document: each SVG <img> gets the sanitized
  * SVG as a base64 data URI; one that is not an SVG at all becomes its alt
  * text. Anything else is returned untouched.
  */
@@ -263,14 +263,14 @@ const CARRIED_ATTRIBUTES = ['class', 'style', 'hidden'] as const
 /**
  * Each SVG drawn inline in an HTML page or a Markdown file (`<svg>…</svg>`
  * in the markup), as an SVG image like any other: a base64 data URI of the
- * SVG, sanitised (B6) with the pictures it names by address kept for the
+ * SVG, sanitized (B6) with the pictures it names by address kept for the
  * read step to fetch, at its own size, its aria-label or <title> as alt.
- * Without this the hub sanitiser dropped the element and the drawing with it.
+ * Without this the hub sanitizer dropped the element and the drawing with it.
  *
  * The SVG is taken from the source as written: an HTML parser lower-cases
  * names an SVG needs as they are (viewBox, preserveAspectRatio). It must end
  * where an HTML parser ends it, at its own `</svg>`; one that runs on to the
- * end of the page is left alone, for the sanitiser to drop as before. One
+ * end of the page is left alone, for the sanitizer to drop as before. One
  * marked aria-hidden="true" is decoration and is left alone too.
  */
 export function inlineSvgElements(html: string): string {
@@ -431,7 +431,7 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
     }
     for (const job of jobs) {
       if (!bySource.has(job.source)) {
-        // The rasteriser went down before this one: said once, above.
+        // The rasterizer went down before this one: said once, above.
         replaceWith(job.el, placeholderFor(job.el))
         continue
       }
@@ -444,7 +444,7 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
         el.attribs.style = `width:${job.width}px;height:auto;max-width:100%`
         continue
       }
-      failed(job.number, result && 'error' in result ? oneLine(result.error) : 'the rasteriser gave no picture')
+      failed(job.number, result && 'error' in result ? oneLine(result.error) : 'the rasterizer gave no picture')
       replaceWith(job.el, placeholderFor(job.el))
     }
   }

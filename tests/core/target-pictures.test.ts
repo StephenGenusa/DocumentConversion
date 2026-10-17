@@ -141,13 +141,13 @@ describe('targetPictures: what each target holds', () => {
     }
   })
 
-  it('EMF and WMF become PNG where SVG images do (Kindle): the drawing rasterised by the render host, at the size it is shown', async () => {
+  it('EMF and WMF become PNG where SVG images do (Kindle): the drawing rasterized by the render host, at the size it is shown', async () => {
     const { render, calls } = host()
     const out = await targetPictures(`<p>${img('image/x-emf', EMF, 'Site plan')}</p>`, 'azw3', { renderBlocks: render })
     expect(calls.map((c) => [c.kind, c.format])).toEqual([['svg', 'png']])
     expect(calls[0].source).toMatch(/^<svg[^>]* width="64" height="48"/)
     expect(out).toBe(`<p><img src="data:image/png;base64,${OUT_PNG}" alt="Site plan" width="64" height="48"></p>`)
-    // Without a renderer there is nothing to rasterise with.
+    // Without a renderer there is nothing to rasterize with.
     const notices: string[] = []
     const alone = await targetPictures(`<p>${img('image/x-emf', EMF, 'Site plan')}</p>`, 'azw3', { onAdvice: (_k, m) => notices.push(m) })
     expect(alone).toContain('[image: Site plan]')
@@ -173,7 +173,7 @@ describe('targetPictures: what each target holds', () => {
     expect(notices).toEqual(['Picture 1 could not be stored for PDF: TIFF pictures are not converted'])
   })
 
-  it('an unrecognised picture is kept in a web page or Markdown, described in a PDF or EPUB', async () => {
+  it('an unrecognized picture is kept in a web page or Markdown, described in a PDF or EPUB', async () => {
     const odd = `<p>${img('image/heic', Buffer.from('not a picture this app knows'), 'Odd')}</p>`
     const render = vi.fn<RenderBlocks>(async () => [])
     expect(await targetPictures(odd, 'html', { renderBlocks: render })).toBe(odd)

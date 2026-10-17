@@ -114,7 +114,7 @@ const RULES: { [S in SettingsSection]: Record<keyof Settings[S], Rule> } = {
     headerFooter: isBoolean,
   },
   read: { transcriptTimestamps: isBoolean, sqliteViews: isBoolean },
-  // A language in the catalogue. Whether its pack is installed is the main process's question.
+  // A language in the catalog. Whether its pack is installed is the main process's question.
   ocr: { language: { ok: (v) => typeof v === 'string' && isKnownLanguage(v), wants: 'an OCR language code' } },
 }
 

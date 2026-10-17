@@ -7,7 +7,7 @@ body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; ba
  *
  * It still stops. An editor line running the full width of a 4K monitor reads
  * worse than one that is merely wide, so growth ends at 1800px - chosen so a
- * maximised window on an ordinary 1920-wide display is filled rather than
+ * maximized window on an ordinary 1920-wide display is filled rather than
  * framed, which was the actual complaint. Beyond that the gutters return, and
  * that is the intended trade.
  */
@@ -205,7 +205,7 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
 .rm__face { cursor: pointer; border-radius: 4px; }
 .rm__face:hover { background: #eef2ff; }
 .rm__face .rb__img { display: inline; vertical-align: middle; }
-/* Display math inside a paragraph: its own centred line, still in the paragraph. */
+/* Display math inside a paragraph: its own centered line, still in the paragraph. */
 .rm--display { display: block; text-align: center; margin: .5em 0; }
 .rm--display .rm__face { display: inline-block; max-width: 100%; }
 .rm--display .rm__face .rb__img { max-width: 100%; }

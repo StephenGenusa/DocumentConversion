@@ -11,7 +11,7 @@ import {
   packFilename,
 } from '../../src/ocr/languages'
 
-describe('the OCR language catalogue', () => {
+describe('the OCR language catalog', () => {
   it('has no duplicate codes', () => {
     const codes = LANGUAGES.map((l) => l.code)
     expect(new Set(codes).size).toBe(codes.length)

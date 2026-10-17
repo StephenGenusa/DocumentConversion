@@ -283,7 +283,7 @@ const NOTE_FALLBACK_MARK = '*'
  * `notes` for the caller to append after the block's own text.
  *
  * Walked as ordinary inline text a note is a disaster twice over: the citation
- * fuses to the word in front of it — "The catalogue record1See appendix B...", which
+ * fuses to the word in front of it — "The catalog record1See appendix B...", which
  * also turns a 400 V rating into a different number — and the body is spliced
  * into the middle of the sentence.
  *

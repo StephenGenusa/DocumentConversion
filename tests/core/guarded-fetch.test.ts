@@ -24,7 +24,7 @@ type TestDeps = GuardedFetchDeps & { calls: Call[] }
  * `redirect: 'manual'` from guarded-fetch.ts leaves every test green while the
  * guard silently stops seeing where the bytes actually came from.
  *
- * So: honour `init.redirect`. Without 'manual', resolve the chain inside the
+ * So: honor `init.redirect`. Without 'manual', resolve the chain inside the
  * fake, exactly as a real fetch would, and hand back only the final response.
  */
 function deps(routes: Record<string, () => Response>, ips: Record<string, string[]> = {}): TestDeps {
@@ -93,11 +93,11 @@ describe('isBlockedAddress', () => {
   })
 
   // S1. Every spelling below denotes an address the guard already claims to
-  // block; a textual prefix test only recognised the shortest spelling of each.
+  // block; a textual prefix test only recognized the shortest spelling of each.
   it('blocks every spelling of IPv4-mapped loopback', () => {
     for (const ip of [
       '::ffff:127.0.0.1',
-      '::ffff:7f00:1', // what WHATWG URL normalises the dotted form to
+      '::ffff:7f00:1', // what WHATWG URL normalizes the dotted form to
       '0:0:0:0:0:ffff:127.0.0.1',
       '0000:0000:0000:0000:0000:ffff:7f00:0001',
       '::ffff:0:127.0.0.1', // IPv4-translated, ::ffff:0:0:0/96
@@ -311,7 +311,7 @@ describe('guardedFetch', () => {
     })
   })
 
-  it('honours a caller signal that was already aborted before the call', async () => {
+  it('honors a caller signal that was already aborted before the call', async () => {
     // A listener never sees an abort that already happened; without checking
     // `aborted`, every fetch after a cancel ran to its full timeout.
     const d = deps({ 'https://example.com/a': () => new Response('ok') })

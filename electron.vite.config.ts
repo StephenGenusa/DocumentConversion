@@ -7,9 +7,9 @@ import react from '@vitejs/plugin-react'
 /**
  * Record every npm package whose code ends up INSIDE this bundle.
  *
- * The licence notices (scripts/build-notices.mjs) cover the production
+ * The license notices (scripts/build-notices.mjs) cover the production
  * dependencies the package ships in node_modules, but that is not everything
- * that ships: Vite inlines whatever a bundle imports that is not externalised
+ * that ships: Vite inlines whatever a bundle imports that is not externalized
  * — React into the renderer, pdf-lib into main — and those are
  * devDependencies, invisible to a scan of node_modules. Listing them by hand
  * would drift the first time an import changed, so the bundler, which knows,

@@ -6,7 +6,7 @@ export type DocExtractor = (bytes: Buffer) => Promise<string>
 
 /**
  * What one cell mark becomes. The structure is genuinely unrecoverable (see
- * DOC_TABLES_ADVICE), but "unrecoverable" is not a licence to hide the
+ * DOC_TABLES_ADVICE), but "unrecoverable" is not a license to hide the
  * boundary: dropped into a `<p>`, HTML collapses the tab to a single space and
  * "28.0 MAX" + "21.0 EXC" arrive as "28.0 MAX 21.0 EXC", with no way to tell
  * where one cell ended and the next began. A literal separator in the TEXT,

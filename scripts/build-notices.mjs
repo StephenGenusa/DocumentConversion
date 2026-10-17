@@ -1,12 +1,12 @@
 /**
- * Write the licence notices the app shows in Help → About and ships as
+ * Write the license notices the app shows in Help → About and ships as
  * THIRD_PARTY_NOTICES.txt.
  *
  *   node scripts/build-notices.mjs          after `electron-vite build` (npm run build does this)
  *   node scripts/build-notices.mjs --dev    before `electron-vite dev`, tolerating a missing out/
  *
- * Fails, listing every problem, when a shipped component's licence is not on
- * the allowlist or no licence text can be found for it. See scripts/notices/lib.mjs.
+ * Fails, listing every problem, when a shipped component's license is not on
+ * the allowlist or no license text can be found for it. See scripts/notices/lib.mjs.
  *
  * Output (git-ignored, regenerated every build, packaged with resources/**):
  *   resources/notices/notices.json

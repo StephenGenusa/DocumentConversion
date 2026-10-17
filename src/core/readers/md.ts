@@ -25,7 +25,7 @@ import type { HubDocument, SourceInput } from '../types'
 const md = new MarkdownIt({ html: true, linkify: true, typographer: false })
 
 /*
- * GitHub-flavoured Markdown that markdown-it core does not read. Each one
+ * GitHub-flavored Markdown that markdown-it core does not read. Each one
  * produces markup the hub already has, so nothing here widens the allowlist,
  * and the Markdown writer turns each back into the same syntax.
  */
@@ -371,11 +371,11 @@ function yamlScalar(raw: string): string | undefined {
 /**
  * YAML front matter, removed before markdown-it sees it.
  *
- * Unrecognised, markdown-it read the opening `---` as a rule and the last
+ * Unrecognized, markdown-it read the opening `---` as a rule and the last
  * `key: value` line plus the closing `---` as a setext heading, so a file's
  * metadata arrived as `<hr><h2>title: Hello\nauthor: me</h2>`.
  *
- * Recognised only when it cannot be anything else: the file's very first line
+ * Recognized only when it cannot be anything else: the file's very first line
  * is `---`, a `---` or `...` closes it within 200 lines, at least one line is
  * `key: value`, and every line between is blank, a comment, `key: value`, an
  * indented continuation or a `- ` list item. A rule followed by prose fails
@@ -450,7 +450,7 @@ export async function readMarkdown(src: SourceInput, _ctx?: unknown, opts: Markd
   const body = /\.(rmd|qmd)$/i.test(src.filename ?? '') ? quartoDivs(unfenced) : unfenced
   // Inline HTML may draw an SVG; it becomes an SVG image, as in a page.
   const html = stripUnresolvableImageSrc(inlineSvgElements(md.render(body, {})))
-  // Notes are lifted BEFORE sanitising: the sanitiser drops comments, so a
+  // Notes are lifted BEFORE sanitizing: the sanitizer drops comments, so a
   // `<!-- notes: ... -->` left until after it would simply be gone.
   return { html: escapeQuotesInText(sanitizeToHub(notesToHub(html))), ...(title ? { title } : {}) }
 }

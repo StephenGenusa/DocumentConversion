@@ -105,7 +105,7 @@ function cellMarkdown(cell: Element): string {
  * 12.5s where `xlsx -> html` took 2.7s: turndown accumulates its output with
  * `join()`, which indexes into the string built so far, forcing V8 to flatten
  * the whole rope on every one of the 300k cells. That is quadratic in the
- * output size, and it also materialised a second full DOM (turndown parses the
+ * output size, and it also materialized a second full DOM (turndown parses the
  * HTML again with domino), which is where the 1.4 GB peak came from.
  */
 function renderPipeTable(grid: string[][]): string {

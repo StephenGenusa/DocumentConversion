@@ -291,7 +291,7 @@ export interface SlideOptions {
 export interface ConvertOptions {
   pdf?: PdfRenderOptions
   ocr?: boolean
-  /** Which language OCR should recognise with. Defaults to the bundled English. */
+  /** Which language OCR should recognize with. Defaults to the bundled English. */
   ocrLanguage?: string
   slides?: SlideOptions
   /** Per input: the card's reading choices. Copied into the read context. */

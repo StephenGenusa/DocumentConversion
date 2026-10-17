@@ -54,7 +54,7 @@ describe('pptx soft line breaks', () => {
   it('does not glue the words either side of a self-closing <a:br/>', async () => {
     const title = `<a:p>${run('Inverters')}<a:br/>${run('Volunteer Training Overview')}</a:p>`
     const hub = await readPptx({ bytes: await deck([sp(title, 'ctrTitle')]) })
-    expect(hub.html).not.toContain('Catalogue recordsKnowledge')
+    expect(hub.html).not.toContain('Catalog recordsKnowledge')
     expect(hub.html).toContain('<h2>Inverters Volunteer Training Overview</h2>')
   })
 
@@ -64,7 +64,7 @@ describe('pptx soft line breaks', () => {
       `${run('Volunteer Training Overview')}<a:br><a:rPr lang="en-US" dirty="0"/></a:br>` +
       `<a:endParaRPr lang="en-US" dirty="0"/></a:p>`
     const hub = await readPptx({ bytes: await deck([sp(title, 'ctrTitle')]) })
-    expect(hub.html).not.toContain('Catalogue recordsKnowledge')
+    expect(hub.html).not.toContain('Catalog recordsKnowledge')
     expect(hub.html).toContain('<h2>Inverters Volunteer Training Overview</h2>')
     // The trailing break must not leave a dangling blank line.
     expect(hub.html).not.toContain('Presentation </h2>')
@@ -105,12 +105,12 @@ describe('pptx soft line breaks', () => {
 
 describe('pptx bullet lists', () => {
   it('renders consecutive bulleted paragraphs as one list', async () => {
-    const body = sp([bullet('Catalogue record Overview'), bullet('Power Factor'), bullet('Types of Load')].join(''))
+    const body = sp([bullet('Catalog record Overview'), bullet('Power Factor'), bullet('Types of Load')].join(''))
     const hub = await readPptx({ bytes: await deck([sp(para('Overview'), 'title') + body]) })
     expect(hub.html).toContain('<ul>')
-    expect(hub.html).toContain('<li>Catalogue record Overview</li>')
+    expect(hub.html).toContain('<li>Catalog record Overview</li>')
     expect(hub.html).toContain('<li>Types of Load</li>')
-    expect(hub.html).not.toContain('<p>Catalogue record Overview</p>')
+    expect(hub.html).not.toContain('<p>Catalog record Overview</p>')
     // One list, not one list per bullet.
     expect((hub.html.match(/<ul>/g) ?? []).length).toBe(1)
   })
@@ -153,9 +153,9 @@ describe('pptx bullet lists', () => {
   it('leaves paragraphs with no bullet markup alone', async () => {
     // Slide 3's lead sentence has no <a:pPr> at all and the master gives level 0
     // no bullet, so guessing a list here would be wrong.
-    const body = sp(para('A catalogue record is a device that stores energy.') + bullet('Two parallel plates'))
-    const hub = await readPptx({ bytes: await deck([sp(para('Catalogue record Overview'), 'title') + body]) })
-    expect(hub.html).toContain('<p>A catalogue record is a device that stores energy.</p>')
+    const body = sp(para('A catalog record is a device that stores energy.') + bullet('Two parallel plates'))
+    const hub = await readPptx({ bytes: await deck([sp(para('Catalog record Overview'), 'title') + body]) })
+    expect(hub.html).toContain('<p>A catalog record is a device that stores energy.</p>')
     expect(hub.html).toContain('<li>Two parallel plates</li>')
   })
 
@@ -182,7 +182,7 @@ describe('odf soft line breaks and spacing', () => {
       `<text:p>Inverters<text:line-break></text:line-break>Field Training</text:p>` +
       `</office:text></office:body></office:document-content>`
     const hub = await readOdt({ bytes: await odf('application/vnd.oasis.opendocument.text', xml) })
-    expect(hub.html).not.toContain('Catalogue recordsKnowledge')
+    expect(hub.html).not.toContain('Catalog recordsKnowledge')
     expect(hub.html).toContain('Inverters Field Training')
   })
 
@@ -236,15 +236,15 @@ describe('odp lists', () => {
       `<office:document-content><office:body><office:presentation>` +
       `<draw:page draw:name="Slide 1"><draw:frame><draw:text-box>` +
       `<text:p>Overview</text:p>` +
-      `<text:list><text:list-item><text:p>Catalogue record Overview</text:p></text:list-item>` +
+      `<text:list><text:list-item><text:p>Catalog record Overview</text:p></text:list-item>` +
       `<text:list-item><text:p>Power Factor</text:p></text:list-item></text:list>` +
       `</draw:text-box></draw:frame></draw:page>` +
       `</office:presentation></office:body></office:document-content>`
     const hub = await readOdp({ bytes: await odf('application/vnd.oasis.opendocument.presentation', xml) })
     expect(hub.html).toContain('<h2>Overview</h2>')
-    expect(hub.html).toContain('<li>Catalogue record Overview</li>')
+    expect(hub.html).toContain('<li>Catalog record Overview</li>')
     expect(hub.html).toContain('<li>Power Factor</li>')
-    expect(hub.html).not.toContain('<p>Catalogue record Overview</p>')
+    expect(hub.html).not.toContain('<p>Catalog record Overview</p>')
   })
 
   it('still titles a slide from its first line when there is no list', async () => {

@@ -159,7 +159,7 @@ describe('readIpynb', () => {
   })
 
   /**
-   * A code cell and its output shipped as two IDENTICAL grey <pre> boxes, with
+   * A code cell and its output shipped as two IDENTICAL gray <pre> boxes, with
    * nothing saying where input ended and output began and no execution
    * prompts. The hub allowlist permits `class` on `pre`/`code` and nothing
    * else, so the distinction has to ride on those classes.

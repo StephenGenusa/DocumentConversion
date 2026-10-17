@@ -82,5 +82,5 @@ tests/pii/domain-terms.ts
 tests/pii/domain-exceptions.txt
 resume.sh
 
-# Generated licence notices (scripts/build-notices.mjs), rebuilt by every build
+# Generated license notices (scripts/build-notices.mjs), rebuilt by every build
 resources/notices/

@@ -23,7 +23,7 @@ import type { TargetFormat } from './types'
 export const DIAGRAM_LANGUAGES = ['mermaid', 'dot'] as const
 export type DiagramLanguage = (typeof DIAGRAM_LANGUAGES)[number]
 
-/** Every name an author may give a Graphviz block, normalised to `dot`. */
+/** Every name an author may give a Graphviz block, normalized to `dot`. */
 const ALIASES = new Map<string, DiagramLanguage>([
   ['mermaid', 'mermaid'],
   ['dot', 'dot'],
@@ -89,7 +89,7 @@ export function hubFeatures(html: string): HubFeatures {
 
 /**
  * What the render host draws. `svg` is not a hub block: it is an SVG image a
- * document already carries, which the host only rasterises, for the targets
+ * document already carries, which the host only rasterizes, for the targets
  * that cannot show SVG (spec D10, svg-images.ts). `picture` is a raster
  * image the document carries, decoded and re-encoded as PNG or JPEG for a
  * target that cannot hold its format or its size (pictures.ts): decoding
@@ -144,7 +144,7 @@ export interface RenderRequest {
  * drawn at twice that size, so it stays sharp when printed or zoomed (a
  * `picture`'s size is its pixels, as re-encoded). `png` and `jpeg` (a
  * `picture` only) are base64 without a data: prefix; `svg` is markup the
- * host has already sanitised (svg-sanitize.ts). `baseline` (inline math only) is how far the
+ * host has already sanitized (svg-sanitize.ts). `baseline` (inline math only) is how far the
  * text baseline sits above the picture's bottom edge, in px: the picture is
  * lowered by that much to sit on the line.
  */

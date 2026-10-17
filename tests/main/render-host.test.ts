@@ -176,7 +176,7 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
       expect(h.rawHasJavascript).toBe(false)
       expect(h.rawHasForeignObject).toBe(false)
       expect(h.rawHasIframe).toBe(false)
-      // What the engine still let through (themeCSS) the sanitiser removes.
+      // What the engine still let through (themeCSS) the sanitizer removes.
       expect(h.svgHasRemote).toBe(false)
       expect(h.svgHasImport).toBe(false)
     }
@@ -294,7 +294,7 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
       expect(result.dotPng.pixelHeight).toBe(result.dotPng.height! * 2)
     })
 
-    it("honours the graph's own layout= (neato), and draws undirected graphs", () => {
+    it("honors the graph's own layout= (neato), and draws undirected graphs", () => {
       expect(result.dotLayered.error).toBeUndefined()
       expect(result.dotNeato.error).toBeUndefined()
       // dot stacks the triangle in three ranks; neato lays it out flat.
@@ -337,11 +337,11 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     })
   })
 
-  it('rasterises an SVG image at twice its own size (spec D10)', () => {
+  it('rasterizes an SVG image at twice its own size (spec D10)', () => {
     expect(result.svgImage).toEqual({ width: 240, height: 150, magic: 'PNG', pixelWidth: 480, pixelHeight: 300 })
   })
 
-  it('rasterises a hostile SVG image without a request (the request log above holds only the page), and refuses one that is not an SVG', () => {
+  it('rasterizes a hostile SVG image without a request (the request log above holds only the page), and refuses one that is not an SVG', () => {
     expect(result.svgHostile).toMatchObject({ width: 40, height: 20, magic: 'PNG' })
     expect(result.requests.some((r) => r.url.includes('127.0.0.1'))).toBe(false)
     expect(result.svgNotOne).toBe('it is not a readable SVG')

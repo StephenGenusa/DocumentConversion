@@ -37,13 +37,13 @@ export const HUB_TAGS = [
   's',
   'br',
   // Content, not presentation: x² is not x2, H₂O is not H2O, and a footnote
-  // reference run into its word reads as a typo. Without these the sanitiser
-  // kept the text and dropped the meaning, for every reader that sanitises.
+  // reference run into its word reads as a typo. Without these the sanitizer
+  // kept the text and dropped the meaning, for every reader that sanitizes.
   'sup',
   'sub',
   'span',
   'div',
-  // Speaker notes. Without this the sanitiser stripped the tag and kept its
+  // Speaker notes. Without this the sanitizer stripped the tag and kept its
   // text, so a note leaked into the body of an ordinary conversion as a loose
   // run of words. See src/core/speaker-notes.ts.
   'aside',
@@ -107,7 +107,7 @@ export function hubSanitizeOptions(): sanitizeHtml.IOptions {
  * emit XML. Word and every epub reader then refuse the whole file rather than
  * skip the character.
  *
- * Stripped twice on purpose. Here, so a reader that sanitises gets a clean
+ * Stripped twice on purpose. Here, so a reader that sanitizes gets a clean
  * result; and in `convert.ts` `read()`, because most readers never call this
  * function — txt, csv, code, pdf, rst, the ODF readers — and "the one boundary
  * every writer is downstream of" is there, not here.

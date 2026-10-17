@@ -152,7 +152,7 @@ export interface BatchItemReq {
   ocr?: boolean
   /** Folder this input came from; drives where the save dialog opens. */
   sourceDir?: string
-  /** Which OCR language to recognise with, when ocr is set. */
+  /** Which OCR language to recognize with, when ocr is set. */
   ocrLanguage?: string
   /** The reading choices made on this input's card. */
   read?: ReadOptions
@@ -292,11 +292,11 @@ export interface Api {
   }): Promise<SaveResult>
   reveal(path: string): Promise<void>
   openPath(path: string): Promise<void>
-  /** Help → About: the version and every licence notice, in its own window. */
+  /** Help → About: the version and every license notice, in its own window. */
   openAbout(): Promise<void>
   /**
    * A diagram or formula drawn for the editor (spec B11): an `<img>`-ready
-   * data URI of the sanitised SVG with its CSS px size, the engine's message,
+   * data URI of the sanitized SVG with its CSS px size, the engine's message,
    * or `unavailable` for a kind this version does not draw.
    */
   renderBlock(req: BlockRenderRequest): Promise<BlockRenderResult>

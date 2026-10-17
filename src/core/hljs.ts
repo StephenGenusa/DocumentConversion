@@ -79,7 +79,7 @@ ${TOKEN_COLORS.map(([scopes, color]) => `  ${scopes.map((s) => `.hljs-${s}`).joi
  * printed page of an AZW4, which a reader such as Calibre's may reflow into
  * text that keeps bold and italic but not color). Darker than the screen palette, so every color still reads at better than
  * 5:1 on a sepia page as well as white; and not by color alone, since a
- * black-and-white Kindle turns these into much the same grey: keywords are
+ * black-and-white Kindle turns these into much the same gray: keywords are
  * bold and comments italic. No backgrounds (a diff's lines included): the
  * reader's night and sepia themes own the page, and a forced light block
  * would clash with them.

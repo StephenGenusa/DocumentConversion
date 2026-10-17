@@ -19,7 +19,7 @@ import type { HubDocument, SourceInput } from '../types'
  *   {-struck-}          -> <s>
  *
  * `^sup^` and `~sub~` are Djot's own syntax and already come out as <sup> and
- * <sub>. Raw HTML (`{=html}`) is passed through and sanitised with the rest.
+ * <sub>. Raw HTML (`{=html}`) is passed through and sanitized with the rest.
  */
 
 /** The characters @djot/djot's inline parser stops a run of text at (its `reSpecial`). */

@@ -332,7 +332,7 @@ const KAPPA_ARC = (sweep: number): number => (4 / 3) * Math.tan(sweep / 4)
 export interface GdiSetup {
   out: SvgOut
   budget: Budget
-  /** Device pixels per millimetre (EMF's reference device). */
+  /** Device pixels per millimeter (EMF's reference device). */
   pxPerMm: [number, number]
   /** The area outside which nothing shows, for clips that exclude. */
   universe: Rect
@@ -731,7 +731,7 @@ export class Gdi {
     this.done(p, true, true)
   }
 
-  /** Part of an ellipse (centre, radii, in logical units) from parameter angle t0 through `sweep`, as Béziers. */
+  /** Part of an ellipse (center, radii, in logical units) from parameter angle t0 through `sweep`, as Béziers. */
   private arcInto(p: PathData, cx: number, cy: number, rx: number, ry: number, t0: number, sweep: number, join: 'move' | 'line'): void {
     const at = (t: number): [number, number] => this.pt(cx + rx * Math.cos(t), cy + ry * Math.sin(t))
     if (join === 'move' || !p.start) p.moveTo(...at(t0))
@@ -775,7 +775,7 @@ export class Gdi {
 
   /**
    * Arc / Chord / Pie / ArcTo: the ellipse in the box, from where the line
-   * from its centre to the start point crosses it to where the line to the
+   * from its center to the start point crosses it to where the line to the
    * end point does, in the arc direction (counter-clockwise as it is seen,
    * unless SetArcDirection said otherwise).
    */

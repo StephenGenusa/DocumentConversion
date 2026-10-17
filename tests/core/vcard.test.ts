@@ -37,7 +37,7 @@ const V30 = [
 ].join('\r\n')
 
 describe('vCard 3.0', () => {
-  it('reads one row per contact, with labelled values on their own lines', () => {
+  it('reads one row per contact, with labeled values on their own lines', () => {
     const { header, rows } = parseVcards(V30)
     expect(header).toEqual(HEADER)
     expect(rows).toHaveLength(1)

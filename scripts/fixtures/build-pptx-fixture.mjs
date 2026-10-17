@@ -67,7 +67,7 @@ const slide1 = deck(
         // ordered runs are merged into ONE <ol> by renderListNodes, which
         // groups on `ordered` alone and takes the type from the first node —
         // so a lettered run placed directly after an arabic one silently
-        // renders as arabic. That is the reader's behaviour today, not
+        // renders as arabic. That is the reader's behavior today, not
         // something this fixture should paper over.
         para(0, V.DECK.bullets[3]),
         para(0, V.DECK.bullets[4], 'alphaLcPeriod'),

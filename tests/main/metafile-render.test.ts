@@ -11,7 +11,7 @@ import { sanitizeSvg } from '../../src/core/svg-sanitize'
 import { metafileCorpus } from '../../scripts/fixtures/metafile-corpus.mjs'
 
 /**
- * The metafile corpus drawn (src/core/metafile), sanitised and rasterised
+ * The metafile corpus drawn (src/core/metafile), sanitized and rasterized
  * by the real render host, as a conversion to Kindle does: key points of
  * each picture checked for the color they should be. Needs a display;
  * skipped without one.
@@ -112,7 +112,7 @@ describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
     return n
   }
 
-  it('rasterises every drawing at twice its size', () => {
+  it('rasterizes every drawing at twice its size', () => {
     for (const p of metafileCorpus()) {
       const r = result[p.name]
       expect(r?.error, p.name).toBeUndefined()
@@ -130,7 +130,7 @@ describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
     expectAt('shapes', 35, 165, WHITE)
   })
 
-  it('transforms: the mapped rectangle, the turned one about its centre, the scaled ellipse', () => {
+  it('transforms: the mapped rectangle, the turned one about its center, the scaled ellipse', () => {
     expectAt('transforms', 75, 50, '#3a6ea5')
     expectAt('transforms', 225, 100, '#e8a33d')
     expectAt('transforms', 45, 150, '#4f9a52')

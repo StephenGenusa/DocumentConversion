@@ -6,7 +6,7 @@
 const ALLOWED = ['http:', 'https:', 'mailto:']
 
 /**
- * Validate and canonicalise a URL typed into the editor's link field.
+ * Validate and canonicalize a URL typed into the editor's link field.
  *
  * Returns null for anything the hub would strip, so the toolbar can refuse it
  * with a message instead of writing a dead — or dangerous — href into the

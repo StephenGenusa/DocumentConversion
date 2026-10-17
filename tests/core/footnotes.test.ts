@@ -28,7 +28,7 @@ const numbered = (html: string) => normalizeFootnotes(html, { reorder: true })
  * RTF ran the note into the sentence. The model:
  *
  *   <sup data-fn="label">n</sup>                 a reference
- *   <ol><li data-fn="label">…                  the notes (every item labelled), last
+ *   <ol><li data-fn="label">…                  the notes (every item labeled), last
  */
 describe('the hub footnote model', () => {
   it('passes the sanitizer with valid labels only', () => {

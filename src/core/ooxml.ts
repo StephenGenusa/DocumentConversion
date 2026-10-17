@@ -16,7 +16,7 @@ function isSelfClosing(xml: string, openEnd: number): boolean {
   return xml[openEnd - 2] === '/'
 }
 
-/** Index just past the element that starts at `start`, honouring nesting. */
+/** Index just past the element that starts at `start`, honoring nesting. */
 function elementEnd(xml: string, start: number, name: string): { end: number; inner: string } {
   const openEnd = xml.indexOf('>', start)
   if (openEnd === -1) return { end: xml.length, inner: '' }

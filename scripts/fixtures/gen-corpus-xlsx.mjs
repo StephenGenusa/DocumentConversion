@@ -2,7 +2,7 @@
 // tests/corpus/. Run with: node scripts/fixtures/gen-corpus-xlsx.mjs
 //
 // All content is invented — generic component descriptions and a generic
-// form layout, no real catalogue codes, customers or reference numbers.
+// form layout, no real catalog codes, customers or reference numbers.
 import { writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -56,7 +56,7 @@ const OUT = join(here, '../../tests/corpus')
     return parts.join(' ').slice(0, 100)
   }
 
-  const rows = [V.CATALOGUE_HEADERS]
+  const rows = [V.CATALOG_HEADERS]
   for (let i = 1; i <= 409; i++) {
     const code = `C-${String(1000 + i)}`
     const long = rand() < 0.62 // ~62% of rows get a longer, wrap-prone description
@@ -64,7 +64,7 @@ const OUT = join(here, '../../tests/corpus')
   }
 
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), V.CATALOGUE_SHEET)
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), V.CATALOG_SHEET)
   const bytes = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   await writeFile(join(OUT, 'catalogue-codes.xlsx'), bytes)
   console.log('catalogue-codes.xlsx: rows =', rows.length)

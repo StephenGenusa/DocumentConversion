@@ -10,7 +10,7 @@ const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwA
 
 const block = (lang: string, source: string): string => `<pre><code class="language-${lang}">${source}</code></pre>`
 
-/** A sanitised SVG, as the host hands it over. */
+/** A sanitized SVG, as the host hands it over. */
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100"><text x="10" y="50">A</text></svg>'
 const SVG64 = Buffer.from(SVG, 'utf8').toString('base64')
 
@@ -38,7 +38,7 @@ describe('drawBlocks (spec B3, B7) with a fake renderer', () => {
     for (const t of TARGET_FORMATS) expect(rendersBlocks(t), t).toBe(DRAWING_TARGETS.includes(t))
   })
 
-  it('replaces a Mermaid block with a centred PNG <img>, alt "Diagram", sized in CSS px', async () => {
+  it('replaces a Mermaid block with a centered PNG <img>, alt "Diagram", sized in CSS px', async () => {
     const { render, calls } = fakeRenderer()
     const html = `<p>Before</p>${block('mermaid', 'flowchart TD\n  A --&gt; B')}<p>After</p>`
     const out = await drawBlocks(html, 'pdf', { renderBlocks: render, format: 'png' })
@@ -329,7 +329,7 @@ describe('Converter.write draws diagrams through ConverterDeps.renderBlocks', ()
     const { render } = fakeRenderer()
     const conv = createConverter(pdf, { renderBlocks: render })
     const hub = await conv.read({ bytes: edited, filename: 'Clipboard' }, 'html')
-    // The two flavours clipboardFlavors writes. The rich one is always PNG:
+    // The two flavors clipboardFlavors writes. The rich one is always PNG:
     // Word and Outlook do not take an SVG data URI from pasted HTML.
     const rich = (await conv.write(hub, 'html', { ...FOR_PASTING })).parts[0].bytes.toString('utf8')
     const plain = (await conv.write(hub, 'txt')).parts[0].bytes.toString('utf8')

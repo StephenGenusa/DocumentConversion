@@ -82,7 +82,7 @@ describe('chunking by cells as well as rows', () => {
 
   it('still emits one row per chunk when a single row busts the cell budget', () => {
     // Never an empty chunk and never an infinite loop: progress must be made
-    // even when the budget cannot be honoured.
+    // even when the budget cannot be honored.
     const chunks = chunkHtmlForPrinting(wideTable(4, 50), 1000, 10)
     expect(chunks).toHaveLength(4)
     expect(chunks.every((c) => countRows(c) === 1)).toBe(true)
@@ -110,7 +110,7 @@ describe('countCells', () => {
 /**
  * Nested tables. A `<table>` inside a `<td>` is part of its parent row, not a
  * row of the parent table — table-grid.ts settled that contract for the five
- * readers that extract tables, and the chunker has to honour it too.
+ * readers that extract tables, and the chunker has to honor it too.
  *
  * Counting every `<tr>` in the subtree does two things wrong at once: it offers
  * an inner row as a place to CUT, which rips it out of its cell and leaves

@@ -150,7 +150,7 @@ function colors(h: View, d: DibHeader, opts: DibOptions): number[] {
     }
     const at = d.tableAt + i * (d.core ? 3 : 4)
     if (!h.has(at, 3)) {
-      // A table cut short: the rest as a grey ramp, so the picture still shows.
+      // A table cut short: the rest as a gray ramp, so the picture still shows.
       const g = Math.round((i * 255) / Math.max(1, n - 1))
       out.push((g << 16) | (g << 8) | g)
       continue

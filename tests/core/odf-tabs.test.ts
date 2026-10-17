@@ -11,7 +11,7 @@ describe('odfText tab stops', () => {
   const GAP = ' '.repeat(4)
 
   it('keeps a tab stop visible instead of collapsing it to one space', () => {
-    expect(odfText('<text:p>How to Catalogue<text:tab/>Page 3</text:p>')).toBe(`How to Catalogue${GAP}Page 3`)
+    expect(odfText('<text:p>How to Catalog<text:tab/>Page 3</text:p>')).toBe(`How to Catalog${GAP}Page 3`)
   })
 
   it('handles the non-self-closing spelling', () => {

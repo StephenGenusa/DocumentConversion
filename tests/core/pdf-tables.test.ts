@@ -84,7 +84,7 @@ describe('readPdf recovers a table from column geometry', () => {
   it('keeps prose above and below the table out of it', async () => {
     const bytes = await makePdf([
       [
-        { text: 'Catalogue code reference', x: 55, y: 720, size: 16 },
+        { text: 'Catalog code reference', x: 55, y: 720, size: 16 },
         { text: INTRO, x: 55, y: 690 },
         ...tableDraws(TABLE, 640),
         { text: OUTRO, x: 55, y: 500 },

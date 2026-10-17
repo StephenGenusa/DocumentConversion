@@ -20,7 +20,7 @@ const HANDBOOK = join(__dirname, '../corpus/visitor-handbook.pdf')
 const SAMPLE_PNG = join(__dirname, '../fixtures/sample.png')
 
 const ABOVE = 'The photograph below shows the insulators recovered from the old line.'
-const BELOW = 'Every insulator in that photograph was catalogued before disposal.'
+const BELOW = 'Every insulator in that photograph was cataloged before disposal.'
 
 async function pdfWithPicture(): Promise<Buffer> {
   const { PDFDocument, StandardFonts } = await import('pdf-lib')

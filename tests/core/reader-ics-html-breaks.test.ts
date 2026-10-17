@@ -65,7 +65,7 @@ describe('ics html descriptions keep their line breaks', () => {
 
   /**
    * SUPERSEDED: this pinned the plain-text path's newline collapse as
-   * "unchanged behaviour" while only the HTML path was being fixed. It was the
+   * "unchanged behavior" while only the HTML path was being fixed. It was the
    * same defect — a literal newline inside a <p> renders as a space, so a
    * multi-line agenda arrived as one run-on sentence — and is now fixed too:
    * one paragraph per line, which keeps the break in the hub and therefore in

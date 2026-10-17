@@ -8,7 +8,7 @@ import { isKnownLanguage, packFilename, type ModelSet } from './languages'
  * A traineddata file is a MODEL, not a resource. A corrupt or substituted one
  * does not crash anything - it quietly reads every document the user converts
  * incorrectly, and they have no way to tell. So nothing reaches the language
- * directory until its SHA-256 matches what the catalogue expects.
+ * directory until its SHA-256 matches what the catalog expects.
  *
  * The filesystem and the fetch are injected rather than imported, which keeps
  * this Electron-free and lets every failure path - bad checksum, dead network,
@@ -17,7 +17,7 @@ import { isKnownLanguage, packFilename, type ModelSet } from './languages'
 
 /**
  * The path a pack occupies inside `dir`, or null if the code is not one we
- * recognise.
+ * recognize.
  *
  * The check lives here, where the path is BUILT, rather than at each call site.
  * It was originally only in `installPack`, and `removePack` - added later -
@@ -26,7 +26,7 @@ import { isKnownLanguage, packFilename, type ModelSet } from './languages'
  * outside the pack directory entirely. Putting it at the construction point
  * means the next function to take a language code cannot forget it.
  *
- * Belt and braces: the catalogue codes are all `[a-z_]+` so none can traverse,
+ * Belt and braces: the catalog codes are all `[a-z_]+` so none can traverse,
  * and the resolved path is confirmed to stay inside `dir` regardless.
  *
  * The containment check compares against the directory plus the PLATFORM
@@ -85,8 +85,8 @@ export async function installPack(
 ): Promise<InstallResult> {
   /*
    * The code becomes a URL path segment AND a filename, so it is checked
-   * against the catalogue before either is built. Rejecting an unknown code
-   * outright is stricter than sanitising one, and there is no legitimate
+   * against the catalog before either is built. Rejecting an unknown code
+   * outright is stricter than sanitizing one, and there is no legitimate
    * reason to install a language the app cannot then select.
    */
   const target = packPathIn(request.dir, request.code, request.set)

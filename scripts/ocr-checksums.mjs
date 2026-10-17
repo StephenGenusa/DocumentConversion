@@ -1,7 +1,7 @@
 /**
  * Record the SHA-256 of each OCR language pack.
  *
- * The catalogue refuses to install a pack it has no verified digest for, so
+ * The catalog refuses to install a pack it has no verified digest for, so
  * this table is what makes the download feature work at all. It is generated
  * rather than hand-written, and generated from the SAME pinned tag the app
  * downloads from - a digest recorded against a different tag would reject
@@ -21,12 +21,12 @@ import { fileURLToPath } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const src = await import(`file://${join(here, '../src/ocr/languages.ts')}`).catch(() => null)
 
-// The catalogue is TypeScript, so read the values out of the source rather than
+// The catalog is TypeScript, so read the values out of the source rather than
 // importing it - this script runs under plain node, with no transpiler.
 const text = await (await import('node:fs/promises')).readFile(join(here, '../src/ocr/languages.ts'), 'utf8')
 const TAG = /TESSDATA_TAG = '([^']+)'/.exec(text)?.[1]
 const codes = [...text.matchAll(/code: '([a-z_]+)'/g)].map((m) => m[1])
-if (!TAG || codes.length === 0) throw new Error('could not read the catalogue')
+if (!TAG || codes.length === 0) throw new Error('could not read the catalog')
 
 const wanted = process.argv.slice(2)
 const targets = wanted.length > 0 ? codes.filter((c) => wanted.includes(c)) : codes

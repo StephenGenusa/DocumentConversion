@@ -6,7 +6,7 @@ import { tableGrid } from '../../src/core/table-grid'
  * R1 (CRITICAL) — `\binN` declares N *raw* bytes that follow the control word.
  * A `{` or `}` inside that payload is data, not structure. Three brace walks in
  * this reader did not know that (`stripGroups`, `groupEnd`, `isBalanced`), so a
- * single `0x7B` byte inside an embedded object desynchronised the walk and it
+ * single `0x7B` byte inside an embedded object desynchronized the walk and it
  * swallowed the rest of the document — silently, with no error and no warning.
  * Word emits `\bin` routinely for embedded objects and pictures.
  *
@@ -115,7 +115,7 @@ describe('rtf \\bin: a brace inside a binary payload does not eat the document',
     expect(html).not.toContain('CD')
   })
 
-  it('honours \\bin inside a group nested in the stripped group', async () => {
+  it('honors \\bin inside a group nested in the stripped group', async () => {
     const html = await hub(String.raw`\pard One\par
 {\*\objdata {\*\objclass \bin4 A{BC} tail}
 \pard Two\par`)
@@ -224,7 +224,7 @@ describe('rtf \bin: a payload outside a picture group', () => {
 
   it('drops a bare \bin payload in prose, and nothing around it', async () => {
     // Not from any destination at all: the bytes must not print as text, and
-    // the brace inside them must not desynchronise anything.
+    // the brace inside them must not desynchronize anything.
     const html = await hub(String.raw`\pard One \bin4 Q{ZW tail\par
 \pard Two\par`)
     expect(html).toContain('One')

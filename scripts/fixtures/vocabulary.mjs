@@ -24,7 +24,7 @@
  * one place that needs reading.
  */
 
-/* -- organisation, sites, people ------------------------------------------- */
+/* -- organization, sites, people -------------------------------------------- */
 
 export const ORG = 'Elmwood Libraries'
 export const ORG_SHORT = 'Elmwood'
@@ -71,10 +71,10 @@ export const JOB_REF = '5502187'
 export const DATE_ISO = '2026-03-14'
 export const DATE_US = '03/14/2026'
 
-/* -- catalogue ------------------------------------------------------------- */
+/* -- catalog ---------------------------------------------------------------- */
 
-export const CATALOGUE_SHEET = 'Codes'
-export const CATALOGUE_HEADERS = ['Catalogue', 'Description', 'Group']
+export const CATALOG_SHEET = 'Codes'
+export const CATALOG_HEADERS = ['Catalogue', 'Description', 'Group']
 export const MATERIALS = [
   'BUCKRAM', 'LINEN', 'LEATHER', 'HARDBACK', 'PAPERBACK',
   'CLOTH', 'BOARD', 'ACID-FREE', 'POLYESTER', 'KRAFT',
@@ -148,7 +148,7 @@ export const CLASSIFICATION_DOC = [
 ]
 
 /** Multiple-choice sets. Each entry is [question, ...options]. */
-export const QUIZ_CATALOGUING = [
+export const QUIZ_CATALOGING = [
   ['The height of a top shelf is measured from what?', 'The floor', 'The shelf below'],
   ['A bookend is used mainly to resist what?', 'Books leaning over', 'Books fading'],
   ['Shelving in the reading room is typically made from which material?', 'Steel', 'Oak', 'Laminate'],
@@ -306,7 +306,7 @@ export const DIRECTORY_HTML = {
       ['List', 'List Tools group. Tab 3 of 3.'],
     ],
     links: ['Home', 'Share'],
-    navigateUp: 'Navigate Up', // the sanitiser adds the brackets around alt text
+    navigateUp: 'Navigate Up', // the sanitizer adds the brackets around alt text
     icons: ['Pin', 'Marker', 'Compass'],
   },
   title: 'Facility Directory',
