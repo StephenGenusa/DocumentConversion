@@ -1,4 +1,5 @@
 import { Worker, type ResourceLimits } from 'worker_threads'
+import { totalmem } from 'os'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { ConversionError } from '../core/errors'
@@ -19,7 +20,11 @@ import type { Reply, Request } from './sqlite-worker'
  *                                no end) returns each batch quickly, forever
  *   Cancel (the job's signal)    the worker is terminated, every call rejects
  *                                as canceled, and the database is closed
- *   memory                       capped by the worker's resourceLimits
+ *   memory                       the worker's JavaScript heap by its
+ *                                resourceLimits; SQLite's own (wasm) memory
+ *                                by memoryLimit (sqlite-worker.ts). A
+ *                                statement over it fails in words, and its
+ *                                worker is ended to give the memory back
  *
  * The bytes stay here for the life of the database so a replacement worker
  * can open them again; the file they came from is never opened by either side.
@@ -41,6 +46,8 @@ export interface SqliteHostOptions {
   /** Tests use small ones. */
   timeouts?: SqliteTimeouts
   resourceLimits?: ResourceLimits
+  /** The most SQLite's heap may hold, in bytes. Defaults to defaultMemoryLimit(). */
+  memoryLimit?: number
 }
 
 export interface SqliteHost extends SqliteEngine {
@@ -55,6 +62,20 @@ export const DEFAULT_TIMEOUTS: SqliteTimeouts = { print: 10_000, export: 60_000 
 const DEFAULT_LIMITS: ResourceLimits = { maxOldGenerationSizeMb: 512, maxYoungGenerationSizeMb: 64 }
 
 const BATCH = 1000
+
+const MB = 1048576
+
+/**
+ * What SQLite may hold for one database: a quarter of the machine's memory,
+ * at least 256 MB and at most 1.5 GB (sql.js's build cannot pass 2 GB, and
+ * the engine's stack and data need room past this). Reading a table's rows
+ * takes a few MB however large it is; only a view that sorts, groups or
+ * joins a large result comes near this, and one that would pass it is
+ * stopped with a message rather than taking the app down with it.
+ */
+export function defaultMemoryLimit(total = totalmem()): number {
+  return Math.min(1536 * MB, Math.max(256 * MB, Math.floor(total / 4)))
+}
 
 /**
  * A packaged path inside app.asar, moved to app.asar.unpacked. The worker
@@ -92,7 +113,13 @@ export function createSqliteHost(opts: SqliteHostOptions = {}): SqliteHost {
     async open(bytes, { purpose, signal }) {
       if (signal?.aborted) throw new ConversionError('canceled', 'Canceled')
       return new Session(
-        { workerPath, ...assetsOf(), bytes: new Uint8Array(bytes), resourceLimits: opts.resourceLimits ?? DEFAULT_LIMITS },
+        {
+          workerPath,
+          ...assetsOf(),
+          bytes: new Uint8Array(bytes),
+          resourceLimits: opts.resourceLimits ?? DEFAULT_LIMITS,
+          memoryLimit: opts.memoryLimit ?? defaultMemoryLimit(),
+        },
         purpose === 'print' ? timeouts.print : timeouts.export,
         signal,
       )
@@ -118,6 +145,7 @@ interface Spawn {
   wasm: Uint8Array
   bytes: Uint8Array
   resourceLimits: ResourceLimits
+  memoryLimit: number
 }
 
 interface Pending {
@@ -160,7 +188,11 @@ class Session implements SqliteDatabase {
       this.pending.delete(reply.id)
       clearTimeout(p.timer)
       if (reply.ok) p.resolve(reply.value)
-      else p.reject(new Error(reply.message))
+      else {
+        p.reject(new Error(reply.message))
+        // Out of memory: the worker's wasm memory stays at the limit until it ends.
+        if (reply.memory && this.generation === generation) this.stop(new Error(reply.message))
+      }
     })
     // A worker that dies (out of memory under resourceLimits, a crash) fails
     // what was asked of it; the next call starts another. Without an 'error'

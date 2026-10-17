@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { createSqliteHost } from '../../src/main/sqlite-host'
+import { createSqliteHost, defaultMemoryLimit } from '../../src/main/sqlite-host'
 import { sqliteReal } from '../../src/main/sqlite-cells'
 import { createConverter } from '../../src/core/convert'
 import { ConversionError } from '../../src/core/errors'
@@ -292,6 +292,49 @@ describe('bad files', () => {
     const hub = await converterWith().read({ bytes, filename: 'w.db' }, 'sqlite', { onAdvice: (_k, m) => advice.push(m) })
     expect(hub.html).toContain('<td>in the file</td>')
     expect(advice.join(' ')).toMatch(/WAL mode/)
+  })
+})
+
+describe('memory', () => {
+  const MB = 1048576
+  // A view whose ORDER BY holds every row at once: 200,000 rows of 1,000 random bytes, about 200 MB to sort.
+  const HUNGRY = 'CREATE VIEW hungry AS WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c LIMIT 200000) SELECT x, randomblob(1000) AS b FROM c ORDER BY b'
+  const bytes = makeDb(`CREATE TABLE t(a); INSERT INTO t VALUES ('kept'); ${HUNGRY}; CREATE VIEW small AS SELECT a FROM t ORDER BY a;`)
+  const small = (): ReturnType<typeof createSqliteHost> => createSqliteHost({ workerPath, assetDir: SQLJS, memoryLimit: 32 * MB })
+
+  it('stops a view that needs more than the limit, in words, and reads the rest', async () => {
+    const advice: string[] = []
+    const out = await createConverter(render, { sqlite: small() }).convert(
+      { bytes, filename: 'm.db' },
+      'sqlite',
+      'csv',
+      { read: { sqliteViews: true } },
+      { onAdvice: (_k, m) => advice.push(m) },
+    )
+    expect(advice.join(' ')).toContain('The view "hungry" could not be read: it needs more than 32 MB of memory, the most a database is given.')
+    const bySuffix = Object.fromEntries(out.parts.map((p) => [p.suffix, p.bytes.toString('utf8')]))
+    expect(bySuffix['.t']).toBe('a\r\nkept\r\n')
+    // Read after the one that ran out, by a fresh engine.
+    expect(bySuffix['.small']).toBe('a\r\nkept\r\n')
+  })
+
+  it('reads the same view with the memory it needs', async () => {
+    const advice: string[] = []
+    const out = await createConverter(render, { sqlite: createSqliteHost({ workerPath, assetDir: SQLJS, memoryLimit: 512 * MB }) }).convert(
+      { bytes, filename: 'm.db' },
+      'sqlite',
+      'csv',
+      { read: { sqliteViews: true } },
+      { onAdvice: (_k, m) => advice.push(m) },
+    )
+    expect(advice).toEqual([])
+    expect(out.parts.find((p) => p.suffix === '.hungry')!.bytes.toString('utf8').split('\r\n').length).toBe(200_002)
+  })
+
+  it('gives a database a quarter of the machine, from 256 MB to 1.5 GB', () => {
+    expect(defaultMemoryLimit(512 * MB)).toBe(256 * MB)
+    expect(defaultMemoryLimit(4096 * MB)).toBe(1024 * MB)
+    expect(defaultMemoryLimit(65536 * MB)).toBe(1536 * MB)
   })
 })
 
