@@ -272,11 +272,19 @@ const CARRIED_ATTRIBUTES = ['class', 'style', 'hidden'] as const
  * where an HTML parser ends it, at its own `</svg>`; one that runs on to the
  * end of the page is left alone, for the sanitizer to drop as before. One
  * marked aria-hidden="true" is decoration and is left alone too.
+ *
+ * An icon from a sprite sheet (`<svg><use href="#icon"/></svg>`, its
+ * `<symbol id="icon">` in another SVG on the page) is given copies of what
+ * it refers to there, in a `<defs>` of its own (pageReferences), so the
+ * picture shows the icon; one whose reference is nowhere on the page, and
+ * that draws nothing else, is left alone. The sprite sheet itself, an SVG of
+ * symbols that draws nothing, is left alone too.
  */
 export function inlineSvgElements(html: string): string {
   if (!/<svg[\s>/]/i.test(html)) return html
   const dom = parseDocument(html, { withStartIndices: true, withEndIndices: true })
   const found: Array<{ start: number; end: number; img: string }> = []
+  let ids: Map<string, Element> | undefined
   const visit = (nodes: ChildNode[]): void => {
     for (const node of nodes) {
       if (!(node instanceof Element)) continue
@@ -287,8 +295,15 @@ export function inlineSvgElements(html: string): string {
       const start = node.startIndex
       const end = node.endIndex
       if (start === null || end === null || node.attribs['aria-hidden'] === 'true') continue
-      const raw = html.slice(start, end + 1)
+      let raw = html.slice(start, end + 1)
       if (!/(?:<\/(?:[\w-]+:)?svg\s*>|\/>)$/i.test(raw)) continue
+      if (isSpriteSheet(node)) continue
+      const refs = pageReferences(node, (ids ??= svgIds(dom.children)))
+      if (refs === null) continue
+      if (refs.length > 0) {
+        const defs = `<defs>${refs.map((el) => html.slice(el.startIndex!, el.endIndex! + 1)).join('')}</defs>`
+        raw = raw.replace(/^<[^>]*>/, (open) => open + defs)
+      }
       const img = inlineSvgImage(raw, node)
       if (img !== null) found.push({ start, end, img })
     }
@@ -297,6 +312,99 @@ export function inlineSvgElements(html: string): string {
   let out = html
   for (const { start, end, img } of found.reverse()) out = `${out.slice(0, start)}${img}${out.slice(end + 1)}`
   return out
+}
+
+/** Elements that hold definitions, not drawing: what is in them is drawn only where it is used. */
+const DEFINITIONS = new Set(['defs', 'symbol', 'clippath', 'mask', 'pattern', 'marker', 'lineargradient', 'radialgradient', 'filter', 'title', 'desc', 'metadata', 'style'])
+
+/** Elements that draw. */
+const DRAWING = new Set(['path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'image', 'use', 'foreignobject'])
+
+const localName = (el: Element): string => el.name.toLowerCase().replace(/^svg:/, '')
+const children = (el: Element): Element[] => el.children.filter((c): c is Element => c instanceof Element)
+
+/** An SVG that is only definitions, at least one a <symbol>: a sprite sheet, which draws nothing. */
+function isSpriteSheet(svg: Element): boolean {
+  const kids = children(svg)
+  return kids.some((c) => localName(c) === 'symbol') && kids.every((c) => DEFINITIONS.has(localName(c)))
+}
+
+/** Every element with an id inside an SVG on the page, by id (the first, as a browser takes it). */
+function svgIds(nodes: ChildNode[], inSvg = false, out = new Map<string, Element>()): Map<string, Element> {
+  for (const node of nodes) {
+    if (!(node instanceof Element)) continue
+    const svg = inSvg || localName(node) === 'svg'
+    const id = node.attribs.id
+    if (svg && id && !out.has(id)) out.set(id, node)
+    svgIds(node.children, svg, out)
+  }
+  return out
+}
+
+/** The ids an element and what is in it refer to: `href="#id"` (and xlink:href), and `url(#id)` in any attribute. */
+function referencesOf(el: Element, out = new Set<string>()): Set<string> {
+  for (const [name, value] of Object.entries(el.attribs)) {
+    if ((name === 'href' || name === 'xlink:href') && value.trim().startsWith('#')) out.add(value.trim().slice(1))
+    for (const m of value.matchAll(/url\(\s*['"]?#([^)'"\s]+)/g)) out.add(m[1])
+  }
+  for (const c of children(el)) referencesOf(c, out)
+  return out
+}
+
+function idsIn(el: Element, out = new Set<string>()): Set<string> {
+  if (el.attribs.id) out.add(el.attribs.id)
+  for (const c of children(el)) idsIn(c, out)
+  return out
+}
+
+const contains = (outer: Element, inner: Element): boolean => {
+  for (let p: Element | null = inner; p; p = p.parent instanceof Element ? p.parent : null) if (p === outer) return true
+  return false
+}
+
+/** The most elements copied in from the page for one SVG. */
+const MAX_PAGE_REFERENCES = 200
+
+/**
+ * What an SVG refers to that is not in it but elsewhere in the page's SVGs
+ * (a sprite sheet's <symbol>, a gradient), and what those refer to in turn,
+ * in page order. Null when it refers to something that is nowhere and draws
+ * nothing else: an icon whose sheet is missing, which would be a blank picture.
+ */
+function pageReferences(svg: Element, ids: Map<string, Element>): Element[] | null {
+  const own = idsIn(svg)
+  const wanted = [...referencesOf(svg)].filter((id) => !own.has(id))
+  if (wanted.length === 0) return []
+  const taken: Element[] = []
+  const seen = new Set<string>()
+  let missing = false
+  while (wanted.length > 0 && taken.length < MAX_PAGE_REFERENCES) {
+    const id = wanted.shift()!
+    if (seen.has(id)) continue
+    seen.add(id)
+    const el = ids.get(id)
+    // Not on the page, or around this SVG (its own ancestor): nothing to copy.
+    if (!el || contains(el, svg)) {
+      missing = true
+      continue
+    }
+    if (taken.some((t) => contains(t, el))) continue
+    for (let k = taken.length - 1; k >= 0; k--) if (contains(el, taken[k])) taken.splice(k, 1)
+    taken.push(el)
+    for (const next of idsIn(el)) seen.add(next)
+    for (const next of referencesOf(el)) if (!seen.has(next) && !own.has(next)) wanted.push(next)
+  }
+  if (missing && taken.length === 0 && !drawsBesidesUse(svg)) return null
+  return taken.sort((a, b) => a.startIndex! - b.startIndex!)
+}
+
+/** Whether an SVG draws anything but <use>, outside its definitions. */
+function drawsBesidesUse(el: Element): boolean {
+  return children(el).some((c) => {
+    const name = localName(c)
+    if (DEFINITIONS.has(name)) return false
+    return (DRAWING.has(name) && name !== 'use') || drawsBesidesUse(c)
+  })
 }
 
 const XML_ENTITY_NAMES = new Set(['amp', 'lt', 'gt', 'quot', 'apos'])

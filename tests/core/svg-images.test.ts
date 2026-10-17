@@ -542,6 +542,37 @@ describe('inlineSvgElements: an SVG drawn inline in a page', () => {
     }
   })
 
+  describe('an icon from a sprite sheet elsewhere on the page', () => {
+    const sheet =
+      '<svg style="display:none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="shade"><stop offset="0" stop-color="#3a6ea5"/></linearGradient></defs>' +
+      '<symbol id="icon-book" viewBox="0 0 16 16"><path d="M2 2h12v12H2z" fill="url(#shade)"/><use href="#icon-mark"/></symbol>' +
+      '<symbol id="icon-mark" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"/></symbol><symbol id="icon-unused"><rect width="1" height="1"/></symbol></svg>'
+
+    it('gets copies of the symbol it uses, and of what that refers to, so it shows the icon', () => {
+      const out = inlineSvgElements(`<body>${sheet}<p>Loans <svg width="16" height="16" aria-label="Books"><use href="#icon-book"/></svg> today</p></body>`)
+      // The sheet draws nothing and is left alone; the icon becomes a picture.
+      expect(out).toContain(sheet)
+      expect(out).toMatch(/<p>Loans <img src="data:image\/svg\+xml;base64,[^"]+" alt="Books" width="16" height="16"> today<\/p>/)
+      const [svg] = decoded(out)
+      expect(svg).toMatch(/^<svg[^>]*><defs><linearGradient id="shade">.*<symbol id="icon-book".*<symbol id="icon-mark".*<\/defs><use href="#icon-book"/)
+      expect(svg).not.toContain('icon-unused')
+    })
+
+    it('xlink:href, and a sheet after the icon, work the same', () => {
+      const out = inlineSvgElements(`<p><svg width="16" height="16"><use xlink:href="#icon-mark"></use></svg></p>${sheet}`)
+      const [svg] = decoded(out)
+      expect(svg).toContain('<symbol id="icon-mark"')
+      expect(svg).not.toContain('icon-book')
+    })
+
+    it('one whose symbol is nowhere on the page is left alone; one that draws something besides is kept', () => {
+      const lone = '<p><svg width="16" height="16"><use href="#icon-gone"/></svg></p>'
+      expect(inlineSvgElements(lone)).toBe(lone)
+      const [svg] = decoded(inlineSvgElements('<p><svg width="16" height="16"><rect width="4" height="4"/><use href="#icon-gone"/></svg></p>'))
+      expect(svg).toContain('<rect')
+    })
+  })
+
   it('keeps a picture it names by address for the read step to fetch', () => {
     const [svg] = decoded(inlineSvgElements('<svg width="4" height="4"><image href="https://example.invalid/a.png" width="4" height="4"/></svg>'))
     expect(svg).toContain('href="https://example.invalid/a.png"')
