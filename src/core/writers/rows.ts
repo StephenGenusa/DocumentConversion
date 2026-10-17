@@ -1,7 +1,7 @@
-import * as XLSX from 'xlsx'
 import { ConversionError } from '../errors'
 import { csvCell } from './csv'
 import { keysFor, typed } from './json'
+import { XlsxBook, type CellValue } from './xlsx-stream'
 import type { RowSource } from '../records'
 import type { TargetFormat, WritePart, WriteResult } from '../types'
 
@@ -40,7 +40,7 @@ function suffixFor(sources: RowSource[], i: number): string {
 }
 
 /** Excel refuses a sheet name over 31 characters, with []:*?/\ in it, or used twice. */
-function sheetNamer(): (name: string) => string {
+export function sheetNamer(): (name: string) => string {
   const used = new Set<string>()
   return (raw) => {
     const base = (raw.replace(/[[\]:*?/\\]/g, '_').trim() || 'Sheet').slice(0, 31)
@@ -89,29 +89,54 @@ async function writeAll(sources: RowSource[], target: TargetFormat, opts: RowWri
     return { parts }
   }
   if (target === 'xlsx') {
-    const max = opts.maxSheetRows ?? XLSX_MAX_ROWS
-    const wb = XLSX.utils.book_new()
+    const book = new XlsxBook()
     const name = sheetNamer()
     for (let i = 0; i < sources.length; i++) {
-      const { header } = sources[i]
-      let sheet: (string | number)[][] = [header]
-      let part = 1
-      const flush = (): void => {
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheet), name(part === 1 ? sources[i].name : `${sources[i].name} (${part})`))
-      }
-      for await (const row of rowsOf(sources[i], opts, i, sources.length)) {
-        if (sheet.length >= max) {
-          // A table past Excel's sheet limit continues on "name (2)", header repeated.
-          flush()
-          part++
-          sheet = [header]
-        }
-        // Numbers as numbers, as the hub path writes them (see `typed`).
-        sheet.push(row.map(typed))
-      }
-      flush()
+      // Numbers as numbers, as the hub path writes them (see `typed`).
+      await writeTable(book, name, sources[i].name, sources[i].header, mapRows(rowsOf(sources[i], opts, i, sources.length), typed), opts.maxSheetRows)
     }
-    return { parts: [{ suffix: '', bytes: Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })) }] }
+    return { parts: [{ suffix: '', bytes: await book.end() }] }
   }
   throw new ConversionError('unsupported', `${target} is not a table output`)
+}
+
+async function* mapRows(rows: AsyncIterable<string[]>, cell: (v: string) => CellValue): AsyncGenerator<CellValue[]> {
+  for await (const row of rows) yield row.map(cell)
+}
+
+/**
+ * One table as sheets of a workbook, named by `sheetName` from `table`: a
+ * table past Excel's sheet limit (`max` rows, header included) continues on
+ * "name (2)", header repeated. The header is text, whatever it says.
+ */
+export async function writeTable(
+  book: XlsxBook,
+  sheetName: (name: string) => string,
+  table: string,
+  header: readonly CellValue[] | undefined,
+  rows: AsyncIterable<readonly CellValue[]> | Iterable<readonly CellValue[]>,
+  max = XLSX_MAX_ROWS,
+): Promise<void> {
+  let part = 1
+  let sheet = book.sheet(sheetName(table))
+  let count = 0
+  const start = (): Promise<void> | undefined => {
+    count = 0
+    if (!header) return undefined
+    count++
+    return sheet.row(header)
+  }
+  await start()
+  for await (const row of rows) {
+    if (count >= max) {
+      await sheet.end()
+      part++
+      sheet = book.sheet(sheetName(`${table} (${part})`))
+      await start()
+    }
+    count++
+    const wait = sheet.row(row)
+    if (wait) await wait
+  }
+  await sheet.end()
 }
