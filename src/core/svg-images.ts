@@ -6,7 +6,7 @@ import serialize from 'dom-serializer'
 import { decodeSvgDataUri, sanitizeSvg, svgDataUri } from './svg-sanitize'
 import { DOCX_MAX_WIDTH, rendersBlocks, type DrawContext } from './draw-blocks'
 import { imagePlaceholder } from './inline-images'
-import { MAX_SVG_IMAGE_BYTES, type RenderResult } from './rendered-blocks'
+import type { RenderResult } from './rendered-blocks'
 import type { TargetFormat } from './types'
 
 /*
@@ -41,7 +41,7 @@ export function rasterizesSvgImages(target: TargetFormat): boolean {
 
 /**
  * How SVG images are converted: `batch` at a time, each allowed `eachMs` of
- * drawing, each source at most `maxBytes`.
+ * drawing. A source of any size (owner, 2026-10-16: the 5 MB cap is gone).
  *
  * Each distinct picture is one request to the render host, which draws one
  * at a time; an ordinary icon or plan takes a few milliseconds, so a page of
@@ -54,7 +54,6 @@ export function rasterizesSvgImages(target: TargetFormat): boolean {
 export const SVG_IMAGE_LIMITS = {
   eachMs: 10_000,
   batch: 25,
-  maxBytes: MAX_SVG_IMAGE_BYTES,
 } as const
 
 /**
@@ -379,7 +378,7 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
   const failed = (n: number, why: string): void =>
     ctx.onAdvice?.('render-failed', `SVG image ${n} could not be converted for ${name}: ${why}`)
 
-  const { eachMs, batch, maxBytes } = SVG_IMAGE_LIMITS
+  const { eachMs, batch } = SVG_IMAGE_LIMITS
 
   interface Job {
     el: Element
@@ -393,7 +392,7 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
     const number = i + 1
     const svg = decodeSvgDataUri(el.attribs.src)
     const prepared =
-      svg === null || Buffer.byteLength(svg, 'utf8') > maxBytes
+      svg === null
         ? undefined
         : prepareSvgForRaster(svg, {
             width: attrPx(el.attribs.width),
@@ -403,10 +402,7 @@ export async function rasterizeSvgImages(html: string, target: TargetFormat, ctx
             maxWidth: DOCX_MAX_WIDTH,
             maxHeight: DOCX_MAX_HEIGHT,
           })
-    if (svg !== null && Buffer.byteLength(svg, 'utf8') > maxBytes) {
-      failed(number, `it is over ${Math.round(maxBytes / (1024 * 1024))} MB`)
-      replaceWith(el, placeholderFor(el))
-    } else if (!prepared || Buffer.byteLength(prepared.svg, 'utf8') > maxBytes) {
+    if (!prepared) {
       failed(number, 'it is not a readable SVG')
       replaceWith(el, placeholderFor(el))
     } else {

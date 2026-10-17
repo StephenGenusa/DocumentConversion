@@ -144,14 +144,75 @@
   /** The largest side a canvas is given, in device pixels. */
   var MAX_SIDE = 8192
 
-  /** An SVG (already sanitised by the main process) drawn to PNG at `scale`, on white. */
-  async function rasterize(svg, width, height, scale) {
+  /**
+   * Sources the main process sends in pieces (render-host.ts `send`), by
+   * id: an SVG's text, or any other picture's bytes, each piece of base64
+   * decoded as it comes, so no one string holds the whole of a large
+   * picture. Answers kept for it to fetch in pieces (`take`), by the same
+   * id. Both are dropped when the block is done.
+   */
+  var uploads = {}
+  var answers = {}
+
+  function begin(id, type) {
+    uploads[id] = { type: String(type), parts: [] }
+    return true
+  }
+
+  function put(id, piece) {
+    var u = uploads[id]
+    if (!u || typeof piece !== 'string') return false
+    if (u.type === 'image/svg+xml') {
+      u.parts.push(piece)
+      return true
+    }
+    var text = atob(piece)
+    var bytes = new Uint8Array(text.length)
+    for (var i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
+    u.parts.push(bytes)
+    return true
+  }
+
+  /** The source sent as `id`, taken (it is held once). */
+  function received(id) {
+    var u = uploads[id]
+    delete uploads[id]
+    if (!u) throw new Error('the picture did not arrive')
+    return u
+  }
+
+  /** Keep an answer's base64 for `take`; answers its length. */
+  function keep(id, b64) {
+    answers[id] = b64
+    return b64.length
+  }
+
+  /** A picture (a Blob) decoded by Chromium through a blob: URL, let go once decoded. */
+  async function decoded(blob) {
+    var url = URL.createObjectURL(blob)
+    try {
+      var img = new Image()
+      img.src = url
+      await img.decode()
+      return img
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+
+  /** The base64 of a canvas, as `type`, without its data: prefix. */
+  function canvasData(canvas, type, quality) {
+    var url = canvas.toDataURL(type, quality)
+    return url.slice(url.indexOf(',') + 1)
+  }
+
+  /** An SVG (already sanitised by the main process, sent as `id`) drawn to PNG at `scale`, on white. Answers the PNG's length (kept for `take`). */
+  async function rasterize(id, width, height, scale) {
+    var svg = received(id)
     var s = Math.min(scale, MAX_SIDE / width, MAX_SIDE / height)
     var w = Math.max(1, Math.round(width * s))
     var h = Math.max(1, Math.round(height * s))
-    var img = new Image()
-    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)))
-    await img.decode()
+    var img = await decoded(new Blob(svg.parts, { type: 'image/svg+xml' }))
     var canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
@@ -159,15 +220,13 @@
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, w, h)
     ctx.drawImage(img, 0, 0, w, h)
-    var url = canvas.toDataURL('image/png')
-    return url.slice(url.indexOf(',') + 1)
+    return { length: keep(id, canvasData(canvas, 'image/png')) }
   }
 
-  /** Bytes of a base64 data URL's payload. */
-  function payloadBytes(url) {
-    var b64 = url.slice(url.indexOf(',') + 1)
+  /** Bytes of a base64 payload. */
+  function payloadBytes(b64) {
     var pad = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0
-    return { b64: b64, bytes: (b64.length * 3) / 4 - pad }
+    return (b64.length * 3) / 4 - pad
   }
 
   /** The most pixels a TIFF is decoded at: its RGBA copy is four bytes a pixel. */
@@ -194,17 +253,14 @@
   }
 
   /**
-   * A TIFF (a base64 data: URL), decoded by UTIF.js onto a canvas: Chromium
+   * A TIFF (its bytes), decoded by UTIF.js onto a canvas: Chromium
    * decodes no TIFF itself. The page at `index` in the file's chain of pages
    * (core read the chain, and asks for each page in turn), or the first
    * with a size, which is what Word and every other viewer show. Its size is read before anything is decoded, so a
    * TIFF claiming a vast picture is refused rather than allocated.
    */
-  async function tiffCanvas(src, index) {
+  async function tiffCanvas(bytes, index) {
     await load('tiff')
-    var text = atob(src.slice(src.indexOf(',') + 1))
-    var bytes = new Uint8Array(text.length)
-    for (var i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
     checkTiffChain(bytes)
     var UTIF = window.UTIF
     var ifds = UTIF.decode(bytes.buffer, { parseMN: false, debug: false })
@@ -233,20 +289,28 @@
   }
 
   /**
-   * A raster picture (a data: URL the main process built from the document's
-   * bytes) decoded here, in the sandbox, and re-encoded to fit `maxBytes`:
-   * PNG when asked for (`as`) or when it has transparency (scaled down until
-   * it fits), JPEG otherwise (quality lowered, then scaled down). `page` is
-   * a TIFF's page. Answers the base64, its type and its size in pixels.
+   * A raster picture (the document's bytes, sent as `id`) decoded here, in
+   * the sandbox, and re-encoded to fit `maxBytes`: PNG when asked for (`as`)
+   * or when it has transparency (scaled down until it fits), JPEG otherwise
+   * (quality lowered, then scaled down). `page` is a TIFF's page. Answers
+   * the length of the base64 (kept for `take`), its type and its size in
+   * pixels.
    */
-  async function reencode(src, maxBytes, as, page) {
+  async function reencode(id, maxBytes, as, page) {
+    var out = await fitted(received(id), maxBytes, as, page)
+    return { length: keep(id, out.data), mime: out.mime, width: out.width, height: out.height }
+  }
+
+  async function fitted(src, maxBytes, as, page) {
     var img
-    if (/^data:image\/tiff;/.test(src)) {
-      img = await tiffCanvas(src, page)
+    if (src.type === 'image/tiff') {
+      var size = src.parts.reduce(function (n, p) { return n + p.length }, 0)
+      var bytes = new Uint8Array(size)
+      for (var k = 0, at = 0; k < src.parts.length; at += src.parts[k].length, k++) bytes.set(src.parts[k], at)
+      src.parts = null
+      img = await tiffCanvas(bytes, page)
     } else {
-      img = new Image()
-      img.src = src
-      await img.decode()
+      img = await decoded(new Blob(src.parts, { type: src.type }))
     }
     var width = img.naturalWidth || img.width
     var height = img.naturalHeight || img.height
@@ -276,8 +340,8 @@
         }
         g.drawImage(full, 0, 0, c.width, c.height)
       }
-      var out = payloadBytes(asPng ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', quality))
-      return { data: out.b64, bytes: out.bytes, mime: asPng ? 'image/png' : 'image/jpeg', width: c.width, height: c.height }
+      var b64 = asPng ? canvasData(c, 'image/png') : canvasData(c, 'image/jpeg', quality)
+      return { data: b64, bytes: payloadBytes(b64), mime: asPng ? 'image/png' : 'image/jpeg', width: c.width, height: c.height }
     }
     var scale = 1
     var out
@@ -810,11 +874,24 @@
       if (kind === 'math') return answer(mathSvg(source, display))
       return answer(Promise.reject(new Error('No engine for ' + kind)))
     },
-    rasterize: function (svg, width, height, scale) {
-      return answer(rasterize(svg, width, height, scale))
+    begin: begin,
+    put: put,
+    rasterize: function (id, width, height, scale) {
+      return answer(rasterize(id, width, height, scale))
     },
-    reencode: function (src, maxBytes, as, page) {
-      return answer(reencode(src, maxBytes, as, page))
+    reencode: function (id, maxBytes, as, page) {
+      return answer(reencode(id, maxBytes, as, page))
+    },
+    take: function (id, from, to) {
+      var a = answers[id]
+      return typeof a === 'string' ? a.slice(from, to) : null
+    },
+    drop: function (ids) {
+      ids.forEach(function (id) {
+        delete uploads[id]
+        delete answers[id]
+      })
+      return true
     },
   }
 })()

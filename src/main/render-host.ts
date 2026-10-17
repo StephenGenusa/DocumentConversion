@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url'
 import { renderCacheKey } from '../core/draw-blocks'
 import { sanitizeSvg } from '../core/svg-sanitize'
 import { svgIntrinsicSize } from '../core/svg-images'
-import { MAX_PICTURE_BYTES, MAX_SOURCE_BYTES, MAX_SVG_IMAGE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
+import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderRequest, type RenderResult } from '../core/rendered-blocks'
 
 /**
  * The render host (spec B5): one hidden window that draws diagrams (Mermaid,
@@ -59,9 +59,25 @@ export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
   picture: 'reencode-3',
 }
 
-/** The largest source of each kind: a diagram's text, a whole SVG image, or a picture's data: URL. */
-const maxSourceBytes = (kind: RenderKind): number =>
-  kind === 'svg' ? MAX_SVG_IMAGE_BYTES : kind === 'picture' ? Math.ceil(MAX_PICTURE_BYTES / 3) * 4 + 64 : MAX_SOURCE_BYTES
+/**
+ * The largest source of each kind: a diagram's or formula's text. An SVG
+ * image or a picture may be of any size (owner, 2026-10-16: the earlier
+ * 5 MB and 30 MB caps are gone): what the app took in, it converts.
+ */
+const maxSourceBytes = (kind: RenderKind): number => (kind === 'svg' || kind === 'picture' ? Infinity : MAX_SOURCE_BYTES)
+
+/**
+ * Sources and answers cross to and from the page in pieces of this many
+ * characters (a multiple of 4, so each piece of base64 decodes alone).
+ * executeJavaScript takes a 260 MB argument, but slowly and ever more so
+ * (16 MB in 0.13 s, 64 MB in 0.9 s, 260 MB in 10.5 s, measured
+ * 2026-10-16) and with several copies alive at once; in pieces the time
+ * grows only with the size, and each copy is a piece.
+ */
+const PIECE_CHARS = 8 * 1024 * 1024
+
+/** How long one piece may take to cross. It is not drawing time: a stuck page is caught here. */
+const PIECE_MS = 30_000
 
 /** The most pages of one TIFF a request may name (core/picture-sizes.ts reads no more). */
 const MAX_TIFF_PAGES = 1000
@@ -224,6 +240,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
   let idleTimer: NodeJS.Timeout | undefined
   let windows = 0
   let draws = 0
+  let uploads = 0
   let renderSession: Session | undefined
 
   function mayLoad(url: string): boolean {
@@ -344,22 +361,49 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
   /** Draw one block in the page: the engine's SVG, sanitised, and for PNG rasterised. */
   async function draw(job: Job): Promise<{ result: RenderResult; cacheable: boolean }> {
     const { req } = job
-    const started = Date.now()
     let w: BrowserWindow
     try {
       w = await windowForWork()
     } catch (err) {
       return { result: { error: `the render window could not start: ${(err as Error).message}` }, cacheable: false }
     }
+    let started = Date.now()
     const left = (): number => Math.max(1, job.timeoutMs - (Date.now() - started))
     type Answer<T> = { ok: true; value: T } | { ok: false; error: string }
+    // Sources the page holds and answers it keeps for us, by id; dropped
+    // when the block is done (or with the window, when it is discarded).
+    const ids: number[] = []
+    /** A source sent to the page in pieces: text for an SVG, base64 for any other type (decoded there piece by piece). */
+    const send = async (type: string, data: string): Promise<number> => {
+      const id = ++uploads
+      ids.push(id)
+      const crossing = Date.now()
+      await call(w, 'begin', [id, type], PIECE_MS)
+      for (let at = 0; at < data.length; at += PIECE_CHARS) await call(w, 'put', [id, data.slice(at, at + PIECE_CHARS)], PIECE_MS)
+      // The time limit is for drawing, decoding and encoding, not for the crossing.
+      started += Date.now() - crossing
+      return id
+    }
+    /** An answer the page keeps, `length` characters, fetched in pieces. */
+    const fetchAnswer = async (id: number, length: number): Promise<string> => {
+      const pieces: string[] = []
+      for (let at = 0; at < length; at += PIECE_CHARS) {
+        const piece = await call<unknown>(w, 'take', [id, at, Math.min(length, at + PIECE_CHARS)], PIECE_MS)
+        if (typeof piece !== 'string') throw new Error('the answer could not be read')
+        pieces.push(piece)
+      }
+      return pieces.join('')
+    }
     const rasterize = async (svg: string, width: number, height: number): Promise<{ result: RenderResult; cacheable: boolean }> => {
-      const png = await call<Answer<string>>(w, 'rasterize', [svg, width, height, PNG_SCALE], left())
+      const id = await send('image/svg+xml', svg)
+      const png = await call<Answer<{ length: number }>>(w, 'rasterize', [id, width, height, PNG_SCALE], left())
       if (!png.ok) return { result: { error: png.error }, cacheable: false }
-      if (typeof png.value !== 'string' || !/^[A-Za-z0-9+/]+=*$/.test(png.value)) {
+      const length = png.value?.length
+      const data = typeof length === 'number' && Number.isInteger(length) && length > 0 ? await fetchAnswer(id, length) : undefined
+      if (typeof data !== 'string' || !/^[A-Za-z0-9+/]+=*$/.test(data)) {
         return { result: { error: 'the picture could not be made' }, cacheable: false }
       }
-      return { result: { png: png.value, width, height }, cacheable: true }
+      return { result: { png: data, width, height }, cacheable: true }
     }
     try {
       if (req.kind === 'picture') {
@@ -370,18 +414,23 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
         if (!PICTURE_SOURCE.test(req.source)) return { result: { error: 'it is not a picture this app reads' }, cacheable: true }
         if (typeof maxBytes !== 'number' || !(maxBytes > 0)) return { result: { error: 'no size to fit' }, cacheable: true }
         if (!Number.isInteger(page) || page < 0 || page >= MAX_TIFF_PAGES) return { result: { error: 'no such page' }, cacheable: true }
-        const out = await call<Answer<{ data: string; mime: string; width: number; height: number }>>(
+        const comma = req.source.indexOf(',')
+        const id = await send(req.source.slice(5, req.source.indexOf(';')), req.source.slice(comma + 1))
+        const out = await call<Answer<{ length: number; mime: string; width: number; height: number }>>(
           w,
           'reencode',
-          [req.source, maxBytes, as, page],
+          [id, maxBytes, as, page],
           left(),
         )
         if (!out.ok) return { result: { error: out.error }, cacheable: true }
-        const { data, mime, width, height } = out.value ?? ({} as Record<string, never>)
-        if (typeof data !== 'string' || typeof mime !== 'string' || !isEncoded(data, mime) || !isSize(width) || !isSize(height)) {
+        const { length, mime, width, height } = out.value ?? ({} as Record<string, never>)
+        if (typeof length !== 'number' || !Number.isInteger(length) || length <= 0 || Math.floor((length * 3) / 4) > maxBytes + 2) {
+          return { result: { error: 'the picture could not be made small enough' }, cacheable: false }
+        }
+        const data = await fetchAnswer(id, length)
+        if (typeof mime !== 'string' || !isEncoded(data, mime) || !isSize(width) || !isSize(height)) {
           return { result: { error: 'the picture could not be made' }, cacheable: false }
         }
-        if (Math.floor((data.length * 3) / 4) > maxBytes + 2) return { result: { error: 'the picture could not be made small enough' }, cacheable: false }
         return { result: mime === 'image/png' ? { png: data, width, height } : { jpeg: data, width, height }, cacheable: true }
       }
       if (req.kind === 'svg') {
@@ -426,6 +475,9 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
         return { result: { error: `drawing took longer than ${Math.round(job.timeoutMs / 1000)} s` }, cacheable: false }
       }
       return { result: { error: `the render window stopped: ${(err as Error).message}` }, cacheable: false }
+    } finally {
+      // What the page holds for this block, let go (a discarded window took it with it).
+      if (ids.length > 0 && win === w && !w.isDestroyed()) void call(w, 'drop', [ids], PIECE_MS).catch(() => undefined)
     }
   }
 

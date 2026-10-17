@@ -3,8 +3,8 @@ import { Element, Text, type ChildNode } from 'domhandler'
 import { append, replaceElement } from 'domutils'
 import serialize from 'dom-serializer'
 import { imageMime } from './readers/image'
-import { imagePlaceholder } from './inline-images'
-import { MAX_PICTURE_BYTES, MAX_SVG_IMAGE_BYTES, type PictureFormat, type RenderRequest, type RenderResult } from './rendered-blocks'
+import { imagePlaceholder, MAX_FETCHED_IMAGE_BYTES } from './inline-images'
+import type { PictureFormat, RenderRequest, RenderResult } from './rendered-blocks'
 import { DOCX_MAX_WIDTH, type DrawContext } from './draw-blocks'
 import type { TargetFormat } from './types'
 import { originalSize, tiffPage, tiffPages } from './picture-headers'
@@ -73,6 +73,14 @@ export const KINDLE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
  */
 export const PICTURE_LIMITS = { eachMs: 20_000, batch: 25 } as const
 
+/**
+ * The largest copy the render host makes where the target sets no limit:
+ * the largest picture the app fetches (owner, 2026-10-16). A picture of any
+ * size is converted (the earlier 30 MB cap is gone); a copy that would be
+ * larger still is scaled down to this, never dropped.
+ */
+const MAX_COPY_BYTES = MAX_FETCHED_IMAGE_BYTES
+
 /** The picture format a converted picture is given when nothing else is chosen (ConvertOptions.pictureFormat). */
 export const DEFAULT_PICTURE_FORMAT: PictureFormat = 'png'
 
@@ -113,7 +121,7 @@ const browser = (name: string, unknown: PictureTarget['unknown']): PictureTarget
   name,
   holds: BROWSER_HOLDS,
   maxBytes: Infinity,
-  fitBytes: MAX_PICTURE_BYTES,
+  fitBytes: MAX_COPY_BYTES,
   unknown,
 })
 
@@ -139,7 +147,7 @@ const PICTURE_TARGETS: Partial<Record<TargetFormat, PictureTarget>> = {
     name: 'EPUB',
     holds: new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
     maxBytes: Infinity,
-    fitBytes: MAX_PICTURE_BYTES,
+    fitBytes: MAX_COPY_BYTES,
     unknown: 'describe',
   },
   azw3: { name: 'Kindle', holds: KINDLE_HOLDS, maxBytes: KINDLE_IMAGE_MAX_BYTES, fitBytes: KINDLE_IMAGE_MAX_BYTES, unknown: 'describe' },
@@ -147,14 +155,14 @@ const PICTURE_TARGETS: Partial<Record<TargetFormat, PictureTarget>> = {
     name: 'Markdown',
     holds: new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
     maxBytes: Infinity,
-    fitBytes: MAX_PICTURE_BYTES,
+    fitBytes: MAX_COPY_BYTES,
     unknown: 'keep',
   },
   docx: {
     name: 'Word',
     holds: new Set(['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', ...WORD_ORIGINALS]),
     maxBytes: Infinity,
-    fitBytes: MAX_PICTURE_BYTES,
+    fitBytes: MAX_COPY_BYTES,
     unknown: 'describe',
     sized: WORD_ORIGINALS,
   },
@@ -239,8 +247,8 @@ function vectorRequest(mime: string, drawn: MetafileResult, opts: { raster: bool
   if (!svg) return { error: `the ${type} picture could not be drawn` }
   if (!opts.raster) return { src: svgDataUri(svg), width, height }
   if (!opts.render) return { error: `${type} pictures are not converted` }
-  const prepared = Buffer.byteLength(svg, 'utf8') > MAX_SVG_IMAGE_BYTES ? null : prepareSvgForRaster(svg, { width, height, maxWidth: DOCX_MAX_WIDTH, maxHeight: DOCX_MAX_HEIGHT })
-  if (!prepared || Buffer.byteLength(prepared.svg, 'utf8') > MAX_SVG_IMAGE_BYTES) return { error: `the ${type} picture is too large to convert` }
+  const prepared = prepareSvgForRaster(svg, { width, height, maxWidth: DOCX_MAX_WIDTH, maxHeight: DOCX_MAX_HEIGHT })
+  if (!prepared) return { error: `the ${type} picture could not be drawn` }
   return { request: { kind: 'svg', source: prepared.svg, display: true, format: 'png' }, width: prepared.width, height: prepared.height }
 }
 
@@ -386,6 +394,47 @@ function splitTiffPages(dom: ReturnType<typeof parseDocument>, pageOf: Map<Eleme
   return changed
 }
 
+/** The data: URL of a converted picture, or undefined when the answer is not one. */
+function answerSrc(result: RenderResult): string | undefined {
+  if ('error' in result) return undefined
+  const png = typeof result.png === 'string' && BASE64.test(result.png) ? result.png : undefined
+  const jpeg = typeof result.jpeg === 'string' && BASE64.test(result.jpeg) ? result.jpeg : undefined
+  return png ? `data:image/png;base64,${png}` : jpeg ? `data:image/jpeg;base64,${jpeg}` : undefined
+}
+
+/**
+ * Each distinct request asked once, `PICTURE_LIMITS.batch` at a time, each
+ * given `eachMs`. Answers by request; a request missing from the answer was
+ * not reached because the converter went down (said once, here).
+ */
+async function convertAll(
+  requests: RenderRequest[],
+  render: NonNullable<DrawContext['renderBlocks']>,
+  ctx: DrawContext,
+  name: string,
+): Promise<Map<RenderRequest, RenderResult | undefined>> {
+  const { eachMs, batch } = PICTURE_LIMITS
+  // By a hash of the source, made once a request: a picture's data: URL may run to hundreds of MB.
+  const keys = new Map(requests.map((r) => [r, JSON.stringify([r.kind, createHash('sha1').update(r.source).digest('hex'), r.fit, r.page])]))
+  const unique = [...new Map(requests.map((r) => [keys.get(r)!, r])).values()]
+  const byKey = new Map<string, RenderResult | undefined>()
+  for (let i = 0; i < unique.length; i += batch) {
+    const part = unique.slice(i, i + batch)
+    let results: RenderResult[]
+    try {
+      results = await render(part, { signal: ctx.signal, timeoutMs: eachMs })
+    } catch (err) {
+      if (ctx.signal?.aborted) throw err
+      ctx.onAdvice?.('render-failed', `Pictures could not be converted for ${name}: ${oneLine((err as Error)?.message ?? String(err))}`)
+      break
+    }
+    part.forEach((r, k) => byKey.set(keys.get(r)!, results[k]))
+  }
+  const out = new Map<RenderRequest, RenderResult | undefined>()
+  for (const r of requests) if (byKey.has(keys.get(r)!)) out.set(r, byKey.get(keys.get(r)!))
+  return out
+}
+
 /**
  * Make every data: picture one `target` can hold. Pictures it holds as they
  * are stay untouched; the others go to the render host, in `ctx.pictureFormat`
@@ -446,10 +495,6 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
       if (profile.unknown === 'describe') describe(el, number, `${typeName(data.declared)} pictures are not converted`)
       continue
     }
-    if (data.bytes.length > MAX_PICTURE_BYTES) {
-      describe(el, number, `it is over ${Math.round(MAX_PICTURE_BYTES / (1024 * 1024))} MB`)
-      continue
-    }
     if (vectorMime(data.bytes)) {
       const plan = vectorRequest(mime, draw(data.bytes), { raster, render: !!render })
       if ('error' in plan) describe(el, number, plan.error)
@@ -477,40 +522,21 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
     const page = pageOf.get(el)
     jobs.push({ el, number, request: page === undefined ? request : { ...request, page } })
   }
-  const { eachMs, batch } = PICTURE_LIMITS
   if (render && jobs.length > 0) {
     changed = true
-    const keyOf = (r: RenderRequest): string => JSON.stringify([r.kind, r.source, r.fit, r.page])
-    const unique = [...new Map(jobs.map((j) => [keyOf(j.request), j.request])).values()]
-    const byKey = new Map<string, RenderResult | undefined>()
-    for (let i = 0; i < unique.length; i += batch) {
-      const part = unique.slice(i, i + batch)
-      let results: RenderResult[]
-      try {
-        results = await render(part, { signal: ctx.signal, timeoutMs: eachMs })
-      } catch (err) {
-        if (ctx.signal?.aborted) throw err
-        ctx.onAdvice?.('render-failed', `Pictures could not be converted for ${profile.name}: ${oneLine((err as Error)?.message ?? String(err))}`)
-        break
-      }
-      part.forEach((r, k) => byKey.set(keyOf(r), results[k]))
-    }
+    const results = await convertAll(jobs.map((j) => j.request), render, ctx, profile.name)
     for (const job of jobs) {
-      const key = keyOf(job.request)
-      // The converter went down before this one: said once, above.
-      if (!byKey.has(key)) {
+      // The converter went down before this one: said once, in convertAll.
+      if (!results.has(job.request)) {
         toPlaceholder(job.el)
         continue
       }
-      const result = byKey.get(key)
-      if (result && !('error' in result)) {
-        const png = typeof result.png === 'string' && BASE64.test(result.png) ? result.png : undefined
-        const jpeg = typeof result.jpeg === 'string' && BASE64.test(result.jpeg) ? result.jpeg : undefined
-        if (png || jpeg) {
-          job.el.attribs.src = png ? `data:image/png;base64,${png}` : `data:image/jpeg;base64,${jpeg}`
-          if (job.size) sizeIfUnsized(job.el, job.size.width, job.size.height)
-          continue
-        }
+      const result = results.get(job.request)
+      const src = result && answerSrc(result)
+      if (src) {
+        job.el.attribs.src = src
+        if (job.size) sizeIfUnsized(job.el, job.size.width, job.size.height)
+        continue
       }
       failed(job.number, result && 'error' in result ? oneLine(result.error) : 'the converter gave no picture')
       toPlaceholder(job.el)

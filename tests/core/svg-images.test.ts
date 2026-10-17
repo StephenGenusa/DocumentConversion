@@ -336,14 +336,17 @@ describe('rasterizeSvgImages (spec D10): PNG copies of SVG images for Word and K
     expect(onAdvice).toHaveBeenCalledTimes(2)
   })
 
-  it('refuses a picture over the size limit without asking', async () => {
+  it('asks for an SVG of any size: a 12 MB one is converted, not refused (owner, 2026-10-16: the 5 MB cap is gone)', async () => {
     const { render, calls } = fakeRenderer()
     const onAdvice = vi.fn()
-    const big = SVG.replace('</svg>', `<desc>${'x'.repeat(SVG_IMAGE_LIMITS.maxBytes)}</desc></svg>`)
+    const big = SVG.replace('</svg>', `<desc>${'x'.repeat(12 * 1024 * 1024)}</desc></svg>`)
     const out = await rasterizeSvgImages(`<p>${img(big)}</p>`, 'docx', { renderBlocks: render, onAdvice })
-    expect(calls).toHaveLength(0)
-    expect(out).toContain('[image: Plan]')
-    expect(onAdvice).toHaveBeenCalledWith('render-failed', expect.stringMatching(/^SVG image 1 could not be converted for Word: it is over \d+ MB$/))
+    expect(calls).toHaveLength(1)
+    expect(calls[0][0].source.length).toBeGreaterThan(12 * 1024 * 1024)
+    expect(out).toContain('data:image/png')
+    expect(out).not.toContain('[image:')
+    expect(onAdvice).not.toHaveBeenCalled()
+    expect(SVG_IMAGE_LIMITS).not.toHaveProperty('maxBytes')
   })
 
   /** `n` distinct SVG images, one per paragraph. */

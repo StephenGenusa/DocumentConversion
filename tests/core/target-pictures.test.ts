@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createCanvas } from '@napi-rs/canvas'
-import { targetPictures, pictureType, vectorMime } from '../../src/core/pictures'
+import { KINDLE_IMAGE_MAX_BYTES, targetPictures, pictureType, vectorMime } from '../../src/core/pictures'
+import { MAX_FETCHED_IMAGE_BYTES } from '../../src/core/inline-images'
 import { tiffPages } from '../../src/core/picture-headers'
 import { createConverter } from '../../src/core/convert'
 import type { RenderBlocks, RenderRequest, RenderResult } from '../../src/core/rendered-blocks'
@@ -287,5 +288,45 @@ describe('targetPictures: what each target holds', () => {
     expect(out).toContain('[image: p29]')
     expect(onAdvice).toHaveBeenCalledTimes(1)
     expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Pictures could not be converted for EPUB: the render window closed')
+  })
+
+  /** A picture of `mb` MB: the signature of a real one (TIFF, PNG), then zeros. The fake host does not decode it. */
+  const sized = (head: Buffer, mb: number): Buffer => Buffer.concat([head, Buffer.alloc(mb * 1024 * 1024 - head.length)])
+
+  it('converts a 40 MB picture, not refusing it for its size (owner, 2026-10-16: the 30 MB cap is gone)', async () => {
+    const big = sized(TIFF, 40)
+    for (const target of ['epub', 'azw3', 'pdf'] as TargetFormat[]) {
+      const { render, calls } = host()
+      const onAdvice = vi.fn()
+      const out = await targetPictures(`<p>${img('image/tiff', big)}</p>`, target, { renderBlocks: render, onAdvice })
+      expect(calls).toHaveLength(1)
+      expect(calls[0].source).toBe(uri('image/tiff', big))
+      expect(types(out)).toEqual(['image/png'])
+      expect(onAdvice).not.toHaveBeenCalled()
+    }
+  })
+
+  it('a copy may be as large as the largest picture the app fetches; Kindle copies 5 MB', async () => {
+    // Word sizes a TIFF from its header; one wider than 20,000 px it cannot, so it is converted.
+    const wide: Buffer = makeTiff({ width: 21_000, height: 1, pixel: () => [10, 20, 30] })
+    for (const [target, html, max] of [
+      ['epub', img('image/bmp', bmp()), MAX_FETCHED_IMAGE_BYTES],
+      ['docx', img('image/tiff', wide), MAX_FETCHED_IMAGE_BYTES],
+      ['azw3', img('image/bmp', bmp()), KINDLE_IMAGE_MAX_BYTES],
+    ] as const) {
+      const { render, calls } = host()
+      await targetPictures(`<p>${html}</p>`, target, { renderBlocks: render })
+      expect(calls.map((c) => c.fit?.maxBytes)).toEqual([max])
+    }
+  })
+
+  it('a 40 MB PNG for Kindle is made smaller to fit its 5 MB, not refused', async () => {
+    const big = sized(png(), 40)
+    const { render, calls } = host()
+    const onAdvice = vi.fn()
+    const out = await targetPictures(`<p>${img('image/png', big)}</p>`, 'azw3', { renderBlocks: render, onAdvice })
+    expect(calls.map((c) => c.fit)).toEqual([{ maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'jpeg' }])
+    expect(types(out)).toEqual(['image/jpeg'])
+    expect(onAdvice).not.toHaveBeenCalled()
   })
 })

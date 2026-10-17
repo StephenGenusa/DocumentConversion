@@ -175,15 +175,16 @@ export const DRAWN_KINDS: ReadonlySet<BlockKind> = new Set<BlockKind>(['mermaid'
 /** The largest source drawn, by the host and by the editor's IPC alike (spec B11). */
 export const MAX_SOURCE_BYTES = 100 * 1024
 
-/**
- * The largest SVG image rasterised (spec D10). Pictures are larger than
- * diagram sources: an illustration exported from a drawing program runs to
- * megabytes, and it is the file itself, not a few lines of text.
+/*
+ * SVG images and raster pictures (kinds `svg` and `picture`) have no size
+ * cap of their own (owner, 2026-10-16): the earlier 5 MB SVG and 30 MB
+ * picture caps turned a merely large picture into its alt text. Any
+ * picture a document brought in is converted; what bounds it is where it
+ * came from (MAX_FETCHED_IMAGE_BYTES for the web, the bomb guard for a
+ * file's own parts) and the decoding rules (50 megapixels, the TIFF chain
+ * checks), not a size here. The render host passes a large one to its page
+ * in pieces (render-host.ts).
  */
-export const MAX_SVG_IMAGE_BYTES = 5 * 1024 * 1024
-
-/** The largest raster picture re-encoded (kind `picture`), in bytes before base64. */
-export const MAX_PICTURE_BYTES = 30 * 1024 * 1024
 
 /**
  * Whether a document with these features has something a conversion draws:
