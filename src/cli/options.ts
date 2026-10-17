@@ -40,7 +40,7 @@ export function cliConvertOptions(
         scale: req.scale,
         pageSize: req.page,
         landscape: req.landscape,
-        headerFooter: req.headerFooter ? true : undefined,
+        headerFooter: req.headerFooter ? true : req.noHeaderFooter ? false : undefined,
       },
       renderedFormat: req.diagrams,
       read: {
@@ -61,10 +61,12 @@ export function cliConvertOptions(
       // The settings with no control on the window's screen: mergeSettings
       // never takes them from a request, so the flags are applied here.
       pictureFormat: req.pictures ?? merged.pictureFormat,
-      codeColour: req.noCodeColour ? false : merged.codeColour,
+      // Each on/off pair: whichever flag was given, else the setting (args.ts
+      // has refused both at once).
+      codeColour: req.codeColor ? true : req.noCodeColor ? false : merged.codeColour,
       web: {
-        fetchPictures: req.noFetch ? false : merged.fetchPictures,
-        allowLocalNetwork: req.noLocalNetwork ? false : merged.allowLocalNetwork,
+        fetchPictures: req.fetch ? true : req.noFetch ? false : merged.fetchPictures,
+        allowLocalNetwork: req.localNetwork ? true : req.noLocalNetwork ? false : merged.allowLocalNetwork,
       },
       ocr: req.ocr,
       ocrLanguage: merged.ocrLanguage,

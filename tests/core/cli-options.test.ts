@@ -21,7 +21,7 @@ const options = (settings: Readonly<Settings>, argv: string[], installed: (code:
 const file = (raw: unknown): Settings => parseSettings(raw).settings
 
 describe('cliConvertOptions: built-in defaults (settings spec 5.7)', () => {
-  it('are DEFAULT_SETTINGS: JPG pictures, fetching on, intranet allowed, code coloured', () => {
+  it('are DEFAULT_SETTINGS: JPG pictures, fetching on, intranet allowed, code colored', () => {
     const { options: o, notes } = options(DEFAULT_SETTINGS, ['a.md', '--to', 'pdf'])
     expect(notes).toEqual([])
     expect(o.pictureFormat).toBe('jpeg')
@@ -37,7 +37,7 @@ describe('cliConvertOptions: built-in defaults (settings spec 5.7)', () => {
 
   it('take each flag', () => {
     const { options: o } = options(DEFAULT_SETTINGS, [
-      'a.png', '--to', 'pdf', '--pictures', 'png', '--no-local-network', '--no-code-colour', '--ocr', '--ocr-lang', 'deu',
+      'a.png', '--to', 'pdf', '--pictures', 'png', '--no-local-network', '--no-code-color', '--ocr', '--ocr-lang', 'deu',
       '--scale', '1.5', '--page', 'A4', '--landscape', '--header-footer', '--diagrams', 'png', '--no-timestamps',
       '--sqlite-views', '--json-as', 'text', '--split', 'h2',
     ])
@@ -92,6 +92,40 @@ describe('cliConvertOptions: a settings file', () => {
     expect(o.ocrLanguage).toBe('deu')
     const turnedOff = options(file({ web: { allowLocalNetwork: true } }), ['a.md', '--to', 'pdf', '--no-local-network'])
     expect(turnedOff.options.web.allowLocalNetwork).toBe(false)
+  })
+
+  it('--fetch and --code-color turn back on what the file turned off', () => {
+    const { options: o } = options(saved, ['a.md', '--to', 'pdf', '--fetch', '--code-color'])
+    expect(o.web).toEqual({ fetchPictures: true, allowLocalNetwork: true })
+    expect(o.codeColour).toBe(true)
+    // Each turns on only its own setting.
+    expect(options(saved, ['a.md', '--to', 'pdf', '--fetch']).options.codeColour).toBe(false)
+    expect(options(saved, ['a.md', '--to', 'pdf', '--code-color']).options.web.fetchPictures).toBe(false)
+  })
+
+  it("--fetch keeps the file's intranet rule, and goes with --no-local-network", () => {
+    const lanOff = file({ version: 1, web: { fetchPictures: false, allowLocalNetwork: false } })
+    expect(options(lanOff, ['a.md', '--to', 'pdf', '--fetch']).options.web).toEqual({ fetchPictures: true, allowLocalNetwork: false })
+    expect(options(saved, ['a.md', '--to', 'pdf', '--fetch', '--no-local-network']).options.web).toEqual({
+      fetchPictures: true,
+      allowLocalNetwork: false,
+    })
+  })
+
+  it('--fetch, --local-network and --code-color change nothing on the built-in defaults', () => {
+    const { options: o } = options(DEFAULT_SETTINGS, ['a.md', '--to', 'pdf', '--fetch', '--local-network', '--code-color'])
+    expect(o).toEqual(options(DEFAULT_SETTINGS, ['a.md', '--to', 'pdf']).options)
+  })
+
+  it('--local-network turns back on the intranet the file refused', () => {
+    const lanOff = file({ version: 1, web: { allowLocalNetwork: false } })
+    expect(options(lanOff, ['a.md', '--to', 'pdf']).options.web).toEqual({ fetchPictures: true, allowLocalNetwork: false })
+    expect(options(lanOff, ['a.md', '--to', 'pdf', '--local-network']).options.web).toEqual({ fetchPictures: true, allowLocalNetwork: true })
+  })
+
+  it('--no-header-footer turns off the header and footer the file turned on', () => {
+    expect(options(saved, ['a.md', '--to', 'pdf', '--no-header-footer']).options.pdf.headerFooter).toBe(false)
+    expect(options(DEFAULT_SETTINGS, ['a.md', '--to', 'pdf', '--no-header-footer']).options.pdf.headerFooter).toBe(false)
   })
 
   it('a flag left off does not undo the file: --header-footer absent keeps the saved one', () => {

@@ -241,13 +241,103 @@ describe('settings flags', () => {
     }
   })
 
-  it('--no-code-colour, strict to the outputs that colour code', () => {
-    expect(ok(['a.md', '--to', 'html', '--no-code-colour']).noCodeColour).toBe(true)
+  it('--no-code-color, strict to the outputs that color code', () => {
+    expect(ok(['a.md', '--to', 'html', '--no-code-color']).noCodeColor).toBe(true)
     for (const t of ['pdf', 'html', 'revealjs', 'epub', 'azw3', 'azw4', 'docx'] as const) {
-      expect(checkFlagScope(['--no-code-colour'], t, ['md']), t).toBeNull()
+      expect(checkFlagScope(['--no-code-color'], t, ['md']), t).toBeNull()
     }
     for (const t of ['md', 'txt', 'csv', 'json', 'xlsx'] as const) {
-      expect(checkFlagScope(['--no-code-colour'], t, ['md']), t).toMatch(/^--no-code-colour applies only to/)
+      expect(checkFlagScope(['--no-code-color'], t, ['md']), t).toMatch(/^--no-code-color applies only to/)
+    }
+  })
+
+  it('--fetch and --code-color turn back on what a settings file turned off', () => {
+    const req = ok(['a.md', '--to', 'html', '--fetch', '--code-color'])
+    expect(req.fetch).toBe(true)
+    expect(req.codeColor).toBe(true)
+    expect(req.noFetch).toBeUndefined()
+    expect(req.noCodeColor).toBeUndefined()
+    const none = ok(['a.md', '--to', 'html'])
+    expect(none.fetch).toBeUndefined()
+    expect(none.codeColor).toBeUndefined()
+  })
+
+  it('--fetch and --code-color are accepted without --settings, where they are the default already', () => {
+    expect(ok(['a.md', '--to', 'pdf', '--fetch']).settings).toBeUndefined()
+    expect(ok(['a.md', '--to', 'pdf', '--code-color']).settings).toBeUndefined()
+  })
+
+  it('a flag and its --no- opposite together are a usage error, either order', () => {
+    for (const [on, off] of [
+      ['--fetch', '--no-fetch'],
+      ['--local-network', '--no-local-network'],
+      ['--code-color', '--no-code-color'],
+      ['--header-footer', '--no-header-footer'],
+    ]) {
+      for (const argv of [[on, off], [off, on]]) {
+        const r = parseArgs(['a.md', '--to', 'pdf', ...argv])
+        expect(r.kind, argv.join(' ')).toBe('usage')
+        if (r.kind === 'usage') expect(r.message).toMatch(new RegExp(`^${on} and ${off} are opposites: give one`))
+      }
+    }
+  })
+
+  it('--fetch with --no-local-network is fine: fetch, but not from the intranet', () => {
+    const req = ok(['a.md', '--to', 'pdf', '--fetch', '--no-local-network'])
+    expect(req.fetch).toBe(true)
+    expect(req.noLocalNetwork).toBe(true)
+    expect(checkFlagScope(['--fetch', '--no-local-network'], 'pdf', ['md'])).toBeNull()
+  })
+
+  it("--fetch has --no-fetch's scope: exit 2 when every input is mail or a calendar", () => {
+    expect(checkFlagScope(['--fetch'], 'pdf', ['eml', 'msg', 'mbox', 'ics'])).toMatch(/^--fetch does not apply to eml, msg, mbox, ics input/)
+    expect(checkFlagScope(['--fetch'], 'pdf', ['eml', 'md'])).toBeNull()
+    expect(checkFlagScope(['--fetch'], 'txt', ['docx'])).toBeNull()
+    // Each is matched whole: --no-fetch's scope is not --fetch's, nor the other way round.
+    expect(checkFlagScope(['--no-fetch'], 'pdf', ['md'])).toBeNull()
+    expect(checkFlagScope(['--no-fetch'], 'pdf', ['eml'])).toMatch(/^--no-fetch does not apply/)
+  })
+
+  it("--code-color has --no-code-color's scope: the outputs that color code", () => {
+    for (const t of ['pdf', 'html', 'revealjs', 'epub', 'azw3', 'azw4', 'docx'] as const) {
+      expect(checkFlagScope(['--code-color'], t, ['md']), t).toBeNull()
+    }
+    for (const t of ['md', 'txt', 'csv', 'json', 'xlsx'] as const) {
+      expect(checkFlagScope(['--code-color'], t, ['md']), t).toMatch(
+        /^--code-color applies only to pdf, html, revealjs, epub, azw3, azw4, docx output, not /,
+      )
+    }
+  })
+
+  it('--local-network turns back on the intranet a settings file refused', () => {
+    const req = ok(['a.md', '--to', 'pdf', '--local-network'])
+    expect(req.localNetwork).toBe(true)
+    expect(req.noLocalNetwork).toBeUndefined()
+    expect(ok(['a.md', '--to', 'pdf']).localNetwork).toBeUndefined()
+    expect(ok(['a.md', '--to', 'pdf', '--fetch', '--local-network']).localNetwork).toBe(true)
+  })
+
+  it('--local-network with --no-fetch is a usage error, like --no-local-network', () => {
+    const r = parseArgs(['a.md', '--to', 'pdf', '--no-fetch', '--local-network'])
+    expect(r.kind).toBe('usage')
+    if (r.kind === 'usage') expect(r.message).toMatch(/^--local-network does nothing with --no-fetch/)
+  })
+
+  it("--local-network has --no-local-network's scope", () => {
+    expect(checkFlagScope(['--local-network'], 'pdf', ['eml', 'ics'])).toMatch(/^--local-network does not apply to eml, msg, mbox, ics input/)
+    expect(checkFlagScope(['--local-network'], 'pdf', ['eml', 'md'])).toBeNull()
+    expect(checkFlagScope(['--no-local-network'], 'pdf', ['md'])).toBeNull()
+  })
+
+  it('--no-header-footer: pdf only, and strict, unlike the legacy --header-footer', () => {
+    const req = ok(['a.md', '--to', 'pdf', '--no-header-footer'])
+    expect(req.noHeaderFooter).toBe(true)
+    expect(req.headerFooter).toBe(false)
+    expect(ok(['a.md', '--to', 'pdf']).noHeaderFooter).toBeUndefined()
+    expect(checkFlagScope(['--no-header-footer'], 'pdf', ['md'])).toBeNull()
+    for (const t of ['azw4', 'html', 'docx', 'txt'] as const) {
+      expect(checkFlagScope(['--no-header-footer'], t, ['md']), t).toMatch(/^--no-header-footer applies only to pdf output, not /)
+      expect(checkFlagScope(['--header-footer'], t, ['md']), t).toBeNull()
     }
   })
 
@@ -281,11 +371,20 @@ describe('settings flags', () => {
   })
 
   it('are all strict, and listed in the usage', () => {
-    for (const flag of ['--pictures', '--no-fetch', '--no-local-network', '--no-code-colour', '--ocr-lang']) {
+    for (const flag of [
+      '--pictures', '--fetch', '--no-fetch', '--local-network', '--no-local-network', '--code-color', '--no-code-color',
+      '--no-header-footer', '--ocr-lang',
+    ]) {
       expect(FLAG_SCOPES.find((s) => s.flag === flag)?.strict, flag).toBe(true)
     }
-    for (const text of ['--pictures <jpg|png>', '--no-fetch', '--no-local-network', '--no-code-colour', '--ocr-lang <code>', '--settings <file|app>']) {
+    for (const text of [
+      '--pictures <jpg|png>', '[--fetch]', '[--no-fetch]', '[--local-network]', '[--no-local-network]', '[--code-color]',
+      '[--no-code-color]', '[--no-header-footer]', '--ocr-lang <code>', '--settings <file|app>',
+    ]) {
       expect(USAGE, text).toContain(text)
+    }
+    for (const old of ['colour', 'coloured']) {
+      expect(USAGE, old).not.toContain(old)
     }
   })
 })

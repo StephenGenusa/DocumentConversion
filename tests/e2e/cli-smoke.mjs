@@ -2,9 +2,9 @@
  * CLI smoke test (Windows-first — the console contract is fragile there).
  * Prereq: npm run build. Usage: node tests/e2e/cli-smoke.mjs
  */
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, existsSync, rmSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { networkInterfaces, tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -331,20 +331,145 @@ run('--no-fetch for mail only exit 2', [mail, '--to', 'html', '--no-fetch'], {
   expectStderr: '--no-fetch does not apply to eml, msg, mbox, ics input',
 })
 
-// Code colour: on by default, off with --no-code-colour.
-const code = join(work, 'code.md')
-writeFileSync(code, '# Code\n\n```js\nconst answer = 42\n```\n')
-run('code coloured by default', [code, '--to', 'html', '--out', join(work, 'code.html')], { expectCode: 0 })
-run('--no-code-colour', [code, '--to', 'html', '--no-code-colour', '--out', join(work, 'code-plain.html')], { expectCode: 0 })
-for (const [file, coloured] of [['code.html', true], ['code-plain.html', false]]) {
-  if (existsSync(join(work, file)) && readFileSync(join(work, file), 'utf8').includes('hljs-keyword') !== coloured) {
-    failures++
-    console.log(`FAIL  ${file} is ${coloured ? 'not ' : ''}coloured`)
+// The on flags win over a settings file that turned fetching off, or the
+// intranet. Against example.invalid nothing can be fetched, so only the note
+// tells: there is none when fetching was on.
+const noWeb = settingsFile('no-web-settings.json', { version: 1, web: { fetchPictures: false, allowLocalNetwork: false } })
+run('--settings with fetching off', [remote, '--to', 'html', '--settings', noWeb, '--out', join(work, 'remote-off.html')], {
+  expectCode: 0,
+  expectStderr: 'NOTE remote.md: 1 web picture was not fetched',
+})
+run('--fetch wins over --settings', [remote, '--to', 'html', '--settings', noWeb, '--fetch', '--out', join(work, 'remote-on.html')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'remote-on.html')],
+  rejectStderr: 'not fetched',
+})
+run('--fetch with --no-local-network', [remote, '--to', 'html', '--fetch', '--no-local-network', '--out', join(work, 'remote-on-lan.html')], {
+  expectCode: 0,
+  rejectStderr: 'not fetched',
+})
+run('--fetch with --no-fetch exit 2', [remote, '--to', 'html', '--fetch', '--no-fetch'], {
+  expectCode: 2,
+  expectStderr: '--fetch and --no-fetch are opposites: give one',
+})
+run('--local-network with --no-local-network exit 2', [remote, '--to', 'html', '--local-network', '--no-local-network'], {
+  expectCode: 2,
+  expectStderr: '--local-network and --no-local-network are opposites: give one',
+})
+run('--local-network with --no-fetch exit 2', [remote, '--to', 'html', '--no-fetch', '--local-network'], {
+  expectCode: 2,
+  expectStderr: '--local-network does nothing with --no-fetch',
+})
+for (const flag of ['--fetch', '--local-network']) {
+  run(`${flag} for mail only exit 2`, [mail, '--to', 'html', flag], {
+    expectCode: 2,
+    expectStderr: `${flag} does not apply to eml, msg, mbox, ics input`,
+  })
+}
+
+// A real fetch, from a picture served on this machine's own intranet address
+// (the one address an intranet test can count on). Skipped with none.
+const intranetIp = Object.values(networkInterfaces())
+  .flat()
+  .find((a) => a && a.family === 'IPv4' && !a.internal && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a.address))?.address
+if (!intranetIp) {
+  console.log('SKIP  intranet fetches: this machine has no intranet IPv4 address')
+} else {
+  const dot = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=='
+  const server = spawn(process.execPath, ['-e', `
+    const png = Buffer.from(${JSON.stringify(dot)}, 'base64')
+    const s = require('node:http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'image/png' }); r.end(png) })
+    s.listen(0, ${JSON.stringify(intranetIp)}, () => console.log(s.address().port))
+    process.stdin.on('end', () => process.exit(0)).resume()
+  `], { stdio: ['pipe', 'pipe', 'inherit'] })
+  try {
+    const port = await new Promise((resolve, reject) => {
+      server.stdout.once('data', (d) => resolve(String(d).trim()))
+      server.once('exit', () => reject(new Error('the picture server stopped')))
+    })
+    // The fetch itself runs without spawnSync blocking the server: it is its own process.
+    const lan = join(work, 'lan.md')
+    writeFileSync(lan, `# LAN\n\n![dot](http://${intranetIp}:${port}/dot.png)\n`)
+    const embedded = (name, file, want) => {
+      const got = existsSync(file) && readFileSync(file, 'utf8').includes('data:image/png')
+      if (got !== want) {
+        failures++
+        console.log(`FAIL  ${name}: the intranet picture is ${got ? '' : 'not '}embedded`)
+      }
+    }
+    const runs = [
+      ['--settings with fetching off: intranet picture left out', ['--settings', noWeb], false],
+      ['--fetch --local-network win over --settings: intranet picture fetched', ['--settings', noWeb, '--fetch', '--local-network'], true],
+      ['--fetch alone keeps the file\'s intranet rule', ['--settings', noWeb, '--fetch'], false],
+      ['--no-local-network refuses the intranet picture', ['--no-local-network'], false],
+      ['default: intranet picture fetched', [], true],
+    ]
+    for (const [i, [name, flags, want]] of runs.entries()) {
+      const out = join(work, `lan-${i}.html`)
+      run(name, [lan, '--to', 'html', ...flags, '--out', out], { expectCode: 0, expectFiles: [out] })
+      embedded(name, out, want)
+    }
+  } finally {
+    server.stdin.end()
+    server.kill()
   }
 }
-run('--no-code-colour for md exit 2', [code, '--to', 'md', '--no-code-colour'], {
+
+// Code color: on by default, off with --no-code-color, and --code-color wins
+// over a settings file that turned it off.
+const code = join(work, 'code.md')
+writeFileSync(code, '# Code\n\n```js\nconst answer = 42\n```\n')
+const plainSettings = settingsFile('plain-code-settings.json', { version: 1, code: { colour: false } })
+run('code colored by default', [code, '--to', 'html', '--out', join(work, 'code.html')], { expectCode: 0 })
+run('--no-code-color', [code, '--to', 'html', '--no-code-color', '--out', join(work, 'code-plain.html')], { expectCode: 0 })
+run('--settings with code color off', [code, '--to', 'html', '--settings', plainSettings, '--out', join(work, 'code-file.html')], { expectCode: 0 })
+run('--code-color wins over --settings', [code, '--to', 'html', '--settings', plainSettings, '--code-color', '--out', join(work, 'code-flag.html')], {
+  expectCode: 0,
+})
+run('--code-color without --settings', [code, '--to', 'html', '--code-color', '--out', join(work, 'code-on.html')], { expectCode: 0 })
+for (const [file, colored] of [['code.html', true], ['code-plain.html', false], ['code-file.html', false], ['code-flag.html', true], ['code-on.html', true]]) {
+  if (!existsSync(join(work, file)) || readFileSync(join(work, file), 'utf8').includes('hljs-keyword') !== colored) {
+    failures++
+    console.log(`FAIL  ${file} is ${colored ? 'not ' : ''}colored`)
+  }
+}
+for (const flag of ['--no-code-color', '--code-color']) {
+  run(`${flag} for md exit 2`, [code, '--to', 'md', flag], {
+    expectCode: 2,
+    expectStderr: `${flag} applies only to pdf, html, revealjs, epub, azw3, azw4, docx output, not md`,
+  })
+}
+run('--code-color with --no-code-color exit 2', [code, '--to', 'html', '--code-color', '--no-code-color'], {
   expectCode: 2,
-  expectStderr: '--no-code-colour applies only to pdf, html, revealjs, epub, azw3, azw4, docx output, not md',
+  expectStderr: '--code-color and --no-code-color are opposites: give one',
+})
+run('the old --no-code-colour is gone', [code, '--to', 'html', '--no-code-colour'], { expectCode: 2, expectStderr: 'Unknown flag: --no-code-colour' })
+
+// PDF header and footer: --no-header-footer wins over a settings file that
+// turned them on. Read back through the PDF reader: the footer says "Page 1 of 1".
+const hfSettings = settingsFile('header-footer-settings.json', { version: 1, pdf: { headerFooter: true } })
+const footer = (name, pdf, want) => {
+  const txt = pdf.replace(/\.pdf$/, '.txt')
+  run(`${name} (read back)`, [pdf, '--to', 'txt', '--out', txt], { expectCode: 0, expectFiles: [txt] })
+  const got = existsSync(txt) && readFileSync(txt, 'utf8').includes('Page 1 of 1')
+  if (got !== want) {
+    failures++
+    console.log(`FAIL  ${name}: the PDF ${got ? 'has' : 'has no'} footer`)
+  }
+}
+run('--settings with header and footer on', [code, '--to', 'pdf', '--settings', hfSettings, '--out', join(work, 'hf-file.pdf')], { expectCode: 0 })
+footer('--settings with header and footer on', join(work, 'hf-file.pdf'), true)
+run('--no-header-footer wins over --settings', [code, '--to', 'pdf', '--settings', hfSettings, '--no-header-footer', '--out', join(work, 'hf-off.pdf')], {
+  expectCode: 0,
+})
+footer('--no-header-footer wins over --settings', join(work, 'hf-off.pdf'), false)
+run('--header-footer with --no-header-footer exit 2', [code, '--to', 'pdf', '--header-footer', '--no-header-footer'], {
+  expectCode: 2,
+  expectStderr: '--header-footer and --no-header-footer are opposites: give one',
+})
+run('--no-header-footer for html exit 2', [code, '--to', 'html', '--no-header-footer'], {
+  expectCode: 2,
+  expectStderr: '--no-header-footer applies only to pdf output, not html',
 })
 
 // OCR language: needs --ocr, an image or PDF, and an installed pack (English ships).

@@ -452,8 +452,9 @@ format (see [Command line](#command-line)). Every setting also has a flag.
 docconv convert <inputs...> --to <txt|md|docx|pdf|html|epub|revealjs|azw3|azw4|csv|json|xlsx>
   [--out <fileOrDir>] [--from <format>] [--merge] [--no-headings] [--table N]
   [--split <auto|hr|h1|h2>] [--diagrams <svg|png>] [--scale 1.25] [--page A4]
-  [--landscape] [--header-footer] [--ocr] [--ocr-lang <code>]
-  [--pictures <jpg|png>] [--no-fetch] [--no-local-network] [--no-code-colour]
+  [--landscape] [--header-footer] [--no-header-footer] [--ocr] [--ocr-lang <code>]
+  [--pictures <jpg|png>] [--fetch] [--no-fetch] [--local-network]
+  [--no-local-network] [--code-color] [--no-code-color]
   [--json-as <table|text>] [--no-timestamps] [--sqlite-views]
   [--settings <file|app>] [--no-clobber] [--help] [--version]
 ```
@@ -476,8 +477,14 @@ checkout, run `npm run cli -- <args>`.
   either way.
 - `--no-fetch` converts without downloading web pictures; each becomes its
   description and a `NOTE` says how many. `--no-local-network` still fetches
-  but refuses intranet addresses; it cannot be combined with `--no-fetch`.
-- `--no-code-colour` writes code blocks plain, not coloured by language.
+  but refuses intranet addresses; neither it nor `--local-network` can be
+  combined with `--no-fetch`.
+- `--no-code-color` writes code blocks plain, not colored by language.
+- `--no-header-footer` leaves the PDF header and footer off.
+- `--fetch`, `--local-network`, `--code-color` and `--header-footer` turn
+  these back on when a `--settings` file turns them off. Without `--settings`
+  the first three are on already, so they change nothing. A flag and its
+  `--no-` opposite together are a usage error (exit 2).
 - `--ocr-lang deu` reads with `--ocr` in another language. Its pack must be
   installed: English ships with the app, others are downloaded in the app.
 - `--settings <file>` starts from a settings file (the format the app saves);
