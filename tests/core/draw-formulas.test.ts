@@ -217,18 +217,18 @@ describe('drawing formulas (step 18)', () => {
     expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Formula 151 could not be drawn: drawing took longer than 2 s')
   })
 
-  it('a cancel stops a long run: no batch is asked for after it, and the conversion ends cancelled', async () => {
+  it('a cancel stops a long run: no batch is asked for after it, and the conversion ends canceled', async () => {
     const controller = new AbortController()
     const calls: RenderRequest[][] = []
     // As the render host does: a request made, or waiting, when the signal fires is rejected.
     const render: RenderBlocks = async (reqs, opts) => {
-      if (opts.signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' })
+      if (opts.signal?.aborted) throw Object.assign(new Error('Canceled'), { name: 'AbortError' })
       calls.push(reqs)
       if (calls.length === 3) controller.abort()
       return reqs.map(() => ({ svg: SVG, width: 24, height: 16, baseline: 4 }))
     }
     const onAdvice = vi.fn()
-    await expect(drawBlocks(many(2500), 'pdf', { renderBlocks: render, onAdvice, signal: controller.signal })).rejects.toThrow('Cancelled')
+    await expect(drawBlocks(many(2500), 'pdf', { renderBlocks: render, onAdvice, signal: controller.signal })).rejects.toThrow('Canceled')
     expect(calls).toHaveLength(3)
     expect(onAdvice).not.toHaveBeenCalled()
   })

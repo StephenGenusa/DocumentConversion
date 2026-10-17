@@ -52,7 +52,7 @@ export interface PackFetchResult {
   ok: boolean
   bytes?: Buffer
   error?: string
-  cancelled?: boolean
+  canceled?: boolean
 }
 
 export type PackFetch = (url: string) => Promise<PackFetchResult>
@@ -77,7 +77,7 @@ export interface InstallRequest {
 export type InstallResult =
   | { kind: 'ok'; path: string }
   | { kind: 'error'; message: string }
-  | { kind: 'cancelled' }
+  | { kind: 'canceled' }
 
 export async function installPack(
   request: InstallRequest,
@@ -100,7 +100,7 @@ export async function installPack(
 
   const response = await deps.fetch(request.url ?? '')
   if (!response.ok || !response.bytes) {
-    if (response.cancelled) return { kind: 'cancelled' }
+    if (response.canceled) return { kind: 'canceled' }
     return { kind: 'error', message: response.error ?? 'The download failed.' }
   }
 

@@ -194,7 +194,7 @@ describe('writing row sources', () => {
     expect(new Set(names).size).toBe(3)
   })
 
-  it('stops when cancelled', async () => {
+  it('stops when canceled', async () => {
     const ac = new AbortController()
     const rows = (async function* () {
       for (let i = 0; ; i++) {
@@ -202,7 +202,7 @@ describe('writing row sources', () => {
         yield [String(i), 'x']
       }
     })()
-    await expect(writeRows([{ name: 't', header: ['a', 'b'], rows }], 'csv', { signal: ac.signal })).rejects.toMatchObject({ code: 'cancelled' })
+    await expect(writeRows([{ name: 't', header: ['a', 'b'], rows }], 'csv', { signal: ac.signal })).rejects.toMatchObject({ code: 'canceled' })
   })
 })
 

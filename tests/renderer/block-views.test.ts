@@ -200,7 +200,7 @@ describe('opening and closing with no change keeps the document byte for byte', 
     expect(e.getHTML()).toBe(html)
   })
 
-  it('an inline formula, opened and cancelled, and opened and applied unchanged', async () => {
+  it('an inline formula, opened and canceled, and opened and applied unchanged', async () => {
     const html = '<p>Let <code class="language-math">\\alpha_i &lt; 2</code> hold.</p>'
     const e = make(html)
     $('.rm__face').dispatchEvent(new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }))
@@ -292,14 +292,14 @@ describe('Insert Diagram and Formula (spec B13)', () => {
     expect(e.getHTML()).toBe(html)
   })
 
-  it('cancelling an empty inline formula leaves nothing', () => {
+  it('canceling an empty inline formula leaves nothing', () => {
     const html = '<p>Area is .</p>'
     const e = make(html)
     e.commands.setTextSelection(9)
     e.commands.insertMathInline()
     ;($('.rm-pop input') as HTMLInputElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     expect(e.getHTML()).toBe(html)
-    // Applying it empty is the same as cancelling.
+    // Applying it empty is the same as canceling.
     e.commands.insertMathInline()
     ;($('.rm-pop input') as HTMLInputElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     expect(e.getHTML()).toBe(html)

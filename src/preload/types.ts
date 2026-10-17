@@ -129,7 +129,7 @@ export type SaveResult =
       notes?: string[]
     }
   | { status: 'copied'; totalParts?: number; notes?: string[] }
-  | { status: 'cancelled' }
+  | { status: 'canceled' }
   | { status: 'error'; code: string; message: string }
 
 /** The reading choices made on one input's card (mirrors core's ReadOptions). */
@@ -160,14 +160,14 @@ export interface BatchItemReq {
 
 export interface BatchRow {
   filename: string
-  status: 'saved' | 'error' | 'cancelled'
+  status: 'saved' | 'error' | 'canceled'
   path?: string
   message?: string
   /** This input's notices, shown on its row. */
   notes?: string[]
 }
 
-export type BatchResult = { status: 'batch'; outDir: string; rows: BatchRow[] } | { status: 'cancelled' }
+export type BatchResult = { status: 'batch'; outDir: string; rows: BatchRow[] } | { status: 'canceled' }
 
 export type UrlLoadResponse =
   | { kind: 'html'; html: string; title?: string; sourceName: string; notice?: string }
@@ -275,7 +275,7 @@ export interface Api {
     code: string,
     set: 'fast' | 'best',
     sha256?: string,
-  ): Promise<{ kind: 'ok'; path: string } | { kind: 'error'; message: string } | { kind: 'cancelled' }>
+  ): Promise<{ kind: 'ok'; path: string } | { kind: 'error'; message: string } | { kind: 'canceled' }>
   removeOcrLanguage(code: string, set: 'fast' | 'best'): Promise<{ ok: boolean; message?: string }>
   resizeContent(req: { height?: number; reset?: boolean }): Promise<void>
   convertAndCopy(req: {

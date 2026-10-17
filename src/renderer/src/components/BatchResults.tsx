@@ -1,6 +1,6 @@
 import type { BatchRow } from '../../../preload/types'
 
-const ICON: Record<BatchRow['status'], string> = { saved: '✅', error: '⚠️', cancelled: '⏹️' }
+const ICON: Record<BatchRow['status'], string> = { saved: '✅', error: '⚠️', canceled: '⏹️' }
 
 export function BatchResults({
   outDir,
@@ -15,12 +15,12 @@ export function BatchResults({
 }): React.JSX.Element {
   const saved = rows.filter((r) => r.status === 'saved').length
   const failed = rows.filter((r) => r.status === 'error').length
-  const cancelled = rows.filter((r) => r.status === 'cancelled').length
+  const canceled = rows.filter((r) => r.status === 'canceled').length
   return (
     <div className={`result ${failed ? 'result--err' : 'result--ok'}`}>
       <p>
         {saved} converted{failed ? `, ${failed} failed` : ''}
-        {cancelled ? `, ${cancelled} cancelled` : ''} → <code>{outDir}</code>
+        {canceled ? `, ${canceled} canceled` : ''} → <code>{outDir}</code>
       </p>
       <ul className="batch-rows">
         {rows.map((r, i) => (

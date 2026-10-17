@@ -97,7 +97,7 @@ interface HarnessResult {
   pictureTiffVast: Picture
   pictureAfter: Picture
   order: string[]
-  cancelled: string
+  canceled: string
   timeout: string | null
   afterTimeout: { ok: boolean; windowsOpened: number }
   openBeforeIdle: boolean
@@ -402,8 +402,8 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     expect(result.order).toEqual(['convert-1', 'visible', 'convert-2', 'prefetch'])
   })
 
-  it('releases a cancelled caller at once', () => {
-    expect(result.cancelled).toBe('AbortError')
+  it('releases a canceled caller at once', () => {
+    expect(result.canceled).toBe('AbortError')
   })
 
   it('stops a block over its time limit and draws the next in a fresh window', () => {

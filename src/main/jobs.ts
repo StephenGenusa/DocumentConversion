@@ -25,29 +25,29 @@ export function finishJob(jobId: string): void {
 /**
  * Cancellation, surfaced to the IPC layer.
  *
- * It is a `ConversionError` so `main/index.ts` reports `code: 'cancelled'`
- * rather than the catch-all 'unexpected'. 'cancelled' is not yet a member of
+ * It is a `ConversionError` so `main/index.ts` reports `code: 'canceled'`
+ * rather than the catch-all 'unexpected'. 'canceled' is not yet a member of
  * `ConversionErrorCode` — that union lives in `core/errors.ts`, which this
  * change does not own; adding it there removes the cast below and nothing else.
  */
-const CANCELLED: ConversionErrorCode = 'cancelled'
+const CANCELED: ConversionErrorCode = 'canceled'
 
-export class CancelledError extends ConversionError {
-  constructor(message = 'Conversion was cancelled') {
-    super(CANCELLED, message)
-    this.name = 'CancelledError'
+export class CanceledError extends ConversionError {
+  constructor(message = 'Conversion was canceled') {
+    super(CANCELED, message)
+    this.name = 'CanceledError'
   }
 }
 
-export function throwIfCancelled(signal?: AbortSignal): void {
-  if (signal?.aborted) throw new CancelledError()
+export function throwIfCanceled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new CanceledError()
 }
 
 /**
  * Await `work`, but give up on it the moment `signal` aborts.
  *
  * Readers and writers are not themselves abortable — most are synchronous CPU
- * work behind a promise — so cancelling cannot stop what is already running.
+ * work behind a promise — so canceling cannot stop what is already running.
  * What it has to do is stop the caller WAITING on it: `ReadContext.signal` was
  * threaded all the way down and then read by nobody outside the OCR and URL
  * paths, so Cancel on a slow document did nothing at all. The conversion ran to
@@ -56,14 +56,14 @@ export function throwIfCancelled(signal?: AbortSignal): void {
  * The abandoned promise keeps a rejection handler attached, so work that fails
  * after the caller walked away does not surface as an unhandled rejection.
  */
-export function untilCancelled<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+export function untilCanceled<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return work
   if (signal.aborted) {
     void work.catch(() => {})
-    return Promise.reject(new CancelledError())
+    return Promise.reject(new CanceledError())
   }
   return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => reject(new CancelledError())
+    const onAbort = (): void => reject(new CanceledError())
     signal.addEventListener('abort', onAbort, { once: true })
     const done = (): void => signal.removeEventListener('abort', onAbort)
     work.then(
@@ -88,7 +88,7 @@ export interface BatchInput {
 
 export interface BatchRow {
   filename: string
-  status: 'saved' | 'error' | 'cancelled'
+  status: 'saved' | 'error' | 'canceled'
   path?: string
   message?: string
   /** This input's notices (a diagram kept as source, web pictures not fetched…). Page-fit tips are for a single PDF and are left out. */
@@ -113,7 +113,7 @@ export function baseName(filename?: string): string {
  * file and nothing else, which is why every failure is caught per item rather
  * than escaping the loop. Cancellation is the other way round — it stops the
  * batch — but it is not an error either: the remaining inputs are reported as
- * 'cancelled', with no message to show the user, and the in-flight conversion
+ * 'canceled', with no message to show the user, and the in-flight conversion
  * is discarded before it reaches the disk rather than left half-written.
  *
  * Output names never overwrite: an existing file (from a previous run, or from
@@ -138,7 +138,7 @@ export async function runBatch<T extends { filename?: string }>(
     const input = inputs[i]
     const name = input.filename ?? `document-${i + 1}`
     if (ctx.signal?.aborted) {
-      rows.push({ filename: name, status: 'cancelled' })
+      rows.push({ filename: name, status: 'canceled' })
       continue
     }
     ctx.onProgress?.(`Converting ${name} (${i + 1} of ${inputs.length})`, (i / inputs.length) * 100)
@@ -152,9 +152,9 @@ export async function runBatch<T extends { filename?: string }>(
     }
     try {
       const out = await convert(input, rowCtx)
-      // Re-check before writing: cancelling during a conversion must not leave
+      // Re-check before writing: canceling during a conversion must not leave
       // its output behind, and a converter that ignores the signal would.
-      throwIfCancelled(ctx.signal)
+      throwIfCanceled(ctx.signal)
       let first: string | undefined
       for (const part of out.parts) {
         const fname = uniqueName(baseName(input.filename) + part.suffix, EXTENSIONS[target], (n) =>
@@ -166,7 +166,7 @@ export async function runBatch<T extends { filename?: string }>(
       }
       rows.push({ filename: name, status: 'saved', path: first, ...(notes.length ? { notes } : {}) })
     } catch (err) {
-      if (ctx.signal?.aborted) rows.push({ filename: name, status: 'cancelled' })
+      if (ctx.signal?.aborted) rows.push({ filename: name, status: 'canceled' })
       else rows.push({ filename: name, status: 'error', message: (err as Error).message })
     }
   }

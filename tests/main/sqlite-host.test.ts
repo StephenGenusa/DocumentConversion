@@ -257,7 +257,7 @@ describe('views', () => {
 describe('cancel', () => {
   const bytes = makeDb(`CREATE TABLE t(a); INSERT INTO t VALUES (1); ${ENDLESS};`)
 
-  it('terminates the worker and rejects as cancelled', async () => {
+  it('terminates the worker and rejects as canceled', async () => {
     const ac = new AbortController()
     const ctx: ReadContext = { signal: ac.signal }
     setTimeout(() => ac.abort(), 300)
@@ -265,7 +265,7 @@ describe('cancel', () => {
     const conv = converterWith(host({ print: 60_000, export: 60_000 }))
     const err = await conv.read({ bytes, filename: 'c.db' }, 'sqlite', { ...ctx, sqliteViews: true }).catch((e: unknown) => e)
     expect(err).toBeInstanceOf(ConversionError)
-    expect((err as ConversionError).code).toBe('cancelled')
+    expect((err as ConversionError).code).toBe('canceled')
     expect(Date.now() - t0).toBeLessThan(5_000)
   })
 })

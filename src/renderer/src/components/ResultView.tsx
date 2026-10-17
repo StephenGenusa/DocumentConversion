@@ -82,7 +82,7 @@ export function ResultView({
   }
   return (
     <div className="result">
-      <p>Save cancelled.</p>
+      <p>Save canceled.</p>
       <button className="btn btn--ghost" onClick={onDone}>
         Back
       </button>

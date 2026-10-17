@@ -10,7 +10,7 @@ vi.setConfig({ testTimeout: 20_000, hookTimeout: 60_000 })
  *
  * Nothing here fakes the conversion: the real txt reader and the real md/html
  * writers run. The only thing injected is a *gate* in front of one reader, so
- * a conversion can be held at a known point and cancelled there deterministically
+ * a conversion can be held at a known point and canceled there deterministically
  * — the same shape as a slow PDF or a large workbook, without the seconds.
  */
 vi.mock('electron', () => ({
@@ -114,10 +114,10 @@ describe('runConversion cancellation', () => {
     // The gate is deliberately NEVER released: if cancellation only took effect
     // after the read returned, this would hang until the test timed out.
     await expect(pending).rejects.toThrow(/cancel/i)
-    await pending.catch((err: { code?: string }) => expect(err.code).toBe('cancelled'))
+    await pending.catch((err: { code?: string }) => expect(err.code).toBe('canceled'))
   })
 
-  it('produces no output when cancelled: it rejects rather than resolving with a WriteResult', async () => {
+  it('produces no output when canceled: it rejects rather than resolving with a WriteResult', async () => {
     const { runConversion } = await conversion()
     const controller = new AbortController()
     const pending = runConversion(TXT, 'a.txt', 'txt', 'html', {}, { signal: controller.signal })

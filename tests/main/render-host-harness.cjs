@@ -382,12 +382,12 @@ async function main() {
   // Cancel: a queued block's caller is released at once.
   const controller = new AbortController()
   const slow = png('flowchart LR\n  C1 --> D', {})
-  const cancelled = png('flowchart LR\n  C2 --> D', { signal: controller.signal }).then(
+  const canceled = png('flowchart LR\n  C2 --> D', { signal: controller.signal }).then(
     () => 'resolved',
     (e) => e.name,
   )
   controller.abort()
-  out.cancelled = await cancelled
+  out.canceled = await canceled
   await slow
 
   // A block over its time limit: an error, and the next block gets a fresh window.

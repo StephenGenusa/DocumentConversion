@@ -22,7 +22,7 @@ import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderReques
  *               on (the engines are scripts). Created on first need, closed
  *               after a minute with nothing to do.
  *   network     its own in-memory session partition, whose every request is
- *               cancelled except the bundled page and the engine files beside
+ *               canceled except the bundled page and the engine files beside
  *               it (resources/render). Navigation, redirects, new windows,
  *               downloads and permission requests are all refused. The page's
  *               own CSP says the same.
@@ -218,7 +218,7 @@ class TimeoutError extends Error {}
 /** A CSS px size the page may answer: a whole, positive, sane number. */
 const isSize = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0 && n <= 100_000
 
-const cancelled = (): Error => Object.assign(new Error('Cancelled'), { name: 'AbortError' })
+const canceled = (): Error => Object.assign(new Error('Canceled'), { name: 'AbortError' })
 
 export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
   const pageDir = resolve(opts.pageDir ?? renderAssetDir())
@@ -504,7 +504,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
 
   function render(req: RenderRequest, callOpts: RenderCallOptions = {}): Promise<RenderResult> {
     const { signal } = callOpts
-    if (signal?.aborted) return Promise.reject(cancelled())
+    if (signal?.aborted) return Promise.reject(canceled())
     const version = ENGINE_VERSIONS[req.kind]
     if (!version) return Promise.resolve({ error: `${req.kind} is not drawn yet` })
     const max = maxSourceBytes(req.kind)
@@ -534,7 +534,7 @@ export function createRenderHost(opts: RenderHostOptions = {}): RenderHost {
         () => {
           const queued = inQueue.get(key)
           if (queued) queued.waiters = queued.waiters.filter((wt) => wt !== waiter)
-          reject(cancelled())
+          reject(canceled())
         },
         { once: true },
       )

@@ -92,7 +92,7 @@ The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
   to, and stay as they were added.
 - **Edits made in the editor survive a conversion.** Dismissing a result rebuilt
   the editor from the original text, so the edits were gone and the next
-  conversion quietly produced the original. Cancelling the save dialog lost them
+  conversion quietly produced the original. Canceling the save dialog lost them
   the same way. Edits are now stored before any result is shown, whatever the
   result is.
 - **A file that changes on disk while it is open in the editor is not reloaded
@@ -392,8 +392,8 @@ clipboard*, then choose a mode. Files are read from disk when you convert, not
 when you add them, so a file you changed in the meantime converts as it is now.
 
 - **Batch** converts each input separately into a directory you choose. You get
-  a result per file, can retry one that failed, and cancelling marks the rest as
-  cancelled. A file that was moved or deleted after it was added fails on its
+  a result per file, can retry one that failed, and canceling marks the rest as
+  canceled. A file that was moved or deleted after it was added fails on its
   own row, by name, and the rest carry on.
 - **Merge** joins everything into one document. Each source gets a heading with
   its name, which you can turn off, and a page break is always inserted between

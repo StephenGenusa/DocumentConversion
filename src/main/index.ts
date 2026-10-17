@@ -10,7 +10,7 @@ import type { DetectResult } from '../core/detect'
 import { featuresHint } from '../core/features-hint'
 import { jsonIsTable } from '../core/readers/json'
 import { ConversionError } from '../core/errors'
-import { createJob, cancelJob, finishJob, runBatch, throwIfCancelled, type BatchRow } from './jobs'
+import { createJob, cancelJob, finishJob, runBatch, throwIfCanceled, type BatchRow } from './jobs'
 import {
   blockHostedFileUrls,
   clipboardFlavors,
@@ -560,9 +560,9 @@ function registerIpc(settings: SettingsStore): void {
         }
         // csv with multiple tables: the clipboard carries table 1 of N.
         const out = await runConversion(bytes, filename, source, target, opts, ctx)
-        // The write above resolved, but the user may have cancelled during it;
-        // the clipboard is the side effect they were cancelling.
-        throwIfCancelled(ctx.signal)
+        // The write above resolved, but the user may have canceled during it;
+        // the clipboard is the side effect they were canceling.
+        throwIfCanceled(ctx.signal)
         clipboard.writeText(out.parts[0].bytes.toString('utf8'))
         return { status: 'copied' as const, totalParts: out.parts.length, ...(notes.length ? { notes } : {}) }
       } catch (err) {
@@ -632,7 +632,7 @@ function registerIpc(settings: SettingsStore): void {
         const out = await runConversion(bytes, filename, source, target, opts, ctx)
         const defaultPath = defaultSavePath(sourceDir, baseName(filename) + EXTENSIONS[target])
         const save = await dialog.showSaveDialog({ defaultPath, filters: [FILTERS[target]] })
-        if (save.canceled || !save.filePath) return { status: 'cancelled' as const }
+        if (save.canceled || !save.filePath) return { status: 'canceled' as const }
         rememberSaveDir(save.filePath)
         const ext = save.filePath.match(/\.[^.\\/]+$/)?.[0] ?? ''
         const stem = ext ? save.filePath.slice(0, -ext.length) : save.filePath
@@ -640,7 +640,7 @@ function registerIpc(settings: SettingsStore): void {
         for (const part of out.parts) {
           // A multi-table csv/json writes N files; a cancel that lands mid-loop
           // used to write the rest anyway.
-          throwIfCancelled(ctx.signal)
+          throwIfCanceled(ctx.signal)
           const p = part.suffix ? `${stem}${part.suffix}${ext}` : save.filePath
           await writeFile(p, part.bytes)
           paths.push(p)
@@ -679,7 +679,7 @@ function registerIpc(settings: SettingsStore): void {
           defaultPath: defaultSaveDir(items[0]?.sourceDir),
           properties: ['openDirectory', 'createDirectory'],
         })
-        if (pick.canceled || pick.filePaths.length === 0) return { status: 'cancelled' as const }
+        if (pick.canceled || pick.filePaths.length === 0) return { status: 'canceled' as const }
         outDir = pick.filePaths[0]
       }
       const signal = jobId ? createJob(jobId) : undefined
@@ -769,7 +769,7 @@ function registerIpc(settings: SettingsStore): void {
           `${baseName(items[0]?.filename)}-merged${EXTENSIONS[target]}`,
         )
         const save = await dialog.showSaveDialog({ defaultPath, filters: [FILTERS[target]] })
-        if (save.canceled || !save.filePath) return { status: 'cancelled' as const }
+        if (save.canceled || !save.filePath) return { status: 'canceled' as const }
         rememberSaveDir(save.filePath)
         await writeFile(save.filePath, out.parts[0].bytes)
         return { status: 'saved' as const, path: save.filePath, ...(notes.length ? { notes } : {}) }

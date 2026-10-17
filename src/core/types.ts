@@ -241,7 +241,7 @@ export type AdviceHandler = (
 
 /**
  * What write() is handed besides the options: drawing diagrams (spec B7) is
- * the part of writing that can be cancelled and that has notices to give.
+ * the part of writing that can be canceled and that has notices to give.
  */
 export interface WriteContext {
   signal?: AbortSignal

@@ -46,7 +46,7 @@ export function runOcr(
 ): Promise<OcrPage[]> {
   return new Promise((resolve, reject) => {
     if (ctx?.signal?.aborted) {
-      reject(new ConversionError('ocr-cancelled', 'OCR was cancelled'))
+      reject(new ConversionError('ocr-canceled', 'OCR was canceled'))
       return
     }
     // Pipe the child's stderr: without it a crash surfaced only as
@@ -67,7 +67,7 @@ export function runOcr(
       fn()
       child.kill()
     }
-    const onAbort = (): void => finish(() => reject(new ConversionError('ocr-cancelled', 'OCR was cancelled')))
+    const onAbort = (): void => finish(() => reject(new ConversionError('ocr-canceled', 'OCR was canceled')))
     ctx?.signal?.addEventListener('abort', onAbort, { once: true })
 
     child.on('message', (msg: OcrMessage) => {

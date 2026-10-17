@@ -25,7 +25,7 @@ export interface RowWriteOptions {
 async function* rowsOf(source: RowSource, opts: RowWriteOptions, index: number, count: number): AsyncGenerator<string[]> {
   let n = 0
   for await (const row of source.rows) {
-    if (opts.signal?.aborted) throw new ConversionError('cancelled', 'Cancelled')
+    if (opts.signal?.aborted) throw new ConversionError('canceled', 'Canceled')
     yield row
     if (++n % 10_000 === 0) {
       const of = source.total !== undefined ? ` of ${source.total.toLocaleString('en-US')}` : ''

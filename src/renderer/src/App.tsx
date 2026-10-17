@@ -135,7 +135,7 @@ function App(): React.JSX.Element {
    * unmounted whenever a result is on screen. A conversion used to read the
    * edits out for its request and never store them, so dismissing the result
    * rebuilt the pane from the ORIGINAL text - and the next conversion quietly
-   * produced that original. Cancelling the save dialog lost edits the same way.
+   * produced that original. Canceling the save dialog lost edits the same way.
    *
    * The pane is read here, outside any state updater, and the updater itself
    * is pure: updaters run twice under StrictMode and must not have effects.
@@ -154,7 +154,7 @@ function App(): React.JSX.Element {
 
   /**
    * Every result goes through these two. Showing one unmounts the pane, so the
-   * edits are stored first - whatever the result is: saved, copied, cancelled
+   * edits are stored first - whatever the result is: saved, copied, canceled
    * or failed, from a conversion or from a URL that would not load.
    */
   function showResult(res: SaveResult): void {

@@ -167,15 +167,15 @@ describe('drawBlocks (spec B3, B7) with a fake renderer', () => {
     expect(onAdvice).toHaveBeenCalledWith('render-failed', 'Diagrams could not be drawn: render window crashed')
   })
 
-  it('rejects when cancelled, rather than writing a half-drawn document', async () => {
+  it('rejects when canceled, rather than writing a half-drawn document', async () => {
     const controller = new AbortController()
     const render: RenderBlocks = async () => {
       controller.abort()
-      throw new Error('cancelled')
+      throw new Error('canceled')
     }
     await expect(
       drawBlocks(block('mermaid', 'graph LR\nA--&gt;B'), 'pdf', { renderBlocks: render, signal: controller.signal }),
-    ).rejects.toThrow('cancelled')
+    ).rejects.toThrow('canceled')
   })
 
   it('draws the first 50 diagrams, keeps the rest as source, and says so once', async () => {

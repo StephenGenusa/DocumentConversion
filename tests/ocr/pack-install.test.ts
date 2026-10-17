@@ -113,9 +113,9 @@ describe('installPack', () => {
     const fs = fakeFs()
     const result = await installPack(
       { code: 'deu', set: 'fast', dir: DIR, sha256: DIGEST },
-      { fetch: async () => ({ ok: false, error: 'cancelled', cancelled: true }), fs },
+      { fetch: async () => ({ ok: false, error: 'canceled', canceled: true }), fs },
     )
-    expect(result.kind).toBe('cancelled')
+    expect(result.kind).toBe('canceled')
     expect([...fs.files.keys()]).toEqual([])
   })
 })

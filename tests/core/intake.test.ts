@@ -408,7 +408,7 @@ describe('intake: dialog and clipboard button', () => {
     expect(loaded).toHaveLength(2)
   })
 
-  it('does nothing when the dialog is cancelled', async () => {
+  it('does nothing when the dialog is canceled', async () => {
     api.openFile.mockResolvedValue(null)
     await intake().openDialog()
     expect(loaded).toHaveLength(0)

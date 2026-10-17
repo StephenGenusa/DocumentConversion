@@ -42,15 +42,15 @@ function engineOf(engine: SqliteEngine | undefined, src: SourceInput): SqliteEng
   return engine
 }
 
-const cancelled = (err: unknown, ctx?: ReadContext): boolean =>
-  ctx?.signal?.aborted === true || (err instanceof ConversionError && err.code === 'cancelled')
+const canceled = (err: unknown, ctx?: ReadContext): boolean =>
+  ctx?.signal?.aborted === true || (err instanceof ConversionError && err.code === 'canceled')
 
 /** The schema, or the one message for a file sql.js cannot open as a database. */
 async function schemaOf(db: SqliteDatabase, ctx?: ReadContext): Promise<SqliteObject[]> {
   try {
     return (await db.schema()).filter((o) => !internal(o.name))
   } catch (err) {
-    if (cancelled(err, ctx)) throw err
+    if (canceled(err, ctx)) throw err
     throw new ConversionError('read-failed', SQLITE_ENCRYPTED_MESSAGE)
   }
 }
@@ -114,7 +114,7 @@ export function sqliteReader(engine?: SqliteEngine): Reader {
           }
           parts.push(recordsTableHtml(header, rows, total, 'rows'))
         } catch (err) {
-          if (cancelled(err, ctx)) throw err
+          if (canceled(err, ctx)) throw err
           // The rest of the database still comes out: this one shows what it is.
           const notice = stoppedNotice(o, err)
           ctx?.onAdvice?.('sqlite-stopped', notice.advice)
@@ -153,7 +153,7 @@ export function sqliteRowReader(engine?: SqliteEngine): RowReader {
           header = await db.columns(o.name)
           if (!view) total = await db.count(o.name)
         } catch (err) {
-          if (cancelled(err, ctx)) throw err
+          if (canceled(err, ctx)) throw err
           ctx?.onAdvice?.('sqlite-stopped', stoppedNotice(o, err).advice)
           continue
         }
@@ -178,7 +178,7 @@ async function* rowsOf(db: SqliteDatabase, o: SqliteObject, ctx?: ReadContext): 
   try {
     yield* db.rows(o.name, { view })
   } catch (err) {
-    if (cancelled(err, ctx) || !view) throw err
+    if (canceled(err, ctx) || !view) throw err
     ctx?.onAdvice?.('sqlite-stopped', `${stoppedNotice(o, err).advice} Its file has only the rows read before then.`)
   }
 }

@@ -18,7 +18,7 @@ import type { Reply, Request } from './sqlite-worker'
  *                                rows: an endless view (a recursive CTE with
  *                                no end) returns each batch quickly, forever
  *   Cancel (the job's signal)    the worker is terminated, every call rejects
- *                                as cancelled, and the database is closed
+ *                                as canceled, and the database is closed
  *   memory                       capped by the worker's resourceLimits
  *
  * The bytes stay here for the life of the database so a replacement worker
@@ -90,7 +90,7 @@ export function createSqliteHost(opts: SqliteHostOptions = {}): SqliteHost {
   const host: SqliteHost = {
     timeouts,
     async open(bytes, { purpose, signal }) {
-      if (signal?.aborted) throw new ConversionError('cancelled', 'Cancelled')
+      if (signal?.aborted) throw new ConversionError('canceled', 'Canceled')
       return new Session(
         { workerPath, ...assetsOf(), bytes: new Uint8Array(bytes), resourceLimits: opts.resourceLimits ?? DEFAULT_LIMITS },
         purpose === 'print' ? timeouts.print : timeouts.export,
@@ -138,7 +138,7 @@ class Session implements SqliteDatabase {
   /** Engine time each view has used so far, against `viewMs`. */
   private readonly used = new Map<string, number>()
   private readonly onAbort = (): void => {
-    this.stop(new ConversionError('cancelled', 'Cancelled'))
+    this.stop(new ConversionError('canceled', 'Canceled'))
     this.closed = true
   }
 
@@ -188,7 +188,7 @@ class Session implements SqliteDatabase {
   }
 
   private call<T>(req: Call, view?: string): Promise<T> {
-    if (this.signal?.aborted) return Promise.reject(new ConversionError('cancelled', 'Cancelled'))
+    if (this.signal?.aborted) return Promise.reject(new ConversionError('canceled', 'Canceled'))
     if (this.closed) return Promise.reject(new Error('The database is closed'))
     const left = view !== undefined ? this.viewMs - (this.used.get(view) ?? 0) : Infinity
     if (view !== undefined && left <= 0) {

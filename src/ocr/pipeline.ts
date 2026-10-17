@@ -70,7 +70,7 @@ async function ensureCanvasGlobals(): Promise<typeof import('@napi-rs/canvas')> 
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw new ConversionError('ocr-cancelled', 'OCR was cancelled')
+  if (signal?.aborted) throw new ConversionError('ocr-canceled', 'OCR was canceled')
 }
 
 async function newWorker(assets: OcrAssets, signal?: AbortSignal): Promise<Worker> {

@@ -181,7 +181,7 @@ describe('runBatch', () => {
 })
 
 describe('runBatch cancellation', () => {
-  it('leaves no output for the cancelled file or the ones after it', async () => {
+  it('leaves no output for the canceled file or the ones after it', async () => {
     const { jobs, conversion } = await mods()
     const controller = new AbortController()
     const rows = await jobs.runBatch(
@@ -201,17 +201,17 @@ describe('runBatch cancellation', () => {
 
     expect(rows.map((r) => [r.filename, r.status])).toEqual([
       ['a.txt', 'saved'],
-      ['b.txt', 'cancelled'],
-      ['c.txt', 'cancelled'],
+      ['b.txt', 'canceled'],
+      ['c.txt', 'canceled'],
     ])
     // The in-flight conversion is discarded, not written half-way.
     expect(await readdir(outDir)).toEqual(['a.md'])
-    // A cancelled row is not an error row: it carries no message to show.
+    // A canceled row is not an error row: it carries no message to show.
     expect(rows[1].message).toBeUndefined()
     expect(rows[2].message).toBeUndefined()
   })
 
-  it('marks every file cancelled when the batch is cancelled before it starts', async () => {
+  it('marks every file canceled when the batch is canceled before it starts', async () => {
     const { jobs, conversion } = await mods()
     const controller = new AbortController()
     controller.abort()
@@ -222,7 +222,7 @@ describe('runBatch cancellation', () => {
       { signal: controller.signal },
       (input, ctx) => conversion.runConversion(input.bytes, input.filename, input.source, 'md', {}, ctx),
     )
-    expect(rows.map((r) => r.status)).toEqual(['cancelled', 'cancelled'])
+    expect(rows.map((r) => r.status)).toEqual(['canceled', 'canceled'])
     expect(await readdir(outDir)).toEqual([])
   })
 })

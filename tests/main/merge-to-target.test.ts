@@ -196,7 +196,7 @@ describe('mergeToTarget — pdf target', () => {
 })
 
 describe('mergeToTarget — cancellation', () => {
-  it('stops mid-merge and produces nothing when the job is cancelled', async () => {
+  it('stops mid-merge and produces nothing when the job is canceled', async () => {
     const { mergeToTarget } = await conversion()
     holdAtRead = 2
     const controller = new AbortController()
@@ -211,7 +211,7 @@ describe('mergeToTarget — cancellation', () => {
     controller.abort()
 
     await expect(pending).rejects.toThrow(/cancel/i)
-    await pending.catch((err: { code?: string }) => expect(err.code).toBe('cancelled'))
+    await pending.catch((err: { code?: string }) => expect(err.code).toBe('canceled'))
     // The third input was never even started.
     expect(gate.reads).toEqual(['a.txt', 'b.txt'])
   })

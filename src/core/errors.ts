@@ -10,9 +10,9 @@ export type ConversionErrorCode =
   | 'fetch-blocked'
   | 'extract-failed'
   | 'ocr-failed'
-  | 'ocr-cancelled'
-  /** The user cancelled: not a failure, and never reported as one. */
-  | 'cancelled'
+  | 'ocr-canceled'
+  /** The user canceled: not a failure, and never reported as one. */
+  | 'canceled'
   | 'eml-parse-failed'
   | 'msg-parse-failed'
   | 'rtf-parse-failed'

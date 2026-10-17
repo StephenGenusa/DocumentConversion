@@ -45,14 +45,14 @@ describe('blockHostedFileUrls', () => {
     const { blockHostedFileUrls } = await import('../../src/main/conversion')
     let listener: ((d: { url: string }, cb: (r: { cancel: boolean }) => void) => void) | undefined
     blockHostedFileUrls({ webRequest: { onBeforeRequest: (l: typeof listener) => (listener = l) } } as never)
-    const cancelled = (url: string): boolean => {
+    const canceled = (url: string): boolean => {
       let result = false
       listener!({ url }, (r) => (result = r.cancel))
       return result
     }
-    expect(cancelled('file://evil.example/share/x.png')).toBe(true)
-    expect(cancelled('file:////evil.example/share/x.png')).toBe(true)
-    expect(cancelled('file:///home/me/app/index.html')).toBe(false)
-    expect(cancelled('https://example.com/')).toBe(false)
+    expect(canceled('file://evil.example/share/x.png')).toBe(true)
+    expect(canceled('file:////evil.example/share/x.png')).toBe(true)
+    expect(canceled('file:///home/me/app/index.html')).toBe(false)
+    expect(canceled('https://example.com/')).toBe(false)
   })
 })

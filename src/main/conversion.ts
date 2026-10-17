@@ -14,7 +14,7 @@ import { escapeHtml } from '../core/shell'
 import { runOcr } from './ocr-host'
 import { createSqliteHost } from './sqlite-host'
 import { createRenderHost } from './render-host'
-import { throwIfCancelled, untilCancelled } from './jobs'
+import { throwIfCanceled, untilCanceled } from './jobs'
 import { looksLikeHeader, rowsToHtmlTable } from '../core/readers/csv'
 import { extractPdfPageLines, pdfPagesToHub, type PdfPageSource } from '../core/readers/pdf'
 import type { OcrPage } from '../ocr/pipeline'
@@ -199,14 +199,14 @@ export async function readForConversion(
   ctx: ReadContext,
   ocrLanguage?: string,
 ): Promise<HubDocument> {
-  throwIfCancelled(ctx.signal)
+  throwIfCanceled(ctx.signal)
   if (source === 'image' && ocr) {
     return ocrPagesToHub(await runOcr('image', bytes, ctx, ocrLanguage), filename)
   }
   // A PDF with SOME image-only pages never throws scanned-pdf, so those pages
   // would silently vanish; with --ocr on, fill just those pages from OCR.
   if (source === 'pdf' && ocr) {
-    const pageLines = await untilCancelled(extractPdfPageLines({ bytes, filename }), ctx.signal)
+    const pageLines = await untilCanceled(extractPdfPageLines({ bytes, filename }), ctx.signal)
     if (pageLines.some((lines) => lines.length === 0)) {
       const recognized = await runOcr('pdf', bytes, ctx, ocrLanguage)
       // Every page contributes its BEST representation, not its lowest common
@@ -231,7 +231,7 @@ export async function readForConversion(
     }
   }
   try {
-    return await untilCancelled(converter.read({ bytes, filename }, source, ctx), ctx.signal)
+    return await untilCanceled(converter.read({ bytes, filename }, source, ctx), ctx.signal)
   } catch (err) {
     if (err instanceof ConversionError && err.code === 'scanned-pdf' && ocr) {
       return ocrPagesToHub(await runOcr('pdf', bytes, ctx, ocrLanguage), filename)
@@ -248,27 +248,27 @@ export async function runConversion(
   opts: ConvertOptions,
   ctx: ReadContext,
 ): Promise<WriteResult> {
-  throwIfCancelled(ctx.signal)
+  throwIfCanceled(ctx.signal)
   // PDF -> PDF is a re-save, not a re-typesetting: route it through the
   // page-for-page copier so images, signatures and vector art survive.
   // (Rendering the extracted text instead silently discarded all graphics.)
   if (source === 'pdf' && target === 'pdf' && !opts.ocr) {
-    const copied = await untilCancelled(mergePdfs([{ bytes, name: filename }]), ctx.signal)
+    const copied = await untilCanceled(mergePdfs([{ bytes, name: filename }]), ctx.signal)
     return { parts: [{ suffix: '', bytes: copied }] }
   }
   const readCtx: ReadContext = readContextOf(ctx, opts) ?? ctx
   // A record source exported to a table format goes row by row, every row,
   // and never through the hub (see core/records.ts).
   if (TABLE_TARGETS.includes(target)) {
-    const rows = await untilCancelled(converter.readRows({ bytes, filename }, source, readCtx), ctx.signal)
+    const rows = await untilCanceled(converter.readRows({ bytes, filename }, source, readCtx), ctx.signal)
     if (rows) {
-      return untilCancelled(converter.writeRows(rows, target, { signal: ctx.signal, onProgress: ctx.onProgress }), ctx.signal)
+      return untilCanceled(converter.writeRows(rows, target, { signal: ctx.signal, onProgress: ctx.onProgress }), ctx.signal)
     }
   }
   const hub = await readForConversion(bytes, filename, source, opts.ocr === true, readCtx, opts.ocrLanguage)
   // Cancel between read and write: the read cannot be unwound, but nothing
   // downstream — writing, and the file the caller would save — must happen.
-  throwIfCancelled(ctx.signal)
+  throwIfCanceled(ctx.signal)
   if (target === 'pdf' && opts.pdf) {
     // Tell the user when a different page setup would fit their tables; never
     // change orientation or paper size behind their back.
@@ -278,7 +278,7 @@ export async function runConversion(
     const advice = advisePageFit(hub.html, named, opts.pdf.landscape)
     if (advice.suggestion) ctx.onAdvice?.('landscape', advice.reason ?? '', advice.suggestion)
   }
-  return untilCancelled(converter.write(hub, target, opts, ctx), ctx.signal)
+  return untilCanceled(converter.write(hub, target, opts, ctx), ctx.signal)
 }
 
 /**
@@ -296,15 +296,15 @@ export async function clipboardFlavors(
   opts: ConvertOptions,
   ctx: ReadContext,
 ): Promise<{ html: string; text: string }> {
-  throwIfCancelled(ctx.signal)
+  throwIfCanceled(ctx.signal)
   const readCtx: ReadContext = readContextOf(ctx, opts) ?? ctx
   const hub = await readForConversion(bytes, filename, source, opts.ocr === true, readCtx, opts.ocrLanguage)
-  throwIfCancelled(ctx.signal)
+  throwIfCanceled(ctx.signal)
   // PNG diagrams and PNG copies of SVG images, whatever was chosen: Word and
   // Outlook do not show SVG from pasted HTML (FOR_PASTING).
-  const html = await untilCancelled(converter.write(hub, 'html', { ...opts, ...FOR_PASTING }, ctx), ctx.signal)
-  const text = await untilCancelled(converter.write(hub, 'txt', opts, ctx), ctx.signal)
-  throwIfCancelled(ctx.signal)
+  const html = await untilCanceled(converter.write(hub, 'html', { ...opts, ...FOR_PASTING }, ctx), ctx.signal)
+  const text = await untilCanceled(converter.write(hub, 'txt', opts, ctx), ctx.signal)
+  throwIfCanceled(ctx.signal)
   return { html: html.parts[0].bytes.toString('utf8'), text: text.parts[0].bytes.toString('utf8') }
 }
 
@@ -337,8 +337,8 @@ export async function mergeToTarget(
     const fragments: PdfMergeInput[] = []
     for (let i = 0; i < items.length; i++) {
       // Per input, not just per read: a pdf input is copied rather than read,
-      // so without this a cancelled merge of PDFs ran to the last page.
-      throwIfCancelled(ctx.signal)
+      // so without this a canceled merge of PDFs ran to the last page.
+      throwIfCanceled(ctx.signal)
       const item = items[i]
       const name = item.filename ?? `document ${i + 1}`
       if (item.source === 'pdf') {
@@ -351,19 +351,19 @@ export async function mergeToTarget(
       const withHeading = headings
         ? { ...hub, html: `<h1 class="doc-title">${escapeHtml(hub.sourceName ?? name)}</h1>\n${hub.html}` }
         : hub
-      const rendered = await untilCancelled(converter.write(withHeading, 'pdf', opts, ctx), ctx.signal)
+      const rendered = await untilCanceled(converter.write(withHeading, 'pdf', opts, ctx), ctx.signal)
       fragments.push({ bytes: rendered.parts[0].bytes, name })
     }
-    throwIfCancelled(ctx.signal)
-    return { parts: [{ suffix: '', bytes: await untilCancelled(mergePdfs(fragments), ctx.signal) }] }
+    throwIfCanceled(ctx.signal)
+    return { parts: [{ suffix: '', bytes: await untilCanceled(mergePdfs(fragments), ctx.signal) }] }
   }
   const hubs: HubDocument[] = []
   for (let i = 0; i < items.length; i++) {
-    throwIfCancelled(ctx.signal)
+    throwIfCanceled(ctx.signal)
     const item = items[i]
     ctx.onProgress?.(`Reading ${item.filename ?? `document ${i + 1}`} (${i + 1} of ${items.length})`)
     hubs.push(await readForConversion(item.bytes, item.filename, item.source, item.ocr, readContextOf(ctx, { read: item.read, web: opts.web }) ?? ctx, item.ocrLanguage))
   }
-  throwIfCancelled(ctx.signal)
-  return untilCancelled(converter.write(mergeHubDocuments(hubs, { headings }), target, opts, ctx), ctx.signal)
+  throwIfCanceled(ctx.signal)
+  return untilCanceled(converter.write(mergeHubDocuments(hubs, { headings }), target, opts, ctx), ctx.signal)
 }

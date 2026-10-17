@@ -40,7 +40,7 @@ const fetchPack =
       const result = await guardedFetch(url, urlFetchDeps, { signal, maxBytes: 64 * 1024 * 1024 })
       return { ok: true, bytes: result.bytes }
     } catch (err) {
-      return { ok: false, error: (err as Error).message, cancelled: signal?.aborted }
+      return { ok: false, error: (err as Error).message, canceled: signal?.aborted }
     }
   }
 
@@ -117,7 +117,7 @@ export async function downloadPack(
   set: ModelSet,
   sha256Override: string | undefined,
   signal?: AbortSignal,
-): Promise<{ kind: 'ok'; path: string } | { kind: 'error'; message: string } | { kind: 'cancelled' }> {
+): Promise<{ kind: 'ok'; path: string } | { kind: 'error'; message: string } | { kind: 'canceled' }> {
   const language = findLanguage(code)
   if (!language) return { kind: 'error', message: `Unknown OCR language "${code}".` }
   // The digest comes from the generated table, not from the renderer. A caller

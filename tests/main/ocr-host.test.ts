@@ -111,12 +111,12 @@ describe('runOcr — request/response protocol', () => {
     const { runOcr } = await host()
     const pending = runOcr('pdf', Buffer.from('%PDF'))
     const child = await nextChild()
-    child.emit('message', { type: 'error', code: 'ocr-cancelled', message: 'OCR was cancelled' })
+    child.emit('message', { type: 'error', code: 'ocr-canceled', message: 'OCR was canceled' })
 
     await expect(pending).rejects.toThrow(ConversionError)
     await pending.catch((err: ConversionError) => {
-      expect(err.code).toBe('ocr-cancelled')
-      expect(err.message).toBe('OCR was cancelled')
+      expect(err.code).toBe('ocr-canceled')
+      expect(err.message).toBe('OCR was canceled')
     })
     expect(child.kills).toBe(1)
   })
@@ -200,12 +200,12 @@ describe('runOcr — cancellation', () => {
     const controller = new AbortController()
     controller.abort()
     await expect(runOcr('pdf', Buffer.from('%PDF'), { signal: controller.signal })).rejects.toThrow(
-      /cancelled/i,
+      /canceled/i,
     )
     expect(forkCalls).toHaveLength(0)
   })
 
-  it('kills a hung child and rejects when cancelled mid-request', async () => {
+  it('kills a hung child and rejects when canceled mid-request', async () => {
     const { runOcr } = await host()
     const controller = new AbortController()
     // This child never replies and never exits — the hang case.
@@ -216,7 +216,7 @@ describe('runOcr — cancellation', () => {
     controller.abort()
 
     await expect(pending).rejects.toThrow(ConversionError)
-    await pending.catch((err: ConversionError) => expect(err.code).toBe('ocr-cancelled'))
+    await pending.catch((err: ConversionError) => expect(err.code).toBe('ocr-canceled'))
     expect(child.kills).toBe(1)
   })
 
