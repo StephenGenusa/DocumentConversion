@@ -61,4 +61,13 @@ describe('the settings API in the preload', () => {
     stop()
     expect(listeners.has('settings:changed')).toBe(false)
   })
+
+  it('hears the menu asking for the dialog, and stops when asked', () => {
+    let opened = 0
+    const stop = api.onOpenSettings(() => opened++) as () => void
+    listeners.get('app:open-settings')?.({ sender: 'main' }, undefined)
+    expect(opened).toBe(1)
+    stop()
+    expect(listeners.has('app:open-settings')).toBe(false)
+  })
 })

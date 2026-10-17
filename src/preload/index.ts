@@ -124,6 +124,14 @@ const api = {
   resetSettings: (section?: string) =>
     ipcRenderer.invoke('settings:reset', section === undefined ? {} : { section }),
   settingsNotice: () => ipcRenderer.invoke('settings:notice'),
+  /** Settings… from the menu or Cmd/Ctrl+, (main sends `app:open-settings`). */
+  onOpenSettings: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('app:open-settings', listener)
+    return () => {
+      ipcRenderer.removeListener('app:open-settings', listener)
+    }
+  },
   onSettingsChanged: (cb: (settings: unknown) => void) => {
     const listener = (_e: unknown, settings: unknown): void => cb(settings)
     ipcRenderer.on('settings:changed', listener)

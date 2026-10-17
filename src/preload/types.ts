@@ -308,6 +308,8 @@ export interface Api {
   resetSettings(section?: SettingsSection): Promise<SettingsResult>
   /** "Your settings file could not be read and was reset.", once, if that happened at start. */
   settingsNotice(): Promise<string | undefined>
+  /** Called when the menu's Settings… (or Cmd/Ctrl+,) asks for the dialog. Returns the way to stop. */
+  onOpenSettings(cb: () => void): () => void
   /** Called with the new settings after each saved change. Returns the way to stop. */
   onSettingsChanged(cb: (settings: Settings) => void): () => void
 }

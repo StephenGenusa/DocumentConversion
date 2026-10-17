@@ -118,8 +118,25 @@ function baseName(filename?: string): string {
   return noPath.replace(/\.[^.]+$/, '') || 'document'
 }
 
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
+/** The converter's window: About and the hidden render window are windows too. */
+let mainWindow: BrowserWindow | null = null
+
+/**
+ * Settings… from the menu or its accelerator (settings spec 7.1). The dialog
+ * is the page's own, so the window is brought forward and asked to open it.
+ * With no window (macOS keeps running after the last one closes) one is
+ * opened first and asked once it has loaded.
+ */
+function openSettingsDialog(): void {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  if (win.isMinimized()) win.restore()
+  win.focus()
+  if (win.webContents.isLoading()) win.webContents.once('did-finish-load', () => win.webContents.send('app:open-settings'))
+  else win.webContents.send('app:open-settings')
+}
+
+function createWindow(): BrowserWindow {
+  const win = new BrowserWindow({
     width: 1040,
     height: 700,
     minWidth: 560,
@@ -136,33 +153,39 @@ function createWindow(): void {
     },
   })
 
+  mainWindow = win
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null
+  })
+
   // The page's own <title> would replace the version-bearing one on load.
-  mainWindow.on('page-title-updated', (e) => e.preventDefault())
+  win.on('page-title-updated', (e) => e.preventDefault())
   // The hidden render window is a window too: left open, it would keep the
   // app running (window-all-closed never fires) until its idle close.
-  mainWindow.on('closed', () => renderHost.close())
+  win.on('closed', () => renderHost.close())
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
-    const [w, h] = mainWindow.getContentSize()
-    resizeState.set(mainWindow, { lastSet: [w, h], userResized: false, base: h })
-    mainWindow.on('resize', () => {
-      const st = resizeState.get(mainWindow)
+  win.on('ready-to-show', () => {
+    win.show()
+    const [w, h] = win.getContentSize()
+    resizeState.set(win, { lastSet: [w, h], userResized: false, base: h })
+    win.on('resize', () => {
+      const st = resizeState.get(win)
       if (!st) return
-      const [cw, ch] = mainWindow.getContentSize()
+      const [cw, ch] = win.getContentSize()
       if (Math.abs(cw - st.lastSet[0]) > 2 || Math.abs(ch - st.lastSet[1]) > 2) st.userResized = true
     })
   })
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  return win
 }
 
 interface LoadedFile {
@@ -798,7 +821,7 @@ app.whenReady().then(() => {
     ocrInstalled: (code) => installedCodes().some((c) => c.code === code),
   })
   registerIpc(settings)
-  installAppMenu(() => void openAboutWindow())
+  installAppMenu({ openAbout: () => void openAboutWindow(), openSettings: openSettingsDialog })
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
