@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createCanvas } from '@napi-rs/canvas'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { readRtf } from '../../src/core/readers/rtf'
 import { createConverter } from '../../src/core/convert'
 import { targetPictures, pictureType } from '../../src/core/pictures'
@@ -132,6 +134,58 @@ describe('RTF pictures', () => {
     const html = await read(`One {\\pict\\macpict\\picw2\\pich2 00aa11bb22} two {\\pict\\wmetafile8 ${'ab'.repeat(300)}} three`)
     expect(pictures(html)).toEqual([])
     expect(html).toMatch(/One\s+two\s+three/)
+  })
+
+  /** A floating picture frame as Word writes it: the picture in the shape's `pib`, a copy in `\\shprslt` for readers that know no shapes. */
+  const floating = (pib: string, result: string, extra = ''): string =>
+    `{\\shp{\\*\\shpinst\\shpleft0\\shptop0\\shpright1800\\shpbottom1200\\shpwr3{\\sp{\\sn shapeType}{\\sv 75}}${extra}{\\sp{\\sn pib}{\\sv ${pib}}}}{\\shprslt\\par\\pard\\ql ${result}\\par}}`
+
+  it('a floating picture: the pib picture where the shape stands, the \\shprslt copy as its alternate, never both', async () => {
+    const fallback: Buffer = wmf({ width: 8, height: 6, placeable: false })
+    const html = await read(
+      `Before ${floating(`{\\pict\\pngblip\\picwgoal120\\pichgoal90 ${hex(png())}}`, `{\\pict\\wmetafile8\\picwgoal120\\pichgoal90 ${hex(fallback)}}`, '{\\sp{\\sn wzDescription}{\\sv Quiet seating sign}}')} after`,
+    )
+    const all = pictures(html)
+    expect(all).toHaveLength(1)
+    expect(all[0].type).toBe('image/png')
+    expect(all[0].bytes!.equals(png())).toBe(true)
+    expect(pictureType(all[0].alternate!)).toBe('image/x-wmf')
+    // The frame's own size (1800 x 1200 twips) and description.
+    expect([all[0].width, all[0].height, all[0].alt]).toEqual(['120', '80', 'Quiet seating sign'])
+    // Where it stood, in its paragraph: the \\shprslt paragraph breaks went with it.
+    expect(html).toMatch(/Before <img [^>]+> after/)
+    expect(html).not.toMatch(/[0-9a-f]{40}/)
+  })
+
+  it('a floating picture whose pib is not read here: the \\shprslt picture, once', async () => {
+    const html = await read(`Before ${floating('{\\pict\\pmmetafile8 00aa11bb22}', `{\\pict\\pngblip\\picwgoal120\\pichgoal90 ${hex(png())}}`)} after`)
+    const all = pictures(html)
+    expect(all.map((p) => [p.type, p.alternate])).toEqual([['image/png', undefined]])
+    expect(html).toMatch(/Before <img [^>]+> after/)
+  })
+
+  it('a floating picture with no \\shprslt, and a text box (no pib) read as before', async () => {
+    const lone = await read(`{\\shp{\\*\\shpinst{\\sp{\\sn pib}{\\sv {\\pict\\pngblip ${hex(png())}}}}}} kept`)
+    expect(pictures(lone).map((p) => p.type)).toEqual(['image/png'])
+    expect(lone).toContain('kept')
+    const box = await read(`{\\shp{\\*\\shpinst{\\sp{\\sn shapeType}{\\sv 202}}{\\shptxt Shelf note\\par}}{\\shprslt Shelf note {\\pict\\pngblip ${hex(png())}}\\par}} kept`)
+    expect(pictures(box).map((p) => p.type)).toEqual(['image/png'])
+    expect(box).toContain('Shelf note')
+  })
+
+  it('the floating-pictures fixture: each picture once, where it stands', async () => {
+    const bytes = readFileSync(join(__dirname, '../corpus/reading-room-floating.rtf'))
+    const html = (await readRtf({ bytes, filename: 'reading-room-floating.rtf' })).html
+    const all = pictures(html)
+    expect(all.map((p) => [p.type, p.width, p.height])).toEqual([
+      ['image/png', '64', '64'],
+      ['image/jpeg', '160', '120'],
+    ])
+    expect(all[0].alt).toBe('Quiet seating sign beside the windows')
+    expect(pictureType(all[0].alternate!)).toBe('image/x-wmf')
+    expect(all[1].alternate).toBeUndefined()
+    expect(html).toMatch(/<img [^>]+>The quiet seating sign floats/)
+    expect(html).toMatch(/<img [^>]+>The photograph of the periodicals floats/)
   })
 
   it('hex with an odd digit or stray characters does not break the document', async () => {

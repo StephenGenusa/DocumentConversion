@@ -1576,8 +1576,67 @@ function pictIn(rtf: string, from: number, to: number): RtfPicture | null {
   return at < 0 ? null : readPict(rtf, from + at, Math.min(groupEnd(rtf, from + at), to))
 }
 
-/** Picture groups, and Word's pair of them (`\\shppict`, the picture; `\\nonshppict`, its fallback for older readers). */
-const PICTURE_GROUP = /\{\\(?:\*\\)?(shppict|nonshppict|pict)\b/g
+/** Picture groups, Word's pair of them (`\\shppict`, the picture; `\\nonshppict`, its fallback for older readers), and shapes (`\\shp`). */
+const PICTURE_GROUP = /\{\\(?:\*\\)?(shppict|nonshppict|pict|shp)\b/g
+
+type LiftedPicture = { picture: RtfPicture; alternate?: RtfPicture }
+
+/** A shape property's value group (`{\\sp{\\sn name}{\\sv …}}`) inside [from, to): where its `{\\sv` opens and ends. */
+function shapeProperty(rtf: string, from: number, to: number, name: string): { open: number; end: number } | null {
+  const sn = new RegExp(`\\{\\\\sn\\s+${name}\\s*\\}\\s*\\{\\\\sv\\b`).exec(rtf.slice(from, to))
+  if (!sn) return null
+  const open = from + sn.index + sn[0].lastIndexOf('{')
+  return { open, end: Math.min(groupEnd(rtf, open), to) }
+}
+
+/**
+ * The picture of a floating picture frame, `{\\shp{\\*\\shpinst … {\\sp{\\sn pib}{\\sv {\\pict…}}}}{\\shprslt …}}`,
+ * or null when the shape has no `pib` (a text box or a drawing: read inside as before).
+ *
+ * The `pib` picture is in the ignorable `\\shpinst`, so it used to go with it and
+ * only the `\\shprslt` copy came through, paragraph breaks and all. Now the
+ * `pib` picture is the picture, the `\\shprslt` one (Word's WMF or DIB of it, for
+ * readers that know no shapes) its alternate, as with `\\shppict`/`\\nonshppict`;
+ * when the `pib` is of a type not read here, the `\\shprslt` picture alone. The
+ * whole shape becomes the one marker, so the two are never both shown. The
+ * frame's size (`\\shpleft`…`\\shpbottom`, twips) and its description are the
+ * shape's own.
+ */
+function floatingPicture(rtf: string, open: number, end: number): LiftedPicture | null {
+  const inst = /\{\\\*\\shpinst\b/.exec(rtf.slice(open, end))
+  if (!inst) return null
+  const instOpen = open + inst.index
+  const instEnd = Math.min(groupEnd(rtf, instOpen), end)
+  const pib = shapeProperty(rtf, instOpen, instEnd, 'pib')
+  if (!pib) return null
+  const main = pictIn(rtf, pib.open, pib.end)
+  const result = /\{\\shprslt\b/.exec(rtf.slice(instEnd, end))
+  let fallback: RtfPicture | undefined
+  if (result) {
+    const resultOpen = instEnd + result.index
+    const inner = liftRtfPictures(rtf.slice(resultOpen, Math.min(groupEnd(rtf, resultOpen), end)))
+    fallback = inner.pictures[0]?.picture
+  }
+  const picture = main ?? fallback
+  if (!picture) return null
+  const desc = shapeProperty(rtf, instOpen, instEnd, 'wzDescription')
+  const alt = desc ? rtfPlainText(rtf.slice(desc.open + 4, desc.end - 1)) : ''
+  if (alt && !picture.alt) picture.alt = alt
+  const words = (name: string): number | undefined => {
+    const m = new RegExp(`\\\\${name}(-?\\d+)`).exec(rtf.slice(instOpen, instEnd))
+    return m ? Number(m[1]) : undefined
+  }
+  const [left, top, right, bottom] = ['shpleft', 'shptop', 'shpright', 'shpbottom'].map(words)
+  if (left !== undefined && top !== undefined && right !== undefined && bottom !== undefined) {
+    const width = Math.round((right - left) / 15)
+    const height = Math.round((bottom - top) / 15)
+    if (width >= 1 && height >= 1 && width <= MAX_PICTURE_SIDE && height <= MAX_PICTURE_SIDE) {
+      picture.width = width
+      picture.height = height
+    }
+  }
+  return main && fallback ? { picture, alternate: fallback } : { picture }
+}
 
 /**
  * Take every picture out of the stream, leaving a marker where it stood.
@@ -1589,12 +1648,12 @@ const PICTURE_GROUP = /\{\\(?:\*\\)?(shppict|nonshppict|pict)\b/g
  * second its alternate: both reach the hub (`data-alt-src`), and the picture
  * step takes whichever the target can use (pictures.ts) - Word the EMF, a
  * web page the DIB beside it. A `\\pict` on its own, or a `\\nonshppict`
- * with no `\\shppict` before it, is the picture. One nothing here reads is
- * left out, as before.
+ * with no `\\shppict` before it, is the picture. A floating picture frame
+ * is read by floatingPicture. One nothing here reads is left out, as before.
  */
-function liftRtfPictures(rtf: string): { rtf: string; pictures: { picture: RtfPicture; alternate?: RtfPicture }[] } {
+function liftRtfPictures(rtf: string): { rtf: string; pictures: LiftedPicture[] } {
   if (!rtf.includes('\\pict')) return { rtf, pictures: [] }
-  const pictures: { picture: RtfPicture; alternate?: RtfPicture }[] = []
+  const pictures: LiftedPicture[] = []
   let out = ''
   let i = 0
   PICTURE_GROUP.lastIndex = 0
@@ -1604,6 +1663,18 @@ function liftRtfPictures(rtf: string): { rtf: string; pictures: { picture: RtfPi
     for (let k = m.index - 1; k >= 0 && rtf[k] === '\\'; k--) slashes++
     if (slashes % 2 === 1) continue
     const end = groupEnd(rtf, m.index)
+    if (m[1] === 'shp') {
+      const lastIndex = PICTURE_GROUP.lastIndex
+      const floating = floatingPicture(rtf, m.index, end)
+      if (floating) {
+        out += rtf.slice(i, m.index) + PICTURE_MARK(pictures.length)
+        pictures.push(floating)
+        i = end
+      }
+      // Not a picture frame: its pictures are read where they stand, as before.
+      PICTURE_GROUP.lastIndex = floating ? end : lastIndex
+      continue
+    }
     let next = end
     let picture = m[1] === 'pict' ? readPict(rtf, m.index, end) : pictIn(rtf, m.index, end)
     let alternate: RtfPicture | null = null
@@ -1628,7 +1699,7 @@ function liftRtfPictures(rtf: string): { rtf: string; pictures: { picture: RtfPi
 }
 
 /** Each marker that came through becomes its picture, within the document's image budget (as docx and pptx). */
-function placePictures(html: string, pictures: { picture: RtfPicture; alternate?: RtfPicture }[], sourceLength: number): string {
+function placePictures(html: string, pictures: LiftedPicture[], sourceLength: number): string {
   if (pictures.length === 0) return html
   const ledger = createImageLedger(archiveInlineBudget(sourceLength))
   return html.replace(PICTURE_MARK_RE, (_m, n: string) => {

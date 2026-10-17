@@ -606,6 +606,12 @@ export const READING_ROOM = {
   rtfBitmapLead: 'A small bitmap marker:',
   rtfTableHead: ['Collection', 'Marker'],
   rtfAfter: 'Every picture should come through in every format that shows pictures.',
+  rtfFloatTitle: 'Floating pictures, saved as rich text',
+  rtfFloatIntro: 'Word lets a picture float beside the text. Each one below should come through once, where it stands.',
+  rtfFloatSignLead: 'The quiet seating sign floats at the left of this line',
+  rtfFloatSignAlt: 'Quiet seating sign beside the windows',
+  rtfFloatPhotoLead: 'The photograph of the periodicals floats at the right of this line',
+  rtfFloatAfter: 'Neither picture should appear twice.',
   metafilesTitle: 'Drawings for the volunteer handbook',
   metafilesIntro:
     'Each drawing below was saved by a word processor as a metafile. Every one should come through as a picture, in every format that shows pictures.',

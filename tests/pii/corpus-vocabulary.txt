@@ -394,6 +394,9 @@ fines
 fire
 first
 fixed
+float
+floating
+floats
 floor
 floorplan
 flowchart
@@ -556,6 +559,7 @@ leave
 left
 lesson-notes-
 let
+lets
 lettered
 letters
 level
@@ -674,6 +678,7 @@ need
 needed
 needless
 needs
+neither
 net
 never
 new
