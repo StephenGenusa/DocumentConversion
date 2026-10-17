@@ -48,7 +48,10 @@ const UNDERLINE = 4
 const STRIKE = 8
 const SUPER = 16
 const SUB = 32
+/** Character highlighting: a `fo:background-color` in the text properties. */
+const HIGHLIGHT = 64
 const FORMAT_TAGS: [number, string][] = [
+  [HIGHLIGHT, 'mark'],
   [BOLD, 'strong'],
   [ITALIC, 'em'],
   [UNDERLINE, 'u'],
@@ -91,6 +94,9 @@ function textFormat(props: string): TextFormat {
   if (slant !== undefined) decide(ITALIC, slant === 'italic' || slant === 'oblique')
   const underline = attr(props, 'style:text-underline-style')
   if (underline !== undefined) decide(UNDERLINE, underline !== 'none')
+  // The color is not kept: a highlight is a plain <mark> (src/core/mark.ts).
+  const background = attr(props, 'fo:background-color')
+  if (background !== undefined) decide(HIGHLIGHT, background !== 'transparent')
   const strike = attr(props, 'style:text-line-through-style')
   if (strike !== undefined) decide(STRIKE, strike !== 'none')
   // "super 58%", "sub 58%", or a signed percentage raise: "33% 58%", "-33% 58%".
@@ -150,7 +156,7 @@ export function withOdfStyles<T>(styles: OdfStyles, build: () => T): T {
  * written afterwards — the same trick as the tab sentinel above.
  */
 const MARK_BASE = 0xe100
-const MARKS = /[\uE100-\uE13F]/g
+const MARKS = /[\uE100-\uE17F]/g
 const mark = (bits: number): string => String.fromCharCode(MARK_BASE + bits)
 
 /**
@@ -193,7 +199,7 @@ function marksToHtml(text: string, drop = 0): string {
   let want: string[] = []
   for (const ch of text) {
     const code = ch.charCodeAt(0)
-    if (code >= MARK_BASE && code < MARK_BASE + 64) {
+    if (code >= MARK_BASE && code < MARK_BASE + 128) {
       want = FORMAT_TAGS.filter(([bit]) => (code - MARK_BASE) & ~drop & bit).map(([, tag]) => tag)
       continue
     }
@@ -407,7 +413,7 @@ function odfInline(xml: string, base = 0): string {
 }
 
 /** Whitespace at either end of a fragment, with any marks among it. */
-const EDGE_SPACE = /^[\s\uE100-\uE13F]+|[\s\uE100-\uE13F]+$/g
+const EDGE_SPACE = /^[\s\uE100-\uE17F]+|[\s\uE100-\uE17F]+$/g
 
 /**
  * The `<li>`s of one `<text:list>`. A nested `<text:list>` belongs INSIDE the
@@ -534,7 +540,7 @@ export function odfMarkedUniformBits(marked: string): number {
   let seen = -2
   for (const ch of marked) {
     const code = ch.charCodeAt(0)
-    if (code >= MARK_BASE && code < MARK_BASE + 64) bits = code - MARK_BASE
+    if (code >= MARK_BASE && code < MARK_BASE + 128) bits = code - MARK_BASE
     else if (!/\s/.test(ch)) {
       if (seen === -2) seen = bits
       else if (seen !== bits) return -1
@@ -548,7 +554,7 @@ export function odfMarkedHasFormat(marked: string): boolean {
   let bits = 0
   for (const ch of marked) {
     const code = ch.charCodeAt(0)
-    if (code >= MARK_BASE && code < MARK_BASE + 64) bits = code - MARK_BASE
+    if (code >= MARK_BASE && code < MARK_BASE + 128) bits = code - MARK_BASE
     else if (bits !== 0 && !/\s/.test(ch)) return true
   }
   return false

@@ -38,6 +38,24 @@ describe('the editor round-trips what the hub allows', () => {
     expect(roundTrip('<p>x<sup>2</sup> H<sub>2</sub>O</p>')).toBe('<p>x<sup>2</sup> H<sub>2</sub>O</p>')
   })
 
+  // A colored one's style is written by the DOM (ProseMirror sets style.cssText,
+  // which spells it the DOM's way: Chromium writes rgb()), and what converts
+  // from the pane is sanitized again (lib/items.ts), so the hub's bytes are
+  // what has to come back.
+  it('keeps a highlight, plain or of its own color, as the hub writes it', () => {
+    const html =
+      '<p>a <mark>plain</mark> b <mark style="background-color:#00FF00">green</mark> ' +
+      '<mark style="background-color:#000080;color:#FFFFFF">dark</mark> <strong><mark>both</mark></strong></p>'
+    expect(sanitizeToHub(html)).toBe(html)
+    expect(sanitizeToHub(roundTrip(html))).toBe(html)
+    expect(sanitizeToHub(roundTrip('<p><mark style="background-color: rgb(0, 255, 0);">g</mark></p>'))).toBe(
+      '<p><mark style="background-color:#00FF00">g</mark></p>',
+    )
+    // In code too, as a documentation page marks a line.
+    const code = '<pre><code class="language-js">let a = 1\n<mark>let b = 2</mark></code></pre>'
+    expect(roundTrip(code)).toBe(code)
+  })
+
   it('keeps footnotes exactly: references, labels and the notes list', () => {
     const html =
       '<p>A claim<sup data-fn="smith2020">1</sup> and<sup data-fn="2">2</sup>.</p>' +

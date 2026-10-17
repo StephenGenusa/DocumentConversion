@@ -1,6 +1,7 @@
 import sanitizeHtml from 'sanitize-html'
 import { FOOTNOTE_LABEL } from './footnotes'
 import { diagramLanguage } from './rendered-blocks'
+import { markColor, markStyle } from './mark'
 
 /**
  * Single source of truth for what the hub allows. The TipTap editor schema
@@ -47,6 +48,10 @@ export const HUB_TAGS = [
   // kept the text and dropped the meaning, for every reader that sanitizes.
   'sup',
   'sub',
+  // Highlighted text: Word's highlighter, LibreOffice's highlighting, HTML's
+  // own tag. Its color, when not the ordinary yellow, is the one style the
+  // hub keeps (src/core/mark.ts).
+  'mark',
   'span',
   'div',
   // Speaker notes. Without this the sanitizer stripped the tag and kept its
@@ -58,6 +63,12 @@ export const HUB_TAGS = [
 function keepValidLabel(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
   const { 'data-fn': label, ...rest } = attribs
   return { tagName, attribs: label !== undefined && FOOTNOTE_LABEL.test(label) ? { ...rest, 'data-fn': label } : rest }
+}
+
+/** A mark keeps only its color, rebuilt by markStyle from the color alone. */
+function keepMarkColor(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
+  const color = markColor(attribs.style)
+  return { tagName, attribs: color ? { style: markStyle(color) } : {} }
 }
 
 /**
@@ -93,8 +104,12 @@ export function hubSanitizeOptions(): sanitizeHtml.IOptions {
       // see transformTags below.
       sup: ['data-fn'],
       li: ['data-fn'],
+      mark: ['style'],
     },
-    transformTags: { sup: keepValidLabel, li: keepValidLabel, code: keepCodeClass },
+    // What keepMarkColor writes, and nothing else; sanitize-html writes it back
+    // as `property:value;property:value`, the form markStyle makes.
+    allowedStyles: { mark: { 'background-color': [/^#[0-9A-F]{6}$/], color: [/^#FFFFFF$/] } },
+    transformTags: { sup: keepValidLabel, li: keepValidLabel, code: keepCodeClass, mark: keepMarkColor },
     // Text inside these is metadata or code, not content: without this the
     // <title> of an HTML page leaked into the body above its own <h1>.
     nonTextTags: ['script', 'style', 'textarea', 'option', 'title', 'head', 'noframes'],

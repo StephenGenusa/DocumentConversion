@@ -8,11 +8,23 @@ import render from 'dom-serializer'
 import { BLOCK, gridForElement, normalizeText } from '../table-grid'
 import type { HubDocument } from '../types'
 import { mathClose, TEX_SHAPED } from '../rendered-blocks'
+import { markColor, markOpenTag } from '../mark'
 
 const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
 td.use([tables, strikethrough])
 // No Markdown syntax for these; GitHub and most renderers accept the HTML.
 td.keep(['sup', 'sub'])
+// Nor for highlight: `==text==` is read by a few Markdown dialects, not by
+// CommonMark, pandoc's default or this app's reader. The tags are inline HTML
+// to all of them, and the text between stays Markdown, so a bold word or a
+// link in a highlight is written as itself. The hub's color goes with the tag.
+td.addRule('mark', {
+  filter: 'mark',
+  replacement: (content, node) => {
+    const style = (node as HTMLElement).getAttribute('style')
+    return content ? `${markOpenTag(markColor(style ?? undefined))}${content}</mark>` : ''
+  },
+})
 // turndown-plugin-gfm writes `~text~`, which only GitHub-style readers take;
 // `~~` is read by all of them, this app's own reader included. Added after
 // the plugin, so it is the rule turndown tries first.

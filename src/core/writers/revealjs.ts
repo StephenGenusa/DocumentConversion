@@ -101,6 +101,7 @@ export const DECK_CSS = `
   .reveal section img { border: 0; background: none; margin: 0.4em auto; }
   .reveal section img[data-rendered="formula"] { display: inline; margin: 0; }
   .reveal ul.task-list { list-style: none; }
+  .reveal mark { background-color: #fef08a; color: #1a1a1a; padding: 0 0.08em; border-radius: 2px; }
 `
 
 /** reveal expects `<aside class="notes">`; the hub carries a bare `<aside>`. */

@@ -178,6 +178,10 @@ const BASE_CSS = `
   dt { font-weight: 600; }
   dd { margin: 0 0 0.5em 1.4em; }
   sup.fnref a { text-decoration: none; }
+  /* Highlighted text: a soft yellow dark text reads on, on screen and on
+     paper (printToPDF prints backgrounds). A mark's own color is on it as a
+     style, and wins; the hub gives a dark one white text (core/mark.ts). */
+  mark { background-color: #fef08a; color: #1a1a1a; padding: 0 0.08em; border-radius: 2px; }
   .footnotes { margin-top: 2.5em; border-top: 1px solid #ddd; font-size: .92em; }
   .footnotes h2 { font-size: 1.1em; }
   a.fnback { text-decoration: none; }

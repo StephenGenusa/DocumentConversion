@@ -6,12 +6,14 @@ import Subscript from '@tiptap/extension-subscript'
 import CodeBlock from '@tiptap/extension-code-block'
 import Link from '@tiptap/extension-link'
 import { Node, Extension } from '@tiptap/core'
+import { Mark } from '@tiptap/core'
 import { Plugin, PluginKey, TextSelection, type EditorState } from '@tiptap/pm/state'
 import { Fragment, type Node as PMNode, Slice } from '@tiptap/pm/model'
 import { AddMarkStep } from '@tiptap/pm/transform'
 import type { Extensions } from '@tiptap/core'
 import { RenderedBlocks, blockNodeView, inlineNodeView } from './block-views'
 import { CodeColor } from './code-color'
+import { markColor, markStyle } from '../../../core/mark'
 
 /**
  * The editor schema must model everything the hub sanitizer passes
@@ -283,6 +285,46 @@ const MathInline = Node.create({
 })
 
 /*
+ * Highlighted text, the hub's <mark> (core/mark.ts): plain, the ordinary
+ * yellow, or of its own color, kept as RRGGBB and written back as the hub's
+ * style byte for byte. Mod-Shift-H: nothing else in the editor, StarterKit
+ * or the app's menus uses it.
+ */
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    highlight: {
+      /** Highlight the selection (the ordinary yellow), or take the highlight off. */
+      toggleHighlight: () => ReturnType
+    }
+  }
+}
+
+const Highlight = Mark.create({
+  name: 'highlight',
+  addAttributes: () => ({
+    color: {
+      default: null,
+      parseHTML: (el: HTMLElement) => markColor(el.getAttribute('style') ?? undefined) ?? null,
+      // Written by the mark itself: TipTap's merge rewrites a style attribute's spacing.
+      renderHTML: () => ({}),
+    },
+  }),
+  parseHTML: () => [{ tag: 'mark' }],
+  renderHTML: ({ mark }) => ['mark', mark.attrs.color ? { style: markStyle(mark.attrs.color) } : {}, 0],
+  addCommands() {
+    return {
+      toggleHighlight:
+        () =>
+        ({ commands }) =>
+          commands.toggleMark(this.name),
+    }
+  },
+  addKeyboardShortcuts() {
+    return { 'Mod-Shift-h': () => this.editor.commands.toggleHighlight() }
+  },
+})
+
+/*
  * The author's markup in code: rustdoc and javadoc link every type name, and
  * the html reader keeps that (core/code-language.ts KEPT_IN_CODE), so the code
  * block holds those marks too. Otherwise opening such a file in the pane drops
@@ -290,7 +332,7 @@ const MathInline = Node.create({
  * anything else stay out: code-markup.ts lays the colors around these only.
  * The colors are drawn by text (code-color.ts), so marks do not change them.
  */
-const CODE_MARKS = 'bold italic underline strike link superscript subscript'
+const CODE_MARKS = 'bold italic underline strike link superscript subscript highlight'
 
 /** The slice with every code block in it as plain text. */
 function flattenCode(content: Fragment): Fragment {
@@ -376,6 +418,7 @@ export const EDITOR_EXTENSIONS: Extensions = [
   // sup and sub are in HUB_TAGS; StarterKit models neither.
   Superscript,
   Subscript,
+  Highlight,
   SpeakerNotes,
   DefinitionList,
   DefinitionTerm,

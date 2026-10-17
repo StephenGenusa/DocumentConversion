@@ -16,6 +16,7 @@ import { DOCX_OWN_LINE } from '../draw-blocks'
 import { pictureType, wordTakes } from '../pictures'
 import { originalSize } from '../picture-headers'
 import { codeBookmarkName } from '../code-bookmark'
+import { WORD_HIGHLIGHTS } from '../mark'
 import { parseCssColor, wordHex } from '../css-color'
 
 /**
@@ -1153,19 +1154,6 @@ function backgroundIn(el: Element): string | undefined {
   const shorthand = /(?:^|;)\s*background:\s*([^;]+)/i.exec(style)?.[1] ?? ''
   const words = shorthand.match(/[^\s(]+\([^)]*\)|[^\s]+/g) ?? []
   return words.map((w) => wordHex(w)).findLast(Boolean)
-}
-
-/**
- * Word's 16 highlight colors (ST_HighlightColor) by their RRGGBB: the 16
- * colors of HTML 4, one for one. A background that is exactly one of them is
- * written as a highlight, which is what Word's own Text Highlight Color makes
- * and what its highlight tools find and clear; any other is shading, which
- * keeps the exact color.
- */
-const WORD_HIGHLIGHTS: Record<string, string> = {
-  FFFF00: 'yellow', '00FF00': 'green', '00FFFF': 'cyan', FF00FF: 'magenta', '0000FF': 'blue', FF0000: 'red',
-  '000000': 'black', FFFFFF: 'white', '000080': 'darkBlue', '008080': 'darkCyan', '008000': 'darkGreen',
-  '800080': 'darkMagenta', '800000': 'darkRed', '808000': 'darkYellow', '808080': 'darkGray', C0C0C0: 'lightGray',
 }
 
 /** Declarations whose colors html-to-docx reads (a border's as one of its words). */

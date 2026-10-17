@@ -142,7 +142,7 @@ function codeText(el: Element): string {
 }
 
 /** The author's inline markup a code block keeps when a file is read (see keepMarkup). */
-export const KEPT_IN_CODE: ReadonlySet<string> = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'a', 'sup', 'sub'])
+export const KEPT_IN_CODE: ReadonlySet<string> = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'a', 'sup', 'sub', 'mark'])
 
 /**
  * The code's content with only the author's inline markup left in it: bold,

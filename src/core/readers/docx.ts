@@ -12,6 +12,7 @@ import {
 import type { HubDocument, ReadContext, SourceInput } from '../types'
 import { MATH_NAMESPACES, ommlLinearText, ommlToTex } from '../omml-tex'
 import { codeBookmarkLanguage } from '../code-bookmark'
+import { markOpenTag, WORD_HIGHLIGHTS } from '../mark'
 import { zipPartsMatch } from '../zip-scan'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode, type ParentNode } from 'domhandler'
@@ -1274,6 +1275,65 @@ export function restoreEquations(html: string, marker: string, equations: WordEq
   return out.replace(new RegExp(`${m}\\d*\ue001?`, 'g'), '')
 }
 
+/*
+ * Highlighted text. Word's highlighter writes `w:highlight` with one of its 16
+ * color names; mammoth reads it and writes nothing for it unless the style map
+ * says what. Run shading (`w:shd` on a run) is how Google Docs and others
+ * write a highlight of any color, and mammoth does not read it at all. Each
+ * becomes the hub's <mark>, of its own color (src/core/mark.ts).
+ */
+const HIGHLIGHT_NAMES = Object.fromEntries(Object.entries(WORD_HIGHLIGHTS).map(([hex, name]) => [name, hex]))
+
+/** A stand-in highlight name for a shading color, which mammoth passes on as it is. */
+const SHADE_PREFIX = 'dc-shade-'
+
+/** A run's own properties, first in the run (CT_R); the paragraph's run properties are left alone. */
+const RUN_PROPERTIES = /(<w:r\b[^>]*>\s*<w:rPr>)([\s\S]*?)(<\/w:rPr>)/g
+
+/**
+ * The parts with each run's shading turned into a highlight mammoth reads,
+ * and the shading colors found; undefined when no run is shaded. A run with a
+ * highlight of its own keeps that (Word draws the highlight over the
+ * shading); `auto` and white shading are none.
+ */
+async function shadingAsHighlight(bytes: Buffer): Promise<{ bytes: Buffer; colors: string[] } | undefined> {
+  try {
+    const zip = await JSZip.loadAsync(bytes)
+    const parts = MATH_PARTS.filter((name) => zip.files[name])
+    const xmls = await Promise.all(parts.map((name) => zip.files[name].async('string')))
+    if (!xmls.some((xml) => /<w:rPr>(?:(?!<\/w:rPr>)[\s\S])*<w:shd\b/.test(xml))) return undefined
+    const colors = new Set<string>()
+    parts.forEach((name, i) => {
+      const xml = xmls[i].replace(RUN_PROPERTIES, (whole, open: string, props: string, close: string) => {
+        const shd = /<w:shd\b[^>]*>/.exec(props)?.[0]
+        if (!shd || /<w:highlight\b/.test(props)) return whole
+        const attr = (n: string): string | undefined => new RegExp(`\\bw:${n}="([^"]*)"`).exec(shd)?.[1]
+        const fill = (attr('val') === 'solid' ? attr('color') : attr('fill'))?.toUpperCase()
+        if (!fill || !/^[0-9A-F]{6}$/.test(fill) || fill === 'FFFFFF') return whole
+        colors.add(fill)
+        return `${open}${props}<w:highlight w:val="${SHADE_PREFIX}${fill}"/>${close}`
+      })
+      zip.file(name, xml)
+    })
+    if (colors.size === 0) return undefined
+    return { bytes: await zip.generateAsync({ type: 'nodebuffer' }), colors: [...colors] }
+  } catch {
+    return undefined
+  }
+}
+
+/** mammoth's style map for highlights: a <mark> naming its color by class, made the hub's by marksToHub. */
+function highlightStyleMap(shades: string[]): string[] {
+  return [
+    ...Object.entries(HIGHLIGHT_NAMES).map(([name, hex]) => `highlight[color='${name}'] => mark.dc-hl-${hex}`),
+    ...shades.map((hex) => `highlight[color='${SHADE_PREFIX}${hex}'] => mark.dc-hl-${hex}`),
+  ]
+}
+
+export function marksToHub(html: string): string {
+  return html.replace(/<mark class="dc-hl-([0-9A-F]{6})">/g, (_, hex: string) => markOpenTag(hex))
+}
+
 /** One notice per document for equations with parts that are only linear text. */
 function equationNotice(equations: WordEquation[], ctx?: ReadContext): void {
   const n = equations.filter((e) => e.partial).length
@@ -1294,17 +1354,23 @@ export async function readDocx(src: SourceInput, ctx?: ReadContext): Promise<Hub
   const math = await extractEquations(code?.bytes ?? src.bytes)
   // The package mammoth and the list scan read: with markers where equations
   // were, so a paragraph holding only an equation is not taken for empty.
-  const bytes = math?.bytes ?? code?.bytes ?? src.bytes
+  const unshaded = math?.bytes ?? code?.bytes ?? src.bytes
+  // Last: code and equations are taken out first, so neither is read as highlighted.
+  const shading = await shadingAsHighlight(unshaded)
+  const bytes = shading?.bytes ?? unshaded
   const [{ value }, flags, header, numIds] = await Promise.all([
     mammoth.convertToHtml(
       { buffer: bytes },
-      { convertImage: budgetedImageConverter(ledger), styleMap: code?.inline ? [`r.${code.inline} => code`] : [] },
+      {
+        convertImage: budgetedImageConverter(ledger),
+        styleMap: [...(code?.inline ? [`r.${code.inline} => code`] : []), ...highlightStyleMap(shading?.colors ?? [])],
+      },
     ),
     headerFlags(bytes),
     headerTitle(bytes),
     listNumIds(bytes),
   ])
-  const converted = math ? restoreEquations(value, math.marker, math.equations) : value
+  const converted = marksToHub(math ? restoreEquations(value, math.marker, math.equations) : value)
   if (math) equationNotice(math.equations, ctx)
   const html = keepTabsVisible(
     mergeInterruptedOrderedLists(promoteHeaderRows(replaceUninlinedImages(converted), flags), numIds),

@@ -68,6 +68,34 @@ interpreter.ctrl$dn = function (param) {
 }
 
 /**
+ * Read `\\highlightN` as a background, as `\\cbN` already is.
+ *
+ * Word's highlighter writes \\highlightN (N an entry of the color table);
+ * rtf-parser has no handler for it, so highlighted text came out plain.
+ * \\highlight0 is none, set as an index no table has so that it overrides
+ * an outer group's highlight instead of falling through to it.
+ */
+interpreter.ctrl$highlight = function (param) {
+  this.group.style.background = param ? param : -1
+}
+// \\cb0 is the table's first entry, "auto" (no background), read as black.
+interpreter.ctrl$cb = function (param) {
+  this.group.style.background = param ? param : -1
+}
+
+/*
+ * A color inside a group: rtf-parser's group looked a color it did not hold
+ * up in its parent's FONTS, so every \\cfN and \\cbN inside braces (the
+ * way Word writes them) resolved to a font, or to nothing.
+ */
+RTFGroup.prototype.getColor = function (
+  this: { colors: unknown[]; parent?: { getColor?: (n: number) => unknown } },
+  num: number,
+): unknown {
+  return this.colors[num] != null ? this.colors[num] : this.parent?.getColor?.(num)
+}
+
+/**
  * Close the last paragraph when the file does not.
  *
  * rtf-parser gathers a paragraph's spans into it when it meets `\\par`, and
@@ -1299,6 +1327,28 @@ function promoteHeadings(html: string): string {
   )
 }
 
+/**
+ * Text with a background (\\highlight or \\cb) as the hub's <mark>, of its
+ * color (the sanitizer makes it the hub's). @iarna/rtf-to-html writes the
+ * background on a span, or on the paragraph when every span in it shares
+ * it; neither nests, and the paragraph keeps its own style for the rest.
+ */
+const BACKGROUND = /background-color:\s*(rgb\([^)]*\))/
+
+function backgroundsAsMarks(html: string): string {
+  const mark = (style: string, inner: string): string => {
+    const color = BACKGROUND.exec(style)?.[1]
+    return color && inner.trim() ? `<mark style="background-color: ${color}">${inner}</mark>` : inner
+  }
+  return html
+    .replace(/<span style="([^"]*)">([\s\S]*?)<\/span>/g, (whole, style: string, inner: string) =>
+      BACKGROUND.test(style) ? `<span style="${style}">${mark(style, inner)}</span>` : whole,
+    )
+    .replace(/<p style="([^"]*)">([\s\S]*?)<\/p>/g, (whole, style: string, inner: string) =>
+      BACKGROUND.test(style) ? `<p style="${style}">${mark(style, inner)}</p>` : whole,
+    )
+}
+
 /** Private-use marks around subscript text, through @iarna/rtf-to-html and back. */
 const SUB_OPEN = '\uE020'
 const SUB_CLOSE = '\uE021'
@@ -1849,7 +1899,7 @@ async function rtfBodyToHubHtml(stripped: string): Promise<string> {
     throw new ConversionError('rtf-parse-failed', `Could not parse RTF: ${(err as Error).message}`)
   }
   const body = /<body[^>]*>([\s\S]*)<\/body>/i.exec(full)?.[1] ?? full
-  const withTables = injectTables(promoteHeadings(body), segmented.tables)
+  const withTables = injectTables(backgroundsAsMarks(promoteHeadings(body)), segmented.tables)
   const clean = sanitizeToHub(withTables)
   // Trailing " | " before a row break reads badly; collapse doubled separators.
   return clean.replace(/ \|\s*<\/p>/g, '</p>')

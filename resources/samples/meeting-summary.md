@@ -7,7 +7,7 @@ title: Office Move Planning Meeting Summary
 **October 15, 2026, 10:00 to 11:15** · Fourth-floor meeting room and online · Notes by Mireille Ostrander
 
 > [!NOTE]
-> **Highlights.** The move is set for the weekend of **December 5 and 6**. The fourth-floor plan is approved with two changes (more quiet space, step-free desks by the elevators). Six action items are open; each is numbered on the floor plan below.
+> **In short.** The move is set for the weekend of <mark>**December 5 and 6**</mark>. The fourth-floor plan is approved with two changes (more quiet space, step-free desks by the elevators). <mark>Six action items are open</mark>; each is numbered on the floor plan below.
 
 **Attendees:** Odile Larkspur (facilities, chair), Nils Ashcombe (IT), Marta Quill (people operations), Petra Ferrow (finance), Iris Vellum (design studio), Mireille Ostrander (office manager).
 

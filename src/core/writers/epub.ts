@@ -35,6 +35,13 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85em; }
 table { border-collapse: collapse; width: 100%; }
 th, td { border: 1px solid #999; padding: 0.3em 0.5em; }
 `
+/**
+ * For a book with highlighted text. A reader's night or sepia theme owns the
+ * page, so the book sets no background but this one, and the text on it is
+ * set dark with it, so it reads in any theme; a mark's own color is on it.
+ */
+const MARK_CSS = `mark { background-color: #fef08a; color: #000; }
+`
 /** For a book with a definition list; others keep the stylesheet they had. */
 const DEFINITION_CSS = `dt { font-weight: bold; }
 dd { margin: 0 0 0.5em 1.5em; }
@@ -350,7 +357,8 @@ export async function writeEpub(doc: HubDocument, opts: EpubOptions = {}): Promi
 <rootfiles><rootfile full-path="${OEBPS}/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
 </container>`,
   )
-  const css = STYLESHEET + (/<dl\b/.test(doc.html) ? DEFINITION_CSS : '') + (highlighted.any ? EPUB_HLJS_CSS : '')
+  const css =
+    STYLESHEET + (/<dl\b/.test(doc.html) ? DEFINITION_CSS : '') + (/<mark\b/.test(doc.html) ? MARK_CSS : '') + (highlighted.any ? EPUB_HLJS_CSS : '')
   zip.file(`${OEBPS}/style.css`, css)
   for (const part of parts) zip.file(`${OEBPS}/${part.file}`, chapterDocument(part.title, part.body))
   zip.file(`${OEBPS}/nav.xhtml`, navDocument(parts))

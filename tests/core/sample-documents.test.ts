@@ -73,6 +73,7 @@ describe('the sample documents', () => {
     const meeting = await read(TEXT.SAMPLE_MEETING.file)
     expect(meeting).toContain('gantt')
     expect(meeting).toContain('mindmap')
+    expect(meeting).toContain('<mark>Six action items are open</mark>')
     expect(meeting).toContain('☐')
     // Every callout on the floor plan names an action item.
     for (const [i, label] of (TEXT.SAMPLE_MEETING.plan.callouts as string[]).entries()) expect(meeting).toContain(`${i + 1}. ${label}.`)

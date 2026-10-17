@@ -24,7 +24,7 @@ import {
  * editor schema is required to model all of them, and anything outside it would
  * be a control that silently loses its effect on the way out. So the toolbar
  * covers headings, both list kinds, blockquote, inline code and code blocks,
- * links, tables, rules, footnotes and the seven inline marks — and nothing else.
+ * links, tables, rules, footnotes and the eight inline marks — and nothing else.
  *
  * Headings stop at 3 for authoring. h4–h6 are in the hub and round-trip
  * untouched when they arrive in pasted content; they are simply not worth five
@@ -105,6 +105,7 @@ export function EditorToolbar({
       strike: !!e?.isActive('strike'),
       superscript: !!e?.isActive('superscript'),
       subscript: !!e?.isActive('subscript'),
+      highlight: !!e?.isActive('highlight'),
       code: !!e?.isActive('code'),
       bulletList: !!e?.isActive('bulletList'),
       orderedList: !!e?.isActive('orderedList'),
@@ -227,6 +228,10 @@ export function EditorToolbar({
       mark('Subscript', <span className="tb-sub">x<sub>2</sub></span>, state.subscript, () =>
         chain().unsetSuperscript().toggleSubscript().run(),
       ),
+      {
+        ...mark('Highlight', <span className="tb-mark">H</span>, state.highlight, () => chain().toggleHighlight().run()),
+        title: `Highlight (${keys('Mod+Shift+H')})`,
+      },
       icon('Inline code', <IconCode />, state.code, () => chain().toggleCode().run()),
     ],
     [

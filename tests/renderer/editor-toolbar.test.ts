@@ -72,3 +72,37 @@ describe('the Formula and Diagram menus', () => {
     expect(button('Insert footnote')).not.toBeNull()
   })
 })
+
+describe('the Highlight button and Mod-Shift-H', () => {
+  it('highlight the selection, show it pressed, and take it off again', () => {
+    mount()
+    const highlight = button('Highlight')!
+    expect(highlight.title).toMatch(/Ctrl\+Shift\+H|⌘⇧H/)
+    expect(highlight.getAttribute('aria-pressed')).toBe('false')
+    act(() => {
+      editor.commands.setTextSelection({ from: 1, to: 6 })
+    })
+    act(() => highlight.click())
+    expect(editor.getHTML()).toBe('<p><mark>Intro</mark>.</p>')
+    expect(highlight.getAttribute('aria-pressed')).toBe('true')
+    act(() => highlight.click())
+    expect(editor.getHTML()).toBe('<p>Intro.</p>')
+  })
+
+  it('answer the shortcut, and keep a highlight of its own color', () => {
+    act(() => {
+      editor.commands.setTextSelection({ from: 1, to: 6 })
+    })
+    const shortcut = (): void => {
+      editor.view.dom.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'H', code: 'KeyH', keyCode: 72, ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true } as KeyboardEventInit),
+      )
+    }
+    act(shortcut)
+    expect(editor.getHTML()).toBe('<p><mark>Intro</mark>.</p>')
+    act(shortcut)
+    expect(editor.getHTML()).toBe('<p>Intro.</p>')
+    editor.commands.setContent('<p><mark style="background-color:#00FF00">Go</mark></p>')
+    expect(editor.getJSON().content?.[0].content?.[0].marks).toEqual([{ type: 'highlight', attrs: { color: '00FF00' } }])
+  })
+})
