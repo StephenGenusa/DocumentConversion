@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { crc32, deflateSync } from 'node:zlib'
 import { build } from 'esbuild'
+import { runHarness } from './electron-harness'
 import JSZip from 'jszip'
 import { initKf8File } from '../kf8-reader.mjs'
 import { KINDLE_IMAGE_MAX_BYTES } from '../../src/core/pictures'
@@ -141,23 +141,10 @@ describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the 
     ].map(([name, target, input]) => ({ name, target, htmlFile: join(dir, `${input}.html`) }))
     await writeFile(join(dir, 'cases.json'), JSON.stringify(cases))
 
-    const electron = require('electron') as unknown as string
-    const stdout = await new Promise<string>((resolvePromise, reject) => {
-      execFile(
-        electron,
-        ['--js-flags=--expose-gc', join(__dirname, 'large-pictures-harness.cjs'), coreJs, hostJs, PAGE_DIR, join(dir, 'cases.json'), join(dir, 'out')],
-        {
-          cwd: ROOT,
-          timeout: 600_000,
-          maxBuffer: 64 * 1024 * 1024,
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: '' },
-        },
-        (err, stdoutText) => (err && !stdoutText.includes('RESULT ') ? reject(err) : resolvePromise(stdoutText)),
-      )
-    })
-    const line = stdout.split('\n').find((l) => l.startsWith('RESULT '))
-    if (!line) throw new Error(`no result from the harness:\n${stdout}`)
-    result = JSON.parse(line.slice('RESULT '.length))
+    result = await runHarness<typeof result>(
+      ['--js-flags=--expose-gc', join(__dirname, 'large-pictures-harness.cjs'), coreJs, hostJs, PAGE_DIR, join(dir, 'cases.json'), join(dir, 'out')],
+      { cwd: ROOT, timeout: 600_000 },
+    )
     if (result.fatal) throw new Error(result.fatal)
     if (process.env.LARGE_PICTURE_TIMINGS) {
       await writeFile(process.env.LARGE_PICTURE_TIMINGS, JSON.stringify({ sizes, cases: Object.fromEntries(Object.entries(result).map(([k, v]) => [k, { ms: v.ms, baseMainMb: v.baseMainMb, peakMainMb: v.peakMainMb, peakAllMb: v.peakAllMb }])) }))

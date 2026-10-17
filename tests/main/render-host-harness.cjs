@@ -4,11 +4,12 @@
  *
  *   electron render-host-harness.cjs <bundled render-host.js> <resources/render>
  *
- * Prints one line, `RESULT <json>`, and exits.
+ * Writes its result (harness-result.cjs) and exits.
  */
 const { app } = require('electron')
+const { harnessArgs, writeResult } = require('./harness-result.cjs')
 
-const [hostPath, pageDir] = process.argv.slice(-2)
+const [hostPath, pageDir] = harnessArgs(2)
 const { createRenderHost } = require(hostPath)
 
 app.on('window-all-closed', () => {})
@@ -407,13 +408,13 @@ async function main() {
   out.requests = requests
   out.stats = host.stats()
   host.close()
-  console.log('RESULT ' + JSON.stringify(out))
+  writeResult(out)
   app.exit(0)
 }
 
 app.whenReady().then(() =>
   main().catch((e) => {
-    console.log('RESULT ' + JSON.stringify({ fatal: String(e && e.stack) }))
+    writeResult({ fatal: String(e && e.stack) })
     app.exit(1)
   }),
 )

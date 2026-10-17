@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { execFile } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -14,6 +13,7 @@ import { EmfWriter } from '../../scripts/fixtures/lib-metafile.mjs'
 // @ts-expect-error: a plain .mjs fixture library, no types.
 import { READING_ROOM } from '../../scripts/fixtures/vocabulary.mjs'
 import { localFontFiles } from '../../src/main/local-fonts'
+import { runHarness } from './electron-harness'
 
 /**
  * The metafile corpus drawn (src/core/metafile), sanitized and rasterized
@@ -107,18 +107,7 @@ describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
       input.push(...FONT_CASES)
       const json = join(dir, 'input.json')
       await writeFile(json, JSON.stringify(input))
-      const electron = require('electron') as unknown as string
-      const stdout = await new Promise<string>((resolvePromise, reject) => {
-        execFile(
-          electron,
-          [join(__dirname, 'metafile-render-harness.cjs'), hostJs, PAGE_DIR, json],
-          { cwd: ROOT, timeout: 90_000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ELECTRON_RUN_AS_NODE: '' } },
-          (err, out) => (err && !out.includes('RESULT ') ? reject(err) : resolvePromise(out)),
-        )
-      })
-      const line = stdout.split('\n').find((l) => l.startsWith('RESULT '))
-      if (!line) throw new Error(`no result from the harness:\n${stdout}`)
-      result = JSON.parse(line.slice('RESULT '.length))
+      result = await runHarness<Result>([join(__dirname, 'metafile-render-harness.cjs'), hostJs, PAGE_DIR, json], { cwd: ROOT, timeout: 90_000 })
       if (result.fatal) throw new Error(result.fatal)
     } finally {
       await rm(dir, { recursive: true, force: true })

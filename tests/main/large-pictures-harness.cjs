@@ -7,15 +7,16 @@
  *
  * Each case is { name, target, htmlFile }: the hub's HTML is read from
  * htmlFile, written for `target`, and the output saved as <outDir>/<name>.
- * Prints one line, `RESULT <json>`: { name: { ms, baseMainMb, peakMainMb,
- * peakAllMb, advice, error? } }, and exits. Run with --js-flags=--expose-gc,
+ * Writes { name: { ms, baseMainMb, peakMainMb, peakAllMb, advice, error? } }
+ * (harness-result.cjs) and exits. Run with --js-flags=--expose-gc,
  * so each case starts from what the one before let go.
  */
 const { app } = require('electron')
 const { readFileSync, writeFileSync } = require('fs')
 const { join } = require('path')
+const { harnessArgs, writeResult } = require('./harness-result.cjs')
 
-const [corePath, hostPath, pageDir, casesFile, outDir] = process.argv.slice(-5)
+const [corePath, hostPath, pageDir, casesFile, outDir] = harnessArgs(5)
 
 app.on('window-all-closed', () => {})
 
@@ -42,7 +43,7 @@ async function measured(fn) {
 
 app.whenReady().then(async () => {
   try {
-    // Loaded here, so a failure is a RESULT line rather than a dialog nobody closes.
+    // Loaded here, so a failure is a written result rather than a dialog nobody closes.
     const { createConverter } = require(corePath)
     const { createRenderHost } = require(hostPath)
     const host = createRenderHost({ pageDir, partition: 'docconv-large-pictures-test' })
@@ -65,10 +66,10 @@ app.whenReady().then(async () => {
       // Each case starts from a fresh window and an empty cache, as a conversion of its own would.
       host.close()
     }
-    console.log('RESULT ' + JSON.stringify(out))
+    writeResult(out)
     app.exit(0)
   } catch (e) {
-    console.log('RESULT ' + JSON.stringify({ fatal: String(e && e.stack) }))
+    writeResult({ fatal: String(e && e.stack) })
     app.exit(1)
   }
 })

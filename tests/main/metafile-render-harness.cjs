@@ -6,12 +6,14 @@
  *
  *   electron metafile-render-harness.cjs <bundled render-host.js> <resources/render> <input.json>
  *
- * The input is [{ name, svg }]. Prints one line, `RESULT <json>`: { name: { png, width, height } | { error } }, and exits.
+ * The input is [{ name, svg }]. Writes { name: { png, width, height } | { error } }
+ * (harness-result.cjs) and exits.
  */
 const { app } = require('electron')
 const { readFileSync } = require('fs')
+const { harnessArgs, writeResult } = require('./harness-result.cjs')
 
-const [hostPath, pageDir, input] = process.argv.slice(-3)
+const [hostPath, pageDir, input] = harnessArgs(3)
 const { createRenderHost } = require(hostPath)
 
 app.on('window-all-closed', () => {})
@@ -24,10 +26,10 @@ app.whenReady().then(async () => {
       out[name] = await host.render({ kind: 'svg', source: svg, display: true, format: 'png' })
     }
     host.close()
-    console.log('RESULT ' + JSON.stringify(out))
+    writeResult(out)
     app.exit(0)
   } catch (e) {
-    console.log('RESULT ' + JSON.stringify({ fatal: String(e && e.stack) }))
+    writeResult({ fatal: String(e && e.stack) })
     app.exit(1)
   }
 })

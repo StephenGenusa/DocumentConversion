@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll } from 'vitest'
-import { execFile } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { build } from 'esbuild'
+import { runHarness } from './electron-harness'
 
 /**
  * The real render host (spec B5) in a real Electron main process: the page,
@@ -123,18 +123,7 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
         outfile: hostJs,
         logLevel: 'silent',
       })
-      const electron = require('electron') as unknown as string
-      const stdout = await new Promise<string>((resolvePromise, reject) => {
-        execFile(
-          electron,
-          [join(__dirname, 'render-host-harness.cjs'), hostJs, PAGE_DIR],
-          { cwd: ROOT, timeout: 90_000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, ELECTRON_RUN_AS_NODE: '' } },
-          (err, out) => (err && !out.includes('RESULT ') ? reject(err) : resolvePromise(out)),
-        )
-      })
-      const line = stdout.split('\n').find((l) => l.startsWith('RESULT '))
-      if (!line) throw new Error(`no result from the harness:\n${stdout}`)
-      result = JSON.parse(line.slice('RESULT '.length))
+      result = await runHarness<HarnessResult>([join(__dirname, 'render-host-harness.cjs'), hostJs, PAGE_DIR], { cwd: ROOT, timeout: 90_000 })
       if (result.fatal) throw new Error(result.fatal)
       if (process.env.RENDER_HOST_TIMINGS) {
         console.log(JSON.stringify({ timings: result.timings, windowMemoryKb: result.windowMemoryKb }))

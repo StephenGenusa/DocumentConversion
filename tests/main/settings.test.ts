@@ -322,12 +322,15 @@ describe('set', () => {
     const store = open()
     await store.flushed()
     const heard: unknown[] = []
-    const stop = store.onChange(async (s) => heard.push([s.code.color, await onDisk()]))
+    // What the file held when the listener was told, read then; awaited below rather than given a while to finish.
+    const reads: Promise<unknown>[] = []
+    const stop = store.onChange((s) => void reads.push(onDisk().then((d) => heard.push([s.code.color, d]))))
     await store.set({ key: 'code.color', value: false })
-    await new Promise((r) => setTimeout(r, 10))
+    await Promise.all(reads)
     expect(heard).toEqual([[false, { version: 1, code: { color: false } }]])
     stop()
     await store.set({ key: 'code.color', value: true })
+    await Promise.all(reads)
     expect(heard).toHaveLength(1)
   })
 
