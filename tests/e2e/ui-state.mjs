@@ -580,6 +580,68 @@ try {
   })()`)
   console.log(`note  formula in the pane: ${JSON.stringify(mathShown)}`)
   check('the editor draws inline and display TeX as SVG <img>s, the inline one lowered onto the baseline', mathShown.inline && mathShown.display && /^-[0-9.]+ex$/.test(mathShown.align) && mathShown.alt === 'x_{0}^2 + 0' && mathShown.inlineH > mathShown.textH * 0.6 && mathShown.inlineH < mathShown.textH * 2, JSON.stringify(mathShown))
+  // The inline-formula popover stays inside the pane and the window, beside
+  // its formula and never over it, at every edge (lib/place-popover.ts).
+  await js(`(() => {
+    const ed = ${EDITOR}.editor
+    const words = Array.from({ length: 90 }, (_, i) => 'step ' + i + ' <code class="language-math">y_{' + i + '}</code>').join(' ')
+    ed.commands.insertContentAt(0, '<p>' + words + '</p>')
+    document.querySelector('.clip-pane__editor').scrollTop = 0
+  })()`)
+  await sleep(300)
+  /** Open the popover of the formula `pick` chooses among those on screen, and measure it. */
+  const popoverAt = (pick) => js(`(async () => {
+    const ed = ${EDITOR}.editor
+    const pane = document.querySelector('.clip-pane__editor')
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const p = pane.getBoundingClientRect()
+    const bounds = { left: Math.max(0, p.left), top: Math.max(0, p.top), right: Math.min(innerWidth, p.right), bottom: Math.min(innerHeight, p.bottom) }
+    const shown = [...pane.querySelectorAll('.rm:not(.rm--display)')].filter((rm) => { const b = rm.getBoundingClientRect(); return b.top >= bounds.top && b.bottom <= bounds.bottom && b.width > 0 })
+    const rm = (${pick})(shown, bounds)
+    if (!rm) return null
+    let pos = ed.view.posAtDOM(rm, 0)
+    if (ed.state.doc.nodeAt(pos)?.type.name !== 'mathInline') pos -= 1
+    ed.commands.setNodeSelection(pos)
+    ed.view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    for (let i = 0; i < 30 && !(document.querySelector('.rm-pop') && document.querySelector('.rm-pop').style.visibility !== 'hidden'); i++) await frame()
+    await frame()
+    const pop = document.querySelector('.rm-pop')
+    if (!pop) return { open: false }
+    const measure = () => {
+      const a = pop.getBoundingClientRect()
+      const f = rm.querySelector('.rm__face')?.getBoundingClientRect() ?? rm.getBoundingClientRect()
+      return { inside: a.left >= bounds.left - 1 && a.right <= bounds.right + 1 && a.top >= bounds.top - 1 && a.bottom <= bounds.bottom + 1, clear: a.top >= f.bottom - 1 || a.bottom <= f.top + 1, side: pop.classList.contains('rm-pop--above') ? 'above' : 'below', pop: [a.left, a.top, a.right, a.bottom].map(Math.round), face: [f.left, f.top, f.right, f.bottom].map(Math.round) }
+    }
+    const first = measure()
+    // Scrolled a little while open, it follows its formula.
+    pane.scrollTop += 12
+    await frame()
+    const scrolled = measure()
+    pane.scrollTop -= 12
+    await frame()
+    pop.querySelector('input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await frame()
+    return { open: true, ...first, followed: scrolled.inside && Math.abs(scrolled.pop[1] - scrolled.face[3] - (first.pop[1] - first.face[3])) <= 2 || scrolled.side !== first.side, bounds: [bounds.left, bounds.top, bounds.right, bounds.bottom].map(Math.round) }
+  })()`)
+  const rightmost = '(shown) => shown.reduce((a, b) => (b.getBoundingClientRect().right > a.getBoundingClientRect().right ? b : a))'
+  const leftmost = '(shown) => shown.reduce((a, b) => (b.getBoundingClientRect().left < a.getBoundingClientRect().left ? b : a))'
+  const lowest = '(shown) => shown.reduce((a, b) => (b.getBoundingClientRect().bottom > a.getBoundingClientRect().bottom ? b : a))'
+  const atEdges = { right: await popoverAt(rightmost), left: await popoverAt(leftmost), bottom: await popoverAt(lowest) }
+  console.log(`note  formula popover at the pane edges: ${JSON.stringify(atEdges)}`)
+  check(
+    'the formula popover stays inside the pane at its right, left and bottom edges, beside its formula (above it at the bottom), and follows it when the pane scrolls',
+    Object.values(atEdges).every((e) => e?.open && e.inside && e.clear && e.followed) && atEdges.bottom.side === 'above' && atEdges.right.side === 'below',
+    JSON.stringify(atEdges),
+  )
+  // The narrowest window (560 px, its minimum): the popover is no wider than the pane, and still inside it.
+  const wide = await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).getSize()`)
+  await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).setSize(560, ${wide[1]})`)
+  await sleep(400)
+  const narrowPop = { right: await popoverAt(rightmost), bottom: await popoverAt(lowest) }
+  await mainEval(`process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible()).setSize(${wide[0]}, ${wide[1]})`)
+  await sleep(400)
+  console.log(`note  formula popover in a 560 px window: ${JSON.stringify(narrowPop)}`)
+  check('in a narrow window the formula popover still fits inside the pane, beside its formula', Object.values(narrowPop).every((e) => e?.open && e.inside && e.clear), JSON.stringify(narrowPop))
   await startOver()
   const many = join(work, 'many.md')
   writeAt(many, Array.from({ length: 40 }, (_, i) => `Diagram ${i}.\n\n\`\`\`mermaid\nflowchart LR\n  A${i}[Start ${i}] --> B${i}[End ${i}]\n\`\`\``).join('\n\n'))

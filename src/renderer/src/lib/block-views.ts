@@ -5,6 +5,7 @@ import type { Node as PMNode } from '@tiptap/pm/model'
 import { DRAWN_KINDS, type BlockKind } from '../../../core/rendered-blocks'
 import { carryDefinitions } from '../../../core/tex-definitions'
 import { renderClient, type BlockAnswer, type BlockPicture, type BlockRequest, type DrawPriority } from './render-client'
+import { placeBeside } from './place-popover'
 
 /*
  * Diagrams and formulas drawn in the editor (spec B11, B13).
@@ -471,6 +472,9 @@ class InlineView extends DrawnView implements NodeView {
   private pop: HTMLElement | null = null
   private input: HTMLInputElement | null = null
   private popPreview: HTMLElement | null = null
+  /** Puts the open popover back beside the formula (on scroll, resize, a new preview). */
+  private replace: (() => void) | null = null
+  private unplace: (() => void) | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private previewTex = ''
   private fresh = false
@@ -573,22 +577,42 @@ class InlineView extends DrawnView implements NodeView {
     input.addEventListener('blur', () => {
       if (this.pop) this.finish(true, false)
     })
+    // Beside the formula and inside the pane and the window: below it, or
+    // above when there is more room there, shifted in from the pane's edges
+    // (place-popover.ts). Fixed, so the pane's scrolling box never clips it;
+    // placed again as the pane scrolls or the window or preview changes size.
+    pop.style.visibility = 'hidden'
+    const win = this.view.dom.ownerDocument.defaultView
+    let frame = 0
+    const place = (): void => {
+      frame = 0
+      if (this.pop !== pop) return
+      const at = placeBeside(pop, this.face, { align: this.display() ? 'center' : 'start' })
+      pop.classList.toggle('rm-pop--above', at.side === 'above')
+      pop.style.visibility = ''
+    }
+    const later = (): void => {
+      if (!frame && win) frame = win.requestAnimationFrame(place)
+    }
+    const onScroll = (e: Event): void => {
+      if (e.target instanceof Node && pop.contains(e.target)) return
+      later()
+    }
+    const doc = this.view.dom.ownerDocument
+    doc.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    win?.addEventListener('resize', later)
+    this.replace = later
+    this.unplace = () => {
+      if (frame) win?.cancelAnimationFrame(frame)
+      doc.removeEventListener('scroll', onScroll, { capture: true })
+      win?.removeEventListener('resize', later)
+    }
     this.drawPreview()
     requestAnimationFrame(() => {
       if (this.input !== input) return
-      input.focus()
+      place()
+      input.focus({ preventScroll: true })
       input.select()
-      // Keep it inside the pane: shift it left at the right edge, and put it
-      // above the formula when the pane has no room for it below.
-      const pane = (this.view.dom.parentElement ?? this.view.dom).getBoundingClientRect()
-      let box = pop.getBoundingClientRect()
-      if (box.right > pane.right) pop.style.left = `${Math.min(0, pane.right - box.right)}px`
-      if (box.bottom > pane.bottom) {
-        const face = this.dom.getBoundingClientRect()
-        if (face.top - pane.top > box.height + 8) pop.classList.add('rm-pop--above')
-        box = pop.getBoundingClientRect()
-        if (box.bottom > pane.bottom || box.top < pane.top) pop.scrollIntoView({ block: 'nearest' })
-      }
     })
   }
 
@@ -600,6 +624,7 @@ class InlineView extends DrawnView implements NodeView {
     if (!this.canDraw() || !tex.trim()) {
       preview.replaceChildren()
       preview.hidden = true
+      this.replace?.()
       return
     }
     preview.hidden = false
@@ -608,6 +633,7 @@ class InlineView extends DrawnView implements NodeView {
       if (this.popPreview !== preview || this.previewTex !== tex) return
       if ('uri' in a) pictureInto(preview, a, tex, this.display() ? 'display' : 'inline')
       else if ('error' in a) preview.replaceChildren(errorLine(a.error))
+      this.replace?.()
     }
     const hit = renderClient().known(req)
     if (hit) put(hit)
@@ -643,6 +669,9 @@ class InlineView extends DrawnView implements NodeView {
 
   private closePopover(): void {
     clearTimeout(this.timer)
+    this.unplace?.()
+    this.unplace = null
+    this.replace = null
     const pop = this.pop
     this.pop = null
     this.input = null
