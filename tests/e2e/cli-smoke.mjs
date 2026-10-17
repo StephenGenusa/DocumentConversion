@@ -591,7 +591,20 @@ if (existsSync(join(work, 'plan.html')) && !/<img[^>]+src="data:image\/svg\+xml;
   failures++
   console.log('FAIL  plan.html has no SVG drawing')
 }
-run('emf->txt is refused like any drawing', [plan, '--to', 'txt'], { expectCode: 1, expectStderr: 'cannot convert metafile to txt' })
+// A drawing as text is its labels, in reading order (owner, 2026-10-17).
+run('emf->txt gives the labels', [plan, '--to', 'txt', '--out', join(work, 'plan.txt')], { expectCode: 0, expectFiles: [join(work, 'plan.txt')] })
+if (existsSync(join(work, 'plan.txt'))) {
+  const labels = readFileSync(join(work, 'plan.txt'), 'utf8').split(/\n+/).map((l) => l.trim()).filter(Boolean).join('|')
+  if (labels !== 'Fiction|Periodicals|Media|Desk|Entrance') {
+    failures++
+    console.log(`FAIL  plan.txt labels are ${labels}, not the plan's five in reading order`)
+  }
+}
+run('emf->md gives the drawing and its labels', [plan, '--to', 'md', '--out', join(work, 'plan.md')], { expectCode: 0, expectFiles: [join(work, 'plan.md')] })
+if (existsSync(join(work, 'plan.md')) && !/data:image\/svg\+xml;base64,[\s\S]*^[-*]\s+Fiction$/m.test(readFileSync(join(work, 'plan.md'), 'utf8'))) {
+  failures++
+  console.log('FAIL  plan.md lacks the SVG drawing followed by its labels')
+}
 // OCR, page by page: a fax of two pages, each holding words, read in order.
 {
   const { createRequire } = await import('node:module')

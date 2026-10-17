@@ -30,6 +30,7 @@ import { hubFeatures, type RenderBlocks } from './rendered-blocks'
 import { drawBlocks } from './draw-blocks'
 import { rasterizeSvgImages, sanitizeSvgImages } from './svg-images'
 import { targetPictures } from './pictures'
+import { drawingAsText } from './drawing-text'
 import type { GuardedFetchDeps } from './net/guarded-fetch'
 import type { FontFiles } from './metafile'
 
@@ -162,6 +163,8 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
       // already removed. Missing this is invisible to a writer unit test,
       // which calls the writer directly and never crosses this boundary.
       const notesFree = SLIDE_TARGETS.includes(target) ? hub.html : stripSpeakerNotes(hub.html)
+      // An EMF or WMF on its own, as text: its labels in reading order (drawing-text.ts).
+      const labeled = drawingAsText(notesFree, target, deps.fontFiles)
       // Diagrams drawn last, on the html the writer is about to get, so a
       // merged document is drawn once and nothing drawn reaches the hub.
       const drawCtx = {
@@ -174,7 +177,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
         onAdvice: ctx?.onAdvice,
         onProgress: ctx?.onProgress,
       }
-      const drawn = await drawBlocks(notesFree, target, drawCtx)
+      const drawn = await drawBlocks(labeled, target, drawCtx)
       // PNG copies of the document's SVG images for Word and Kindle (spec
       // D10), and for HTML that is to be pasted (FOR_PASTING).
       const rasterized = await rasterizeSvgImages(drawn, target, drawCtx)

@@ -507,6 +507,15 @@ async function main() {
           if (lost.length) throw new Error(`${target} lost the drawing's text: ${lost.join(', ')}`)
           rec.note = `${rec.note ? rec.note + ', ' : ''}drawing's text selectable`
         }
+        if (source === 'metafile' && (target === 'txt' || target === 'md')) {
+          // An EMF or WMF as text is its labels, one a line (txt) or a list item (md), every word of them.
+          const text = out.toString('utf8')
+          const lines = target === 'txt' ? text.split(/\n+/).filter((l) => l.trim()) : [...text.matchAll(/^[-*]\s+(.+)$/gm)].map((m) => m[1])
+          if (lines.length === 0) throw new Error(`${target} has none of the drawing's labels`)
+          const lost = drawingWords.filter((w) => !lines.some((l) => l.includes(w)))
+          if (lost.length) throw new Error(`${target} lost the drawing's text: ${lost.join(', ')}`)
+          rec.note = `${rec.note ? rec.note + ', ' : ''}${lines.length} labels`
+        }
         if ((tiffImages > 0 || vectorImages > 0) && target === 'docx') {
           // Word keeps TIFF (one a page), EMF and WMF as they are, each part's type declared.
           const zip = await JSZip.loadAsync(out)

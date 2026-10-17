@@ -25,9 +25,12 @@ function targetsFor(input: TargetValidityInput): TargetFormat[] {
   // An SVG is a picture the same way (spec D10), and so is an EMF or WMF
   // drawing. OCR is never offered for either (its text is in the file, not
   // in pixels), so an imageMode carried on its item changes nothing.
-  if (input.format === 'svg' || input.format === 'metafile' || (input.format === 'image' && input.imageMode !== 'ocr')) {
+  if (input.format === 'svg' || (input.format === 'image' && input.imageMode !== 'ocr')) {
     return ['docx', 'pdf', 'html', 'epub', 'revealjs', 'azw3', 'azw4']
   }
+  // An EMF or WMF also as its words (owner, 2026-10-17): its text is drawn
+  // as text, so txt and Markdown give its labels (drawing-text.ts).
+  if (input.format === 'metafile') return ['docx', 'pdf', 'html', 'epub', 'revealjs', 'azw3', 'azw4', 'txt', 'md']
   return TARGET_FORMATS
 }
 

@@ -1327,7 +1327,7 @@ export class EmfPlusPlayer implements PlusHook {
       const markup = `<text transform="${matrixAttr(m)}"${place}${attrs}>${esc(line)}</text>`
       const left = anchor === 'middle' ? ax - width / 2 : anchor === 'end' ? ax - width : ax
       const corners = [apply(m, left, by - em), apply(m, left + width, by + em * 0.3)]
-      this.out.add(markup, this.state.clip, { kind: 'text', bounds: corners.reduce<Rect | null>((u, [px, py]) => union(u, { l: px, t: py, r: px, b: py }), null) })
+      this.out.add(markup, this.state.clip, { kind: 'text', text: line, bounds: corners.reduce<Rect | null>((u, [px, py]) => union(u, { l: px, t: py, r: px, b: py }), null) })
     })
   }
 
@@ -1394,7 +1394,7 @@ export class EmfPlusPlayer implements PlusHook {
       const lastX = Number(xs[xs.length - 1] ?? x0)
       corners.push(apply(m, lastX + f.em, y0))
     }
-    this.out.add(markup, this.state.clip, { kind: 'text', bounds: corners.reduce<Rect | null>((u, [px, py]) => union(u, { l: px, t: py, r: px, b: py }), null) })
+    this.out.add(markup, this.state.clip, { kind: 'text', text: content, bounds: corners.reduce<Rect | null>((u, [px, py]) => union(u, { l: px, t: py, r: px, b: py }), null) })
   }
 }
 

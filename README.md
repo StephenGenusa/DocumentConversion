@@ -229,7 +229,9 @@ picture; read as a picture."). Text that only starts like one stays text.
 - **Drawings.** `.svg`, and Word's vector pictures `.emf` and `.wmf`
   (`metafile`), are kept as drawings where the output allows it: SVG, its text
   still text (selectable in a PDF), otherwise PNG. Word keeps an EMF or WMF as
-  it is. A drawing's text is its description.
+  it is. A drawing's text is its description. An EMF or WMF also converts to
+  plain text, as its labels in reading order (top to bottom, left to right),
+  one a line, and to Markdown, as the drawing followed by a list of its labels.
 - **Source code.** More than 80 extensions, and names such as `Dockerfile` and
   `Makefile`, listed in `EXT_TO_LANG` in `src/core/code-langs.ts`, syntax
   highlighted in the output.

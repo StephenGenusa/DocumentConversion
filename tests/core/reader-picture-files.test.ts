@@ -203,8 +203,9 @@ describe('an EMF or WMF file', () => {
     expect(bare.html).toMatch(/width="\d+" height="\d+"/)
   })
 
-  it('goes where an SVG goes: no Embed/OCR choice, no text or table targets', () => {
-    expect(allowedTargets([{ format: 'metafile', imageMode: 'ocr' }])).toEqual(allowedTargets([{ format: 'svg' }]))
+  it('goes where an SVG goes, and to txt and Markdown as its labels: no Embed/OCR choice, no table targets', () => {
+    // Owner, 2026-10-17: txt and md give the drawing's labels (drawing-text.ts).
+    expect(new Set(allowedTargets([{ format: 'metafile', imageMode: 'ocr' }]))).toEqual(new Set([...allowedTargets([{ format: 'svg' }]), 'txt', 'md']))
   })
 
   it('is read as the picture it is under another picture name', async () => {

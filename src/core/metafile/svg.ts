@@ -290,6 +290,8 @@ export interface Drawn {
   kind: 'shape' | 'text' | 'image'
   bounds: Rect | null
   clip: Clip
+  /** Text: the characters drawn (a run, or a line of a string laid out in a box). */
+  text?: string
   /** An image: the bitmap, the transform from its pixels to device space, and whether it is drawn as it is (no blending, fully opaque). */
   picture?: Picture
   matrix?: Matrix

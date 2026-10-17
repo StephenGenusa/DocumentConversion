@@ -7,6 +7,7 @@ import type { GlyphFonts } from './fonts'
 import { Gdi } from './gdi'
 import { area, axisAligned, intersect, SvgOut, TooLarge, type ImageData, type Rect } from './svg'
 import { embeddedEmf, META, readWmfHeader, WmfPlayer, wmfRecords } from './wmf'
+import type { DrawingLabel } from './labels'
 
 /*
  * EMF and WMF pictures (Word's vector pictures) drawn as SVG, for every
@@ -40,6 +41,7 @@ import { embeddedEmf, META, readWmfHeader, WmfPlayer, wmfRecords } from './wmf'
  */
 
 export { GlyphFonts, type FontFiles } from './fonts'
+export { readingOrder, type DrawingLabel } from './labels'
 
 export interface MetafileDrawing {
   /** The picture as SVG (not yet sanitized). */
@@ -51,6 +53,8 @@ export interface MetafileDrawing {
   bitmap?: Picture
   /** What the file asks for that is not drawn, once each. */
   lost: string[]
+  /** Its text, each run where it is drawn (device space, as the viewBox), in drawing order: see labels.ts. */
+  labels: DrawingLabel[]
 }
 
 export type MetafileResult = MetafileDrawing | { error: string }
@@ -129,6 +133,11 @@ function singleBitmap(out: SvgOut, vb: Rect): Picture | null {
   return img.picture
 }
 
+/** The text a drawing drew, with where. */
+function labelsOf(out: SvgOut): DrawingLabel[] {
+  return out.drawn.flatMap((d) => (d.kind === 'text' && d.text?.trim() && d.bounds ? [{ text: d.text, bounds: d.bounds }] : []))
+}
+
 /** Why a finished drawing is no good, or null when it is. */
 function broken(out: SvgOut, vb: Rect, played: number, failed: number): string | null {
   if (out.empty) return 'it draws nothing this app can show'
@@ -194,7 +203,7 @@ function drawEmf(file: View, bytes: Buffer, opts: Options): MetafileResult {
     const why = broken(r.out, viewBox, r.played, r.failed)
     if (why) return { error: why }
     const bitmap = singleBitmap(r.out, viewBox) ?? undefined
-    return { svg: r.out.finish(viewBox, width, height), width, height, bitmap, lost: [...r.lost] }
+    return { svg: r.out.finish(viewBox, width, height), width, height, bitmap, lost: [...r.lost], labels: labelsOf(r.out) }
   }
 
   const cssWidth = size?.width ?? (vb ? ((vb.r - vb.l) / mx) * (96 / 25.4) : 0)
@@ -272,5 +281,5 @@ function drawWmf(file: View, bytes: Buffer, header: NonNullable<ReturnType<typeo
   const why = broken(out, viewBox, player.played, player.failed)
   if (why) return { error: why }
   const bitmap = singleBitmap(out, viewBox) ?? undefined
-  return { svg: out.finish(viewBox, width, height), width, height, bitmap, lost: [...gdi.lost] }
+  return { svg: out.finish(viewBox, width, height), width, height, bitmap, lost: [...gdi.lost], labels: labelsOf(out) }
 }

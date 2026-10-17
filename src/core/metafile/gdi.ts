@@ -1485,7 +1485,7 @@ export class Gdi {
       ` fill="${hex(r.rgb)}" xml:space="preserve"${SvgOut_blend(r.blend)}>${esc(content)}</text>`
     const corners = [apply(t, left, baseY - ASCENT * em), apply(t, left + total, baseY - ASCENT * em), apply(t, left, baseY + DESCENT * em), apply(t, left + total, baseY + DESCENT * em)]
     const bounds = corners.reduce<Rect | null>((acc, [px, py]) => union(acc, { l: px, t: py, r: px, b: py }), null)
-    this.out.add(markup, clip, { kind: 'text', bounds })
+    this.out.add(markup, clip, { kind: 'text', bounds, text: content })
     if (dc.textAlign & TA_UPDATECP && hasDx) {
       // The current position moves on by the text's advance, along its baseline.
       this.set('cur', [x + u[0] * total, y + u[1] * total])
