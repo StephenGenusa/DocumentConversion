@@ -20,7 +20,7 @@ export const PRODUCT_NAME = 'Document Converter'
  */
 export const PACKAGE_NAME = 'docconversion'
 
-/** "Document Converter 1.3.0": the version comes from package.json, as `--version` prints it. */
+/** "Document Converter 1.4.0": the version comes from package.json, as `--version` prints it. */
 export function appTitle(): string {
   return `${PRODUCT_NAME} ${app.getVersion()}`
 }
