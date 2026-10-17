@@ -37,12 +37,15 @@ const appArgs = [`--inspect=${MAIN_INSPECT_PORT}`, ROOT, `--remote-debugging-por
 const headless = process.platform === 'linux' && spawnSync('which', ['xvfb-run']).status === 0
 // Its own process group: xvfb-run is a shell script, and signalling only it
 // leaves Electron and the X server behind.
-const app = headless
-  ? spawn('xvfb-run', ['-a', electron, ...appArgs], { stdio: 'ignore', detached: true })
-  : spawn(electron, appArgs, { stdio: 'ignore' })
+const spawnApp = () =>
+  headless
+    ? spawn('xvfb-run', ['-a', electron, ...appArgs], { stdio: 'ignore', detached: true })
+    : spawn(electron, appArgs, { stdio: 'ignore' })
+let app = spawnApp()
 
 let failures = 0
-async function finish(code) {
+/** Quit the app and wait until it, and every process it started, has gone. */
+async function stopApp() {
   const exited = app.exitCode !== null ? Promise.resolve() : new Promise((r) => app.once('exit', r))
   try {
     if (headless) process.kill(-app.pid, 'SIGTERM')
@@ -64,6 +67,18 @@ async function finish(code) {
     }
     await sleep(100)
   }
+  // And until nothing answers on its ports, so a restart can have them.
+  for (let i = 0; i < 50; i++) {
+    try {
+      await fetch(`http://127.0.0.1:${PORT}/json`)
+      await sleep(100)
+    } catch {
+      break
+    }
+  }
+}
+async function finish(code) {
+  await stopApp()
   // Never let tidying up turn a pass into a failure.
   for (const dir of [work, profile]) {
     try {
@@ -77,34 +92,48 @@ async function finish(code) {
 const watchdog = setTimeout(() => {
   console.log('FAIL  timed out')
   void finish(1)
-}, 180_000)
+}, 240_000)
 
 /* ---------------------------- a minimal CDP client ---------------------------- */
 
-let page
-for (let i = 0; i < 80 && !page; i++) {
-  await sleep(250)
-  try {
-    page = (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find((t) => t.type === 'page')
-  } catch {
-    /* not listening yet */
-  }
-}
-if (!page) {
-  console.log('FAIL  the app did not start (run `npm run build` first)')
-  await finish(1)
-}
-const ws = new WebSocket(page.webSocketDebuggerUrl)
-await new Promise((r) => (ws.onopen = r))
+let ws
 let seq = 0
 const pending = new Map()
-ws.onmessage = (m) => {
-  const d = JSON.parse(m.data)
-  if (d.id && pending.has(d.id)) {
-    pending.get(d.id)(d)
-    pending.delete(d.id)
+/** Find the app's page and talk to it. Run again after a restart. */
+async function connect() {
+  let page
+  for (let i = 0; i < 80 && !page; i++) {
+    await sleep(250)
+    try {
+      page = (await (await fetch(`http://127.0.0.1:${PORT}/json`)).json()).find((t) => t.type === 'page')
+    } catch {
+      /* not listening yet */
+    }
   }
+  if (!page) {
+    console.log('FAIL  the app did not start (run `npm run build` first)')
+    await finish(1)
+  }
+  ws = new WebSocket(page.webSocketDebuggerUrl)
+  await new Promise((r) => (ws.onopen = r))
+  ws.onmessage = (m) => {
+    const d = JSON.parse(m.data)
+    if (d.id && pending.has(d.id)) {
+      pending.get(d.id)(d)
+      pending.delete(d.id)
+    }
+  }
+  // The checks run on a real desktop, where another window may hold the
+  // keyboard focus; the page then gets no focus events (the language picker
+  // fills its list on focus) and the checks depended on what else was open.
+  // Chromium's focus emulation has the page behave as the focused window.
+  await new Promise((r) => {
+    const id = ++seq
+    pending.set(id, r)
+    ws.send(JSON.stringify({ id, method: 'Emulation.setFocusEmulationEnabled', params: { enabled: true } }))
+  })
 }
+await connect()
 async function js(expression) {
   const id = ++seq
   const res = await new Promise((r) => {
@@ -121,16 +150,6 @@ async function waitFor(expression, what) {
   }
   throw new Error(`never happened: ${what}`)
 }
-// The checks run on a real desktop, where another window may hold the
-// keyboard focus; the page then gets no focus events (the language picker
-// fills its list on focus) and the checks depended on what else was open.
-// Chromium's focus emulation has the page behave as the focused window.
-await new Promise((r) => {
-  const id = ++seq
-  pending.set(id, r)
-  ws.send(JSON.stringify({ id, method: 'Emulation.setFocusEmulationEnabled', params: { enabled: true } }))
-})
-
 /** A one-off DevTools-protocol session on any target (a page, or the main process). */
 async function session(wsUrl) {
   const sock = new WebSocket(wsUrl)
@@ -841,7 +860,159 @@ try {
     JSON.stringify(pasted),
   )
   const reset = await js(`window.api.resetSettings()`)
-  check('Reset all puts the defaults back', reset?.ok === true && reset.settings.rendered.format === 'svg', JSON.stringify(reset))
+  check('resetting through the bridge puts the defaults back', reset?.ok === true && reset.settings.rendered.format === 'svg', JSON.stringify(reset))
+
+  /* ------------- Settings, through the dialog and across a restart ------------- */
+  // Settings spec 8.1. The screen still holds diagram-notes.md, going to PDF.
+  const saved = () => JSON.parse(readFileSync(settingsFile, 'utf8'))
+  const inDialog = (expression) => js(`(() => { const d = document.querySelector('dialog.settings[open]'); return ${expression} })()`)
+  const openTab = async (name) => {
+    await js(`[...document.querySelectorAll('dialog.settings [role=tab]')].find((t) => t.textContent === ${JSON.stringify(name)}).click()`)
+    await waitFor(`document.querySelector('dialog.settings [role=tab][aria-selected=true]')?.textContent === ${JSON.stringify(name)}`, `the ${name} section`)
+  }
+  /** Set a dialog select (by its setting) or click a radio (by its label). */
+  const setInDialog = async (key, value) => {
+    await waitFor(`!!document.querySelector('dialog.settings select[data-setting=${JSON.stringify(key)}]')`, `the ${key} control`)
+    await js(`(() => { const s=document.querySelector('dialog.settings select[data-setting=${JSON.stringify(key)}]'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change',{bubbles:true})) })()`)
+    await waitFor(`document.querySelector('.settings__status')?.textContent === 'Saved'`, `${key} to be saved`)
+  }
+  const clickRadio = async (label) => {
+    // The dialog draws its controls once it has the settings.
+    await waitFor(`[...document.querySelectorAll('dialog.settings label')].some((l) => l.textContent.trim() === ${JSON.stringify(label)})`, `the "${label}" choice`)
+    await js(`[...document.querySelectorAll('dialog.settings label')].find((l) => l.textContent.trim() === ${JSON.stringify(label)}).querySelector('input').click()`)
+    await waitFor(`document.querySelector('.settings__status')?.textContent === 'Saved'`, `${label} to be saved`)
+  }
+  const closeDialog = async () => {
+    await pressEscape()
+    await waitFor(`!document.querySelector('dialog.settings')`, 'the Settings dialog to close')
+  }
+  const resizeTo = (w, h) =>
+    mainEval(
+      `(() => { const w = process.mainModule.require('electron').BrowserWindow.getAllWindows().find((w) => w.isVisible() && w.getTitle().startsWith('Document Converter')); w.setContentSize(${w}, ${h}); return w.getContentSize() })()`,
+    )
+  const openFromGear = async () => {
+    await js(`document.querySelector('button[aria-label="Settings"]').focus()`)
+    await press('Settings')
+    await waitFor(dialogOpen, 'the Settings dialog to open from the gear')
+  }
+
+  // Escape gives the focus back to the conversion screen's gear, too.
+  await openFromGear()
+  await closeDialog()
+  check('Escape gives the focus back to the gear', await js(`document.activeElement?.getAttribute('aria-label') === 'Settings'`), await js(`document.activeElement?.outerHTML.slice(0, 120)`))
+
+  // At the window's smallest, 560×480: the sections are a row of tabs and
+  // nothing scrolls sideways, in any section.
+  const narrowSize = await resizeTo(560, 480)
+  await waitFor(`innerWidth === 560`, 'the window to be 560 wide')
+  await openFromGear()
+  const narrow = []
+  for (const name of ['Pictures', 'Web', 'Formulas & diagrams', 'Code', 'PDF', 'Reading', 'OCR']) {
+    await openTab(name)
+    narrow.push(
+      await inDialog(
+        `(() => { const p = d.querySelector('[role=tabpanel]'); const tabs = [...d.querySelectorAll('[role=tab]')]; const box = d.getBoundingClientRect(); return { name: ${JSON.stringify(name)}, orientation: d.querySelector('[role=tablist]').getAttribute('aria-orientation'), tabsShown: tabs.every((t) => { const r = t.getBoundingClientRect(); return r.width > 0 && r.left >= box.left && r.right <= box.right }), page: document.documentElement.scrollWidth <= document.documentElement.clientWidth, panel: p.scrollWidth <= p.clientWidth } })()`,
+      ),
+    )
+  }
+  check(
+    'at 560×480 the sections are tabs and nothing scrolls sideways',
+    JSON.stringify(narrowSize) === '[560,480]' && narrow.every((n) => n.orientation === 'horizontal' && n.tabsShown && n.page && n.panel),
+    JSON.stringify({ narrowSize, narrow }),
+  )
+  await shot('settings-560x480')
+  await closeDialog()
+  await resizeTo(1040, 700)
+  await waitFor(`innerWidth === 1040`, 'the window to be 1040 wide again')
+
+  // A change in the dialog is saved at once; the toolbar, left alone, follows.
+  await openFromGear()
+  await clickRadio('PNG (exact)')
+  await openTab('PDF')
+  await setInDialog('pdf.pageSize', 'Legal')
+  check('the dialog saves each change to the file', saved().pictures?.format === 'png' && saved().pdf?.pageSize === 'Legal', JSON.stringify(saved()))
+  await closeDialog()
+  check('the toolbar follows a changed setting it was left at', (await choice('Page'))?.value === 'Legal', JSON.stringify(await choice('Page')))
+  // A toolbar change is this session's: not saved, and kept while its control is hidden.
+  await choose('Page', 'Tabloid')
+  check('a toolbar change is not saved', saved().pdf?.pageSize === 'Legal', JSON.stringify(saved()))
+  await click('Word')
+  check('the page size is not offered for Word', (await choice('Page')) === null, 'shown for Word')
+  await click('PDF')
+  check('a hidden toolbar control keeps its session value', (await choice('Page'))?.value === 'Tabloid', JSON.stringify(await choice('Page')))
+
+  // Settings → OCR. A downloaded pack stands in as an empty file in this run's
+  // profile (never the real one): Remove only deletes it, nothing reads it.
+  const pack = join(profile, 'ocr', 'deu.traineddata')
+  mkdirSync(dirname(pack), { recursive: true })
+  writeFileSync(pack, '')
+  await openFromGear()
+  await openTab('OCR')
+  await waitFor(`!!document.querySelector('dialog.settings [data-language="deu"]')`, 'German among the installed languages')
+  await setInDialog('ocr.language', 'deu')
+  const packs = await inDialog(`[...d.querySelectorAll('.ocr-packs__item')].map((i) => ({ code: i.dataset.language, text: i.textContent, remove: !!i.querySelector('button') }))`)
+  check(
+    'OCR lists the installed languages; English is included and has no Remove',
+    // German's size is the pack's recorded one, not the stand-in's.
+    packs?.length === 2 &&
+      JSON.stringify(packs[0]) === JSON.stringify({ code: 'eng', text: 'EnglishIncluded', remove: false }) &&
+      packs[1].code === 'deu' &&
+      /^German[\d.]+ MBRemove$/.test(packs[1].text) &&
+      packs[1].remove,
+    JSON.stringify(packs),
+  )
+  await js(`document.querySelector('dialog.settings button[aria-label="Remove German"]').click()`)
+  await waitFor(`!document.querySelector('dialog.settings [data-language="deu"]')`, 'German to be removed')
+  const removed = {
+    status: await js(`document.querySelector('.settings__status').textContent`),
+    shown: await js(`document.querySelector('dialog.settings select[data-setting="ocr.language"]').value`),
+    inForce: (await js(`window.api.getSettings()`)).ocr.language,
+    file: saved().ocr?.language,
+    onDisk: existsSync(pack),
+  }
+  check(
+    'Remove deletes the pack and the default falls back to English, saying so',
+    removed.status === 'German is removed. The default language is now English.' &&
+      removed.shown === 'eng' &&
+      removed.inForce === 'eng' &&
+      !removed.onDisk,
+    JSON.stringify(removed),
+  )
+  check('the file keeps German, for when it is installed again', removed.file === 'deu', JSON.stringify(saved()))
+  await closeDialog()
+
+  // A restart: the app quits and starts again on the same profile.
+  await stopApp()
+  app = spawnApp()
+  await connect()
+  await waitFor(`!!document.querySelector('.dropzone')`, 'the app to load after a restart')
+  await click('Settings')
+  await waitFor(dialogOpen, 'the Settings dialog to open after a restart')
+  await waitFor(`!!document.querySelector('dialog.settings input[type=radio]')`, 'the dialog to show the settings')
+  const pictures = await inDialog(`d.querySelector('input[type=radio]:checked')?.value`)
+  await openTab('PDF')
+  const pageSetting = await inDialog(`d.querySelector('select[data-setting="pdf.pageSize"]').value`)
+  check('a change in the dialog survives a restart', pictures === 'png' && pageSetting === 'Legal', JSON.stringify({ pictures, pageSetting }))
+  await closeDialog()
+  await dropFile(join(ROOT, 'tests', 'corpus', 'diagram-notes.md'), 'diagram-notes.md')
+  await click('PDF')
+  check('after a restart the toolbar starts from the setting, not the last session', (await choice('Page'))?.value === 'Legal', JSON.stringify(await choice('Page')))
+
+  // Reset all, in the dialog, after its confirm: the file holds no choices,
+  // the dialog shows the defaults and the toolbar, left alone, follows.
+  await openFromGear()
+  await click('Reset all settings…')
+  await click('Reset all')
+  await waitFor(`document.querySelector('.settings__status')?.textContent === 'Every setting is back to its default'`, 'Reset all')
+  const afterReset = saved()
+  const shownAfter = await inDialog(`d.querySelector('input[type=radio]:checked')?.value`)
+  check(
+    'Reset all puts every setting back to its default',
+    JSON.stringify(afterReset) === '{"version":1}' && shownAfter === 'jpeg',
+    JSON.stringify({ afterReset, shownAfter }),
+  )
+  await closeDialog()
+  check('the toolbar follows Reset all', (await choice('Page'))?.value === 'Letter', JSON.stringify(await choice('Page')))
 } catch (err) {
   failures++
   console.log(`FAIL  ${err.message}`)

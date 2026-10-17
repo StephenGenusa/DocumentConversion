@@ -31,6 +31,7 @@ locally, and the code that does it is in this repository.
 - [What it is good at](#what-it-is-good-at)
 - [What it deliberately does not do](#what-it-deliberately-does-not-do)
 - [Batch and merge](#batch-and-merge)
+- [Settings](#settings)
 - [Command line](#command-line)
 - [Development](#development)
 - [Project layout](#project-layout)
@@ -238,8 +239,9 @@ default** and applies to:
 
 Opening a document that refers to remote images therefore contacts the servers
 that host them, which tells those servers your IP address and that the
-document was opened. On the command line, `--no-fetch` turns this off and
-`--no-local-network` refuses intranet addresses (see [Command line](#command-line)).
+document was opened. **Settings → Web** turns this off, or refuses intranet
+addresses (see [Settings](#settings)); on the command line `--no-fetch` and
+`--no-local-network` do the same (see [Command line](#command-line)).
 Two exceptions are built in:
 
 - **Email and calendar invitations** (`.eml`, `.msg`, `.mbox`, `.ics`) never
@@ -250,9 +252,10 @@ Two exceptions are built in:
 
 Every download goes through the same checks as *From URL*:
 
-- Only `http` and `https`. Pictures on your intranet are fetched: private
-  addresses (10.x, 172.16–31.x, 192.168.x, IPv6 `fc00::/7`) and single-word
-  host names such as `http://intranet/logo.png`. Each redirect hop is checked,
+- Only `http` and `https`. Pictures on your intranet are fetched, unless
+  Settings → Web says not to: private addresses (10.x, 172.16–31.x, 192.168.x,
+  IPv6 `fc00::/7`) and single-word host names such as
+  `http://intranet/logo.png`. Each redirect hop is checked,
   and this machine (`localhost`, 127.x, `::1`), link-local addresses
   (169.254.x, where cloud metadata services answer, and `fe80::`), and
   multicast and reserved addresses are refused, so a document cannot make the
@@ -398,6 +401,50 @@ when you add them, so a file you changed in the meantime converts as it is now.
 
 The csv, json and xlsx outputs are excluded from merge, since they produce one
 file per table and are per-file work by definition.
+
+## Settings
+
+Settings holds the defaults for choices most people make once. Open it with
+**File → Settings…** (Ctrl+,) on Windows and Linux, or the app menu's
+**Settings…** (Cmd+,) on macOS; the start screen also has a *Settings* link and
+the conversion screen a gear button. A change is saved as soon as you make it
+and applies from the next conversion; there is no OK or Cancel. Every setting
+says which outputs it affects.
+
+| Section | Setting | Default | What it does |
+| --- | --- | --- | --- |
+| Pictures | Pictures the output can't hold | JPG | A picture the output can't hold as it is (a TIFF in a PDF, a WebP in a Kindle book) is converted to JPG, much smaller for photographs, or PNG, which keeps every pixel. Pictures with see-through parts always stay PNG; drawings (EMF, WMF, SVG) stay SVG where the output allows it, otherwise PNG |
+| Web | Fetch pictures from the web | on | Off, web pictures in documents, pastes and web pages are not downloaded; each becomes its description, and the result says how many. A web page opened from an address is still fetched. Email and calendar never load web pictures, whatever this says |
+| Web | Allow pictures from your local network | on | Off, intranet addresses are refused too (pictures, and web pages opened from an address). Shown only while fetching is on |
+| Formulas & diagrams | Draw diagrams and formulas as | Sharp (SVG) | Or Image (PNG). Word and Kindle (AZW3) always get images |
+| Code | Color code by language | on | Off, code blocks are written plain black, for example for printing. The editor's colors stay either way |
+| PDF | Page size; zoom; header and footer | Letter; 90%; off | What a new PDF starts with. On first run, unless the system's region uses Letter paper (US, CA, MX or PH), the page size is saved as A4 |
+| Reading | Transcripts: show times | on | Subtitle and transcript paragraphs start with their time |
+| Reading | SQLite: include view results | off | Adds the rows each view returns; views are always listed in the schema |
+| OCR | Default language | English | The language OCR reads in. One that isn't installed is downloaded first, after showing its size |
+| OCR | Installed languages | | Each downloaded language with its size and *Remove*. English is included and can't be removed. If you remove the default language, English is used until you install it again |
+
+**The conversion screen is for this session.** Its page size, zoom, header and
+footer, diagrams, OCR language and reading choices start from Settings each
+time the app starts. A change made there lasts until you quit and is never
+saved; Settings is the one place defaults change. A screen value you have not
+touched follows a change made in Settings at once.
+
+*Reset this section* and *Reset all settings…* (with a confirm) put the
+defaults back. Neither removes a downloaded OCR language.
+
+The settings are saved in `settings.json` in the app's data folder,
+`<appData>/docconversion`: `~/.config/docconversion` on Linux,
+`%APPDATA%\docconversion` on Windows, `~/Library/Application
+Support/docconversion` on macOS. It is the same folder for an installed copy
+and for `npm run dev`, and downloaded OCR languages are kept beside it, in
+`ocr/`. The file is JSON and holds only what differs from the defaults. If it
+can't be read, it is renamed to `settings.json.bad-<time>`, the defaults are
+used, and the window says so.
+
+The command line does not read these settings unless asked:
+`--settings app` uses this file, and `--settings <file>` any file in the same
+format (see [Command line](#command-line)). Every setting also has a flag.
 
 ## Command line
 
