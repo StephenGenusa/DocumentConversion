@@ -5,6 +5,7 @@ import JSZip from 'jszip'
 import * as XLSX from 'xlsx'
 import { readXlsx } from '../../src/core/readers/xlsx'
 import { extractTables } from '../../src/core/writers/csv'
+import { odfCellMarked, odfCellMarkedSlow, parseOdfStyles, withOdfStyles } from '../../src/core/readers/odf-common'
 
 /*
  * OpenDocument spreadsheets are read by SheetJS, which keeps a cell's text and
@@ -255,5 +256,24 @@ describe('stock-formatting.ods (tests/corpus)', () => {
     expect(html).toContain('A<sub>5</sub>')
     expect(html).toContain('<td colspan="2"><strong>Seasonal stock</strong></td><td><em>STATIONERY</em></td>')
     expect(html).toContain('<td><s>Struck items are withdrawn from the catalogue.</s></td>')
+  })
+})
+
+describe('a cell that is one plain paragraph', () => {
+  it('is marked as the full walk marks it', () => {
+    const styles = parseOdfStyles('')
+    for (const text of ['Name 1', '', '  lead and trail  ', 'two\n lines\t here', ' wide ', 'x']) {
+      for (const base of [0, 1, 5, 63]) {
+        const inner = `<text:p>${text}</text:p>`
+        expect(withOdfStyles(styles, () => odfCellMarked(inner, base)), JSON.stringify([text, base])).toBe(
+          withOdfStyles(styles, () => odfCellMarkedSlow(inner, base)),
+        )
+      }
+    }
+  })
+
+  it('reads in a package opened once, formatting and all', async () => {
+    const html = await read(table('One', row(cell(p('Bold here'), ' table:style-name="ceB"'), cell(p('plain')))))
+    expect(html).toContain('<td><strong>Bold here</strong></td><td>plain</td>')
   })
 })

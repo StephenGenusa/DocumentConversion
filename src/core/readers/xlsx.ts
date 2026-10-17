@@ -79,14 +79,41 @@ function alignMerges(raw: CellMerge[], origin: { r: number; c: number }, height:
   return out
 }
 
+/** SheetJS's reader of an opened zip package: what XLSX.read runs on one, exported but not typed. */
+const parseZip = (XLSX as unknown as { parse_zip: (zip: unknown, opts: XLSX.ParsingOptions) => XLSX.WorkBook }).parse_zip
+
+const ODS_MIMETYPE = 'mimetypeapplication/vnd.oasis.opendocument.spreadsheet'
+
 /**
- * An .ods file's cell formatting, which SheetJS does not keep (ods-format.ts).
- * The package is opened a second time, as SheetJS hands back no part of it,
- * with SheetJS's own zip reader: it is several times quicker than JSZip at
- * this, which matters on a 50,000-row sheet.
+ * An OpenDocument spreadsheet, by the stored `mimetype` entry ODF puts
+ * first in the package: the name at byte 30 of the first local header, and
+ * its content right after.
  */
-function odsFormatting(bytes: Buffer): OdsFormatting | null {
+function isOdsPackage(bytes: Buffer): boolean {
+  if (bytes.length < 30 + ODS_MIMETYPE.length || bytes.readUInt32LE(0) !== 0x04034b50) return false
+  if (bytes.readUInt16LE(8) !== 0 || bytes.readUInt16LE(26) !== 8 || bytes.readUInt16LE(28) !== 0) return false
+  return bytes.toString('latin1', 30, 30 + ODS_MIMETYPE.length) === ODS_MIMETYPE
+}
+
+/**
+ * The workbook, and for an .ods its cell formatting, which SheetJS does not
+ * keep (ods-format.ts). An .ods package is opened once, with SheetJS's own
+ * zip reader (several times quicker than JSZip at this, which matters on a
+ * 50,000-row sheet), and handed to SheetJS opened, as XLSX.read would hand
+ * it on; its content.xml is read for the formatting from the same opening.
+ */
+function openWorkbook(bytes: Buffer): { wb: XLSX.WorkBook; formatting: OdsFormatting | null } {
+  if (!isOdsPackage(bytes)) {
+    // raw:false yields formatted strings — formulas export their computed values.
+    const wb = XLSX.read(bytes, { type: 'buffer' })
+    return { wb, formatting: wb.bookType === 'ods' ? odsFormatting(XLSX.CFB.read(bytes, { type: 'buffer' })) : null }
+  }
   const zip = XLSX.CFB.read(bytes, { type: 'buffer' })
+  const wb = parseZip(zip, { type: 'buffer' })
+  return { wb, formatting: wb.bookType === 'ods' ? odsFormatting(zip) : null }
+}
+
+function odsFormatting(zip: unknown): OdsFormatting | null {
   const part = (name: string): string => {
     const content = XLSX.CFB.find(zip, name)?.content
     return content ? Buffer.from(content as Uint8Array).toString('utf8') : ''
@@ -121,9 +148,7 @@ function richCells(format: Map<string, string>, rows: string[][], origin: { r: n
 }
 
 function buildDocument(src: SourceInput): HubDocument {
-  // raw:false yields formatted strings — formulas export their computed values.
-  const wb = XLSX.read(src.bytes, { type: 'buffer' })
-  const formatting = wb.bookType === 'ods' ? odsFormatting(src.bytes) : null
+  const { wb, formatting } = openWorkbook(src.bytes)
   const sections: string[] = []
   for (const [index, name] of wb.SheetNames.entries()) {
     const ws = wb.Sheets[name]

@@ -495,7 +495,22 @@ export function odfFormattingTextStyles(styles: OdfStyles): Set<string> {
  */
 const PARAGRAPH_OPEN = /<text:[ph][\s>/]/g
 
+/** A cell that is one plain paragraph: no style of its own, no element or entity in its text. */
+const PLAIN_PARAGRAPH = /^<text:p>([^<&]*)<\/text:p>$/
+
 export function odfCellMarked(cellInner: string, base: number): string {
+  // The commonest formatted cell, a bold one with plain text: what the walk
+  // below makes of it, without the walk (ods-inline-format.test.ts checks the two agree).
+  const plain = PLAIN_PARAGRAPH.exec(cellInner)
+  if (plain) {
+    const m = mark(base)
+    return `${m}${m}${plain[1].replace(/\s+/g, ' ').trim()}${m}${m}`
+  }
+  return odfCellMarkedSlow(cellInner, base)
+}
+
+/** odfCellMarked without its shortcut: exported for the test that the two agree. */
+export function odfCellMarkedSlow(cellInner: string, base: number): string {
   const paragraphs: string[] = []
   // The usual cell is one paragraph and nothing else, and needs no element walk.
   if (!cellInner.includes('<office:annotation') && cellInner.match(PARAGRAPH_OPEN)?.length === 1) {

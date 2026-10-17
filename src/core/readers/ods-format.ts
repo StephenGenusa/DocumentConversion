@@ -30,6 +30,9 @@ import {
 /** Per sheet, in workbook order: `"row,col"` (absolute, from A1) → marked text. */
 export type OdsFormatting = Map<string, string>[]
 
+const END_CELL = '</table:table-cell>'
+const END_COVERED = '</table:covered-table-cell>'
+
 /** The start of each tag the walk counts; the rest of the tag is found by indexOf, which is quicker on a big sheet. */
 const TAG = /<(\/?)(table:table|table:table-column|table:table-row|table:table-cell|table:covered-table-cell)(?=[\s/>])/g
 
@@ -136,14 +139,16 @@ function walk(xml: string, styles: ReturnType<typeof parseOdfStyles>): OdsFormat
         const repeat = count(attrs, 'table:number-columns-repeated')
         C = start + repeat - 1
         if (empty) break
-        const end = `</${name}>`
-        const at = xml.indexOf(end, TAG.lastIndex)
+        const covered = name === 'table:covered-table-cell'
+        const end = covered ? END_COVERED : END_CELL
+        const from = TAG.lastIndex
+        const at = xml.indexOf(end, from)
         if (at === -1) break
-        const inner = xml.slice(TAG.lastIndex, at)
         TAG.lastIndex = at + end.length
         // A covered cell's text is never shown; SheetJS ignores it too.
-        if (name === 'table:covered-table-cell' || !sheet || stored >= MAX_TABLE_CELLS) break
-        const own = attr(attrs, 'table:style-name') ?? rowStyle
+        if (covered || !sheet || stored >= MAX_TABLE_CELLS) break
+        const own = (attrs.includes('table:style-name') ? attr(attrs, 'table:style-name') : undefined) ?? rowStyle
+        const inner = xml.slice(from, at)
         const hasStyledText = namesFormat(inner)
         let last: { bits: number; marked: string | null } | null = null
         for (let c = start; c <= C && stored < MAX_TABLE_CELLS; c++) {
