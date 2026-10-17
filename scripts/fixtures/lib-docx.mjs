@@ -19,9 +19,12 @@ export const M = 'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006
  */
 export const FIXTURE_DATE = new Date(Date.UTC(2026, 0, 1))
 
-/** A trivial, valid 3x1 PNG — the same bytes used by tests/fixtures/gen-fixtures.mjs. */
+/**
+ * A valid 3x1 RGBA PNG: three blues, opaque. (It was once the hand-typed 3x1
+ * PNG tests/fixtures/sample.png had too, whose CRCs libpng refused.)
+ */
 export const TINY_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAMAAAABCAYAAACczIWkAAAAEklEQVR4nGNgYGD4z8DA8B8ABQ0CAmXEU2sAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAMAAAABCAYAAAAb4BS0AAAAFklEQVR42mMwTpv5P23mmf8zz/z/DwAuqwhfu/yHBwAAAABJRU5ErkJggg==',
   'base64',
 )
 
