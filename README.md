@@ -199,6 +199,12 @@ Some of those names cover more than one file extension. The extensions are in
 `EXTENSION_FORMATS` in `src/core/extensions.ts`, and the start screen lists
 them from there.
 
+A file is read by its extension, unless its contents are beyond doubt
+something else: a picture, a PDF, or an Office, OpenDocument, EPUB or Outlook
+file named as text (`.txt`, `.md`, `.csv`, source code and the like) is read as
+what it is, and the app says so ("This file is named .txt but is a TIFF
+picture; read as a picture."). Text that only starts like one stays text.
+
 - **Word.** `.docx` and `.docm` are read fully. `.doc` (Word 97 to 2003) is read
   for its text only, and the app tells you what it could not recover.
 - **Spreadsheets.** `xlsx` covers `.xlsx`, `.xls` and `.ods`. `.csv` and `.tsv`

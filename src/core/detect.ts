@@ -2,7 +2,7 @@ import type { SourceFormat } from './types'
 import type { HubFeatures } from './rendered-blocks'
 import { codeFormatFromFilename, codeNameFromFilename } from './code-langs'
 import { looksLikeSvg } from './readers/image'
-import { isHeic, pictureMime, vectorMime } from './picture-types'
+import { isHeic, pictureMime, pictureType, vectorMime } from './picture-types'
 import { hasSqliteMagic } from './sqlite'
 import { EXTENSION_FORMATS } from './extensions'
 
@@ -241,6 +241,232 @@ function rulesOutExtension(bytes: Buffer, byExtension: SourceFormat, sniffed: So
 /** The picture formats: the bytes choose between them, whatever the name says. */
 const PICTURES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['image', 'svg', 'metafile'])
 
+/**
+ * Whether a name claims a text format: one with no binary container, a
+ * picture name aside (an .svg holding a PNG is a picture by its name too),
+ * or source code by its name or extension.
+ */
+function namedAsText(filename: string): boolean {
+  if (codeNameFromFilename(filename)) return true
+  const byExt = detectByExtension(filename)
+  if (byExt) return !CONTAINER[byExt] && !PICTURES.has(byExt)
+  return codeFormatFromFilename(filename)
+}
+
+/**
+ * Bytes no text file has: a NUL, a control character other than the ones
+ * text uses (tab, line ends, form feed, escape), or a byte sequence that is
+ * not UTF-8, in the first 4 KiB. Every picture and binary document has one
+ * of these within its header; a text file that merely starts with "GIF89a"
+ * or "RIFF" has none.
+ */
+function hasBinaryBytes(bytes: Buffer): boolean {
+  const head = bytes.subarray(0, 4096)
+  for (const b of head) {
+    if (b < 0x20 && b !== 0x09 && b !== 0x0a && b !== 0x0b && b !== 0x0c && b !== 0x0d && b !== 0x1b) return true
+    if (b === 0x7f) return true
+  }
+  try {
+    // `stream` so a character cut off by the 4 KiB end is not taken for a bad one.
+    new TextDecoder('utf-8', { fatal: true }).decode(head, { stream: true })
+    return false
+  } catch {
+    return true
+  }
+}
+
+/**
+ * A picture's structure past its signature, for the types whose signature
+ * alone is short: the header that has to follow it.
+ */
+function pictureHeaderHolds(bytes: Buffer, mime: string): boolean {
+  switch (mime) {
+    case 'image/png':
+      // The first chunk is always IHDR, 13 bytes long.
+      return bytes.length >= 16 && bytes.readUInt32BE(8) === 13 && bytes.toString('latin1', 12, 16) === 'IHDR'
+    case 'image/jpeg':
+      // SOI is followed by a marker: FF then a marker code (APPn, DQT, SOF, DHT, COM...).
+      return bytes.length >= 4 && bytes[3] >= 0xc0 && bytes[3] !== 0xff
+    case 'image/webp':
+      return bytes.length >= 16 && ['VP8 ', 'VP8L', 'VP8X'].includes(bytes.toString('latin1', 12, 16))
+    case 'image/tiff': {
+      // The first directory: inside the file, with at least one entry.
+      if (bytes.length < 10) return false
+      const le = bytes[0] === 0x49
+      const at = le ? bytes.readUInt32LE(4) : bytes.readUInt32BE(4)
+      if (at < 8 || at + 2 > bytes.length) return false
+      return (le ? bytes.readUInt16LE(at) : bytes.readUInt16BE(at)) > 0
+    }
+    case 'image/x-icon': {
+      // The first directory entry: reserved byte 0, its data past the directory and inside the file.
+      const count = bytes.readUInt16LE(4)
+      if (count > 256 || bytes.length < 6 + 16 * count) return false
+      const offset = bytes.readUInt32LE(18)
+      return bytes[9] === 0 && offset >= 6 + 16 * count && offset < bytes.length
+    }
+    default:
+      // GIF, BMP, AVIF, EMF, WMF: the signature check already reads past the magic.
+      return true
+  }
+}
+
+/**
+ * The names of the streams and storages at the top of a Compound File
+ * (legacy Word and Excel files, PowerPoint decks, Outlook .msg), read from its directory:
+ * the header's sector size, its first FAT sectors, the directory chain, and
+ * the root's children (its tree of siblings), so a workbook embedded in a
+ * Word file does not name the file. Null when the structure does not hold.
+ */
+function cfbEntryNames(bytes: Buffer): Set<string> | null {
+  if (bytes.length < 512 || !hasMagic(bytes, CFB_MAGIC)) return null
+  const shift = bytes.readUInt16LE(0x1e)
+  if (shift !== 9 && shift !== 12) return null
+  const size = 1 << shift
+  const sectorAt = (n: number): number => (n + 1) * size
+  // The FAT sectors the header lists itself (109): enough for a file of ~7 MB
+  // with 512-byte sectors; a directory further in is not followed.
+  const fatSectors: number[] = []
+  for (let i = 0; i < 109; i++) {
+    const n = bytes.readUInt32LE(0x4c + i * 4)
+    if (n >= 0xfffffffa) break
+    fatSectors.push(n)
+  }
+  const perFat = size / 4
+  const next = (n: number): number | null => {
+    const fat = fatSectors[Math.floor(n / perFat)]
+    if (fat === undefined) return null
+    const at = sectorAt(fat) + (n % perFat) * 4
+    return at + 4 <= bytes.length ? bytes.readUInt32LE(at) : null
+  }
+  // Every directory entry's offset in the file, in directory order.
+  const entries: number[] = []
+  const seen = new Set<number>()
+  let sector: number | null = bytes.readUInt32LE(0x30)
+  while (sector !== null && sector < 0xfffffffa && !seen.has(sector) && seen.size < 4096) {
+    seen.add(sector)
+    const start = sectorAt(sector)
+    if (start + size > bytes.length) return null
+    for (let at = start; at < start + size; at += 128) entries.push(at)
+    sector = next(sector)
+  }
+  // The first entry is the root storage (type 5), whatever its name says
+  // (Office writes "Root Entry"; SheetJS writes "R").
+  if (entries.length === 0 || bytes[entries[0] + 66] !== 5) return null
+  const names = new Set<string>()
+  const visited = new Set<number>()
+  const pending = [bytes.readUInt32LE(entries[0] + 76)]
+  while (pending.length > 0) {
+    const id = pending.pop()!
+    // 0 is the root itself, never a child; NOSTREAM (0xFFFFFFFF) is past the end.
+    if (id === 0 || id >= entries.length || visited.has(id)) continue
+    visited.add(id)
+    const at = entries[id]
+    const length = bytes.readUInt16LE(at + 64)
+    if (length < 2 || length > 64 || length % 2 !== 0 || ![1, 2].includes(bytes[at + 66])) return null
+    names.add(bytes.toString('utf16le', at, at + length - 2))
+    pending.push(bytes.readUInt32LE(at + 68), bytes.readUInt32LE(at + 72))
+  }
+  return names
+}
+
+/** Which Compound File this is, by the streams it holds; null when none this app knows. */
+function cfbKind(bytes: Buffer): 'doc' | 'xls' | 'msg' | 'ppt' | null {
+  const names = cfbEntryNames(bytes)
+  if (!names) return null
+  if (names.has('WordDocument')) return 'doc'
+  if (names.has('Workbook') || names.has('Book')) return 'xls'
+  if (names.has('PowerPoint Document')) return 'ppt'
+  if ([...names].some((n) => n.startsWith('__substg1.0_') || n === '__properties_version1.0')) return 'msg'
+  return null
+}
+
+/** The zip formats a text name may give way to (an archive does not: see `unmistakablyBinary`). */
+const ZIP_DOCUMENTS: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['docx', 'xlsx', 'pptx', 'epub', 'odt', 'odp'])
+
+/** A zip's end-of-central-directory record, in the last 64 KiB (its comment's limit) and a bit. */
+function hasZipEnd(bytes: Buffer): boolean {
+  const from = Math.max(0, bytes.length - 65_557)
+  return bytes.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]), bytes.length - 22) >= from
+}
+
+/**
+ * What a file named as text really is, when its bytes say so beyond doubt
+ * (owner, 2026-10-17): a picture, a PDF, an Office or OpenDocument file, an
+ * EPUB, a legacy Office or Outlook file. Null for anything that could be
+ * text, which keeps its name.
+ *
+ * Beyond doubt means the whole signature and the structure behind it, never a
+ * magic prefix alone: a picture also needs its header (pictureHeaderHolds)
+ * and bytes no text has (hasBinaryBytes), so notes starting "GIF89a" or
+ * "BM" stay notes; a zip needs its end record and the part that names the
+ * format; a Compound File needs a directory naming its streams; a PDF needs
+ * binary bytes or its `%%EOF` at the end. Formats that are text themselves
+ * (SVG, HTML, RTF) are left to the name: a .txt of SVG markup is source to read.
+ * A plain zip named .txt is not expanded either: nothing says it was meant to be.
+ */
+export function unmistakablyBinary(bytes: Buffer): DetectResult | null {
+  const picture = pictureMime(bytes)
+  if (picture) return pictureHeaderHolds(bytes, picture) && hasBinaryBytes(bytes) ? ok('image') : null
+  if (vectorMime(bytes)) return hasBinaryBytes(bytes) ? ok('metafile') : null
+  if (/^%PDF-\d\.\d/.test(bytes.toString('latin1', 0, 8))) {
+    const tail = bytes.toString('latin1', Math.max(0, bytes.length - 2048))
+    return hasBinaryBytes(bytes) || tail.includes('%%EOF') ? ok('pdf') : null
+  }
+  if (hasMagic(bytes, CFB_MAGIC)) {
+    const kind = cfbKind(bytes)
+    if (kind === 'ppt') return unsupported('Legacy PowerPoint (.ppt) is not supported')
+    if (kind === 'xls') return ok('xlsx')
+    return kind ? ok(kind) : null
+  }
+  if (bytes.length >= 30 && bytes.toString('latin1', 0, 4) === 'PK\x03\x04' && hasZipEnd(bytes)) {
+    const sniffed = sniffBinary(bytes)
+    return sniffed?.kind === 'ok' && ZIP_DOCUMENTS.has(sniffed.format) ? sniffed : null
+  }
+  return null
+}
+
+const PICTURE_NAMES: Record<string, string> = {
+  'image/png': 'a PNG picture',
+  'image/jpeg': 'a JPEG picture',
+  'image/gif': 'a GIF picture',
+  'image/webp': 'a WebP picture',
+  'image/bmp': 'a BMP picture',
+  'image/avif': 'an AVIF picture',
+  'image/x-icon': 'an icon (ICO) picture',
+  'image/tiff': 'a TIFF picture',
+  'image/x-emf': 'an EMF drawing',
+  'image/x-wmf': 'a WMF drawing',
+}
+
+const DOCUMENT_NAMES: Partial<Record<SourceFormat, string>> = {
+  pdf: 'a PDF document',
+  docx: 'a Word document',
+  xlsx: 'a spreadsheet',
+  pptx: 'a PowerPoint presentation',
+  epub: 'an EPUB e-book',
+  odt: 'an OpenDocument text',
+  odp: 'an OpenDocument presentation',
+  doc: 'a Word 97-2003 document',
+  msg: 'an Outlook message',
+}
+
+/**
+ * The notice for a file named as text but read by its contents: "This file
+ * is named .txt but is a TIFF picture; read as a picture." Null when the
+ * name and the reading agree, or the reading was not the bytes' doing.
+ */
+export function misnamedNotice(bytes: Buffer, filename: string | undefined, format: SourceFormat): string | null {
+  if (!filename || !namedAsText(filename)) return null
+  const found = unmistakablyBinary(bytes)
+  if (found?.kind !== 'ok' || found.format !== format) return null
+  const ext = /\.([^.\\/]+)$/.exec(filename.trim())?.[1]
+  const named = ext ? `named .${ext.toLowerCase()}` : `named ${(filename.split(/[\\/]/).pop() ?? filename).trim()}`
+  const type = pictureType(bytes)
+  const what = type ? PICTURE_NAMES[type] : DOCUMENT_NAMES[format]
+  if (!what) return null
+  return `This file is ${named} but is ${what}; read as ${type ? 'a picture' : 'one'}.`
+}
+
 /** `BEGIN:VCARD` on one of a file's first lines. */
 export function looksLikeVcard(bytes: Buffer): boolean {
   const head = bytes.toString('utf8', 0, 1024).replace(/^\ufeff/, '').split(/\r?\n/).slice(0, 5)
@@ -256,6 +482,10 @@ export function detect(bytes: Buffer, filename?: string): DetectResult {
     // .zip is an acquisition method, not a SourceFormat, so it is matched here
     // rather than through the extension map (an empty zip has no PK\x03\x04).
     if (/\.zip$/i.test(filename.trim())) return archive()
+    // A text name on a file that is beyond doubt a picture or a binary
+    // document: the bytes win (see `unmistakablyBinary`).
+    const binary = namedAsText(filename) ? unmistakablyBinary(bytes) : null
+    if (binary) return binary
     if (codeNameFromFilename(filename)) return ok('code')
     const byExt = detectByExtension(filename)
     if (byExt) {

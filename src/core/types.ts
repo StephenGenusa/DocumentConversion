@@ -240,6 +240,8 @@ export type AdviceKind =
   | 'render-failed'
   /** Web pictures left as their description because Settings → Web turns fetching off. */
   | 'pictures-not-fetched'
+  /** A file named as text read by its contents, a picture or a binary document (detect.ts misnamedNotice). */
+  | 'misnamed'
 
 export type AdviceHandler = (
   kind: AdviceKind,

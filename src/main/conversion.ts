@@ -8,6 +8,7 @@ import { FOR_PASTING } from '../core/draw-blocks'
 import { getReader } from '../core/readers'
 import { HEADER_FOOTER_MARGIN_INCHES, normalizePdfOptions } from '../core/pdf-options'
 import { ConversionError } from '../core/errors'
+import { misnamedNotice } from '../core/detect'
 import { mergeHubDocuments } from '../core/merge'
 import { mergePdfs, type PdfMergeInput } from '../core/pdf-merge'
 import { escapeHtml } from '../core/shell'
@@ -200,6 +201,12 @@ export async function ocrPagesToHub(pages: OcrPage[], filename?: string): Promis
   return hub
 }
 
+/** The notice converter.read gives a file named as text but read by its contents, for the paths around it. */
+function noteMisnamed(bytes: Buffer, filename: string | undefined, source: SourceFormat, ctx: ReadContext): void {
+  const notice = misnamedNotice(bytes, filename, source)
+  if (notice) ctx.onAdvice?.('misnamed', notice)
+}
+
 /** OCR-aware read: image OCR mode, and scanned-pdf recovery when opted in. */
 export async function readForConversion(
   bytes: Buffer,
@@ -211,6 +218,8 @@ export async function readForConversion(
 ): Promise<HubDocument> {
   throwIfCanceled(ctx.signal)
   if (source === 'image' && ocr) {
+    // Past converter.read, which gives this notice for every other reading.
+    noteMisnamed(bytes, filename, source, ctx)
     return ocrPagesToHub(await runOcr('image', bytes, ctx, ocrLanguage), filename)
   }
   // A PDF with SOME image-only pages never throws scanned-pdf, so those pages
@@ -232,6 +241,7 @@ export async function readForConversion(
         if (page?.grid && page.grid.length > 0) return { kind: 'table', rows: page.grid }
         return { kind: 'text', text: page?.text ?? '' }
       })
+      noteMisnamed(bytes, filename, source, ctx)
       const hub = pdfPagesToHub(pages)
       if (filename) {
         hub.title ??= filename
@@ -263,6 +273,7 @@ export async function runConversion(
   // page-for-page copier so images, signatures and vector art survive.
   // (Rendering the extracted text instead silently discarded all graphics.)
   if (source === 'pdf' && target === 'pdf' && !opts.ocr) {
+    noteMisnamed(bytes, filename, source, ctx)
     const copied = await untilCanceled(mergePdfs([{ bytes, name: filename }]), ctx.signal)
     return { parts: [{ suffix: '', bytes: copied }] }
   }

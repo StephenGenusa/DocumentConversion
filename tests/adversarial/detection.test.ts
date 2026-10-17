@@ -119,12 +119,18 @@ const okFormat = (r: unknown): string | undefined =>
 // §2.5: "Rules run in this exact order (first match wins)" with the extension
 // pass as rule 1. So a known extension must beat contradicting magic bytes.
 
+// Owner, 2026-10-17: except where the bytes are beyond doubt a picture or a
+// binary document (detect.ts unmistakablyBinary; tests/core/detect-text-named.test.ts).
 describe('§2.5 rule 1 beats rule 2: extension wins over magic bytes', () => {
-  it('PDF bytes named notes.md detect as md (extension pass first)', () => {
-    expect(detect(PDF_BYTES, 'notes.md')).toEqual({ kind: 'ok', format: 'md' })
+  it('a whole PDF named notes.md is read as a PDF (its %%EOF at the end)', () => {
+    expect(detect(PDF_BYTES, 'notes.md')).toEqual({ kind: 'ok', format: 'pdf' })
   })
 
-  it('PNG bytes named data.csv detect as csv (extension pass first)', () => {
+  it('notes.md that only start with "%PDF-" stay md', () => {
+    expect(detect(utf8('%PDF-1.7 is what the printer wants.\n'), 'notes.md')).toEqual({ kind: 'ok', format: 'md' })
+  })
+
+  it('a PNG signature with no header after it, named data.csv, stays csv', () => {
     expect(detect(PNG_BYTES, 'data.csv')).toEqual({ kind: 'ok', format: 'csv' })
   })
 
@@ -132,9 +138,9 @@ describe('§2.5 rule 1 beats rule 2: extension wins over magic bytes', () => {
     expect(detect(RTF_BYTES, 'notes.txt')).toEqual({ kind: 'ok', format: 'txt' })
   })
 
-  it('a docx zip named notes.txt detects as txt (extension pass first)', async () => {
+  it('a whole docx zip named notes.txt is read as a docx', async () => {
     const bytes = await makeZip(docxParts())
-    expect(detect(bytes, 'notes.txt')).toEqual({ kind: 'ok', format: 'txt' })
+    expect(detect(bytes, 'notes.txt')).toEqual({ kind: 'ok', format: 'docx' })
   })
 
   it('HTML text named readme.md detects as md (extension pass first)', () => {

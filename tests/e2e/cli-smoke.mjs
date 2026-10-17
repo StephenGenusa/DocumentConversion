@@ -569,6 +569,17 @@ if (existsSync(join(work, 'lease.docx')) && (readFileSync(join(work, 'lease.docx
   failures++
   console.log('FAIL  lease.docx does not keep its three TIFF pages')
 }
+// A picture named as text is read by its bytes, and the command line says so (owner, 2026-10-17).
+writeFileSync(join(work, 'lease-scan.txt'), readFileSync(lease))
+run('a TIFF named .txt is read as a picture', [join(work, 'lease-scan.txt'), '--to', 'pdf', '--out', join(work, 'lease-scan.pdf')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'lease-scan.pdf')],
+  expectStderr: 'NOTE lease-scan.txt: This file is named .txt but is a TIFF picture; read as a picture.',
+})
+if (existsSync(join(work, 'lease-scan.pdf')) && pageShapes(join(work, 'lease-scan.pdf')) !== 'PLP') {
+  failures++
+  console.log(`FAIL  lease-scan.pdf pages are ${pageShapes(join(work, 'lease-scan.pdf'))}, not the fax's PLP`)
+}
 const plan = join(root, 'tests', 'corpus', 'reading-room-floor-plan.emf')
 run('emf->docx keeps the EMF', [plan, '--to', 'docx', '--out', join(work, 'plan.docx')], { expectCode: 0, expectFiles: [join(work, 'plan.docx')] })
 if (existsSync(join(work, 'plan.docx')) && !/word\/media\/[^\0/]*?\.emf/.test(readFileSync(join(work, 'plan.docx')).toString('latin1'))) {

@@ -10,6 +10,7 @@ import type {
   WriteResult,
 } from './types'
 import { ConversionError } from './errors'
+import { misnamedNotice } from './detect'
 import { getReader, type Reader, type RowReader } from './readers'
 import { sqliteReader, sqliteRowReader } from './readers/sqlite'
 import type { SqliteEngine } from './sqlite'
@@ -100,7 +101,14 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
     sqlite: { read: sqliteReader(deps.sqlite), rows: sqliteRowReader(deps.sqlite) },
   }
 
+  /** Says so when a file named as text is read by its contents (detect.ts). */
+  function noteMisnamed(src: SourceInput, source: SourceFormat, ctx?: ReadContext): void {
+    const notice = misnamedNotice(src.bytes, src.filename, source)
+    if (notice) ctx?.onAdvice?.('misnamed', notice)
+  }
+
   async function read(src: SourceInput, source: SourceFormat, ctx?: ReadContext): Promise<HubDocument> {
+    noteMisnamed(src, source, ctx)
     try {
       const hub = await (bound[source]?.read ?? getReader(source))(src, ctx)
       if (!hub.sourceName && src.filename) hub.sourceName = src.filename
@@ -194,6 +202,7 @@ export function createConverter(render: RenderHtmlToPdf, deps: ConverterDeps = {
     async readRows(src, source, ctx) {
       const reader = bound[source]?.rows ?? getRowReader(source)
       if (!reader) return null
+      noteMisnamed(src, source, ctx)
       try {
         return await reader(src, ctx)
       } catch (err) {
