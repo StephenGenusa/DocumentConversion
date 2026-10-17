@@ -128,7 +128,7 @@ function readerFor(format) {
   }
 }
 
-async function renderHtmlToPdf(html) {
+async function renderHtmlToPdf(html, opts) {
   const dir = await mkdtemp(join(tmpdir(), 'docconv-'))
   const file = join(dir, 'doc.html')
   await writeFile(file, html, 'utf8')
@@ -138,7 +138,12 @@ async function renderHtmlToPdf(html) {
   })
   try {
     await win.loadFile(file)
-    return await win.webContents.printToPDF({ printBackground: true })
+    // The page the writer settled on, as the app prints it (main/conversion.ts): its
+    // size (the Kindle's for azw4) and orientation (Automatic chosen by the writer).
+    return await win.webContents.printToPDF({
+      printBackground: true,
+      ...(opts ? { pageSize: opts.pageSize, landscape: opts.landscape, scale: opts.scale } : {}),
+    })
   } finally {
     if (!win.isDestroyed()) win.destroy()
     await rm(dir, { recursive: true, force: true })
@@ -466,6 +471,20 @@ async function main() {
             shown = source === 'metafile' ? (pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length : (pdf.toString('latin1').match(/\/Subtype\s*\/Image\b/g) ?? []).length
             const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length
             if (pages !== filePictures) throw new Error(`${target} has ${pages} pages for a picture file of ${filePictures} pictures`)
+            // Automatic orientation (orientation.ts): each page as its picture is shaped, a wide one
+            // landscape, the rest portrait; checked where the reader gave every picture its size.
+            const sizes = [...hubText.matchAll(/<img\b[^>]*>/g)].map((m) => {
+              const w = /\swidth="([\d.]+)"/.exec(m[0])
+              const h = /\sheight="([\d.]+)"/.exec(m[0])
+              return w && h ? (Number(w[1]) > Number(h[1]) ? 'L' : 'P') : null
+            })
+            if (sizes.every(Boolean)) {
+              const boxes = [...pdf.toString('latin1').matchAll(/\/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\]/g)]
+                .map((m) => (Number(m[3]) - Number(m[1]) > Number(m[4]) - Number(m[2]) ? 'L' : 'P'))
+                .join('')
+              if (boxes !== sizes.join('')) throw new Error(`${target} pages are ${boxes}, its pictures ${sizes.join('')}`)
+              rec.note = `${rec.note ? rec.note + ', ' : ''}pages ${boxes}`
+            }
           } else {
             text = out.toString('utf8')
             shown = target === 'md' ? (text.match(/!\[[^\]]*\]\(data:image\//g) ?? []).length : (text.match(/<img\b[^>]*\ssrc="data:image\//g) ?? []).length

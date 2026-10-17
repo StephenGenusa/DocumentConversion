@@ -5,7 +5,8 @@
  *
  *   tests/corpus/reading-room-lease.tiff         a fax of three pages and a preview
  *                                                (one bit a pixel, PackBits; eight-bit
- *                                                gray, LZW; one bit again, big-endian)
+ *                                                gray, LZW, a landscape page; one bit
+ *                                                again, big-endian)
  *   tests/corpus/reading-room-floor-plan.emf     an EMF drawing with its labels as text
  *   tests/corpus/reading-room-shelf-label.wmf    a placeable WMF with a line of text
  *   tests/corpus/reading-room-sign.bmp           a 24-bit BMP
@@ -52,11 +53,15 @@ function typed(x, y) {
   return inLine && x > 30 && x < end && (x + line * 5) % 37 > 4 ? BLACK : WHITE
 }
 
+// The floor plan is a landscape page, as a fax sends a drawing turned sideways.
+const PW = H
+const PH = W
+
 /** A shaded floor plan: gray floor, darker stacks, a light aisle down the middle. */
 function plan(x, y) {
-  let v = 210 - Math.round((y / H) * 50)
-  if (x > 40 && x < W - 40 && y > 50 && y < H - 50 && Math.floor((y - 50) / 34) % 2 === 0) v = 80
-  if (x > W / 2 - 14 && x < W / 2 + 14) v = 240
+  let v = 210 - Math.round((y / PH) * 50)
+  if (x > 40 && x < PW - 40 && y > 50 && y < PH - 50 && Math.floor((y - 50) / 34) % 2 === 0) v = 80
+  if (x > PW / 2 - 14 && x < PW / 2 + 14) v = 240
   return [v, v, v]
 }
 
@@ -77,7 +82,7 @@ write(
     pages: [
       { width: W, height: H, pixel: typed, kind: 'bilevel', compression: 'packbits', pageNumber: [0, 3], dpi: 100 },
       { width: 34, height: 44, pixel: (x, y) => typed(x * 10, y * 10), kind: 'gray', thumbnail: true },
-      { width: W, height: H, pixel: plan, kind: 'gray', compression: 'lzw', pageNumber: [1, 3], dpi: 100 },
+      { width: PW, height: PH, pixel: plan, kind: 'gray', compression: 'lzw', pageNumber: [1, 3], dpi: 100 },
       { width: W, height: H, pixel: signed, kind: 'bilevel', compression: 'packbits', pageNumber: [2, 3], dpi: 100 },
     ],
   }),

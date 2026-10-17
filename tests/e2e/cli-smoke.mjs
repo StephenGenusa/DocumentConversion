@@ -538,6 +538,32 @@ if (existsSync(join(work, 'lease.pdf'))) {
     console.log(`FAIL  lease.pdf has ${pages} pages for a TIFF of 3`)
   }
 }
+/** Each page's orientation, in order, from its MediaBox: 'L' landscape, 'P' portrait. */
+const pageShapes = (file) =>
+  [...readFileSync(file).toString('latin1').matchAll(/\/MediaBox\s*\[\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*\]/g)]
+    .map((m) => (Number(m[3]) - Number(m[1]) > Number(m[4]) - Number(m[2]) ? 'L' : 'P'))
+    .join('')
+// Automatic orientation: the fax's floor plan is a landscape page, and keeps it; Portrait is every page.
+if (existsSync(join(work, 'lease.pdf')) && pageShapes(join(work, 'lease.pdf')) !== 'PLP') {
+  failures++
+  console.log(`FAIL  lease.pdf pages are ${pageShapes(join(work, 'lease.pdf'))}, not PLP (each its own orientation)`)
+}
+run('tiff->pdf --orientation portrait: every page portrait', [lease, '--to', 'pdf', '--orientation', 'portrait', '--out', join(work, 'lease-portrait.pdf')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'lease-portrait.pdf')],
+})
+if (existsSync(join(work, 'lease-portrait.pdf')) && pageShapes(join(work, 'lease-portrait.pdf')) !== 'PPP') {
+  failures++
+  console.log(`FAIL  lease-portrait.pdf pages are ${pageShapes(join(work, 'lease-portrait.pdf'))}, not PPP`)
+}
+run('--landscape with --orientation is refused', [lease, '--to', 'pdf', '--landscape', '--orientation', 'auto'], {
+  expectCode: 2,
+  expectStderr: '--landscape and --orientation both set the orientation',
+})
+run('--orientation is for pdf only', [lease, '--to', 'docx', '--orientation', 'landscape'], {
+  expectCode: 2,
+  expectStderr: '--orientation applies only to pdf output, not docx',
+})
 run('tiff->docx keeps each page a TIFF', [lease, '--to', 'docx', '--out', join(work, 'lease.docx')], { expectCode: 0, expectFiles: [join(work, 'lease.docx')] })
 if (existsSync(join(work, 'lease.docx')) && (readFileSync(join(work, 'lease.docx')).toString('latin1').match(/word\/media\/[^\0/]*?\.tif/g) ?? []).length < 3) {
   failures++
