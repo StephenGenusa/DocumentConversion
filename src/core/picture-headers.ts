@@ -240,6 +240,18 @@ export function tiffSize(bytes: Buffer): PictureSize | null {
 }
 
 /**
+ * The size a TIFF page is meant to be shown at, its pixels at its
+ * resolution (a 300 dpi scan at its paper size), for the page at `index` in
+ * the file's chain (the first page when not given). Null when the file says
+ * no resolution: the page is then shown at its pixel size, as anywhere.
+ */
+export function tiffShownSize(bytes: Buffer, index?: number): PictureSize | null {
+  const pages = tiffPages(bytes)
+  const page = index === undefined ? pages?.[0] : pages?.find((p) => p.index === index)
+  return page?.dpi ? sane((page.width * 96) / page.dpi.x, (page.height * 96) / page.dpi.y) : null
+}
+
+/**
  * An EMF's size, from its header record (EMR_HEADER): rclFrame, the
  * picture's frame in hundredths of a millimeter, which is the size Word
  * shows it at; rclBounds (device pixels) when the frame is empty.

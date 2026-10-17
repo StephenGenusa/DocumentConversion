@@ -7,7 +7,7 @@ import { imagePlaceholder, MAX_FETCHED_IMAGE_BYTES } from './inline-images'
 import type { PictureFormat, RenderRequest, RenderResult } from './rendered-blocks'
 import { DOCX_MAX_WIDTH, type DrawContext } from './draw-blocks'
 import type { TargetFormat } from './types'
-import { originalSize, tiffPage, tiffPages } from './picture-headers'
+import { originalSize, tiffPage, tiffPages, tiffShownSize } from './picture-headers'
 import { drawMetafile, type MetafileResult } from './metafile'
 import { sanitizeSvg, svgDataUri } from './svg-sanitize'
 import { DOCX_MAX_HEIGHT, prepareSvgForRaster, rasterizesSvgImages } from './svg-images'
@@ -525,7 +525,13 @@ export async function targetPictures(html: string, target: TargetFormat, ctx: Dr
     const as: PictureFormat = profile.holds.has(mime) && data.bytes.length > profile.maxBytes ? 'jpeg' : format
     const request = picture(`data:${mime};base64,${data.bytes.toString('base64')}`, as)
     const page = pageOf.get(el)
-    jobs.push({ el, number, request: page === undefined ? request : { ...request, page } })
+    // A TIFF is shown at its resolution, as Word shows it (originalSize): the
+    // copy's pixels alone would show a 300 dpi scan at three times its size.
+    // A PNG's pHYs or a JPEG's JFIF density is not applied: browsers show
+    // those at their pixel size whatever they say, and most say 72 or 300
+    // by an editor's default, not by what they show.
+    const size = mime === 'image/tiff' ? (tiffShownSize(data.bytes, page) ?? undefined) : undefined
+    jobs.push({ el, number, request: page === undefined ? request : { ...request, page }, size })
   }
   if (render && jobs.length > 0) {
     changed = true

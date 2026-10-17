@@ -217,11 +217,26 @@ describe('targetPictures: what each target holds', () => {
     }
   })
 
+  it('a converted TIFF is shown at its resolution, as Word shows it, unless the document gives it a size', async () => {
+    const at = (dpi: number, width = 30, height = 20) => makeTiff({ width, height, pixel: () => [9, 9, 9], dpi })
+    const fax: Buffer = makeTiff({ pages: [{ width: 300, height: 200, pixel: () => [0, 0, 0], dpi: 300 }, { width: 200, height: 100, pixel: () => [9, 9, 9], dpi: 200 }] })
+    const { render } = host()
+    const html =
+      `<p>${img('image/tiff', at(300, 600, 300))}</p><p><img src="${uri('image/tiff', at(300, 600, 300))}" width="50"></p>` +
+      `<p>${img('image/tiff', at(96))}</p><p>${img('image/tiff', fax)}</p>`
+    for (const target of ['html', 'pdf', 'epub', 'azw3'] as TargetFormat[]) {
+      const out = await targetPictures(html, target, { renderBlocks: render })
+      const sizes = [...out.matchAll(/<img\b[^>]*>/g)].map((m) => [/ width="(\d+)"/.exec(m[0])?.[1], / height="(\d+)"/.exec(m[0])?.[1]])
+      // 600 x 300 px at 300 dpi: 2 x 1 inches, 192 x 96 CSS px. The fax's pages each at their own dpi.
+      expect(sizes).toEqual([['192', '96'], ['50', undefined], ['30', '20'], ['96', '64'], ['96', '48']])
+    }
+  })
+
   it('a multi-page TIFF alone in its paragraph gets a paragraph a page', async () => {
     const fax: Buffer = makeTiff({ pages: [{ width: 4, height: 4, pixel: () => [0, 0, 0] }, { width: 4, height: 4, pixel: () => [9, 9, 9] }] })
     const { render } = host()
     const out = await targetPictures(`<p>Lease:</p><p class="figure"> ${img('image/tiff', fax, 'Lease')} </p><p>End</p>`, 'epub', { renderBlocks: render })
-    expect(out).toMatch(/^<p>Lease:<\/p><p class="figure"> <img [^>]+alt="Lease \(page 1 of 2\)"> <\/p><p class="figure"><img [^>]+alt="Lease \(page 2 of 2\)"><\/p><p>End<\/p>$/)
+    expect(out).toMatch(/^<p>Lease:<\/p><p class="figure"> <img [^>]+alt="Lease \(page 1 of 2\)"[^>]*> <\/p><p class="figure"><img [^>]+alt="Lease \(page 2 of 2\)"[^>]*><\/p><p>End<\/p>$/)
   })
 
   it('a page with no alt text is named by its number; without a renderer each page is its description', async () => {
