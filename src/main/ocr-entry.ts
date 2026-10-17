@@ -1,4 +1,4 @@
-import { ocrPdf, ocrImage } from '../ocr/pipeline'
+import { ocrPdf, ocrPicture } from '../ocr/pipeline'
 import { ConversionError } from '../core/errors'
 
 /**
@@ -26,7 +26,7 @@ process.parentPort.on('message', (e) => {
   const run =
     req.kind === 'pdf'
       ? ocrPdf(bytes, assets, ctx)
-      : ocrImage(bytes, assets, ctx).then((page) => [page])
+      : ocrPicture(bytes, assets, ctx)
   run
     .then((pages) => post({ type: 'done', pages }))
     .catch((err) =>

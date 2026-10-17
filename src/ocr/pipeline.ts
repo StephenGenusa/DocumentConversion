@@ -2,6 +2,8 @@ import { createWorker, type Worker, type Page } from 'tesseract.js'
 import { ConversionError } from '../core/errors'
 import { groupIntoRows, inferColumns, inferGrid, type PositionedText } from '../core/grid-infer'
 import { loadPdfjs } from '../core/pdfjs-loader'
+import { tiffPage, tiffPages } from '../core/picture-headers'
+import { isHeic, pictureMime } from '../core/picture-types'
 import type { ReadContext } from '../core/types'
 import { BUNDLED_LANGUAGE, confidenceFloorFor, tesseractName, type ModelSet } from './languages'
 
@@ -232,6 +234,94 @@ export async function ocrImage(bytes: Buffer, assets: OcrAssets, ctx?: ReadConte
       )
     }
     return page
+  } catch (err) {
+    if (err instanceof ConversionError) throw err
+    throwIfAborted(ctx?.signal)
+    throw new ConversionError('ocr-failed', `OCR failed: ${(err as Error).message}`)
+  } finally {
+    await worker.terminate().catch(() => {})
+  }
+}
+
+/**
+ * What tesseract reads itself (Leptonica's decoders). Anything else it is
+ * given, it throws on from its worker, past any catch, and the process goes
+ * down with it; so every other picture is decoded here first.
+ */
+const TESSERACT_READS: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp', 'image/tiff'])
+
+/**
+ * The pages of a picture, each as bytes tesseract reads: a TIFF page by page
+ * (each a one-page TIFF of its own, its data byte for byte, as the reader
+ * splits it: tesseract reads only a TIFF's first page; a preview is not a
+ * page), and a picture tesseract cannot read (AVIF, ICO) decoded by Skia and
+ * given as PNG, on white, as the page it would be printed on.
+ */
+async function pagesOf(bytes: Buffer): Promise<Buffer[]> {
+  const mime = pictureMime(bytes)
+  if (!mime) {
+    throw new ConversionError(
+      'image-unsupported',
+      isHeic(bytes) ? 'HEIC pictures (as iPhones save them) cannot be read here; save it as JPEG first' : 'Unsupported or corrupt image',
+    )
+  }
+  if (mime === 'image/tiff') {
+    const pages = tiffPages(bytes) ?? []
+    if (pages.length === 1 && pages[0].index === 0) return [bytes]
+    const own = pages.map((p) => tiffPage(bytes, p.index))
+    // A page that cannot be taken out on its own: the file as it is (its first page).
+    return own.length > 0 && own.every((b) => b !== null) ? (own as Buffer[]) : [bytes]
+  }
+  if (TESSERACT_READS.has(mime)) return [bytes]
+  const canvasMod = await ensureCanvasGlobals()
+  let image: Awaited<ReturnType<typeof canvasMod.loadImage>>
+  try {
+    image = await canvasMod.loadImage(bytes)
+  } catch (err) {
+    throw new ConversionError('image-unsupported', `This picture could not be decoded: ${(err as Error).message}`)
+  }
+  const canvas = canvasMod.createCanvas(Math.max(1, image.width), Math.max(1, image.height))
+  const g = canvas.getContext('2d')
+  g.fillStyle = '#ffffff'
+  g.fillRect(0, 0, canvas.width, canvas.height)
+  g.drawImage(image, 0, 0)
+  return [canvas.toBuffer('image/png')]
+}
+
+/**
+ * A picture file recognized: one page for a picture, one a page for a TIFF
+ * of several (a fax), in order, each as ocrPdf reads a page. A picture of
+ * one page has to pass ocrImage's confidence floor; a TIFF of several fails
+ * only when none of its pages that hold text passes it (a page that is a
+ * signature or a stamp should not lose the letter).
+ */
+export async function ocrPicture(bytes: Buffer, assets: OcrAssets, ctx?: ReadContext): Promise<OcrPage[]> {
+  const rasters = await pagesOf(bytes)
+  if (rasters.length === 1) return [await ocrImage(rasters[0], assets, ctx)]
+  const worker = await newWorker(assets, ctx?.signal)
+  const pages: OcrPage[] = []
+  let readable = false
+  let tried = false
+  try {
+    for (let i = 0; i < rasters.length; i++) {
+      throwIfAborted(ctx?.signal)
+      ctx?.onProgress?.(`OCR page ${i + 1} of ${rasters.length}`, (i / rasters.length) * 100)
+      const { page, confidence } = await recognizePage(worker, rasters[i])
+      if (page.text.trim() !== '') {
+        tried = true
+        if (confidence >= minConfidenceFor(assets)) readable = true
+      }
+      pages.push({ ...page, text: page.text.trim() })
+    }
+    throwIfAborted(ctx?.signal)
+    if (tried && !readable) {
+      throw new ConversionError(
+        'ocr-failed',
+        'OCR could not read any page of this picture reliably. It may be handwriting, or too low-resolution to recognize.',
+      )
+    }
+    ctx?.onProgress?.('OCR complete', 100)
+    return pages
   } catch (err) {
     if (err instanceof ConversionError) throw err
     throwIfAborted(ctx?.signal)
