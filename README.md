@@ -24,18 +24,23 @@ locally, and the code that does it is in this repository.
 - [Gallery](#gallery)
 - [Install](#install)
 - [What's new in 1.4](#whats-new-in-14)
-- [What's new in 1.3](#whats-new-in-13)
-- [What's new in 1.2](#whats-new-in-12)
-- [What's new in 1.1](#whats-new-in-11)
+- [Earlier releases](#whats-new-in-13): [1.3](#whats-new-in-13),
+  [1.2](#whats-new-in-12), [1.1](#whats-new-in-11)
+- [Editing before converting](#editing-before-converting)
+- [Sample documents](#sample-documents)
 - [What it reads](#what-it-reads)
 - [What it writes](#what-it-writes)
+- [Diagrams, formulas and code](#diagrams-formulas-and-code)
+- [Pictures](#pictures)
 - [Images and the network](#images-and-the-network)
 - [What it is good at](#what-it-is-good-at)
 - [What it deliberately does not do](#what-it-deliberately-does-not-do)
 - [Batch and merge](#batch-and-merge)
 - [Settings](#settings)
 - [Command line](#command-line)
+- [Troubleshooting](#troubleshooting)
 - [Development](#development)
+- [Building a release](#building-a-release)
 - [Project layout](#project-layout)
 - [License](#license)
 
@@ -51,75 +56,203 @@ Download the release for your platform:
 
 | Platform | File |
 | --- | --- |
-| Windows x64 | `docconversion-<version>-setup.exe` |
+| Windows x64 | `docconversion-<version>-setup.exe` (installer) |
 | Linux x64 | `docconversion-<version>.AppImage` |
-| macOS x64 | `Document Converter-<version>-mac.zip` |
+| macOS, Apple Silicon | `Document Converter-<version>-arm64.dmg` (or the `-arm64-mac.zip`) |
+| macOS, Intel | `Document Converter-<version>.dmg` (or the `-mac.zip`) |
 
-The builds are **not code signed**. Windows SmartScreen will warn on first run —
-choose *More info* then *Run anyway*. On Linux, mark the AppImage executable
-with `chmod +x` before running it. On macOS, Gatekeeper refuses an unsigned app
-on first launch: right-click it and choose *Open*, or clear the quarantine
-attribute with `xattr -d com.apple.quarantine "Document Converter.app"`.
+- **Windows.** Run the installer. It installs for your user only (no
+  administrator rights), adds a Start menu entry and a desktop shortcut, and
+  puts the command-line launcher in `<install>\resources\cli\docconv.cmd`.
+- **Linux.** Make the AppImage executable and run it:
+  `chmod +x docconversion-<version>.AppImage && ./docconversion-<version>.AppImage`.
+  AppImages need FUSE 2 (`libfuse2`, `libfuse2t64` on Ubuntu 24.04); see
+  [Troubleshooting](#troubleshooting).
+- **macOS.** Open the `.dmg` and drag *Document Converter* to Applications, or
+  unzip the `.zip`.
 
-The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
+Unless a release says otherwise, the builds are **not code signed**. Windows
+SmartScreen warns on first run: choose *More info*, then *Run anyway*. On
+macOS, Gatekeeper refuses an unsigned app on first launch: right-click it and
+choose *Open*, or clear the quarantine attribute with
+`xattr -dr com.apple.quarantine "/Applications/Document Converter.app"`.
+[Building a release](#building-a-release) says how a signed build is made.
+
+Nothing else needs installing: English OCR, the diagram and formula engines and
+the SQLite engine ship inside the app, and it works offline.
 
 ## What's new in 1.4
 
-- **Settings.** A Settings dialog holds the defaults for choices most people
-  make once. Open it with **File → Settings…** (Ctrl+,) on Windows and Linux,
-  **Settings…** (Cmd+,) on macOS, the start screen's *Settings* link or the
-  conversion screen's gear button. Its seven sections cover pictures, the web,
-  formulas and diagrams, code, PDF, reading and OCR, and every setting says
-  which outputs it affects. Settings are remembered from one start to the next; a
-  change on the conversion screen lasts only until you quit. See
-  [Settings](#settings).
-- **PDF orientation is Automatic.** The toolbar's Orientation starts at
-  *Automatic*, which picks the page for the document: a wide picture or
-  drawing opened on its own prints on a landscape page, a fax or TIFF of
-  portrait and landscape pages keeps each page's own orientation, and a
-  document that is mostly tables too wide for a portrait page (a wide
-  spreadsheet) prints landscape. Everything else stays portrait. *Portrait*
-  and *Landscape* print every page that way, exactly as before. On the
-  command line it is `--orientation auto|portrait|landscape` (`auto` by
-  default); `--landscape` still works and means `--orientation landscape`.
-  Word output has the same Orientation choice and rule: a fax of portrait and
-  landscape pages becomes a Word file with one section a page, each turned as
-  its picture is.
-- **Pictures an output can't hold are converted to the right kind.** A TIFF
-  in a PDF or a WebP in a Kindle book becomes PNG when it is a screenshot,
-  line art, a diagram, a scan or a GIF (few colors or large flat areas), so
-  lines and text stay sharp, and JPG when it is a photograph, much smaller.
-  Pictures with see-through parts stay PNG, and drawings stay SVG where the
-  output allows it, otherwise PNG. Settings → Pictures (or `--pictures`) can
-  make them all JPG or all PNG instead.
-- **Web pictures, intranet pictures and code color can be turned off.**
-  Settings → Web stops the app downloading the pictures a document refers to by
-  web address (each becomes its description, and the result says how many), or
-  refuses intranet addresses only. Settings → Code writes code blocks plain
-  black instead of colored by language.
+1.4 is the largest release so far. In short: diagrams and formulas are drawn,
+nine more input formats are read, pictures of every common kind go everywhere
+they can, code is colored, the app has Settings, and Word and Kindle output
+are much more faithful.
+
+**Diagrams, formulas and code**
+
+- **Diagrams are drawn, offline.** Mermaid (flowcharts, sequence, class,
+  state, Gantt, mind maps, pies, timelines, git graphs and the rest) and
+  Graphviz (`dot`) blocks become pictures in every output: sharp SVG in PDF,
+  HTML, slides, EPUB and Kindle Print Replica, PNG in Word and Kindle (AZW3).
+  A diagram that fails to draw keeps its source, with a notice. See
+  [Diagrams, formulas and code](#diagrams-formulas-and-code).
+- **TeX formulas are drawn with MathJax.** `$…$` and `$$…$$` in Markdown,
+  and math in AsciiDoc, reStructuredText, Djot and notebooks, print as
+  formulas; a document's `\newcommand` carries to its later formulas, and
+  `\R`, `\N`, `\bm` and basic siunitx quantities (`\SI`, `\si`, `\num`)
+  work. Every formula is drawn however many a document has, with progress.
+- **Word equations are read as formulas**, display or inline as Word has them,
+  including line breaks, alignment, boxes and brackets.
+- **Code is colored by language** in PDF, HTML, slides, EPUB, Kindle and Word,
+  with a night palette in e-books and a dark one on dark slides; the author's
+  bold, italic and links inside a code block are kept. Settings → Code (or
+  `--no-code-color`) writes it plain.
+
+**New inputs**
+
+- **SVG, EMF and WMF drawings, TIFF (every page), BMP, AVIF and ICO** open on
+  their own. EMF and WMF (Word's vector pictures) are drawn as SVG by the app's
+  own code, gradients, right-to-left text and masked bitmaps included, and
+  also convert to text and Markdown as their labels.
+- **JSON and JSON Lines** (records become a table), **SQLite databases**
+  (schema, every table, views on request), **WebVTT and SRT subtitles** and
+  Teams transcripts, **OPML** outlines, **vCard** contacts, **Djot** and
+  **Textile**. R Markdown and Quarto, and many more source-code and
+  configuration extensions, are read too.
+- **A file named for one format but holding another** (a TIFF named `.txt`, a
+  Word file named `.md`) is read as what it is, and the app says so.
+
+**Formatting kept**
+
+- **Footnotes** survive every conversion, from Word, RTF, OpenDocument,
+  Markdown (`[^1]`), Djot and Textile, and the editor can insert them.
+- **Highlighted text** keeps its color through every format, and the editor
+  has a Highlight button (Ctrl+Shift+H).
+- **Definition lists** from Djot, AsciiDoc, Textile, HTML, reStructuredText
+  and Markdown (pandoc's `term` / `:   definition`) stay definition lists.
+- **GitHub Markdown:** task lists, alerts (`> [!NOTE]`), single-tilde
+  strikethrough and emoji shortcodes; YAML front matter is read (its `title:`
+  becomes the document title) instead of being printed as a heading.
+- **Superscript, subscript, table column alignment** and **line breaks in
+  spreadsheet cells** are kept through every format.
+- **Inline SVG** in web pages, pastes, EPUB chapters, email and calendar
+  descriptions is kept, as are pictures inside SVGs.
+
+**Word output**
+
+- **Italic, strikethrough and combined formatting** (***bold italic***,
+  ~~struck~~) were lost in Word files; they are now kept, as are colors on
+  bold and italic words, background colors, and links inside formatting.
+- **Word's own page:** 1-inch margins, the page size chosen for PDF (A4 or
+  Letter, from Settings), Automatic orientation, and a section a page for a
+  fax of portrait and landscape pages.
+- **Tables:** columns sized by their content, header rows repeated on each
+  page, merged cells and cell borders written as Word expects, tables inside
+  cells no longer lost.
+- **Code blocks** keep their lines, their language and their monospace font,
+  and Word files read back with their code blocks, inline code and math.
+- **Pictures:** TIFF, EMF and WMF stay as they are in Word; every SVG picture
+  gets a PNG copy Word can show, however many a document has.
+
+**Kindle**
+
+- **AZW3 books open in calibre.** calibre refused every AZW3 the app wrote,
+  because of two index fields the writer left wrong; they are now written as
+  kindlegen writes them, and the book ends with kindlegen's end-of-file record.
+- **AZW3 books have their pictures.** They used to drop every image; pictures
+  are now stored in the book, converted to fit Kindle's 5 MB limit when
+  needed.
+
+**Pictures**
+
+- **Automatic pictures.** A picture an output can't hold as it is (a TIFF in
+  a PDF, a WebP in a Kindle book) becomes PNG when it is a screenshot, line
+  art, a diagram, a scan or a GIF, so lines and text stay sharp, and JPG when
+  it is a photograph, much smaller. Pictures with see-through parts stay PNG.
+  Settings → Pictures (or `--pictures`) can make them all JPG or all PNG.
+- **Automatic orientation.** The PDF toolbar's Orientation starts at
+  *Automatic*: a wide picture or drawing opened on its own prints on a
+  landscape page, a TIFF of portrait and landscape pages keeps each page's
+  own orientation, and a document that is mostly tables too wide for a
+  portrait page prints landscape. Everything else stays portrait. *Portrait*
+  and *Landscape* print every page that way, exactly as before. Word has the
+  same choice. On the command line it is `--orientation auto|portrait|landscape`
+  (`auto` by default); `--landscape` still works.
+- **Every page of a TIFF is recognized** by OCR, page by page, and a picture
+  of a page (a scan, a fax) prints filling its page.
+- **No size limits on pictures.** Pictures of any size convert, and every
+  formula and diagram in a document is drawn; the limits left are the ones
+  that protect memory (a picture over 50 megapixels, a TIFF page chain that
+  loops).
+
+**Web pictures, intranet and security**
+
 - **Every web picture is fetched, intranet ones included.** 1.3 stopped at 100
   images and 25 MB a document and refused intranet addresses. Now there is no
   count or total, each picture may be up to 200 MB, and private addresses such
   as `http://intranet/logo.png` load. This machine and cloud metadata addresses
-  are still refused. See [Images and the network](#images-and-the-network).
+  are still refused. Pictures an SVG names by web address are fetched too.
+- **Security fix: DNS rebinding.** The address check and the connection used
+  to look the name up separately, so a host name could answer a public address
+  to the check and this machine to the connection. The connection is now made
+  to the address that was checked. OCR language downloads use the same guarded
+  path. See [Images and the network](#images-and-the-network).
+- **Builds carry no update address.** Every earlier build held an
+  `app-update.yml` naming this repository, although no updater reads it; it is
+  gone.
+
+**Settings and the command line**
+
+- **Settings.** A Settings dialog holds the defaults for choices most people
+  make once. Open it with **File → Settings…** (Ctrl+,) on Windows and Linux,
+  **Settings…** (Cmd+,) on macOS, the start screen's *Settings* link or the
+  conversion screen's gear button. Its seven sections cover pictures, the
+  web, formulas and diagrams, code, pages, reading and OCR, and every setting says
+  which outputs it affects. Settings are remembered from one start to the
+  next; a change on the conversion screen lasts only until you quit. Web
+  pictures, intranet pictures and code color can each be turned off there.
+  See [Settings](#settings).
 - **The command line takes the same settings.** `--settings <file>` starts from
   a settings file and `--settings app` from the app's own; without either, the
   built-in defaults are used and nothing on disk is read. New flags:
-  `--pictures <auto|jpg|png>` and `--ocr-lang <code>`, and the pairs
-  `--fetch`/`--no-fetch`, `--local-network`/`--no-local-network`,
-  `--code-color`/`--no-code-color` and `--header-footer`/`--no-header-footer`,
-  so a flag can turn back on what a settings file turns off. See
-  [Command line](#command-line).
-- **Large drawings and workbooks take less time and memory.** A 12 MB SVG
-  file converts to Word in about 3 seconds, was 18, and no longer needs more
-  than a gigabyte of memory to be cleaned. Excel output is written as it goes and
-  compressed: a million rows take about 3 seconds and 300 MB, were 10 seconds
-  and 3 GB, and the file is a sixth of the size. An empty cell is now empty
-  in Excel, not empty text.
-- **A SQLite view cannot take the app down.** A view that would need more
-  memory than a database is given (a quarter of the computer's, at most
-  1.5 GB) is stopped with a message, and the rest of the database is still
-  converted.
+  `--pictures <auto|jpg|png>`, `--ocr-lang <code>`, `--orientation`,
+  `--diagrams <svg|png>`, `--json-as <table|text>`, `--no-timestamps`,
+  `--sqlite-views`, and the pairs `--fetch`/`--no-fetch`,
+  `--local-network`/`--no-local-network`, `--code-color`/`--no-code-color`
+  and `--header-footer`/`--no-header-footer`, so a flag can turn back on what
+  a settings file turns off. See [Command line](#command-line).
+
+**The app**
+
+- **Sample documents.** Help → Sample Documents (and the start screen's
+  *Sample documents* link) opens one of five invented documents that show off
+  diagrams, formulas, code, tables and pictures. See
+  [Sample documents](#sample-documents).
+- **The editor** draws diagrams and formulas as you type (a diagram's source
+  over its drawing, an inline formula in a popover), colors code by language
+  with a searchable language picker (Ctrl+Alt+L), and has Insert buttons for
+  formulas, diagrams and footnotes. See
+  [Editing before converting](#editing-before-converting).
+- **About and licenses.** Help → About shows the version and the license of
+  every component the app ships; the window title shows the version too.
+- **Slides** split a titled document into section slides and shrink a slide
+  that is too long to fit; long titles fit instead of filling the slide.
+- **File dialogs** open on top of the window, one at a time, and the editor
+  stays inside its card in a narrow or short window.
+
+**Faster, and lighter on memory**
+
+- A 12 MB SVG file converts to Word in about 3 seconds (was 18) and no longer
+  needs more than a gigabyte of memory to be cleaned.
+- Excel output is written as it goes and compressed: a million rows take
+  about 3 seconds and 300 MB (were 10 seconds and 3 GB), and the file is a
+  sixth of the size. An empty cell is now empty in Excel, not empty text.
+- A SQLite view that would need more memory than a database is given (a
+  quarter of the computer's, at most 1.5 GB) is stopped with a message, and
+  the rest of the database is still converted.
+- Record files (CSV, JSON Lines and the like) of any size are read, stopping
+  with a notice if memory runs out; long code blocks color quickly in the
+  editor, and Markdown with long pictures is written in linear time.
 
 ## What's new in 1.3
 
@@ -189,8 +322,50 @@ The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
 ## Editing before converting
 
 Anything pasted or fetched opens in an editor first, so you can trim it before
-converting. Pasted Markdown arrives as formatted text, not as raw syntax. The
-[Gallery](#gallery) shows the editor with each sample document.
+converting; a file opens there with *Edit*. Pasted Markdown arrives as
+formatted text, not as raw syntax. The editor keeps everything the converter
+keeps, and what you see is what is converted.
+
+- **Formatting:** paragraph styles (headings, code block and the rest), bold,
+  italic, underline, strikethrough, superscript, subscript, highlight
+  (Ctrl+Shift+H), inline code, lists, quotes, links, tables (with buttons to
+  add and remove rows and columns), horizontal rules, undo and redo, and
+  *Clear formatting*.
+- **Footnotes:** *Insert footnote* (Ctrl+Alt+F).
+- **Formulas:** the *fx* menu inserts an inline formula (Ctrl+Shift+M) or a
+  formula block. An inline formula edits in a popover that shows its TeX and
+  its drawing.
+- **Diagrams:** the diagram menu inserts a Mermaid or Graphviz diagram. While
+  the cursor is in one, its source is shown over its drawing, and the drawing
+  follows as you type.
+- **Code:** code blocks are colored by language as you edit. The language
+  button in a block's corner (Ctrl+Alt+L from the code) opens a list to
+  search by name or alias (`js`, `py`, `c++`). Pasted code that names no
+  language has it guessed.
+
+On macOS, Ctrl is Cmd in these shortcuts. A file that changes on disk while it
+is open in the editor is not reloaded behind your back: a notice offers
+*Reload from disk* or *Keep my edits*. The [Gallery](#gallery) shows the
+editor with each sample document.
+
+## Sample documents
+
+**Help → Sample Documents** (on macOS in its Help menu), or the start
+screen's *Sample documents* link, opens one of five invented documents, each
+3 to 4 printed pages, made to show what the app does:
+
+| Sample | Shows |
+| --- | --- |
+| Engineering design note (a footbridge retrofit) | Graphviz load path, siunitx formulas, right-aligned number tables |
+| Software design specification (a sync service) | Mermaid class and sequence diagrams, colored SQL and code |
+| Lab report (reaction rate against temperature) | display and inline formulas, an SVG plot, a photograph |
+| Meeting summary (an office move) | a Mermaid mind map and Gantt chart, highlighted text, an annotated floor plan |
+| Architecture diagram | a standalone SVG drawing, printed landscape by Automatic orientation |
+
+A sample opens as an untitled copy, so converting it never touches the copy
+inside the app: a Markdown sample opens in the editor, the SVG is added as a
+dropped picture would be. The samples live in `resources/samples`, built by
+`scripts/samples/build-samples.mjs`.
 
 ## What it reads
 
@@ -221,7 +396,10 @@ picture; read as a picture."). Text that only starts like one stays text.
 - **Web pages.** `.html` and `.htm`.
 - **Text and Markdown.** `.txt` and `.text`; Markdown as `.md`, `.markdown`,
   `.mdown`, `.mkd`, `.mkdn`, `.mdwn` and `.markdn`, and R Markdown and Quarto
-  (`.rmd`, `.qmd`) with their code chunks.
+  (`.rmd`, `.qmd`) with their code chunks. Markdown is CommonMark with GitHub
+  tables, task lists, alerts, strikethrough and emoji shortcodes, footnotes,
+  definition lists, YAML front matter, `$…$` / `$$…$$` math and `mermaid` /
+  `dot` diagram blocks. Minified JSON and XML are printed re-indented.
 - **Other documents.** `.pdf`, `.rtf` and `.epub`.
 - **Email.** `.eml`, `.msg` (Outlook) and `.mbox` archives.
 - **Calendars and contacts.** `.ics` and `.ical` invitations; vCard contacts
@@ -336,7 +514,69 @@ plain text version on the clipboard. It is hidden for outputs whose bytes are
 not text (Word, PDF, EPUB, Excel, Kindle), and for slide decks, which are a
 complete HTML document with about 240 KB of JavaScript inlined.
 
+## Diagrams, formulas and code
+
+Diagrams and formulas are drawn by engines that ship inside the app, in a
+hidden, sandboxed window with no network access: Mermaid 11.12, Graphviz 16.1
+(viz-js 3.31) and MathJax 3.2. Nothing is sent anywhere to be drawn.
+
+- **Where they come from.** Markdown fences (` ```mermaid `, ` ```dot ` or
+  ` ```graphviz `) and `$…$` / `$$…$$` math, and the same in notebooks,
+  AsciiDoc, reStructuredText and Djot; web pages that mark them as diagrams
+  or TeX; and Word equations, which are converted to TeX.
+- **How they are written.** *Sharp (SVG)*, the default, embeds them as SVG
+  in PDF, HTML, slides, EPUB and Kindle Print Replica (AZW4): text stays
+  selectable and they print sharp at any zoom. *Image (PNG)* (Settings →
+  Formulas & diagrams, the conversion screen, or `--diagrams png`) embeds PNG
+  instead. Word and Kindle (AZW3) always get PNG, sized to the text, with
+  inline formulas set on the baseline. Markdown and plain text keep the
+  source (fences and dollars), so a round trip loses nothing.
+- **When one fails.** A diagram with a syntax error, or a formula with an
+  unknown macro, keeps its source in the output, with a notice naming it;
+  the rest of the document converts.
+- **Code** is colored by language (highlight.js grammars; more than 80
+  extensions, plus names such as `Dockerfile` and `Makefile`) in every output
+  that can show color, and in the editor. Settings → Code or `--no-code-color`
+  writes it plain black, for printing.
+
+Copying the result to the clipboard (*Convert to clipboard*) turns diagrams
+and SVG pictures into PNG, which Word and Outlook can show.
+
+## Pictures
+
+The app reads PNG, JPEG, GIF, WebP, TIFF, BMP, AVIF and ICO pictures, SVG
+drawings and Word's EMF and WMF drawings, on their own or inside documents
+(Word, RTF, PowerPoint, OpenDocument, web pages, EPUB, email). Each output
+keeps what it can hold and gets a converted copy of the rest:
+
+| Output | Kept as they are | Converted |
+| --- | --- | --- |
+| Word | PNG, JPEG, GIF, BMP, WebP, TIFF, EMF, WMF | SVG gets a PNG copy; AVIF and ICO become PNG or JPG |
+| PDF, HTML, slides, AZW4 | PNG, JPEG, GIF, WebP, SVG, BMP, AVIF, ICO | TIFF; EMF and WMF are drawn as SVG |
+| EPUB | PNG, JPEG, GIF, WebP, SVG | EMF and WMF are drawn as SVG; the others become PNG or JPG |
+| Kindle (AZW3) | PNG, JPEG, GIF up to 5 MB | the others (SVG and drawings as pictures), and anything over 5 MB, fitted under 5 MB |
+| Markdown | PNG, JPEG, GIF, WebP, SVG | the others become PNG or JPG |
+
+A converted picture becomes PNG when it is a screenshot, line art, a diagram,
+a scan or a GIF (few colors or large flat areas), and JPG when it is a
+photograph, unless Settings → Pictures (or `--pictures jpg|png`) says
+otherwise. Pictures with see-through parts always stay PNG, and drawings stay
+drawings (SVG) where the output allows it. A TIFF of several pages (a fax, a
+scanned letter) becomes a picture a page, each page printed on a page of its
+own and turned as it is; with OCR each page is recognized.
+
+The limits that remain protect memory, not size: a TIFF page may be up to 50
+megapixels, and a web picture up to 200 MB. HEIC
+(iPhone photos) is not read: Chromium cannot decode it, so save it as JPEG
+first.
+
 ## Images and the network
+
+What leaves your computer, in full: a web page you ask for (*From URL*), the
+pictures a document or a paste names by web address (on by default, can be
+turned off), and an OCR language pack you choose to download. Conversions
+themselves run locally; there is no account, no telemetry, no update check
+and no cloud service.
 
 A document can refer to an image by web address instead of containing it: a
 saved web page, a Markdown file with `![chart](https://…)`, a paste from a
@@ -485,15 +725,15 @@ than plain text. See
 `docs/superpowers/specs/2026-09-01-epub-output-and-anchors-design.md`.
 
 **No auto-update.** The app does not check for updates and contains no updater.
-There is deliberately no `publish` section in `electron-builder.yml`, so no
-update endpoint is written into the packaged app.
+`electron-builder.yml` sets `publish: null`, so no update endpoint is written
+into the packaged app.
 
-**macOS ships as an unsigned zip only.** The `.app` is cross-built from Linux,
-which is enough for the zip target but not for a `.dmg` (`hdiutil` is macOS-only)
-and not for signing or notarization (`codesign` likewise). There is no Apple
-Developer certificate and no macOS build machine, so Gatekeeper will always
-challenge it. An arm64 build would need `@napi-rs/canvas-darwin-arm64` installed
-before packaging, for the reason given under Packaging.
+**macOS builds are unsigned unless built with a certificate.** `npm run build:mac`
+cross-builds an unsigned x64 zip on Linux; a `.dmg`, an Apple Silicon build,
+signing and notarization need a Mac (`hdiutil` and `codesign` are macOS-only),
+which `scripts/build/build-macos.sh` does (see
+[Building a release](#building-a-release)). Without an Apple Developer ID
+certificate, Gatekeeper challenges the app on first open.
 
 **Out of scope.** `.ppt` (the old binary PowerPoint format, with no usable
 JavaScript reader), `.odg`, LaTeX, `.pst` archives, and converting email
@@ -574,8 +814,27 @@ docconv convert <inputs...> --to <txt|md|docx|pdf|html|epub|revealjs|azw3|azw4|c
   [--settings <file|app>] [--no-clobber] [--help] [--version]
 ```
 
-The launcher is installed at `<install>/resources/cli/docconv`. In a development
-checkout, run `npm run cli -- <args>`.
+The command line is the app itself, started with `convert` as its first word:
+
+- **Windows:** `<install>\resources\cli\docconv.cmd convert …` (the installer
+  puts the app in your user folder, under `%LOCALAPPDATA%\Programs`; add its
+  `resources\cli` folder to `PATH` to type `docconv`).
+- **Linux:** `./docconversion-<version>.AppImage convert …`.
+- **macOS:** `"/Applications/Document Converter.app/Contents/MacOS/Document Converter" convert …`.
+- **A development checkout:** `npm run cli -- <args>` (after `npm run build`).
+
+`--help` and `--version` work without `convert`. Examples:
+
+```
+docconv convert report.docx --to pdf --page A4
+docconv convert notes.md --to docx --out notes.docx --settings app
+docconv convert scan.tiff --to txt --ocr --ocr-lang deu
+docconv convert a.md b.md c.md --to pdf --merge --out handbook.pdf
+docconv convert *.html --to epub --out books/ --no-fetch
+docconv convert sales.xlsx --to csv --table 2 --out sales.csv
+docconv convert talk.md --to revealjs --split h2 --diagrams png
+docconv convert app.sqlite --to xlsx --sqlite-views --out app.xlsx
+```
 
 - `--out` names a file, and its extension is honored. Given a directory, names
   are derived from the inputs. Given no extension, the target's is appended.
@@ -629,6 +888,32 @@ checkout, run `npm run cli -- <args>`.
 - Exit code 0 when everything succeeded, 1 when anything failed, 2 when the
   arguments were wrong.
 - On Linux, PDF output needs a display server — run under `xvfb-run` if headless.
+
+## Troubleshooting
+
+- **Windows says the app is unrecognized (SmartScreen).** The build is not
+  code signed: choose *More info*, then *Run anyway*.
+- **macOS says the app is damaged or can't be opened.** It is unsigned and
+  quarantined: right-click it and choose *Open*, or run
+  `xattr -dr com.apple.quarantine "/Applications/Document Converter.app"`.
+- **The AppImage does not start on Linux** ("dlopen(): error loading
+  libfuse.so.2"): install FUSE 2 (`sudo apt install libfuse2`, or
+  `libfuse2t64` on Ubuntu 24.04), or run it with `--appimage-extract-and-run`.
+- **PDF output fails on a Linux server.** PDF is printed by Chromium, which
+  needs a display server: run the command line under `xvfb-run`.
+- **A web picture is missing** (it shows as `[image: …]`). It could not be
+  fetched within 10 seconds, was over 200 MB, was not a picture, or is on an
+  address the app refuses (this machine, link-local, or the intranet when
+  Settings → Web says so). Email and calendar invitations never fetch them.
+- **A diagram or formula shows its source.** It has an error, or uses a
+  macro MathJax doesn't know; the notice after the conversion names it.
+- **Settings were reset.** A `settings.json` that can't be read is renamed to
+  `settings.json.bad-<time>` beside it and the defaults are used; the window
+  says so.
+- **OCR in another language** needs that language's pack, downloaded once from
+  Settings → OCR (it shows the size first). On the command line, `--ocr-lang`
+  uses packs the app has installed.
+- **An iPhone photo (HEIC) is refused.** Save it as JPEG first.
 
 ## Development
 
@@ -692,10 +977,48 @@ and overwrites the clipboard.
 ### Packaging
 
 ```
+npm run build:unpack  # the app, unpacked, for this OS -> dist/<os>-unpacked
 npm run build:win     # NSIS installer -> dist/docconversion-<version>-setup.exe
 npm run build:linux   # AppImage       -> dist/docconversion-<version>.AppImage
-npm run build:mac     # zip            -> dist/Document Converter-<version>-mac.zip
+npm run build:mac     # x64 zip        -> dist/Document Converter-<version>-mac.zip
 ```
+
+Each `build:<os>` first installs that platform's `@napi-rs/canvas` binding
+(`scripts/native-for-target.mjs`): npm installs only the host's, and a package
+without its own converts every PDF with no pictures, silently. `build:win`
+runs on Linux too, but electron-builder needs Wine there to finish the
+installer (it runs it once to write the uninstaller); `dist/win-unpacked` is
+made without Wine. `build:mac` on Linux makes an unsigned x64 zip.
+
+What goes into a package is an allowlist in `electron-builder.yml`: `out/`
+(less the e2e bundle and the build's own package record), `resources/`,
+`package.json` and `node_modules/`. Nothing else in the checkout can be
+packaged by accident.
+
+## Building a release
+
+One script per OS, run on that OS, makes a release build end to end:
+
+```
+scripts/build/build-linux.sh                                   # on Linux x64
+scripts/build/build-macos.sh                                   # on a Mac
+powershell -ExecutionPolicy Bypass -File scripts\build\build-windows.ps1   # on Windows x64
+```
+
+Each checks the platform, Node (`engines` in `package.json`: 22.13 or later)
+and npm, runs `npm ci`, the type check and the unit tests, builds, and prints
+each artifact's path, size and SHA-256. `--e2e` (`-E2E` on Windows) also runs
+`test:cli` and `test:ui` against the build; `--skip-checks` (`-SkipChecks`)
+skips the type check and tests, for trying a build, not for a release.
+
+| Script | Makes | Signing |
+| --- | --- | --- |
+| `build-linux.sh` | `dist/docconversion-<version>.AppImage` (x64) | none |
+| `build-windows.ps1` | `dist/docconversion-<version>-setup.exe` (NSIS, x64) | signed when `CSC_LINK` (or `WIN_CSC_LINK`) and `CSC_KEY_PASSWORD` name a code-signing certificate; otherwise unsigned |
+| `build-macos.sh` | a `.dmg` and a `.zip` each for Apple Silicon and Intel (`--arch arm64\|x64` for one) | signed with a Developer ID Application certificate in the keychain (or `CSC_LINK`), and notarized when `APPLE_API_KEY`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER`, `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` or `APPLE_KEYCHAIN_PROFILE` are set; otherwise ad-hoc signed, with a note |
+
+The version is the one in `package.json`. The scripts do not tag, publish or
+upload anything.
 
 ## Project layout
 
@@ -719,7 +1042,14 @@ npm run build:mac     # zip            -> dist/Document Converter-<version>-mac.
   checksum-gated pack installation. No Electron dependency.
 - `src/cli/` — argument parsing and output-path resolution. No side effects.
 - `src/main/` — the Electron main process: IPC handlers, dialogs, conversion
-  orchestration, the recognition host, and the headless CLI runner.
+  orchestration, the recognition host, the headless CLI runner, settings,
+  the menu and the About window.
+  - `render-host.ts` — the hidden, sandboxed window that draws diagrams,
+    formulas, metafiles and converted pictures.
+  - `sqlite-host.ts`, `sqlite-worker.ts` — SQLite databases, read in a worker
+    with its own memory cap.
+  - `net.ts` — the pinned fetcher: connects only to the addresses the guard
+    checked.
   - `file-handles.ts` — keeps the path of each file the app was given and hands
     the interface a token for it, so a conversion re-reads the file from disk.
 - `src/preload/` — the typed `window.api` bridge. Context isolation on, Node
@@ -727,12 +1057,21 @@ npm run build:mac     # zip            -> dist/Document Converter-<version>-mac.
 - `src/renderer/` — the React interface.
   - `lib/items.ts` — the input list, which is the only state that outlives the
     editor: edits are written back to it before a result is shown.
-- `docs/superpowers/` — design specs and implementation plans.
+- `resources/` — shipped with the app: `render/` (the diagram and formula
+  engines and the render page), `sqlite/` (sql.js), `ocr/` (English OCR data),
+  `samples/`, and `notices/` (written by the build).
+- `scripts/` — build helpers: `build/` (the release scripts), `screenshots.mjs`
+  (the README's pictures and tour), `samples/`, `fixtures/`, `notices/`.
+- `docs/screenshots/` — the README's tour and picture.
 
 ## License
 
 [MIT](LICENSE) © Stephen Genusa
 
-reveal.js is MIT © Hakim El Hattab and contributors. OCR language data is from
-the [tesseract-ocr](https://github.com/tesseract-ocr) project under the Apache
-2.0 license.
+The app ships many open-source components, each under its own license; Help →
+About lists every one with its license text, and the build writes the same
+list to `resources/notices/THIRD_PARTY_NOTICES.txt`. Among them: reveal.js
+(MIT), Mermaid (MIT), MathJax (Apache 2.0), Graphviz via viz-js (EPL 2.0),
+sql.js (MIT), tesseract.js (Apache 2.0), and OCR language data from the
+[tesseract-ocr](https://github.com/tesseract-ocr) project (Apache 2.0).
+
