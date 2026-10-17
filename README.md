@@ -22,6 +22,7 @@ locally, and the code that does it is in this repository.
 ## Contents
 
 - [Install](#install)
+- [What's new in 1.4](#whats-new-in-14)
 - [What's new in 1.3](#whats-new-in-13)
 - [What's new in 1.2](#whats-new-in-12)
 - [What's new in 1.1](#whats-new-in-11)
@@ -54,6 +55,40 @@ on first launch: right-click it and choose *Open*, or clear the quarantine
 attribute with `xattr -d com.apple.quarantine "Document Converter.app"`.
 
 The macOS build is x64 only; Apple Silicon runs it under Rosetta 2.
+
+## What's new in 1.4
+
+- **Settings.** A Settings dialog holds the defaults for choices most people
+  make once. Open it with **File → Settings…** (Ctrl+,) on Windows and Linux,
+  **Settings…** (Cmd+,) on macOS, the start screen's *Settings* link or the
+  conversion screen's gear button. Its seven sections cover pictures, the web,
+  formulas and diagrams, code, PDF, reading and OCR, and every setting says
+  which outputs it affects. Settings are remembered from one start to the next; a
+  change on the conversion screen lasts only until you quit. See
+  [Settings](#settings).
+- **JPG for pictures an output can't hold.** A TIFF in a PDF or a WebP in a
+  Kindle book is converted to JPG by default, much smaller for photographs.
+  Pictures with see-through parts stay PNG, and drawings stay SVG where the
+  output allows it, otherwise PNG. Settings → Pictures switches to PNG, which
+  keeps every pixel.
+- **Web pictures, intranet pictures and code color can be turned off.**
+  Settings → Web stops the app downloading the pictures a document refers to by
+  web address (each becomes its description, and the result says how many), or
+  refuses intranet addresses only. Settings → Code writes code blocks plain
+  black instead of colored by language.
+- **Every web picture is fetched, intranet ones included.** 1.3 stopped at 100
+  images and 25 MB a document and refused intranet addresses. Now there is no
+  count or total, each picture may be up to 200 MB, and private addresses such
+  as `http://intranet/logo.png` load. This machine and cloud metadata addresses
+  are still refused. See [Images and the network](#images-and-the-network).
+- **The command line takes the same settings.** `--settings <file>` starts from
+  a settings file and `--settings app` from the app's own; without either, the
+  built-in defaults are used and nothing on disk is read. New flags:
+  `--pictures <jpg|png>` and `--ocr-lang <code>`, and the pairs
+  `--fetch`/`--no-fetch`, `--local-network`/`--no-local-network`,
+  `--code-color`/`--no-code-color` and `--header-footer`/`--no-header-footer`,
+  so a flag can turn back on what a settings file turns off. See
+  [Command line](#command-line).
 
 ## What's new in 1.3
 
@@ -422,7 +457,7 @@ says which outputs it affects.
 | Reading | Transcripts: show times | on | Subtitle and transcript paragraphs start with their time |
 | Reading | SQLite: include view results | off | Adds the rows each view returns; views are always listed in the schema |
 | OCR | Default language | English | The language OCR reads in. One that isn't installed is downloaded first, after showing its size |
-| OCR | Installed languages | | Each downloaded language with its size and *Remove*. English is included and can't be removed. If you remove the default language, English is used until you install it again |
+| OCR | Installed languages | | Each downloaded language with its size and *Remove*, which asks first and says how large the download to get it back is. English is included and can't be removed. If you remove the default language, English is used until you install it again |
 
 **The conversion screen is for this session.** Its page size, zoom, header and
 footer, diagrams, OCR language and reading choices start from Settings each
@@ -476,7 +511,8 @@ checkout, run `npm run cli -- <args>`.
   Pictures with see-through parts stay PNG, and drawings stay SVG or PNG,
   either way.
 - `--no-fetch` converts without downloading web pictures; each becomes its
-  description and a `NOTE` says how many. `--no-local-network` still fetches
+  description and a `NOTE` says how many, and that `--no-fetch` (or the
+  settings file) turned fetching off. `--no-local-network` still fetches
   but refuses intranet addresses; neither it nor `--local-network` can be
   combined with `--no-fetch`.
 - `--no-code-color` writes code blocks plain, not colored by language.
