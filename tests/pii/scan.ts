@@ -42,7 +42,7 @@ const SKIP_PATHS = new Set([
   'tests/pii/domain-exceptions.txt',
 ])
 const BINARY_EXT =
-  /\.(png|jpe?g|gif|ico|icns|svg|pdf|docx?|xlsx?|pptx?|odt|odp|ods|epub|msg|rtf|eml|ics|gz|zip|traineddata|wasm|woff2?|ttf|mobi|azw3?|azw4)$/i
+  /\.(png|jpe?g|gif|ico|icns|bmp|tiff?|emf|wmf|svg|pdf|docx?|xlsx?|pptx?|odt|odp|ods|epub|msg|rtf|eml|ics|gz|zip|traineddata|wasm|woff2?|ttf|mobi|azw3?|azw4)$/i
 
 /**
  * A minimal .gitignore matcher.

@@ -6,7 +6,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, existsSync, rmSync, readFileSync } from 'node:fs'
 import { networkInterfaces, tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // The electron package exports the path to its own binary, which is
@@ -526,6 +526,60 @@ run('--settings OCR language not installed: English, with a note', [sample, '--t
   expectFiles: [join(work, 'sample-deu.txt')],
   expectStderr: "NOTE settings: The settings file's OCR language (deu) is not installed; English is used.",
 })
+
+// Picture files opened on their own: a TIFF of several pages, an EMF (tests/corpus,
+// scripts/fixtures/build-picture-files.mjs). Each was read as text before, and came out as garbage.
+const lease = join(root, 'tests', 'corpus', 'reading-room-lease.tiff')
+run('tiff->pdf: a page a TIFF page', [lease, '--to', 'pdf', '--out', join(work, 'lease.pdf')], { expectCode: 0, expectFiles: [join(work, 'lease.pdf')] })
+if (existsSync(join(work, 'lease.pdf'))) {
+  const pages = (readFileSync(join(work, 'lease.pdf')).toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length
+  if (pages !== 3) {
+    failures++
+    console.log(`FAIL  lease.pdf has ${pages} pages for a TIFF of 3`)
+  }
+}
+run('tiff->docx keeps each page a TIFF', [lease, '--to', 'docx', '--out', join(work, 'lease.docx')], { expectCode: 0, expectFiles: [join(work, 'lease.docx')] })
+if (existsSync(join(work, 'lease.docx')) && (readFileSync(join(work, 'lease.docx')).toString('latin1').match(/word\/media\/[^\0/]*?\.tif/g) ?? []).length < 3) {
+  failures++
+  console.log('FAIL  lease.docx does not keep its three TIFF pages')
+}
+const plan = join(root, 'tests', 'corpus', 'reading-room-floor-plan.emf')
+run('emf->docx keeps the EMF', [plan, '--to', 'docx', '--out', join(work, 'plan.docx')], { expectCode: 0, expectFiles: [join(work, 'plan.docx')] })
+if (existsSync(join(work, 'plan.docx')) && !/word\/media\/[^\0/]*?\.emf/.test(readFileSync(join(work, 'plan.docx')).toString('latin1'))) {
+  failures++
+  console.log('FAIL  plan.docx does not keep the EMF')
+}
+run('emf->html is drawn as SVG', [plan, '--to', 'html', '--out', join(work, 'plan.html')], { expectCode: 0, expectFiles: [join(work, 'plan.html')] })
+if (existsSync(join(work, 'plan.html')) && !/<img[^>]+src="data:image\/svg\+xml;base64,/.test(readFileSync(join(work, 'plan.html'), 'utf8'))) {
+  failures++
+  console.log('FAIL  plan.html has no SVG drawing')
+}
+run('emf->txt is refused like any drawing', [plan, '--to', 'txt'], { expectCode: 1, expectStderr: 'cannot convert metafile to txt' })
+// OCR, page by page: a fax of two pages, each holding words, read in order.
+{
+  const { createRequire } = await import('node:module')
+  const { createCanvas } = createRequire(join(root, 'package.json'))('@napi-rs/canvas')
+  const { tiff } = await import(pathToFileURL(join(root, 'scripts', 'fixtures', 'lib-tiff.mjs')).href)
+  const pageOf = (words) => {
+    const c = createCanvas(1400, 600)
+    const g = c.getContext('2d')
+    g.fillStyle = '#ffffff'
+    g.fillRect(0, 0, 1400, 600)
+    g.fillStyle = '#000000'
+    g.font = 'bold 72px Arial, "Liberation Sans", "DejaVu Sans", sans-serif'
+    g.fillText(words, 100, 300)
+    const data = g.getImageData(0, 0, 1400, 600).data
+    return { width: 1400, height: 600, pixel: (x, y) => [data[(y * 1400 + x) * 4]], kind: 'bilevel', compression: 'packbits', dpi: 200 }
+  }
+  const fax = join(work, 'fax.tif')
+  writeFileSync(fax, tiff({ pages: [pageOf('DOCUMENT CONVERSION'), pageOf('SEVENTY SEVEN')] }))
+  run('--ocr reads every page of a TIFF', [fax, '--to', 'txt', '--ocr', '--out', join(work, 'fax.txt')], { expectCode: 0, expectFiles: [join(work, 'fax.txt')] })
+  const text = existsSync(join(work, 'fax.txt')) ? readFileSync(join(work, 'fax.txt'), 'utf8').toLowerCase() : ''
+  if (!(text.indexOf('conversion') >= 0 && text.indexOf('seventy') > text.indexOf('conversion'))) {
+    failures++
+    console.log(`FAIL  fax.txt does not hold both pages' words in order: ${JSON.stringify(text.slice(0, 120))}`)
+  }
+}
 
 // content sanity
 if (existsSync(join(work, 'spec.html'))) {

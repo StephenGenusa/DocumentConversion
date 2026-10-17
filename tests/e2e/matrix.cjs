@@ -266,7 +266,7 @@ async function main() {
       )
     const addressedPictures = addressedIn(hubText)
     // Pictures a Kindle book must keep (decodable raster images; SVG ones get PNG copies).
-    const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp|tiff)[;,]/i.test(hubText)
+    const hasRasterImages = /src="data:image\/(?:png|jpe?g|gif|webp|tiff|bmp|avif|x-icon)[;,]/i.test(hubText)
     // TIFF pictures, by page (each page of a multi-page TIFF becomes its own picture),
     // which a Kindle book gets as JPEG or PNG (decoded in the render host).
     const tiffImages = [...hubText.matchAll(/src="data:image\/tiff;base64,([A-Za-z0-9+/=]+)"/gi)].reduce(
@@ -277,6 +277,12 @@ async function main() {
     // (src/core/metafile): SVG where SVG images stay SVG, PNG for Kindle, the bitmap itself for a
     // metafile that is only one. (Not an alternate, data-alt-src: the picture step chooses between the two.)
     const vectorImages = (hubText.match(/(?<![\w-])src="data:image\/x-[ew]mf[;,]/gi) ?? []).length
+    // A picture file opened on its own (a TIFF, EMF, WMF, BMP, ICO...): the document is its pictures,
+    // one a page, and nothing else. Every target that shows pictures gets each of them, a PDF a page
+    // each; no text is made up from its bytes; a drawing's text (its alt text) stays text in a PDF.
+    const pictureFile = source === 'image' || source === 'metafile'
+    const filePictures = pictureFile ? (hubText.match(/<img\b/g) ?? []).length : 0
+    const drawingWords = source === 'metafile' ? [...hubText.matchAll(/\salt="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/)).filter((w) => /^[A-Za-z]{3,}$/.test(w) && !/\.(?:emf|wmf)$/i.test(w)) : []
     // Code highlight.js finds tokens in (a shell prompt line may hold none).
     const hasColoredCode = /<span class="hljs-/.test(highlightCodeBlocks(hubText).html)
     const valid = allowedTargets([{ format: source, imageMode: 'embed' }])
@@ -439,6 +445,48 @@ async function main() {
           const images = (out.toString('latin1').match(/\/Subtype\s*\/Image\b/g) ?? []).length
           if (images < tiffImages) throw new Error(`${target} has ${images} images for ${tiffImages} TIFFs`)
           rec.note = `${rec.note ? rec.note + ', ' : ''}${images} images for ${tiffImages} TIFFs`
+        }
+        if (pictureFile && PICTURE_TARGETS.includes(target)) {
+          if (filePictures === 0) throw new Error('the picture file was read as no picture')
+          let shown
+          let text = ''
+          if (target === 'docx') {
+            const zip = await JSZip.loadAsync(out)
+            shown = Object.keys(zip.files).filter((n) => n.startsWith('word/media/') && !n.endsWith('/')).length
+          } else if (target === 'epub') {
+            const zip = await JSZip.loadAsync(out)
+            const pages = Object.keys(zip.files).filter((n) => /\.x?html$/.test(n) && !/cover|nav/i.test(n))
+            text = (await Promise.all(pages.map((n) => zip.file(n).async('string')))).join('\n')
+            shown = (text.match(/<img\b[^>]*\ssrc="(?!data:)[^"]+"/g) ?? []).length
+          } else if (target === 'azw3') {
+            shown = azw3Pictures
+          } else if (target === 'pdf' || target === 'azw4') {
+            const pdf = target === 'azw4' ? azw4Pdf(out) : out
+            // A drawing is drawn as vectors (SVG): its pages are counted, not its images.
+            shown = source === 'metafile' ? (pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length : (pdf.toString('latin1').match(/\/Subtype\s*\/Image\b/g) ?? []).length
+            const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length
+            if (pages !== filePictures) throw new Error(`${target} has ${pages} pages for a picture file of ${filePictures} pictures`)
+          } else {
+            text = out.toString('utf8')
+            shown = target === 'md' ? (text.match(/!\[[^\]]*\]\(data:image\//g) ?? []).length : (text.match(/<img\b[^>]*\ssrc="data:image\//g) ?? []).length
+          }
+          if (shown < filePictures) throw new Error(`${target} shows ${shown} pictures of the file's ${filePictures}`)
+          if (text) {
+            // What is read as text: no replacement characters or control codes (the bytes read as text).
+            const visible = text
+              .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
+              .replace(/data:[\w/+.-]+;base64,[A-Za-z0-9+/=]+/g, ' ')
+              .replace(/<[^>]*>/g, ' ')
+            if (/[\uFFFD\u0000-\u0008\u000E-\u001F]/.test(visible)) throw new Error(`${target} holds garbage text from the picture's bytes`)
+          }
+          rec.note = `${rec.note ? rec.note + ', ' : ''}${shown} of ${filePictures} pictures`
+        }
+        if (drawingWords.length > 0 && (target === 'pdf' || target === 'azw4')) {
+          // The drawing's text is text in the PDF (drawn as SVG), so it is found, selected and read back.
+          const back = (await getReader('pdf')({ bytes: target === 'azw4' ? azw4Pdf(out) : out, filename: 'back.pdf' })).html.replace(/<[^>]+>/g, ' ').toLowerCase()
+          const lost = drawingWords.filter((w) => !back.includes(w.toLowerCase()))
+          if (lost.length) throw new Error(`${target} lost the drawing's text: ${lost.join(', ')}`)
+          rec.note = `${rec.note ? rec.note + ', ' : ''}drawing's text selectable`
         }
         if ((tiffImages > 0 || vectorImages > 0) && target === 'docx') {
           // Word keeps TIFF (one a page), EMF and WMF as they are, each part's type declared.
