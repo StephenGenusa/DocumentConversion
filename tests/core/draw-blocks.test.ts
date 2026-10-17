@@ -284,6 +284,21 @@ describe('Converter.write draws diagrams through ConverterDeps.renderBlocks', ()
     ])
   })
 
+  it("draws a Textile bc(language-mermaid). block and an HTML page's <pre class=\"mermaid\">", async () => {
+    const { render, calls } = fakeRenderer()
+    const conv = createConverter(pdf, { renderBlocks: render })
+    const fromTextile = Buffer.from('bc(language-mermaid). graph LR\n  A --> B\n')
+    const out = (await conv.convert({ bytes: fromTextile, filename: 'g.textile' }, 'textile', 'html')).parts[0].bytes.toString('utf8')
+    expect(out).toContain(`src="data:image/svg+xml;base64,${SVG64}"`)
+    expect(calls[0]).toEqual([{ kind: 'mermaid', source: 'graph LR\n  A --> B', display: true, format: 'svg' }])
+    const fromHtml = Buffer.from('<html><body><pre class="mermaid">graph TD\nA --&gt; B</pre><pre class="graphviz">digraph { a -&gt; b }</pre></body></html>')
+    await conv.convert({ bytes: fromHtml, filename: 'g.html' }, 'html', 'pdf')
+    expect(calls[1]).toEqual([
+      { kind: 'mermaid', source: 'graph TD\nA --> B', display: true, format: 'svg' },
+      { kind: 'dot', source: 'digraph { a -> b }', display: true, format: 'svg' },
+    ])
+  })
+
   it('passes the chosen format from ConvertOptions.renderedFormat', async () => {
     const { render, calls } = fakeRenderer()
     const conv = createConverter(pdf, { renderBlocks: render })

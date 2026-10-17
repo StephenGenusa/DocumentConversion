@@ -1,6 +1,7 @@
 import { getReader } from './readers'
 import { docxHasEquations } from './readers/docx'
 import { decodeTextBytes } from './readers/txt'
+import { MATH_LIBRARY } from './readers/html'
 import { hubFeatures, type HubFeatures } from './rendered-blocks'
 import type { SourceFormat } from './types'
 
@@ -104,6 +105,16 @@ const mdCloses = (open: string, close: string): boolean => close[0] === open[0] 
  */
 const MD_CANDIDATES = /^[ \t]{0,3}(?:`{3,}|~{3,})[ \t]*\{?[ \t]*[.=]?(?:mermaid|dot|graphviz|gv|viz|math)\b|\$\$|\$(?=\S)[^$\n]*[\\{}^_][^$\n]*\$/gim
 
+/**
+ * In HTML: a block named as a diagram or math (the hub's `language-X`,
+ * mermaid.js's `class="mermaid"`, pandoc's `class="math …"`), MathJax's
+ * script and KaTeX's drawing (readers/html.ts). In a page that loads MathJax
+ * or KaTeX, also its delimiters in the text (HTML_DELIMITED).
+ */
+const HTML_CANDIDATES =
+  /\blanguage-(?:mermaid|dot|graphviz|gv|math)\b|\bclass=["']?(?:[^"'>]*\s)?(?:mermaid|graphviz|math|katex)\b|\bmath\/tex\b/gi
+const HTML_DELIMITED = new RegExp(`${HTML_CANDIDATES.source}|\\\\[([]|\\$\\$`, 'gi')
+
 const SCANS: Partial<Record<SourceFormat, Scan>> = {
   md: { candidates: MD_CANDIDATES, fence: MD_FENCE, closes: mdCloses, literal: () => true },
   ipynb: { candidates: MD_CANDIDATES, fence: MD_FENCE, closes: mdCloses, literal: () => true, readAs: 'md' },
@@ -123,8 +134,11 @@ const SCANS: Partial<Record<SourceFormat, Scan>> = {
   },
   rst: { candidates: /^[ \t]*\.\.[ \t]+(?:mermaid|math|graphviz|digraph|graph)::|:math:`/gim },
   textile: { candidates: /language-(?:mermaid|dot|math)\b|^bc\.?\(language-(?:mermaid|dot)\)/gim },
-  html: { candidates: /\blanguage-(?:mermaid|dot|math)\b/g },
+  html: { candidates: HTML_CANDIDATES },
 }
+
+/** Where an HTML window may end: the element its text is in closes. */
+const HTML_CLOSE = /<\/(?:code|pre|div|span|script|p)>/gi
 
 /** A window's reach either side of its candidate, when no block boundary comes sooner. */
 const BEFORE = 4 * 1024
@@ -147,8 +161,11 @@ async function scanFeatures(bytes: Buffer, format: SourceFormat, deadline: numbe
   const text = format === 'ipynb' ? notebookMarkdown(bytes) : decodeTextBytes(bytes)
   if (text === undefined) return undefined
   const fences = scan.fence ? fenceRanges(text, scan) : []
+  // A page's math library makes its delimiters math (readers/html.ts): each
+  // excerpt carries the script that loads it.
+  const library = format === 'html' ? MATH_LIBRARY.exec(text)?.[0] : undefined
   // A formula's mark in a code block is code; a fence's own line is the candidate, not in it.
-  const candidates = [...text.matchAll(scan.candidates)]
+  const candidates = [...text.matchAll(library ? HTML_DELIMITED : scan.candidates)]
     .map((m) => ({ at: m.index, diagram: isDiagramCandidate(m[0]) }))
     .filter(({ at, diagram }) => {
       if (diagram) return true
@@ -157,7 +174,7 @@ async function scanFeatures(bytes: Buffer, format: SourceFormat, deadline: numbe
     })
   // asciidoctor resolves `stem:[…]` by the header's `:stem:` (asciidoc.ts):
   // each excerpt carries the header's attribute lines.
-  const header = format === 'asciidoc' ? headerAttributes(text) : ''
+  const header = format === 'asciidoc' ? headerAttributes(text) : library ? `${library}</script>\n` : ''
   const found: HubFeatures = { diagrams: false, math: false }
   const reader = getReader(scan.readAs ?? format)
   let next = 0
@@ -232,8 +249,10 @@ function windowAt(text: string, pos: number, fences: Fence[], format: SourceForm
     const tag = text.lastIndexOf('<', pos)
     const pre = text.lastIndexOf('<pre', tag)
     const start = pre >= 0 && tag - pre < 512 && !text.slice(pre, tag).includes('</pre') ? pre : Math.max(0, tag)
-    const close = text.indexOf('</code>', pos)
-    const end = close < 0 || close - pos > FENCE_MAX ? Math.min(text.length, pos + AFTER) : close + '</code>'.length
+    // To the first closing tag a diagram's or formula's text can end at.
+    HTML_CLOSE.lastIndex = pos
+    const close = HTML_CLOSE.exec(text)
+    const end = !close || close.index - pos > FENCE_MAX ? Math.min(text.length, pos + AFTER) : close.index + close[0].length
     const after = /^\s*<\/pre>/.exec(text.slice(end, end + 64))
     return [start, after ? end + after[0].length : end]
   }

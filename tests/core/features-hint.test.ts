@@ -16,6 +16,10 @@ describe('featuresHint (spec 2a: the Diagrams choice knows about a file never op
     expect(await featuresHint(b('[mermaid]\n----\ngraph LR\nA-->B\n----\n'), 'asciidoc')).toEqual({ diagrams: true, math: false })
     expect(await featuresHint(b('.. mermaid::\n\n   graph LR\n   A-->B\n'), 'rst')).toEqual({ diagrams: true, math: false })
     expect(await featuresHint(b('<pre><code class="language-mermaid">graph LR</code></pre>'), 'html')).toEqual({ diagrams: true, math: false })
+    // mermaid.js's own markup, Textile's class on a block, a pandoc math span.
+    expect(await featuresHint(b('<pre class="mermaid">graph LR</pre>'), 'html')).toEqual({ diagrams: true, math: false })
+    expect(await featuresHint(b('bc(language-mermaid). graph LR\n'), 'textile')).toEqual({ diagrams: true, math: false })
+    expect(await featuresHint(b('<p><span class="math inline">\\(x^2\\)</span></p>'), 'html')).toEqual({ diagrams: false, math: true })
     // Graphviz alone counts: it is drawn too (step 17), so the Diagrams choice applies.
     expect(await featuresHint(b('.. digraph:: deps\n\n   a -> b\n'), 'rst')).toEqual({ diagrams: true, math: false })
     expect(await featuresHint(b('# Plain\n\nNothing to draw, and $5 is not math.\n'), 'md')).toEqual({ diagrams: false, math: false })
@@ -73,6 +77,16 @@ describe('featuresHint on a large input: scanned, not read whole', () => {
     const page = `<html><body>${'<p>The reading room opens at nine.</p>'.repeat(60_000)}<pre><code class="language-mermaid">graph LR\nA --&gt; B</code></pre><p>Inline <code class="language-math">x^2</code>.</p></body></html>`
     expect(page.length).toBeGreaterThan(FEATURES_HINT_MAX_BYTES)
     expect(await featuresHint(big(page), 'html')).toEqual({ diagrams: true, math: true })
+  })
+
+  it("HTML: mermaid.js's markup, a math span, and MathJax's delimiters in a page that loads it", async () => {
+    const filler = '<p>The reading room opens at nine.</p>'.repeat(60_000)
+    const page = `<html><body>${filler}<div class="mermaid">\n  graph LR\n  A --&gt; B\n</div><p>Inline <span class="math inline">x^2</span>.</p></body></html>`
+    expect(await featuresHint(big(page), 'html')).toEqual({ diagrams: true, math: true })
+    const mathjax = '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>'
+    const delimited = `<html><head>${mathjax}</head><body>${filler}<p>Area \\(\\pi r^2\\) here.</p></body></html>`
+    expect(await featuresHint(big(delimited), 'html')).toEqual({ diagrams: false, math: true })
+    expect(await featuresHint(big(delimited.replace(mathjax, '')), 'html')).toEqual({ diagrams: false, math: false })
   })
 
   it('Djot and a notebook large for its outputs', async () => {

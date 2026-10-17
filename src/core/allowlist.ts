@@ -1,5 +1,6 @@
 import sanitizeHtml from 'sanitize-html'
 import { FOOTNOTE_LABEL } from './footnotes'
+import { diagramLanguage } from './rendered-blocks'
 
 /**
  * Single source of truth for what the hub allows. The TipTap editor schema
@@ -124,8 +125,23 @@ export function stripXmlIllegal(text: string): string {
   return text.replace(XML_ILLEGAL, '')
 }
 
+/**
+ * A diagram or formula block in exactly the hub's form (rendered-blocks.ts),
+ * which is what hubFeatures and the drawing pass look for: no class on the
+ * `<pre>` (Textile's `bc(language-mermaid).` puts it on both), and Graphviz
+ * named `dot` whatever the author called it (`language-graphviz`).
+ */
+const CLASSED_BLOCK = /<pre\b[^>]*><code class="language-([\w+-]+)">/g
+
+function hubDrawnBlocks(html: string): string {
+  return html.replace(CLASSED_BLOCK, (tag, lang: string) => {
+    const name = lang === 'math' ? 'math' : diagramLanguage(lang)
+    return name ? `<pre><code class="language-${name}">` : tag
+  })
+}
+
 export function sanitizeToHub(html: string): string {
-  const clean = sanitizeHtml(html, hubSanitizeOptions())
+  const clean = hubDrawnBlocks(sanitizeHtml(html, hubSanitizeOptions()))
   // An <img> whose src used a scheme we don't allow (cid:, file:) comes back
   // with no src at all. Such an element carries nothing and made the docx
   // writer throw, so drop it — keeping its alt text where there is any.
