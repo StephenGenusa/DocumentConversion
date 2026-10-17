@@ -64,7 +64,14 @@ export function trimTrailingEmpty(rows: string[][]): string[][] {
 /**
  * `rich`, when given, may return a cell's HTML in place of its escaped value —
  * the .ods reader's formatted text. `header` says the cell is a `<th>`.
+ *
+ * A line break inside a cell (Alt+Enter in Excel, a newline in a quoted csv
+ * field, the paragraphs of an .ods cell) becomes a `<br>`: html and pdf show a
+ * bare newline as a space. The table writers (csv, xlsx, md) read either as
+ * the same space between the lines, so their cell text is as it was.
  */
+const LINE_BREAK = /\r\n?|\n/g
+
 export type RichCell = (r: number, c: number, header: boolean) => string | undefined
 
 export function rowsToHtmlTable(rows: string[][], header: boolean, merges: CellMerge[] = [], rich?: RichCell): string {
@@ -87,7 +94,8 @@ export function rowsToHtmlTable(rows: string[][], header: boolean, merges: CellM
     const attrs = span
       ? (span.colspan > 1 ? ` colspan="${span.colspan}"` : '') + (span.rowspan > 1 ? ` rowspan="${span.rowspan}"` : '')
       : ''
-    return `<${tag}${attrs}>${rich?.(r, c, tag === 'th') ?? escapeHtml(value)}</${tag}>`
+    const html = rich?.(r, c, tag === 'th') ?? escapeHtml(value)
+    return `<${tag}${attrs}>${html.includes('\n') || html.includes('\r') ? html.replace(LINE_BREAK, '<br>') : html}</${tag}>`
   }
   const tr = (row: string[], tag: string, r: number): string =>
     `<tr>${row.map((v, c) => cell(tag, v, r, c)).join('')}</tr>`
