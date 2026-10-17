@@ -17,6 +17,9 @@
   "desktopName": "docconversion.desktop",
   "author": "Stephen Genusa",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "start": "electron-vite preview",
     "dev": "node scripts/build-notices.mjs --dev && electron-vite dev",
