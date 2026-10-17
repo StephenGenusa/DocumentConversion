@@ -1258,7 +1258,8 @@ describe('image reader (spec F12)', () => {
     expect(imageMime(webp)).toBe('image/webp')
   })
 
-  it('returns null for BMP and TIFF (not on the accepted list)', () => {
+  // Those two are pictures (picture-types.ts pictureMime), but not ones every target shows.
+  it('returns null for BMP and TIFF (not what every target shows)', () => {
     expect(imageMime(bmp)).toBeNull()
     expect(imageMime(tiff)).toBeNull()
   })
@@ -1283,14 +1284,16 @@ describe('image reader (spec F12)', () => {
     expect(doc.html).toContain('<img')
   }, SLOW)
 
-  it('throws image-unsupported for a BMP', async () => {
+  // "BM" and no info header: not a BMP at all.
+  it('throws image-unsupported for a BMP with no header', async () => {
     await expect(readImage({ bytes: bmp, filename: 'x.bmp' })).rejects.toMatchObject({
       name: 'ConversionError',
       code: 'image-unsupported',
     })
   }, SLOW)
 
-  it('throws image-unsupported for a TIFF', async () => {
+  // A TIFF header pointing at no page: nothing to show.
+  it('throws image-unsupported for a TIFF with no page', async () => {
     await expect(readImage({ bytes: tiff, filename: 'x.tif' })).rejects.toMatchObject({
       name: 'ConversionError',
       code: 'image-unsupported',

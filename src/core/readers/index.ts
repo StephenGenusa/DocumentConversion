@@ -10,6 +10,7 @@ import { readXlsx } from './xlsx'
 import { readCode } from './code'
 import { readImage } from './image'
 import { readSvg } from './svg'
+import { readMetafile } from './metafile'
 import { readRtf } from './rtf'
 import { readEml } from './eml'
 import { readMsg } from './msg'
@@ -45,6 +46,7 @@ const registered: Partial<Record<SourceFormat, Reader>> = {
   code: readCode,
   image: readImage,
   svg: readSvg,
+  metafile: readMetafile,
   rtf: readRtf,
   eml: readEml,
   msg: readMsg,

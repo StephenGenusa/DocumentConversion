@@ -1,4 +1,4 @@
-import { imageMime } from '../readers/image'
+import { imageMime } from '../picture-types'
 import { ShortRecord, View } from './bytes'
 import { readPackedDib, toPicture, type Budget, type Picture, type Raster } from './dib'
 import { MAX_RECORDS, type PlusHook } from './emf'

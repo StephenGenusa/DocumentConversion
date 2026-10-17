@@ -22,10 +22,10 @@ function targetsFor(input: TargetValidityInput): TargetFormat[] {
   // csv/json/xlsx (no table). A deck is self-contained HTML carrying data
   // URIs, so one image is a legitimate one-slide deck.
   //
-  // An SVG is a picture the same way (spec D10). OCR is never offered for it
-  // (its text is in the file, not in pixels), so an imageMode carried on its
-  // item changes nothing.
-  if (input.format === 'svg' || (input.format === 'image' && input.imageMode !== 'ocr')) {
+  // An SVG is a picture the same way (spec D10), and so is an EMF or WMF
+  // drawing. OCR is never offered for either (its text is in the file, not
+  // in pixels), so an imageMode carried on its item changes nothing.
+  if (input.format === 'svg' || input.format === 'metafile' || (input.format === 'image' && input.imageMode !== 'ocr')) {
     return ['docx', 'pdf', 'html', 'epub', 'revealjs', 'azw3', 'azw4']
   }
   return TARGET_FORMATS

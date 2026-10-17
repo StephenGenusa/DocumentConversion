@@ -3,7 +3,8 @@ import { escapeHtml } from '../shell'
 import { sanitizeSvgDoc } from '../svg-sanitize'
 import { svgDataUri, svgSizeOf } from '../svg-images'
 import type { HubDocument, SourceInput } from '../types'
-import { imageMime, readImage, svgText } from './image'
+import { pictureType } from '../picture-types'
+import { readImage, svgText } from './image'
 
 /**
  * An .svg file (spec D10): the picture becomes the document, as with any
@@ -14,10 +15,11 @@ import { imageMime, readImage, svgText } from './image'
  * image. Its text is not extracted: it is a picture. A picture it names by
  * a web address is fetched where the document is read, like an <img>'s.
  *
- * A raster image saved with an .svg name is read as the image it is.
+ * A raster image, an EMF or a WMF saved with an .svg name is read as the
+ * picture it is.
  */
 export async function readSvg(src: SourceInput): Promise<HubDocument> {
-  if (imageMime(src.bytes)) return readImage(src)
+  if (pictureType(src.bytes)) return readImage(src)
   // Pictures it names by address are kept for the read step to fetch.
   const doc = sanitizeSvgDoc(svgText(src.bytes), { keepImageUrls: true })
   if (!doc) throw new ConversionError('image-unsupported', 'This is not a readable SVG image')

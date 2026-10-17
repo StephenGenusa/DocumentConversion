@@ -27,7 +27,7 @@ const ORDER: { formats: SourceFormat[]; label?: string }[] = [
   { formats: ['csv'] },
   { formats: ['json'] },
   { formats: ['image'], label: 'images' },
-  { formats: ['svg'] },
+  { formats: ['svg', 'metafile'] },
   { formats: ['ipynb'] },
   // Over a hundred names (code-langs.ts): a word, not a list.
   { formats: ['code'], label: 'source code' },

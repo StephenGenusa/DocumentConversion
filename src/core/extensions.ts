@@ -79,6 +79,17 @@ export const EXTENSION_FORMATS: ReadonlyMap<string, SourceFormat> = new Map<stri
     jpeg: 'image',
     gif: 'image',
     webp: 'image',
+    // TIFF is kept by Word and converted for every other target (pictures.ts);
+    // each page of a multi-page one becomes a picture of its own (readers/image.ts).
+    tif: 'image',
+    tiff: 'image',
+    // Chromium shows these; the targets that do not hold them get a copy they do.
+    bmp: 'image',
+    avif: 'image',
+    ico: 'image',
+    // Word's vector pictures, read as drawings (readers/metafile.ts).
+    emf: 'metafile',
+    wmf: 'metafile',
     // SVG is text, so it is sniffed by its first element (looksLikeSvg), not by magic bytes.
     svg: 'svg',
   } satisfies Record<string, SourceFormat>),

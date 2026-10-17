@@ -36,6 +36,7 @@ export type SourceFormat =
   | 'rtf'
   | 'image'
   | 'svg'
+  | 'metafile'
   | 'code'
   | 'ipynb'
   | 'pptx'
@@ -118,6 +119,7 @@ export const SOURCE_FORMATS: SourceFormat[] = [
   'rtf',
   'image',
   'svg',
+  'metafile',
   'code',
   'ipynb',
   'pptx',

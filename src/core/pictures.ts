@@ -2,7 +2,7 @@ import { parseDocument } from 'htmlparser2'
 import { Element, Text, type ChildNode } from 'domhandler'
 import { append, replaceElement } from 'domutils'
 import serialize from 'dom-serializer'
-import { imageMime } from './readers/image'
+import { pictureMime, pictureType, vectorMime } from './picture-types'
 import { imagePlaceholder, MAX_FETCHED_IMAGE_BYTES } from './inline-images'
 import type { PictureFormat, RenderRequest, RenderResult } from './rendered-blocks'
 import { DOCX_MAX_WIDTH, type DrawContext } from './draw-blocks'
@@ -69,6 +69,9 @@ import { createHash } from 'node:crypto'
  * JPG or PNG, as JPEG. A drawing (an EMF or WMF) rasterized to PNG over the
  * limit is made smaller as JPEG, after it is drawn.
  */
+
+/** A picture's type by its bytes (picture-types.ts), where the picture step's callers look for it. */
+export { pictureMime, pictureType, vectorMime }
 
 export const KINDLE_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 
@@ -191,39 +194,6 @@ function holds(profile: PictureTarget, mime: string, bytes: Buffer): boolean {
 export function wordTakes(bytes: Buffer): boolean {
   const mime = pictureMime(bytes)
   return mime !== null && PICTURE_TARGETS.docx!.holds.has(mime) && !WORD_ORIGINALS.has(mime)
-}
-
-/** The picture's type, by its signature (a declared type can lie), for the types a browser decodes. */
-export function pictureMime(bytes: Buffer): string | null {
-  const known = imageMime(bytes)
-  if (known) return known
-  if (bytes.length >= 26 && bytes.toString('latin1', 0, 2) === 'BM') return 'image/bmp'
-  if (bytes.length >= 12 && bytes.toString('latin1', 4, 8) === 'ftyp' && /^avi[fs]$/.test(bytes.toString('latin1', 8, 12))) {
-    return 'image/avif'
-  }
-  if (bytes.length >= 6 && bytes.readUInt32BE(0) === 0x00000100 && bytes.readUInt16LE(4) > 0) return 'image/x-icon'
-  // TIFF, either byte order. Not BigTIFF (43), which UTIF.js does not read.
-  if (bytes.length >= 8 && (bytes.toString('latin1', 0, 4) === 'II*\0' || bytes.toString('latin1', 0, 4) === 'MM\0*')) return 'image/tiff'
-  return null
-}
-
-/**
- * Word's vector pictures, by signature: EMF (an EMR_HEADER record whose
- * signature is " EMF") and WMF (Aldus placeable, or a bare memory or disk
- * metafile header of nine words).
- */
-export function vectorMime(bytes: Buffer): string | null {
-  if (bytes.length >= 88 && bytes.readUInt32LE(0) === 1 && bytes.readUInt32LE(40) === 0x464d4520) return 'image/x-emf'
-  if (bytes.length >= 22 && bytes.readUInt32LE(0) === 0x9ac6cdd7) return 'image/x-wmf'
-  if (bytes.length >= 18 && [1, 2].includes(bytes.readUInt16LE(0)) && bytes.readUInt16LE(2) === 9 && [0x100, 0x300].includes(bytes.readUInt16LE(4))) {
-    return 'image/x-wmf'
-  }
-  return null
-}
-
-/** Every picture type this app recognizes, by its bytes. */
-export function pictureType(bytes: Buffer): string | null {
-  return pictureMime(bytes) ?? vectorMime(bytes)
 }
 
 /** What a picture's type is called in a notice: "EMF" for image/x-emf, "TIFF" for image/tiff. */

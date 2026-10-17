@@ -18,6 +18,7 @@ const SHORT: Record<SourceFormat, string> = {
   rtf: 'rtf',
   image: 'image',
   svg: 'svg',
+  metafile: 'emf',
   code: 'code',
   ipynb: 'nb',
   pptx: 'pptx',

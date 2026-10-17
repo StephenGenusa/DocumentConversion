@@ -1,6 +1,6 @@
 # Document Converter
 
-Convert documents between 30 input formats and 12 output formats on your own
+Convert documents between 31 input formats and 12 output formats on your own
 machine. Your documents are never uploaded, there is no account and no
 telemetry. The app goes to the network for three things: a web page you ask it
 to fetch, the images a document or a paste refers to by web address (so they
@@ -181,8 +181,8 @@ converting. Pasted Markdown arrives as formatted text, not as raw syntax.
 The internal names are in `SOURCE_FORMATS` in `src/core/types.ts`:
 
 ```
-txt, md, docx, pdf, html, eml, msg, csv, xlsx, rtf, image, svg, code,
-ipynb, pptx, doc, epub, mbox, odt, odp, ics, asciidoc, rst, json,
+txt, md, docx, pdf, html, eml, msg, csv, xlsx, rtf, image, svg, metafile,
+code, ipynb, pptx, doc, epub, mbox, odt, odp, ics, asciidoc, rst, json,
 subtitles, opml, vcard, djot, textile, sqlite
 ```
 
@@ -205,9 +205,16 @@ them from there.
 - **Calendars and contacts.** `.ics` and `.ical` invitations; vCard contacts
   (`.vcf`, `.vcard`), one row per contact. A `.vcf` that is not a vCard is
   the genomics Variant Call Format and is read as text.
-- **Images.** `.png`, `.jpg`, `.jpeg`, `.gif` and `.webp`. Embed the image in
-  the output, or run text recognition on it. `.svg` drawings are kept as
-  drawings where the output allows it.
+- **Images.** `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.tif`, `.tiff`,
+  `.bmp`, `.avif` and `.ico`. Embed the image in the output, or run text
+  recognition on it. Each page of a TIFF (a fax, a scanned letter) becomes a
+  page of its own, recognized page by page. Word keeps a TIFF as it is; an
+  output that can't hold a picture gets PNG or JPG. HEIC (iPhone photos) is
+  not read: Chromium cannot decode it, so save it as JPEG first.
+- **Drawings.** `.svg`, and Word's vector pictures `.emf` and `.wmf`
+  (`metafile`), are kept as drawings where the output allows it: SVG, its text
+  still text (selectable in a PDF), otherwise PNG. Word keeps an EMF or WMF as
+  it is. A drawing's text is its description.
 - **Source code.** More than 80 extensions, and names such as `Dockerfile` and
   `Makefile`, listed in `EXT_TO_LANG` in `src/core/code-langs.ts`, syntax
   highlighted in the output.

@@ -1,4 +1,4 @@
-import { imageMime } from '../readers/image'
+import { imageMime } from '../picture-types'
 import { MAX_BITMAP_PIXELS, MAX_BITMAP_SIDE } from './dib'
 import { encodePng } from './png'
 

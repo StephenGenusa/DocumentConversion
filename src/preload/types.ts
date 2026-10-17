@@ -47,6 +47,7 @@ export type SourceFormat =
   | 'rtf'
   | 'image'
   | 'svg'
+  | 'metafile'
   | 'code'
   | 'ipynb'
   | 'pptx'

@@ -1,4 +1,4 @@
-import { imageMime } from '../readers/image'
+import { imageMime } from '../picture-types'
 import { View } from './bytes'
 import { encodePng } from './png'
 

@@ -4,6 +4,8 @@ import { INPUT_FORMAT_GROUPS, inputFormatHint } from '../../src/core/input-forma
 import { EXTENSION_FORMATS } from '../../src/core/extensions'
 import { detect, detectByExtension } from '../../src/core/detect'
 import { SOURCE_FORMATS } from '../../src/core/types'
+// @ts-expect-error: plain .mjs fixture libraries, no types.
+import { tiff, emf, wmf } from '../../scripts/fixtures/lib-tiff.mjs'
 
 /** The start screen's list of what the app reads, built from the detector's own tables. */
 describe('input format list', () => {
@@ -30,6 +32,21 @@ describe('input format list', () => {
         else expect(group.formats, ext).toContain(detectByExtension(`x.${ext}`))
       }
     }
+  })
+
+  it('lists TIFF, the other pictures Chromium shows, and EMF/WMF drawings, each read by its bytes', () => {
+    const groupOf = (ext: string) => INPUT_FORMAT_GROUPS.find((g) => g.extensions.includes(ext))
+    for (const ext of ['tif', 'tiff', 'bmp', 'avif', 'ico']) expect(groupOf(ext)?.formats, ext).toEqual(['image'])
+    for (const ext of ['emf', 'wmf']) expect(groupOf(ext)?.formats, ext).toContain('metafile')
+    expect(inputFormatHint()).toContain('images (png/jpg/jpeg/gif/webp/tif/tiff/bmp/avif/ico)')
+    expect(inputFormatHint()).toContain('svg/emf/wmf')
+    // HEIC is not among them: Chromium cannot decode it.
+    expect(tokens.has('heic')).toBe(false)
+    const page = { width: 8, height: 8, pixel: () => [0, 0, 0], kind: 'gray' }
+    expect(detect(tiff(page), 'x.tif')).toEqual({ kind: 'ok', format: 'image' })
+    expect(detect(tiff({ pages: [page, page] }), 'x.tiff')).toEqual({ kind: 'ok', format: 'image' })
+    expect(detect(emf(), 'x.emf')).toEqual({ kind: 'ok', format: 'metafile' })
+    expect(detect(wmf(), 'x.wmf')).toEqual({ kind: 'ok', format: 'metafile' })
   })
 
   it('stays short: the usual name first in its group, an extension at most once', () => {

@@ -1,7 +1,8 @@
 import type { SourceFormat } from './types'
 import type { HubFeatures } from './rendered-blocks'
 import { codeFormatFromFilename, codeNameFromFilename } from './code-langs'
-import { imageMime, looksLikeSvg } from './readers/image'
+import { looksLikeSvg } from './readers/image'
+import { isHeic, pictureMime, vectorMime } from './picture-types'
 import { hasSqliteMagic } from './sqlite'
 import { EXTENSION_FORMATS } from './extensions'
 
@@ -43,7 +44,9 @@ function hasMagic(bytes: Buffer, magic: number[]): boolean {
  */
 export function sniffBinary(bytes: Buffer, filename?: string): DetectResult | null {
   if (hasSqliteMagic(bytes)) return ok('sqlite')
-  if (imageMime(bytes)) return ok('image')
+  if (pictureMime(bytes)) return ok('image')
+  if (vectorMime(bytes)) return ok('metafile')
+  if (isHeic(bytes)) return unsupported('HEIC pictures (as iPhones save them) cannot be read here; save it as JPEG first')
   if (bytes.length >= 5 && bytes.toString('latin1', 0, 5) === '%PDF-') return ok('pdf')
   if (hasMagic(bytes, CFB_MAGIC)) {
     // Outlook .msg, legacy Excel and legacy Word are all CFB; the extension disambiguates them.
@@ -182,7 +185,9 @@ const CONTAINER: Partial<Record<SourceFormat, 'zip' | 'cfb' | 'pdf' | 'image' | 
   doc: 'cfb',
   msg: 'cfb',
   pdf: 'pdf',
+  // Pictures, raster or vector: PICTURES (below) chooses between them by their bytes.
   image: 'image',
+  metafile: 'image',
   rtf: 'rtf',
   sqlite: 'sqlite',
 }
@@ -234,7 +239,7 @@ function rulesOutExtension(bytes: Buffer, byExtension: SourceFormat, sniffed: So
 }
 
 /** The picture formats: the bytes choose between them, whatever the name says. */
-const PICTURES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['image', 'svg'])
+const PICTURES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['image', 'svg', 'metafile'])
 
 /** `BEGIN:VCARD` on one of a file's first lines. */
 export function looksLikeVcard(bytes: Buffer): boolean {
@@ -259,7 +264,7 @@ export function detect(bytes: Buffer, filename?: string): DetectResult {
       // where they rule the extension out; see `rulesOutExtension`.
       const sniffed = sniffBinary(bytes, filename)
       // An image's name says it is a picture; the bytes say whether a raster
-      // one or an SVG (a .png that is really an SVG, an .svg that is a PNG).
+      // one, an SVG or an EMF/WMF (a .png that is really an SVG, an .emf that is a PNG).
       if (sniffed?.kind === 'ok' && PICTURES.has(byExt) && PICTURES.has(sniffed.format)) return sniffed
       if (sniffed?.kind === 'ok' && sniffed.format !== byExt && rulesOutExtension(bytes, byExt, sniffed.format)) {
         return sniffed

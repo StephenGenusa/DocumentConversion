@@ -15,6 +15,7 @@ const LABELS: Record<SourceFormat, string> = {
   rtf: 'Rich text (.rtf)',
   image: 'Image',
   svg: 'SVG image',
+  metafile: 'EMF/WMF drawing',
   code: 'Source code',
   ipynb: 'Jupyter notebook',
   pptx: 'PowerPoint (.pptx)',
@@ -37,7 +38,7 @@ const LABELS: Record<SourceFormat, string> = {
 
 // Binary formats are what their magic bytes say — no override. Text inputs can
 // be reinterpreted as any text format that has a reader (extended per phase).
-const BINARY: SourceFormat[] = ['docx', 'pdf', 'xlsx', 'msg', 'image', 'pptx', 'doc', 'epub', 'odt', 'odp', 'sqlite']
+const BINARY: SourceFormat[] = ['docx', 'pdf', 'xlsx', 'msg', 'image', 'metafile', 'pptx', 'doc', 'epub', 'odt', 'odp', 'sqlite']
 const TEXT_OVERRIDES: SourceFormat[] = [
   'txt',
   'md',
