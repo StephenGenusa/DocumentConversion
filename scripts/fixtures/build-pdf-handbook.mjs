@@ -36,6 +36,9 @@ const LOGO_PNG = join(here, '../../tests/fixtures/sample.png')
 
 import * as V from './vocabulary.mjs'
 
+/** The date every fixture carries (lib-docx.mjs has the same). */
+const FIXTURE_DATE = new Date(Date.UTC(2026, 0, 1))
+
 const PAGE = [612, 792]
 const LEFT = 55
 const RIGHT = 557
@@ -70,7 +73,10 @@ function wrap(text, chars = 92) {
 }
 
 async function main() {
-  const pdf = await PDFDocument.create()
+  // The same bytes every build: pdf-lib stamps the clock into the info dictionary otherwise.
+  const pdf = await PDFDocument.create({ updateMetadata: false })
+  pdf.setCreationDate(FIXTURE_DATE)
+  pdf.setModificationDate(FIXTURE_DATE)
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const logoBytes = readFileSync(LOGO_PNG)
   // A fresh embed per use, not a single image object reused across many
@@ -91,7 +97,17 @@ async function main() {
     return page
   }
   const text = (page, t, x, y, size = BODY_SIZE) => page.draws.push({ text: t, x, y, size })
-  const image = (page, img, x, y, w, h) => page.images.push({ img, x, y, w, h })
+  /**
+   * A picture fitted into the box at (x, y), w by h, keeping its shape: as
+   * large as fits, set against the box's top-left corner. The logo box is
+   * 90 x 60 and sample.png is 600 x 120, which drawn to the box was squeezed
+   * to a third of its width.
+   */
+  const image = (page, img, x, y, w, h) => {
+    const scale = Math.min(w / img.width, h / img.height)
+    const [dw, dh] = [img.width * scale, img.height * scale]
+    page.images.push({ img, x, y: y + h - dh, w: dw, h: dh })
+  }
   const header = (page) => text(page, HEADER, LEFT, 760, 9)
 
   // --- Page 0: cover. Two images: a "cover photo" and the company logo. ---
