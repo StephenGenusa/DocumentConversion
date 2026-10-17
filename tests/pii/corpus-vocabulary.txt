@@ -122,6 +122,7 @@ both
 bottom
 box
 boxed
+boxes
 braces
 brackets
 braddock
@@ -248,9 +249,11 @@ cube
 cup
 current
 currently
+curved
 customer
 customers
 cut
+cut-out
 daily
 damaged
 damp
@@ -280,6 +283,7 @@ describes
 description
 design
 desk
+desks
 desktop
 detail
 devi
@@ -401,6 +405,7 @@ for
 forall
 form
 format
+formats
 formula
 formulas
 forward
@@ -454,6 +459,7 @@ happen
 hardback
 has
 hat
+hatched
 have
 header
 heavy
@@ -574,6 +580,7 @@ live
 loaded
 loading
 loan
+loans
 locations
 log
 long
@@ -745,7 +752,9 @@ part
 partial
 participant
 pass
+pasted
 path
+paths
 pay
 pays
 penny
@@ -766,6 +775,7 @@ photographs
 photography
 picture
 pictures
+pie
 piece
 pieces
 pin
@@ -775,6 +785,7 @@ place
 plain
 plan
 plans
+please
 plus
 pm
 pmatrix
@@ -924,6 +935,8 @@ satisfaction
 saved
 says
 sbraddock
+scaled
+scan
 scanned
 scanner
 scans
@@ -953,6 +966,7 @@ several
 severe
 sgn
 shape
+shapes
 share
 shared
 sharepoint
@@ -994,6 +1008,7 @@ smallest
 so
 social
 solve
+some
 something
 sometimes
 somewhere
@@ -1128,7 +1143,9 @@ truck
 true
 try
 turn
+turned
 turns
+twice
 two
 two-part
 txt
@@ -1184,6 +1201,7 @@ volunteers
 wait
 wall
 want
+was
 water
 way
 we
@@ -1211,6 +1229,7 @@ why
 widehat
 widths
 will
+window
 windows
 wing
 with

@@ -602,6 +602,22 @@ export const READING_ROOM = {
   rtfBitmapLead: 'A small bitmap marker:',
   rtfTableHead: ['Collection', 'Marker'],
   rtfAfter: 'Every picture should come through in every format that shows pictures.',
+  metafilesTitle: 'Drawings for the volunteer handbook',
+  metafilesIntro:
+    'Each drawing below was saved by a word processor as a metafile. Every one should come through as a picture, in every format that shows pictures.',
+  shapesAlt: 'Shelf shapes: boxes, rounded desks, a pie of loans and curved paths',
+  transformsAlt: 'The same desk turned and scaled',
+  clippingAlt: 'Shelving seen through a round window and a cut-out',
+  textAlt: 'Signs for the reading room, some of them turned',
+  hatchAlt: 'Hatched floor areas for the four collections',
+  scanAlt2: 'A pasted photograph of the periodicals',
+  dualAlt: 'A drawing saved twice, for old and new readers',
+  plusAlt: 'A drawing saved for new readers only',
+  plusPhotoAlt: 'A photograph saved inside a drawing',
+  wmfPlanAlt: 'An older drawing of the desk and entrance',
+  wmfScanAlt: 'An older scan of the shelf label',
+  signs: ['Quiet please', 'Entrance', 'Returns', 'Media', 'Fiction'],
+  metafilesAfter: 'Volunteers can print every drawing from any of these formats.',
 }
 
 /**
