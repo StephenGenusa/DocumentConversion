@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { readSubtitles } from '../../src/core/readers/subtitles'
 import { detect } from '../../src/core/detect'
-import { cliReadOptions, parseArgs, checkFlagScope } from '../../src/cli/args'
+import { parseArgs, checkFlagScope } from '../../src/cli/args'
+import { cliConvertOptions } from '../../src/cli/options'
+import { DEFAULT_SETTINGS } from '../../src/core/settings'
 import type { ReadContext } from '../../src/core/types'
 
 const read = (text: string, filename = 'meeting.vtt', ctx?: ReadContext) =>
@@ -143,7 +145,7 @@ describe('--no-timestamps', () => {
   it('turns times off for every input', () => {
     const r = parseArgs(['convert', 'a.vtt', '--to', 'md', '--no-timestamps'].slice(1))
     expect(r.kind).toBe('ok')
-    if (r.kind === 'ok') expect(cliReadOptions(r.req)).toEqual({ transcriptTimestamps: false })
+    if (r.kind === 'ok') expect(cliConvertOptions(DEFAULT_SETTINGS, r.req, () => true)).toMatchObject({ options: { read: { transcriptTimestamps: false } } })
   })
   it('is a usage error when no input is a transcript', () => {
     expect(checkFlagScope(['--no-timestamps'], 'md', ['docx'])).toMatch(/--no-timestamps applies only to subtitles input/)

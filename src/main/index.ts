@@ -46,7 +46,7 @@ import { pastedHtmlToHub } from '../core/remote-images'
 import { loadUrl } from '../core/readers/url'
 import type { ReadContext } from '../core/types'
 import { urlFetchDeps } from './net'
-import { appTitle } from './app-identity'
+import { appTitle, PACKAGE_NAME } from './app-identity'
 import { installAppMenu } from './menu'
 import { openAboutWindow } from './about-window'
 import { renderForEditor } from './render-ipc'
@@ -66,6 +66,13 @@ if (isCli) {
   // font quirks. Both went to stderr on every run, so any script treating
   // stderr as failure misfired on a successful conversion.
   process.noDeprecation = true
+  // userData is where the window saves its settings, which `--settings app`
+  // reads, and its downloaded OCR packs, which `--ocr-lang` needs. Electron
+  // names it after package.json, so a packaged build and `electron .` already
+  // agree with the window; `electron out/main/index.js` has no package.json
+  // beside it and would look in ~/.config/Electron. Chromium's
+  // --user-data-dir (a run with its own profile) still wins.
+  if (!app.commandLine.hasSwitch('user-data-dir')) app.setPath('userData', join(app.getPath('appData'), PACKAGE_NAME))
 }
 
 // Grow-to-fit is suppressed once the user resizes manually (spec §F0: no snap-back).

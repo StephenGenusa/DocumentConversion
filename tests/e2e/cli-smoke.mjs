@@ -3,7 +3,7 @@
  * Prereq: npm run build. Usage: node tests/e2e/cli-smoke.mjs
  */
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync, existsSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, existsSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,15 +17,19 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const { default: electron } = await import('electron')
 const appEntry = join(root, 'out', 'main', 'index.js')
 const work = mkdtempSync(join(tmpdir(), 'docconv-cli-'))
+// Every run gets its own profile (Chromium's --user-data-dir), so nothing here
+// reads or writes the real userData - the app's settings file above all.
+const profile = join(work, 'profile')
 
 let failures = 0
-function run(name, args, { expectCode, expectFiles = [], expectStderr }) {
-  const res = spawnSync(electron, [appEntry, 'convert', ...args], { encoding: 'utf8', timeout: 120000 })
+function run(name, args, { expectCode, expectFiles = [], expectStderr, rejectStderr }) {
+  const res = spawnSync(electron, [appEntry, 'convert', ...args, `--user-data-dir=${profile}`], { encoding: 'utf8', timeout: 120000 })
   const problems = []
   if (res.error) problems.push(`could not run: ${res.error.message}`)
   if (res.status !== expectCode) problems.push(`exit ${res.status}, wanted ${expectCode}`)
   for (const f of expectFiles) if (!existsSync(f)) problems.push(`missing output ${f}`)
   if (expectStderr && !res.stderr.includes(expectStderr)) problems.push(`stderr missing "${expectStderr}"`)
+  if (rejectStderr && res.stderr.includes(rejectStderr)) problems.push(`stderr has "${rejectStderr}"`)
   if (problems.length) {
     failures++
     console.log(`FAIL  ${name}: ${problems.join('; ')}\n  stderr: ${(res.stderr ?? '').slice(0, 300)}`)
@@ -216,6 +220,172 @@ if (existsSync(join(work, 'plan.azw3'))) {
     console.log('FAIL  plan.azw3 has no PNG picture, or still holds SVG')
   }
 }
+
+// Settings (settings spec 5.7). A picture an EPUB can't hold (BMP) is
+// converted: to JPG by default, as in the app; PNG when asked.
+const bmp = (() => {
+  const w = 4, h = 4, row = w * 3, size = 54 + row * h
+  const b = Buffer.alloc(size)
+  b.write('BM', 0); b.writeUInt32LE(size, 2); b.writeUInt32LE(54, 10); b.writeUInt32LE(40, 14)
+  b.writeInt32LE(w, 18); b.writeInt32LE(h, 22); b.writeUInt16LE(1, 26); b.writeUInt16LE(24, 28); b.writeUInt32LE(row * h, 34)
+  for (let i = 54; i < size; i += 3) { b[i] = 200; b[i + 1] = i & 255; b[i + 2] = (i * 7) & 255 }
+  return b
+})()
+const photo = join(work, 'photo.html')
+writeFileSync(photo, `<h1>Photo</h1><p><img alt="a photo" src="data:image/bmp;base64,${bmp.toString('base64')}"></p>`)
+/** The converted picture's file name inside an EPUB, from the zip's (uncompressed) directory. */
+const epubPicture = (file) => (existsSync(file) ? /OEBPS\/images\/img001\.(jpg|png)/.exec(readFileSync(file).toString('latin1'))?.[1] : undefined)
+function wantPicture(name, file, ext) {
+  const got = epubPicture(file)
+  if (got !== ext) {
+    failures++
+    console.log(`FAIL  ${name}: picture is ${got ?? 'missing'}, wanted ${ext}`)
+  }
+}
+const settingsFile = (name, json) => {
+  const path = join(work, name)
+  writeFileSync(path, JSON.stringify(json))
+  return path
+}
+const pngSettings = settingsFile('png-settings.json', { version: 1, pictures: { format: 'png' } })
+
+run('default pictures are JPG', [photo, '--to', 'epub', '--out', join(work, 'photo-default.epub')], { expectCode: 0 })
+wantPicture('default pictures are JPG', join(work, 'photo-default.epub'), 'jpg')
+run('--pictures png', [photo, '--to', 'epub', '--pictures', 'png', '--out', join(work, 'photo-png.epub')], { expectCode: 0 })
+wantPicture('--pictures png', join(work, 'photo-png.epub'), 'png')
+run('--settings file applies', [photo, '--to', 'epub', '--settings', pngSettings, '--out', join(work, 'photo-file.epub')], { expectCode: 0 })
+wantPicture('--settings file applies', join(work, 'photo-file.epub'), 'png')
+run('a flag wins over --settings', [photo, '--to', 'epub', '--settings', pngSettings, '--pictures', 'jpg', '--out', join(work, 'photo-flag.epub')], { expectCode: 0 })
+wantPicture('a flag wins over --settings', join(work, 'photo-flag.epub'), 'jpg')
+
+// --settings app: the file the window saves in userData, here this run's profile.
+run('--settings app with no saved settings', [photo, '--to', 'epub', '--settings', 'app', '--out', join(work, 'photo-noapp.epub')], {
+  expectCode: 0,
+  expectStderr: 'NOTE settings: the app has no saved settings yet',
+})
+mkdirSync(profile, { recursive: true })
+const appSettings = join(profile, 'settings.json')
+writeFileSync(appSettings, JSON.stringify({ version: 1, pictures: { format: 'png' } }))
+run('--settings app reads the app\'s file', [photo, '--to', 'epub', '--settings', 'app', '--out', join(work, 'photo-app.epub')], { expectCode: 0 })
+wantPicture('--settings app reads the app\'s file', join(work, 'photo-app.epub'), 'png')
+run('without --settings the app\'s file is not read', [photo, '--to', 'epub', '--out', join(work, 'photo-noread.epub')], { expectCode: 0 })
+wantPicture('without --settings the app\'s file is not read', join(work, 'photo-noread.epub'), 'jpg')
+// A bad file is read only: never renamed aside, never rewritten.
+writeFileSync(appSettings, '{ not json')
+run('--settings app, not JSON, exit 2', [photo, '--to', 'epub', '--settings', 'app'], { expectCode: 2, expectStderr: 'is not valid JSON' })
+if (readFileSync(appSettings, 'utf8') !== '{ not json' || readdirSync(profile).some((n) => n.startsWith('settings.json.'))) {
+  failures++
+  console.log('FAIL  --settings app changed or renamed the app\'s file')
+}
+rmSync(appSettings)
+run('--settings missing file exit 2', [photo, '--to', 'epub', '--settings', join(work, 'nope.json')], {
+  expectCode: 2,
+  expectStderr: 'The settings file could not be read',
+})
+// A file value that can't apply is ignored; a bad one is a note, never a usage error.
+const otherSettings = settingsFile('other-settings.json', {
+  version: 1,
+  pictures: { format: 'png' },
+  pdf: { pageSize: 'A4' },
+  code: { colour: false },
+  ocr: { language: 'deu' },
+  rendered: { format: 'gif' },
+})
+run('--settings values that cannot apply are ignored', [md, '--to', 'txt', '--settings', otherSettings, '--out', join(work, 'other.txt')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'other.txt')],
+  expectStderr: 'NOTE settings: rendered.format: "gif" is not one of svg, png; the default is used.',
+  rejectStderr: 'OCR language',
+})
+run('--pictures for txt exit 2', [photo, '--to', 'txt', '--pictures', 'png'], {
+  expectCode: 2,
+  expectStderr: '--pictures applies only to html, revealjs, pdf, azw4, epub, azw3, md, docx output, not txt',
+})
+run('--pictures needs jpg or png', [photo, '--to', 'epub', '--pictures', 'gif'], { expectCode: 2, expectStderr: '--pictures needs jpg or png' })
+
+// Web: --no-fetch leaves web pictures as their description, with a note.
+const remote = join(work, 'remote.md')
+writeFileSync(remote, '# Remote\n\n![chart](https://example.invalid/chart.png)\n')
+run('--no-fetch', [remote, '--to', 'html', '--no-fetch', '--out', join(work, 'remote.html')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'remote.html')],
+  expectStderr: 'NOTE remote.md: 1 web picture was not fetched',
+})
+if (existsSync(join(work, 'remote.html')) && !readFileSync(join(work, 'remote.html'), 'utf8').includes('[image: chart]')) {
+  failures++
+  console.log('FAIL  remote.html does not describe the unfetched picture')
+}
+run('--no-local-network', [remote, '--to', 'html', '--no-local-network', '--out', join(work, 'remote-lan.html')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'remote-lan.html')],
+  rejectStderr: 'not fetched',
+})
+run('--no-local-network with --no-fetch exit 2', [remote, '--to', 'html', '--no-fetch', '--no-local-network'], {
+  expectCode: 2,
+  expectStderr: '--no-local-network does nothing with --no-fetch',
+})
+const mail = join(work, 'mail.eml')
+writeFileSync(mail, 'From: a@example.com\r\nTo: b@example.com\r\nSubject: Hi\r\nContent-Type: text/plain\r\n\r\nHello\r\n')
+run('--no-fetch for mail only exit 2', [mail, '--to', 'html', '--no-fetch'], {
+  expectCode: 2,
+  expectStderr: '--no-fetch does not apply to eml, msg, mbox, ics input',
+})
+
+// Code colour: on by default, off with --no-code-colour.
+const code = join(work, 'code.md')
+writeFileSync(code, '# Code\n\n```js\nconst answer = 42\n```\n')
+run('code coloured by default', [code, '--to', 'html', '--out', join(work, 'code.html')], { expectCode: 0 })
+run('--no-code-colour', [code, '--to', 'html', '--no-code-colour', '--out', join(work, 'code-plain.html')], { expectCode: 0 })
+for (const [file, coloured] of [['code.html', true], ['code-plain.html', false]]) {
+  if (existsSync(join(work, file)) && readFileSync(join(work, file), 'utf8').includes('hljs-keyword') !== coloured) {
+    failures++
+    console.log(`FAIL  ${file} is ${coloured ? 'not ' : ''}coloured`)
+  }
+}
+run('--no-code-colour for md exit 2', [code, '--to', 'md', '--no-code-colour'], {
+  expectCode: 2,
+  expectStderr: '--no-code-colour applies only to pdf, html, revealjs, epub, azw3, azw4, docx output, not md',
+})
+
+// OCR language: needs --ocr, an image or PDF, and an installed pack (English ships).
+// tests/fixtures/sample.png fails libpng's CRC check, so a picture of words is drawn here.
+const { createCanvas } = createRequire(import.meta.url)('@napi-rs/canvas')
+const canvas = createCanvas(600, 120)
+const pen = canvas.getContext('2d')
+pen.fillStyle = '#fff'
+pen.fillRect(0, 0, 600, 120)
+pen.fillStyle = '#000'
+pen.font = '56px sans-serif'
+pen.fillText('Hello smoke test', 20, 80)
+const sample = join(work, 'words.png')
+writeFileSync(sample, canvas.toBuffer('image/png'))
+run('--ocr --ocr-lang eng', [sample, '--to', 'txt', '--ocr', '--ocr-lang', 'eng', '--out', join(work, 'sample.txt')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'sample.txt')],
+})
+if (existsSync(join(work, 'sample.txt')) && !readFileSync(join(work, 'sample.txt'), 'utf8').includes('Hello smoke test')) {
+  failures++
+  console.log('FAIL  sample.txt does not hold the words in the picture')
+}
+run('--ocr-lang without --ocr exit 2', [sample, '--to', 'txt', '--ocr-lang', 'eng'], { expectCode: 2, expectStderr: '--ocr-lang needs --ocr' })
+run('--ocr-lang not installed exit 2', [sample, '--to', 'txt', '--ocr', '--ocr-lang', 'deu'], {
+  expectCode: 2,
+  expectStderr: '--ocr-lang: deu is not installed',
+})
+run('--ocr-lang unknown exit 2', [sample, '--to', 'txt', '--ocr', '--ocr-lang', 'klingon'], {
+  expectCode: 2,
+  expectStderr: '--ocr-lang: klingon is not an OCR language',
+})
+run('--ocr-lang with no image or PDF exit 2', [md, '--to', 'txt', '--ocr', '--ocr-lang', 'eng'], {
+  expectCode: 2,
+  expectStderr: '--ocr-lang applies only to image, pdf input',
+})
+const deuSettings = settingsFile('deu-settings.json', { version: 1, ocr: { language: 'deu' } })
+run('--settings OCR language not installed: English, with a note', [sample, '--to', 'txt', '--ocr', '--settings', deuSettings, '--out', join(work, 'sample-deu.txt')], {
+  expectCode: 0,
+  expectFiles: [join(work, 'sample-deu.txt')],
+  expectStderr: "NOTE settings: The settings file's OCR language (deu) is not installed; English is used.",
+})
 
 // content sanity
 if (existsSync(join(work, 'spec.html'))) {

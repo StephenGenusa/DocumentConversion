@@ -3,7 +3,9 @@ import { detect } from '../../src/core/detect'
 import { createConverter } from '../../src/core/convert'
 import { ConversionError } from '../../src/core/errors'
 import { SQLITE_ENCRYPTED_MESSAGE, SqliteTimeoutError, type SqliteDatabase, type SqliteEngine, type SqliteObject } from '../../src/core/sqlite'
-import { checkFlagScope, cliReadOptions, parseArgs, USAGE } from '../../src/cli/args'
+import { checkFlagScope, parseArgs, USAGE } from '../../src/cli/args'
+import { cliConvertOptions } from '../../src/cli/options'
+import { DEFAULT_SETTINGS } from '../../src/core/settings'
 import type { ReadContext } from '../../src/core/types'
 
 /**
@@ -263,7 +265,7 @@ describe('--sqlite-views', () => {
   it('includes view results for every input', () => {
     const r = parseArgs(['a.sqlite', '--to', 'csv', '--sqlite-views'])
     expect(r.kind).toBe('ok')
-    if (r.kind === 'ok') expect(cliReadOptions(r.req)).toEqual({ sqliteViews: true })
+    if (r.kind === 'ok') expect(cliConvertOptions(DEFAULT_SETTINGS, r.req, () => true)).toMatchObject({ options: { read: { sqliteViews: true } } })
     expect(USAGE).toContain('--sqlite-views')
   })
 

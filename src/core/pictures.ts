@@ -170,6 +170,9 @@ const PICTURE_TARGETS: Partial<Record<TargetFormat, PictureTarget>> = {
   },
 }
 
+/** The targets that show pictures, so the ones a picture format can apply to (the CLI's `--pictures`). */
+export const PICTURE_TARGET_FORMATS: readonly TargetFormat[] = Object.keys(PICTURE_TARGETS) as TargetFormat[]
+
 function holds(profile: PictureTarget, mime: string, bytes: Buffer): boolean {
   if (!profile.holds.has(mime) || bytes.length > profile.maxBytes) return false
   return !profile.sized?.has(mime) || originalSize(mime, bytes) !== null

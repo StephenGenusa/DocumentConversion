@@ -199,3 +199,93 @@ describe('--diagrams', () => {
     expect(USAGE).toContain('--diagrams <svg|png>')
   })
 })
+
+/** Settings spec 5.7: a flag for each setting, all strict. */
+describe('settings flags', () => {
+  it('--pictures takes jpg or png (jpeg too), as the picture format', () => {
+    expect(ok(['a.md', '--to', 'pdf', '--pictures', 'jpg']).pictures).toBe('jpeg')
+    expect(ok(['a.md', '--to', 'pdf', '--pictures', 'jpeg']).pictures).toBe('jpeg')
+    expect(ok(['a.md', '--to', 'pdf', '--pictures', 'png']).pictures).toBe('png')
+    expect(ok(['a.md', '--to', 'pdf']).pictures).toBeUndefined()
+    expect(parseArgs(['a.md', '--to', 'pdf', '--pictures', 'gif']).kind).toBe('usage')
+    expect(parseArgs(['a.md', '--to', 'pdf', '--pictures']).kind).toBe('usage')
+  })
+
+  it('--pictures exits 2 for an output that holds no pictures', () => {
+    for (const t of ['pdf', 'html', 'revealjs', 'epub', 'azw3', 'azw4', 'md', 'docx'] as const) {
+      expect(checkFlagScope(['--pictures'], t, ['md']), t).toBeNull()
+    }
+    for (const t of ['txt', 'csv', 'json', 'xlsx'] as const) {
+      expect(checkFlagScope(['--pictures'], t, ['md']), t).toMatch(/^--pictures applies only to .* output, not /)
+    }
+  })
+
+  it('--no-fetch and --no-local-network', () => {
+    const req = ok(['a.md', '--to', 'pdf', '--no-fetch'])
+    expect(req.noFetch).toBe(true)
+    expect(req.noLocalNetwork).toBeUndefined()
+    expect(ok(['a.md', '--to', 'pdf', '--no-local-network']).noLocalNetwork).toBe(true)
+  })
+
+  it('--no-local-network with --no-fetch is a usage error: nothing is fetched to limit', () => {
+    const r = parseArgs(['a.md', '--to', 'pdf', '--no-fetch', '--no-local-network'])
+    expect(r.kind).toBe('usage')
+    if (r.kind === 'usage') expect(r.message).toMatch(/^--no-local-network does nothing with --no-fetch/)
+  })
+
+  it('the web flags exit 2 when every input is mail or a calendar, which never fetch', () => {
+    for (const flag of ['--no-fetch', '--no-local-network']) {
+      expect(checkFlagScope([flag], 'pdf', ['eml', 'ics']), flag).toMatch(new RegExp(`^${flag} does not apply to eml, msg, mbox, ics input`))
+      expect(checkFlagScope([flag], 'pdf', ['eml', 'md']), flag).toBeNull()
+      expect(checkFlagScope([flag], 'txt', ['docx']), flag).toBeNull()
+    }
+  })
+
+  it('--no-code-colour, strict to the outputs that colour code', () => {
+    expect(ok(['a.md', '--to', 'html', '--no-code-colour']).noCodeColour).toBe(true)
+    for (const t of ['pdf', 'html', 'revealjs', 'epub', 'azw3', 'azw4', 'docx'] as const) {
+      expect(checkFlagScope(['--no-code-colour'], t, ['md']), t).toBeNull()
+    }
+    for (const t of ['md', 'txt', 'csv', 'json', 'xlsx'] as const) {
+      expect(checkFlagScope(['--no-code-colour'], t, ['md']), t).toMatch(/^--no-code-colour applies only to/)
+    }
+  })
+
+  it('--ocr-lang needs --ocr and a language the app knows', () => {
+    expect(ok(['a.png', '--to', 'txt', '--ocr', '--ocr-lang', 'deu']).ocrLang).toBe('deu')
+    const without = parseArgs(['a.png', '--to', 'txt', '--ocr-lang', 'deu'])
+    expect(without.kind).toBe('usage')
+    if (without.kind === 'usage') expect(without.message).toMatch(/^--ocr-lang needs --ocr/)
+    const unknown = parseArgs(['a.png', '--to', 'txt', '--ocr', '--ocr-lang', 'klingon'])
+    expect(unknown.kind).toBe('usage')
+    if (unknown.kind === 'usage') expect(unknown.message).toMatch(/^--ocr-lang: klingon is not an OCR language/)
+    expect(parseArgs(['a.png', '--to', 'txt', '--ocr', '--ocr-lang']).kind).toBe('usage')
+  })
+
+  it('--ocr-lang exits 2 when no input is an image or a PDF', () => {
+    expect(checkFlagScope(['--ocr-lang'], 'txt', ['image'])).toBeNull()
+    expect(checkFlagScope(['--ocr-lang'], 'txt', ['pdf'])).toBeNull()
+    expect(checkFlagScope(['--ocr-lang'], 'txt', ['md'])).toMatch(/^--ocr-lang applies only to image, pdf input/)
+  })
+
+  it('--settings takes a path or app', () => {
+    expect(ok(['a.md', '--to', 'pdf', '--settings', 'app']).settings).toBe('app')
+    expect(ok(['a.md', '--to', 'pdf', '--settings', 'my.json']).settings).toBe('my.json')
+    expect(ok(['a.md', '--to', 'pdf']).settings).toBeUndefined()
+    expect(parseArgs(['a.md', '--to', 'pdf', '--settings']).kind).toBe('usage')
+  })
+
+  it("lets Chromium's --user-data-dir=<dir> through, the profile --settings app reads from", () => {
+    const req = ok(['a.md', '--to', 'pdf', '--user-data-dir=/tmp/profile'])
+    expect(req.inputs).toEqual(['a.md'])
+  })
+
+  it('are all strict, and listed in the usage', () => {
+    for (const flag of ['--pictures', '--no-fetch', '--no-local-network', '--no-code-colour', '--ocr-lang']) {
+      expect(FLAG_SCOPES.find((s) => s.flag === flag)?.strict, flag).toBe(true)
+    }
+    for (const text of ['--pictures <jpg|png>', '--no-fetch', '--no-local-network', '--no-code-colour', '--ocr-lang <code>', '--settings <file|app>']) {
+      expect(USAGE, text).toContain(text)
+    }
+  })
+})

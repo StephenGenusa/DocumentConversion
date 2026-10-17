@@ -26,7 +26,7 @@ const IMAGE_TIMEOUT_MS = 10_000
  * default for the same reason. A calendar invitation arrives by mail and its
  * HTML description carries the same kind of tracking image.
  */
-const NO_FETCH_SOURCES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['eml', 'msg', 'mbox', 'ics'])
+export const NO_FETCH_SOURCES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['eml', 'msg', 'mbox', 'ics'])
 
 /** What fetching a document's pictures is given: cancellation, progress, the notice, and Settings → Web. */
 export type PictureFetchContext = Pick<ReadContext, 'signal' | 'onProgress' | 'onAdvice' | 'web'>

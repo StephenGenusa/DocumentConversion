@@ -1,15 +1,46 @@
 import { existsSync, statSync } from 'fs'
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { basename, dirname, resolve } from 'path'
+import { basename, dirname, join, resolve } from 'path'
 import { app } from 'electron'
-import { parseArgs, USAGE, checkFlagScope, cliReadOptions } from '../cli/args'
+import { parseArgs, USAGE, checkFlagScope, type CliRequest } from '../cli/args'
+import { cliConvertOptions } from '../cli/options'
+import { DEFAULT_SETTINGS, type Settings } from '../core/settings'
+import { readSettingsFile, SETTINGS_FILE } from './settings'
+import { installedCodes } from './ocr-packs'
 import { mergeToTarget, runConversion } from './conversion'
 import { detect } from '../core/detect'
 import { allowedTargets } from '../core/target-validity'
 import { expandZipArchive } from '../core/zip-expand'
-import { normalizePdfOptions } from '../core/pdf-options'
 import { resolveOutPath } from '../cli/out-path'
 import { EXTENSIONS, type SourceFormat, type WritePart } from '../core/types'
+
+/**
+ * The settings a run starts from (settings spec 5.7): the built-in defaults,
+ * or the file `--settings` names - `app` for the one the window saves, in
+ * userData (index.ts pins that to the app's own folder in every launch mode).
+ * Read only: the file is never written, and never renamed even when it is
+ * bad. Without `--settings`, nothing on disk is read, so a script gives the
+ * same result on every machine.
+ *
+ * A file that can't be read or isn't settings is a usage error (exit 2): the
+ * run would otherwise quietly use other settings than asked. `app` with no
+ * file yet means the app has saved nothing: the defaults, with a note. A bad
+ * value costs only itself (the schema's rule), with a note.
+ */
+function cliSettings(req: CliRequest): { settings: Readonly<Settings> } | { error: string } {
+  if (req.settings === undefined) return { settings: DEFAULT_SETTINGS }
+  const fromApp = req.settings === 'app'
+  const path = fromApp ? join(app.getPath('userData'), SETTINGS_FILE) : resolve(req.settings)
+  const name = fromApp ? `the app's settings (${path})` : path
+  if (fromApp && !existsSync(path)) {
+    console.error(`NOTE settings: the app has no saved settings yet (${path}); the defaults are used.`)
+    return { settings: DEFAULT_SETTINGS }
+  }
+  const file = readSettingsFile(path)
+  if (!file.ok) return { error: `--settings: ${name}: ${file.message}` }
+  for (const problem of file.problems) console.error(`NOTE settings: ${problem.key}: ${problem.message}.`)
+  return { settings: file.settings }
+}
 
 interface LoadedInputFile {
   path: string
@@ -41,18 +72,18 @@ export async function runCli(argv: string[]): Promise<number> {
     return 2
   }
   const req = parsed.req
-  const opts = {
-    pdf: normalizePdfOptions({
-      scale: req.scale,
-      pageSize: req.page,
-      landscape: req.landscape,
-      headerFooter: req.headerFooter,
-    }),
-    slides: { splitOn: req.split ?? 'auto' },
-    renderedFormat: req.diagrams,
-    ocr: req.ocr,
-    read: cliReadOptions(req),
+  const loadedSettings = cliSettings(req)
+  if ('error' in loadedSettings) {
+    console.error(`${loadedSettings.error}\n\n${USAGE}`)
+    return 2
   }
+  const built = cliConvertOptions(loadedSettings.settings, req, (code) => installedCodes().some((c) => c.code === code))
+  if (built.kind === 'usage') {
+    console.error(`${built.message}\n\n${USAGE}`)
+    return 2
+  }
+  for (const note of built.notes) console.error(`NOTE settings: ${note}`)
+  const opts = built.options
 
   let failed = 0
 
@@ -149,8 +180,9 @@ export async function runCli(argv: string[]): Promise<number> {
           bytes: await bytesFor(f),
           filename: basename(f.path),
           source: f.source,
-          read: cliReadOptions(req),
+          read: opts.read,
           ocr: req.ocr,
+          ocrLanguage: opts.ocrLanguage,
         })),
       )
       const out = await mergeToTarget(

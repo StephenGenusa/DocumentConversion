@@ -238,8 +238,9 @@ default** and applies to:
 
 Opening a document that refers to remote images therefore contacts the servers
 that host them, which tells those servers your IP address and that the
-document was opened. There is no setting to turn this off. Two exceptions are
-built in:
+document was opened. On the command line, `--no-fetch` turns this off and
+`--no-local-network` refuses intranet addresses (see [Command line](#command-line)).
+Two exceptions are built in:
 
 - **Email and calendar invitations** (`.eml`, `.msg`, `.mbox`, `.ics`) never
   have their remote images fetched. Senders use them to learn that a message
@@ -403,8 +404,11 @@ file per table and are per-file work by definition.
 ```
 docconv convert <inputs...> --to <txt|md|docx|pdf|html|epub|revealjs|azw3|azw4|csv|json|xlsx>
   [--out <fileOrDir>] [--from <format>] [--merge] [--no-headings] [--table N]
-  [--split <auto|hr|h1|h2>] [--scale 1.25] [--page A4] [--landscape]
-  [--header-footer] [--ocr] [--no-clobber] [--help] [--version]
+  [--split <auto|hr|h1|h2>] [--diagrams <svg|png>] [--scale 1.25] [--page A4]
+  [--landscape] [--header-footer] [--ocr] [--ocr-lang <code>]
+  [--pictures <jpg|png>] [--no-fetch] [--no-local-network] [--no-code-colour]
+  [--json-as <table|text>] [--no-timestamps] [--sqlite-views]
+  [--settings <file|app>] [--no-clobber] [--help] [--version]
 ```
 
 The launcher is installed at `<install>/resources/cli/docconv`. In a development
@@ -419,6 +423,27 @@ checkout, run `npm run cli -- <args>`.
 - `--table N` picks one table, for csv and json output only.
 - `--split` chooses where a new slide starts, for the `revealjs` target.
 - `--merge` cannot be combined with csv, json or xlsx.
+- A picture the output can't hold (a TIFF in a PDF, a BMP in an EPUB) is
+  converted to JPG, as in the app; `--pictures png` keeps every pixel instead.
+  Pictures with see-through parts stay PNG, and drawings stay SVG or PNG,
+  either way.
+- `--no-fetch` converts without downloading web pictures; each becomes its
+  description and a `NOTE` says how many. `--no-local-network` still fetches
+  but refuses intranet addresses; it cannot be combined with `--no-fetch`.
+- `--no-code-colour` writes code blocks plain, not coloured by language.
+- `--ocr-lang deu` reads with `--ocr` in another language. Its pack must be
+  installed: English ships with the app, others are downloaded in the app.
+- `--settings <file>` starts from a settings file (the format the app saves);
+  `--settings app` uses the app's own, in its data folder
+  (`~/.config/docconversion`, `%APPDATA%\docconversion`,
+  `~/Library/Application Support/docconversion`). The file is only read. Flags
+  win over it, a value that doesn't apply to the run is ignored, and a bad
+  value is a `NOTE` and its default. Without `--settings` the app's settings
+  are never read, so a script gives the same result on every machine.
+- A flag that can do nothing for the output or the inputs given (`--pictures`
+  for txt, `--diagrams` for Word, `--sqlite-views` with no database) is an
+  error, exit code 2. `--table`, `--split`, `--scale`, `--page`, `--landscape`
+  and `--header-footer` predate this rule and are still ignored instead.
 - More than one input requires `--out`.
 - Exit code 0 when everything succeeded, 1 when anything failed, 2 when the
   arguments were wrong.

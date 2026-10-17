@@ -1,6 +1,9 @@
-import { SOURCE_FORMATS, TABLE_TARGETS, TARGET_FORMATS, type ReadOptions, type SourceFormat, type TargetFormat } from '../core/types'
+import { SOURCE_FORMATS, TABLE_TARGETS, TARGET_FORMATS, type SourceFormat, type TargetFormat } from '../core/types'
 import { PDF_PAGE_SIZES } from '../core/pdf-options'
-import { SVG_TARGETS } from '../core/rendered-blocks'
+import { SVG_TARGETS, type PictureFormat } from '../core/rendered-blocks'
+import { PICTURE_TARGET_FORMATS } from '../core/pictures'
+import { NO_FETCH_SOURCES } from '../core/remote-images'
+import { isKnownLanguage } from '../ocr/languages'
 
 export interface CliRequest {
   inputs: string[]
@@ -26,6 +29,18 @@ export interface CliRequest {
   ocr: boolean
   noClobber: boolean
   headings: boolean
+  /** What a picture the target can't hold becomes (settings: pictures.format). */
+  pictures?: PictureFormat
+  /** Leave web pictures unfetched (settings: web.fetchPictures off). */
+  noFetch?: boolean
+  /** Refuse intranet addresses for web pictures (settings: web.allowLocalNetwork off). */
+  noLocalNetwork?: boolean
+  /** Plain code, not coloured by language (settings: code.colour off). */
+  noCodeColour?: boolean
+  /** The OCR language, with --ocr. */
+  ocrLang?: string
+  /** A settings file to start from, or `app` for the app's own. */
+  settings?: string
 }
 
 export type ParseResult = { kind: 'ok'; req: CliRequest } | { kind: 'usage'; message: string }
@@ -42,11 +57,18 @@ export const USAGE = `usage: docconv convert <inputs...> --to <txt|md|docx|pdf|h
   [--page <size>]       pdf page size (Letter, A4, Legal, A3, Tabloid)
   [--landscape]         pdf landscape orientation
   [--header-footer]     pdf header/footer with title, date, page numbers
-  [--ocr]               OCR scanned PDFs and images (English)
+  [--ocr]               OCR scanned PDFs and images (English unless --ocr-lang)
+  [--ocr-lang <code>]   with --ocr: the OCR language, e.g. deu (its pack must be installed in the app)
+  [--pictures <jpg|png>]  pictures the output can't hold become JPG (default; see-through ones stay PNG) or PNG
+  [--no-fetch]          don't download web pictures; each is replaced by its description
+  [--no-local-network]  don't download web pictures from intranet addresses (10.x, 192.168.x, http://intranet/)
+  [--no-code-colour]    plain code, not coloured by language: pdf, html, revealjs, epub, azw3, azw4, docx
+  [--settings <file|app>]  start from a settings file, or the app's own (app); flags win over it
   [--json-as <table|text>]  JSON records: a table (default) or formatted JSON
   [--no-timestamps]     subtitles and transcripts without their times
   [--sqlite-views]      SQLite databases: include each view's results after the tables
   [--no-clobber]        fail instead of overwriting existing outputs
+Without --settings the defaults are built in: the app's settings are never read.
 Exit codes: 0 all succeeded, 1 any failed, 2 bad usage.`
 
 const usage = (message: string): ParseResult => ({ kind: 'usage', message: `${message}\n\n${USAGE}` })
@@ -60,10 +82,19 @@ const usage = (message: string): ParseResult => ({ kind: 'usage', message: `${me
  */
 export interface FlagScope {
   flag: string
-  targets?: TargetFormat[]
-  inputs?: SourceFormat[]
+  targets?: readonly TargetFormat[]
+  inputs?: readonly SourceFormat[]
+  /** Inputs it does nothing for: an error only when every input is one. */
+  notInputs?: readonly SourceFormat[]
+  /** Why, for `notInputs`. */
+  because?: string
   strict: boolean
 }
+
+/** The outputs that colour code by language (and so the ones --no-code-colour changes). */
+export const CODE_COLOUR_TARGETS: readonly TargetFormat[] = ['pdf', 'html', 'revealjs', 'epub', 'azw3', 'azw4', 'docx']
+
+const NEVER_FETCH = [...NO_FETCH_SOURCES]
 
 export const FLAG_SCOPES: FlagScope[] = [
   { flag: '--table', targets: ['csv', 'json'], strict: false },
@@ -78,6 +109,12 @@ export const FLAG_SCOPES: FlagScope[] = [
   { flag: '--sqlite-views', inputs: ['sqlite'], strict: true },
   // Word (and Kindle AZW3) are always PNG; md and txt keep the source.
   { flag: '--diagrams', targets: [...SVG_TARGETS], strict: true },
+  // Settings spec 5.7: one flag per setting.
+  { flag: '--pictures', targets: PICTURE_TARGET_FORMATS, strict: true },
+  { flag: '--no-fetch', notInputs: NEVER_FETCH, because: 'they never fetch web pictures', strict: true },
+  { flag: '--no-local-network', notInputs: NEVER_FETCH, because: 'they never fetch web pictures', strict: true },
+  { flag: '--no-code-colour', targets: CODE_COLOUR_TARGETS, strict: true },
+  { flag: '--ocr-lang', inputs: ['image', 'pdf'], strict: true },
 ]
 
 /** The usage message for the first strict flag that cannot apply, or null. */
@@ -95,17 +132,11 @@ export function checkFlagScope(
     if (scope.inputs && !inputFormats.some((f) => scope.inputs!.includes(f))) {
       return `${scope.flag} applies only to ${scope.inputs.join(', ')} input, and no input is one`
     }
+    if (scope.notInputs && inputFormats.every((f) => scope.notInputs!.includes(f))) {
+      return `${scope.flag} does not apply to ${scope.notInputs.join(', ')} input (${scope.because}), and every input is one`
+    }
   }
   return null
-}
-
-/** The reading choices a request's flags make, for every input. */
-export function cliReadOptions(req: CliRequest): ReadOptions {
-  return {
-    ...(req.jsonAs ? { jsonAs: req.jsonAs } : {}),
-    ...(req.noTimestamps ? { transcriptTimestamps: false } : {}),
-    ...(req.sqliteViews ? { sqliteViews: true } : {}),
-  }
 }
 
 export function parseArgs(argv: string[]): ParseResult {
@@ -196,6 +227,36 @@ export function parseArgs(argv: string[]): ParseResult {
         req.diagrams = v
         break
       }
+      case '--pictures': {
+        const v = takeValue(arg, i++)
+        const formats: Record<string, PictureFormat> = { jpg: 'jpeg', jpeg: 'jpeg', png: 'png' }
+        const format = v ? formats[v.toLowerCase()] : undefined
+        if (!format) return usage('--pictures needs jpg or png')
+        req.pictures = format
+        break
+      }
+      case '--ocr-lang': {
+        const v = takeValue(arg, i++)
+        if (!v) return usage('--ocr-lang needs a language code')
+        if (!isKnownLanguage(v)) return usage(`--ocr-lang: ${v} is not an OCR language this app knows`)
+        req.ocrLang = v
+        break
+      }
+      case '--settings': {
+        const v = takeValue(arg, i++)
+        if (!v) return usage('--settings needs a settings file, or app')
+        req.settings = v
+        break
+      }
+      case '--no-fetch':
+        req.noFetch = true
+        break
+      case '--no-local-network':
+        req.noLocalNetwork = true
+        break
+      case '--no-code-colour':
+        req.noCodeColour = true
+        break
       case '--no-timestamps':
         req.noTimestamps = true
         break
@@ -221,10 +282,17 @@ export function parseArgs(argv: string[]): ParseResult {
         req.noClobber = true
         break
       default:
+        // Chromium's own switch (it takes only the `=` form): the profile, and
+        // so the userData folder that `--settings app` reads. Electron acts on it.
+        if (arg.startsWith('--user-data-dir=')) break
         return usage(`Unknown flag: ${arg}`)
     }
   }
 
+  if (req.ocrLang && !req.ocr) return usage('--ocr-lang needs --ocr')
+  if (req.noFetch && req.noLocalNetwork) {
+    return usage('--no-local-network does nothing with --no-fetch: no web picture is fetched at all')
+  }
   if (req.inputs.length === 0) return usage('No inputs given')
   if (!toSeen) return usage('--to is required')
   if (req.inputs.length > 1 && !req.out) {
