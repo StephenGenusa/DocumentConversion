@@ -76,8 +76,9 @@ export interface ConverterDeps {
   renderBlocks?: RenderBlocks
   /**
    * The fonts on this computer, by family (src/main/local-fonts.ts): what
-   * an EMF's text given as glyph numbers is read with. Without it that
-   * text is not drawn.
+   * an EMF's text given as glyph numbers is read with, and its text given
+   * without advances measured with. Without it the first is not drawn and
+   * the second is laid out by the reader's fonts.
    */
   fontFiles?: FontFiles
 }

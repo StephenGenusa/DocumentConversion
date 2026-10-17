@@ -2,11 +2,14 @@
  * Tiny synthetic TrueType fonts for tests: no outlines, only the tables a
  * glyph-number reader looks at (src/core/metafile/sfnt.ts) - 'name' (family
  * and style), 'cmap' (format 4 for the BMP, format 12 when a code point is
- * beyond it) and, when glyph names are given, 'post' (format 2). So no
- * third-party font is committed or needed.
+ * beyond it), when glyph names are given 'post' (format 2), and when
+ * advances are given 'head', 'hhea' and 'hmtx' (each glyph's advance in
+ * units of `unitsPerEm`; glyphs past the last given take its advance). So
+ * no third-party font is committed or needed.
  *
  *   sfnt({ family: 'Reading Sans', style: 'Regular',
- *          cmap: [[0x41, 3], [0x42, 4]], names: { 9: 'f_i' }, glyphs: 10 })
+ *          cmap: [[0x41, 3], [0x42, 4]], names: { 9: 'f_i' }, glyphs: 10,
+ *          advances: [0, 0, 0, 1200, 1100], unitsPerEm: 2048 })
  *   collection([fontA, fontB])   // a .ttc of them
  */
 
@@ -82,11 +85,25 @@ function postTable(glyphs, names) {
   return Buffer.concat([be32(0x00020000), Buffer.alloc(28), be16(glyphs, ...index), strings])
 }
 
+/** 'head', 'hhea' and 'hmtx' for these advances (left side bearings all 0). */
+function metricTables(advances, unitsPerEm) {
+  const head = Buffer.alloc(54)
+  head.writeUInt32BE(0x00010000, 0)
+  head.writeUInt32BE(0x5f0f3cf5, 12)
+  head.writeUInt16BE(unitsPerEm, 18)
+  const hhea = Buffer.alloc(36)
+  hhea.writeUInt32BE(0x00010000, 0)
+  hhea.writeUInt16BE(advances.length, 34)
+  const hmtx = Buffer.concat(advances.map((a) => be16(a, 0)))
+  return { head, hhea, hmtx }
+}
+
 /** One face's tables, by tag. */
-function tablesOf({ family, style = 'Regular', cmap = [], names = null, glyphs = 0 }) {
+function tablesOf({ family, style = 'Regular', cmap = [], names = null, glyphs = 0, advances = null, unitsPerEm = 1000 }) {
   const count = Math.max(glyphs, ...cmap.map(([, g]) => g + 1), ...Object.keys(names ?? {}).map((g) => Number(g) + 1))
   const tables = { cmap: cmapTable(cmap), name: nameTable(family, style) }
   if (names) tables.post = postTable(count, names)
+  if (advances) Object.assign(tables, metricTables(advances, unitsPerEm))
   return tables
 }
 

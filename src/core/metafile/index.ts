@@ -67,7 +67,7 @@ export const METAFILE_LIMITS = {
 interface Options {
   depth?: number
   maxChars?: number
-  /** The fonts text given as glyph numbers is read with (fonts.ts); without them that text is not drawn. */
+  /** The fonts text given as glyph numbers is read with, and text without advances measured with (fonts.ts); without them the first is not drawn. */
   fonts?: GlyphFonts
 }
 

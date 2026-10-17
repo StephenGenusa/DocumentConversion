@@ -9,6 +9,11 @@ import { drawMetafile } from '../../src/core/metafile'
 import { sanitizeSvg } from '../../src/core/svg-sanitize'
 // @ts-expect-error: a plain .mjs fixture library, no types.
 import { metafileCorpus } from '../../scripts/fixtures/metafile-corpus.mjs'
+// @ts-expect-error: a plain .mjs fixture library, no types.
+import { EmfWriter } from '../../scripts/fixtures/lib-metafile.mjs'
+// @ts-expect-error: a plain .mjs fixture library, no types.
+import { READING_ROOM } from '../../scripts/fixtures/vocabulary.mjs'
+import { localFontFiles } from '../../src/main/local-fonts'
 
 /**
  * The metafile corpus drawn (src/core/metafile), sanitized and rasterized
@@ -59,6 +64,31 @@ function decode(b64: string): { width: number; height: number; at: (x: number, y
 const hex = (h: string): number[] => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
 const WHITE = '#ffffff'
 
+/**
+ * Text in a font that is not here, drawn as the render host draws it, and
+ * the same SVG with its font-family swapped for one name: whether the host
+ * took the metric-compatible twin (or the generic family) the SVG names.
+ */
+const installed = localFontFiles()
+const has = (family: string): boolean => installed(family, false, false) !== null
+function fontCase(face: string, pitchFamily: number): string {
+  const r = drawMetafile(new EmfWriter({ width: 300, height: 40 }).font(1, { face, height: -24, pitchFamily }).select(1).text(4, 8, READING_ROOM.signs[0]).bytes())
+  if ('error' in r) throw new Error(r.error)
+  return sanitizeSvg(r.svg)
+}
+const withFamily = (svg: string, family: string): string => svg.replace(/font-family="[^"]*"/, `font-family="${family}"`)
+// Arial drawn as a serif by its pitch and family, so taking the generic family would show.
+const TWIN = fontCase('Arial', 0x10)
+const FALLBACK = fontCase('Calibri', 0x20)
+const FONT_CASES = [
+  { name: 'font-twin', svg: TWIN },
+  { name: 'font-twin-only', svg: withFamily(TWIN, "'Liberation Sans'") },
+  { name: 'font-twin-generic', svg: withFamily(TWIN, 'serif') },
+  { name: 'font-fallback', svg: FALLBACK },
+  { name: 'font-fallback-generic', svg: withFamily(FALLBACK, 'sans-serif') },
+  { name: 'font-fallback-default', svg: withFamily(FALLBACK, 'NoSuchFace') },
+]
+
 type Result = Record<string, { png?: string; width?: number; height?: number; error?: string }> & { fatal?: string }
 
 describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
@@ -74,6 +104,7 @@ describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
         if ('error' in r) throw new Error(`${p.name}: ${r.error}`)
         return { name: p.name, svg: sanitizeSvg(r.svg) }
       })
+      input.push(...FONT_CASES)
       const json = join(dir, 'input.json')
       await writeFile(json, JSON.stringify(input))
       const electron = require('electron') as unknown as string
@@ -111,6 +142,24 @@ describe.skipIf(!hasDisplay)('metafiles drawn, through the render host', () => {
     for (let y = t * 2; y < b * 2; y++) for (let x = l * 2; x < r * 2; x++) if (img.at(x, y).some((v) => v < 128)) n++
     return n
   }
+
+  // Arial is not installed here, only its twin: the host draws the text in the twin (by the name the SVG gives it, or by
+  // fontconfig's alias for Arial where there is one), not in the generic family.
+  it.skipIf(!has('Liberation Sans') || has('Arial'))('text in a missing font is drawn in its metric-compatible twin when that is installed', () => {
+    expect(TWIN).toContain("font-family=\"'Arial','Liberation Sans','Arimo',serif\"")
+    expect(result['font-twin'].png).toBeTruthy()
+    expect(result['font-twin'].png).toBe(result['font-twin-only'].png)
+    expect(result['font-twin'].png).not.toBe(result['font-twin-generic'].png)
+  })
+
+  // Neither Calibri nor Carlito here: the generic family the SVG ends with, not the host's default font.
+  it.skipIf(has('Calibri') || has('Carlito'))('text in a missing font with no twin falls back to the right generic family', () => {
+    expect(FALLBACK).toContain("font-family=\"'Calibri','Carlito',sans-serif\"")
+    expect(result['font-fallback'].png).toBeTruthy()
+    expect(result['font-fallback'].png).toBe(result['font-fallback-generic'].png)
+    // Whether the host's default (a serif) differs from its sans-serif depends on the fonts installed.
+    if (result['font-fallback-generic'].png !== result['font-fallback-default'].png) expect(result['font-fallback'].png).not.toBe(result['font-fallback-default'].png)
+  })
 
   it('rasterizes every drawing at twice its size', () => {
     for (const p of metafileCorpus()) {

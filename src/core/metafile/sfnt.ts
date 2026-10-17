@@ -8,7 +8,9 @@
  *
  * Glyph numbers belong to one font: a metric-compatible twin (Carlito for
  * Calibri) has the same widths but its own glyph order, so only the font
- * the metafile names, by its exact family, is any use (fonts.ts).
+ * the metafile names, by its exact family, is any use (fonts.ts). Widths
+ * are another matter: characterAdvances reads them, from the font or its
+ * twin, for text that comes without its own.
  *
  * The font is read as untrusted, like the metafile: every read is checked
  * against the buffer, tables and records are capped, and every loop moves
@@ -151,10 +153,26 @@ export function glyphCharacters(buf: Buffer, tables: Map<string, Table>): Map<nu
     const had = glyphs.get(glyph)
     if (had === undefined || better(code, had)) glyphs.set(glyph, code)
   }
+  if (!readCmap(b, cmap, keep)) return null
+  const chars = new Map<number, string>()
+  for (const [glyph, code] of glyphs) chars.set(glyph, String.fromCodePoint(code))
+  try {
+    postNames(b, tables.get('post'), chars)
+  } catch {
+    // Names are only a help.
+  }
+  return chars
+}
+
+/**
+ * The face's character map into `keep`, code point by code point: the
+ * subtables worth reading, the fullest first (Unicode full range, Unicode
+ * BMP, symbol). False when it has none this can read.
+ */
+function readCmap(b: Be, cmap: Table, keep: (code: number, glyph: number) => void): boolean {
   let read = false
   try {
     const n = Math.min(b.u16(cmap.offset + 2), MAX_SUBTABLES)
-    // The subtables worth reading, the fullest first: Unicode full range, Unicode BMP, symbol.
     const picks: { rank: number; at: number }[] = []
     for (let i = 0; i < n; i++) {
       const at = cmap.offset + 4 + i * 8
@@ -179,15 +197,37 @@ export function glyphCharacters(buf: Buffer, tables: Map<string, Table>): Map<nu
   } catch {
     // A broken character map: what was read before it broke is kept.
   }
-  if (!read) return null
-  const chars = new Map<number, string>()
-  for (const [glyph, code] of glyphs) chars.set(glyph, String.fromCodePoint(code))
+  return read
+}
+
+/**
+ * How far each character of the face moves the pen, in ems: the character
+ * map read forward, each glyph's advance from 'hmtx' over the em of
+ * 'head' (glyphs past hhea's numberOfHMetrics take the last one's, as the
+ * format says). What metafile text without advances is laid out with
+ * (fonts.ts); a metric-compatible twin gives the same widths, so it does
+ * here. Null without the tables, or with an em or metrics out of range.
+ */
+export function characterAdvances(buf: Buffer, tables: Map<string, Table>): Map<number, number> | null {
+  const b = new Be(buf)
+  const [cmap, head, hhea, hmtx] = [tables.get('cmap'), tables.get('head'), tables.get('hhea'), tables.get('hmtx')]
+  if (!cmap || !head || !hhea || !hmtx) return null
   try {
-    postNames(b, tables.get('post'), chars)
+    const unitsPerEm = b.u16(head.offset + 18)
+    // The format allows an em of 16 to 0x4000 units.
+    if (unitsPerEm < 16 || unitsPerEm > 0x4000) return null
+    const metrics = Math.min(b.u16(hhea.offset + 34), Math.floor(hmtx.length / 4))
+    if (metrics < 1) return null
+    const advanceOf = (glyph: number): number => b.u16(hmtx.offset + Math.min(glyph, metrics - 1) * 4) / unitsPerEm
+    const out = new Map<number, number>()
+    const keep = (code: number, glyph: number): void => {
+      if (glyph === 0 || glyph >= MAX_GLYPHS || code > 0x10ffff || out.has(code)) return
+      out.set(code, advanceOf(glyph))
+    }
+    return readCmap(b, cmap, keep) && out.size ? out : null
   } catch {
-    // Names are only a help.
+    return null
   }
-  return chars
 }
 
 /** Whether `code` is a better name for a glyph than `had`. */

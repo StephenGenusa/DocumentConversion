@@ -445,7 +445,12 @@ export class PlusWriter {
   fillEllipse(argb, rect) { return this.rec(0x400e, 0x8000, u32s(argb >>> 0), f32s(...rect)) }
   drawLines(penId, pts, closed = false) { return this.rec(0x400d, penId | (closed ? 0x2000 : 0), u32s(pts.length / 2), f32s(...pts)) }
   drawImage(imageId, src, dest) { return this.rec(0x401a, imageId, u32s(0, 2), f32s(...src), f32s(...dest)) }
-  drawString(fontId, argb, rect, s) { return this.rec(0x401c, 0x8000 | fontId, u32s(argb >>> 0, 0xffffffff, s.length), f32s(...rect), pad4(utf16(s))) }
+  /** DRAWSTRING in `rect` [x, y, w, h], laid out by the string format object `formatId` when given. */
+  drawString(fontId, argb, rect, s, formatId = 0xffffffff) { return this.rec(0x401c, 0x8000 | fontId, u32s(argb >>> 0, formatId, s.length), f32s(...rect), pad4(utf16(s))) }
+  /** A string format object: `align` and `lineAlign` 0 near, 1 center, 2 far; `flags` StringFormatFlags (0x1000 no wrap). */
+  stringFormat(id, { align = 0, lineAlign = 0, flags = 0 } = {}) {
+    return this.rec(0x4008, 0x700 | id, u32s(0xdbc01002, flags, 0, align, lineAlign, 0, 0), f32s(0), u32s(0), f32s(0, 0, 1), u32s(0, 0, 0))
+  }
   /** DRAWDRIVERSTRING: `glyphs` (code units, or glyph numbers when `cmap` is false) each at its [x, y]. */
   drawDriverString(fontId, argb, glyphs, positions, { cmap = true } = {}) {
     const units = Buffer.alloc(glyphs.length * 2)

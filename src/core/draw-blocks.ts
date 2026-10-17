@@ -95,7 +95,7 @@ export const FOR_PASTING = { renderedFormat: 'png', svgImagesAsPng: true } as co
 
 export interface DrawContext {
   renderBlocks?: RenderBlocks
-  /** The fonts metafile text given as glyph numbers is read with (ConverterDeps.fontFiles). */
+  /** The fonts metafile text given as glyph numbers is read with, and text without advances measured with (ConverterDeps.fontFiles). */
   fontFiles?: FontFiles
   /** The choice made; renderedFormatFor decides what each target gets. */
   format?: RenderFormat

@@ -6,10 +6,11 @@ import { sfntFaces, sfntName } from '../core/metafile/sfnt'
 
 /*
  * The fonts installed on this computer, found by family name: what an
- * EMF's text given as glyph numbers is read with (ConverterDeps.fontFiles,
- * core/metafile/fonts.ts). Only the family the picture names is any use
- * (glyph numbers are that font's own), so this looks the family up by its
- * exact name and offers no substitute.
+ * EMF's text given as glyph numbers is read with, and its text without
+ * advances measured with (ConverterDeps.fontFiles, core/metafile/fonts.ts).
+ * This looks a family up by its exact name and offers no substitute of its
+ * own: glyph numbers are only the named font's; for widths the caller asks
+ * for the font's metric-compatible twins by their own names.
  *
  * The folders are read once, on the first lookup (only a picture with
  * such text asks), and only each font's 'name' table is read then; the

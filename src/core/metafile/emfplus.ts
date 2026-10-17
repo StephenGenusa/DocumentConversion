@@ -4,7 +4,7 @@ import { readPackedDib, toPicture, type Budget, type Picture, type Raster } from
 import { MAX_RECORDS, type PlusHook } from './emf'
 import type { GlyphFonts } from './fonts'
 import { fan, shade } from './shade'
-import { fontFamily, readGlyphs, type Font } from './gdi'
+import { fontFamily, measure, readGlyphs, type Font } from './gdi'
 import {
   apply,
   axisAligned,
@@ -116,7 +116,11 @@ interface PlusFont {
 interface Format {
   align: number
   lineAlign: number
+  /** StringFormatFlags (NoWrap is 0x1000). */
+  flags: number
 }
+
+const StringFormatFlagsNoWrap = 0x1000
 
 type PlusObject =
   | { type: 'brush'; brush: Brush }
@@ -161,7 +165,7 @@ export class EmfPlusPlayer implements PlusHook {
     private readonly universe: Rect,
     readonly lost: Set<string>,
     private readonly nested: NestedMetafile,
-    /** The fonts text given as glyph numbers is read with (fonts.ts). */
+    /** The fonts text given as glyph numbers is read with, and DrawString text measured with (fonts.ts). */
     private readonly fonts?: GlyphFonts,
   ) {}
 
@@ -618,7 +622,7 @@ export class EmfPlusPlayer implements PlusHook {
         obj = { type: 'font', font: this.readFont(data) }
         break
       case 7:
-        obj = { type: 'format', format: { align: data.u32(12), lineAlign: data.u32(16) } }
+        obj = { type: 'format', format: { align: data.u32(12), lineAlign: data.u32(16), flags: data.u32(4) } }
         break
     }
     if (obj) this.objects.set(id, obj)
@@ -1261,32 +1265,66 @@ export class EmfPlusPlayer implements PlusHook {
     )
   }
 
+  /**
+   * DrawString: text laid out in its layout rectangle, line by line. When
+   * the font (or its metric-compatible twin) is here its characters are
+   * measured (gdi.ts measure): the lines wrap at the rectangle's width, as
+   * GDI+ wraps them (unless the format says NoWrap), and each character is
+   * written at its place, so the text keeps GDI+'s layout in any reader.
+   * Without the font each line is written whole from its anchor and the
+   * reader's font lays it out.
+   */
   private drawString(flags: number, v: View): void {
     const f = this.font(flags)
     const paint = this.paint(this.brushOf(flags, v.u32(0)))
     if (!f || !paint) return
     const fmtObj = this.objects.get(v.u32(4) & 0xff)
-    const format: Format = fmtObj?.type === 'format' ? fmtObj.format : { align: 0, lineAlign: 0 }
+    const format: Format = fmtObj?.type === 'format' ? fmtObj.format : { align: 0, lineAlign: 0, flags: 0 }
     const n = v.u32(8)
     const [x, y, w, h] = this.rectF(v, 12, false)
     const text = v.utf16(28, n)
-    const lines = text.split(/\r\n|\r|\n/).map((l) => l.replace(/[\u0000-\u001f]/g, ''))
-    if (!lines.some((l) => l.trim())) return
     const { em } = f
+    // GDI+'s default layout (no string format) leaves a sixth of an em on each side.
+    const padding = fmtObj?.type === 'format' ? 0 : em / 6
+    const gdiFont = plusGdiFont(f.font, em)
+    const room = w > 0 && !(format.flags & StringFormatFlagsNoWrap) ? w - 2 * padding : Infinity
+    const lines: { chars: string[]; advances: number[] | null }[] = []
+    for (const raw of text.split(/\r\n|\r|\n/)) {
+      const chars = [...raw.replace(/[\u0000-\u001f]/g, '')]
+      const advances = measure(this.fonts, gdiFont, chars, em)
+      if (advances) lines.push(...wrap(chars, advances, room))
+      else lines.push({ chars, advances: null })
+    }
+    if (!lines.some((l) => l.chars.join('').trim())) return
     const lineHeight = em * 1.2
     const total = lines.length * lineHeight
     const top = format.lineAlign === 1 ? y + h / 2 - total / 2 : format.lineAlign === 2 ? y + h - total : y
     const anchor = format.align === 1 ? 'middle' : format.align === 2 ? 'end' : 'start'
-    // GDI+'s default layout (no string format) leaves a sixth of an em on each side.
-    const padding = fmtObj?.type === 'format' ? 0 : em / 6
     const ax = w > 0 ? (format.align === 1 ? x + w / 2 : format.align === 2 ? x + w - padding : x + padding) : x + padding
     const m = this.matrix()
     const attrs = this.textAttrs(f.font, em, paint)
-    lines.forEach((line, i) => {
+    lines.forEach(({ chars, advances }, i) => {
+      const line = chars.join('')
       if (!line.trim()) return
       const by = top + i * lineHeight + em * 0.905
-      const markup = `<text transform="${matrixAttr(m)}" x="${num(ax)}" y="${num(by)}"${anchor === 'start' ? '' : ` text-anchor="${anchor}"`}${attrs}>${esc(line)}</text>`
-      const width = line.length * em * 0.5
+      let width: number
+      let place: string
+      if (advances) {
+        // Each character at its place, from the line's left end as its alignment puts it.
+        width = advances.reduce((a, b) => a + b, 0)
+        const start = anchor === 'middle' ? ax - width / 2 : anchor === 'end' ? ax - width : ax
+        const xs: string[] = []
+        let pos = start
+        chars.forEach((_, k) => {
+          xs.push(num(pos))
+          pos += advances[k]
+        })
+        place = ` x="${xs.join(' ')}" y="${num(by)}"`
+      } else {
+        width = line.length * em * 0.5
+        place = ` x="${num(ax)}" y="${num(by)}"${anchor === 'start' ? '' : ` text-anchor="${anchor}"`}`
+      }
+      const markup = `<text transform="${matrixAttr(m)}"${place}${attrs}>${esc(line)}</text>`
       const left = anchor === 'middle' ? ax - width / 2 : anchor === 'end' ? ax - width : ax
       const corners = [apply(m, left, by - em), apply(m, left + width, by + em * 0.3)]
       this.out.add(markup, this.state.clip, { kind: 'text', bounds: corners.reduce<Rect | null>((u, [px, py]) => union(u, { l: px, t: py, r: px, b: py }), null) })
@@ -1358,6 +1396,38 @@ export class EmfPlusPlayer implements PlusHook {
     }
     this.out.add(markup, this.state.clip, { kind: 'text', bounds: corners.reduce<Rect | null>((u, [px, py]) => union(u, { l: px, t: py, r: px, b: py }), null) })
   }
+}
+
+/**
+ * A line of measured characters broken into lines no wider than `room`,
+ * at spaces (the spaces a break falls on are dropped, as GDI+ drops them);
+ * a word wider than `room` keeps a line of its own, whole.
+ */
+function wrap(chars: string[], advances: number[], room: number): { chars: string[]; advances: number[] }[] {
+  const out: { chars: string[]; advances: number[] }[] = []
+  let line: { chars: string[]; advances: number[] } = { chars: [], advances: [] }
+  let width = 0
+  for (let i = 0; i < chars.length; ) {
+    // The next word and the spaces before it.
+    let j = i
+    while (j < chars.length && chars[j] === ' ') j++
+    while (j < chars.length && chars[j] !== ' ') j++
+    const wordWidth = advances.slice(i, j).reduce((a, b) => a + b, 0)
+    if (line.chars.length && width + wordWidth > room + 1e-6) {
+      out.push(line)
+      line = { chars: [], advances: [] }
+      width = 0
+      while (i < j && chars[i] === ' ') i++
+    }
+    for (let k = i; k < j; k++) {
+      line.chars.push(chars[k])
+      line.advances.push(advances[k])
+      width += advances[k]
+    }
+    i = j
+  }
+  out.push(line)
+  return out
 }
 
 /** An EMF+ font as the GDI font it draws like. */

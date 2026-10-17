@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { drawMetafile, GlyphFonts, METAFILE_LIMITS } from '../../src/core/metafile'
-import { glyphCharacters, sfntFaces, sfntName, sfntTables } from '../../src/core/metafile/sfnt'
+import { characterAdvances, glyphCharacters, sfntFaces, sfntName, sfntTables } from '../../src/core/metafile/sfnt'
 import { MAX_RECORDS } from '../../src/core/metafile/emf'
 import { MAX_CLIP_DEPTH } from '../../src/core/metafile/svg'
 import { sanitizeSvg } from '../../src/core/svg-sanitize'
@@ -311,10 +311,12 @@ describe('hostile fonts', () => {
       const tables = sfntTables(font, face)
       sfntName(font, tables)
       glyphCharacters(font, tables)
+      characterAdvances(font, tables)
     }
     new GlyphFonts(() => font).characters('Reading Sans', false, false)
+    new GlyphFonts(() => font).advances(['Reading Sans'], false, false)
   }
-  const good = sfnt({ family: 'Reading Sans', cmap: [[0x41, 3], [0x1f4d6, 7], [0x42, 4]], names: { 9: 'f_i', 10: 'uni00E9' } })
+  const good = sfnt({ family: 'Reading Sans', cmap: [[0x41, 3], [0x1f4d6, 7], [0x42, 4]], names: { 9: 'f_i', 10: 'uni00E9' }, advances: [0, 0, 0, 600, 700], unitsPerEm: 1000 })
 
   it('a font cut short anywhere, or with bytes changed at random: never a throw', () => {
     const t0 = Date.now()
@@ -343,6 +345,31 @@ describe('hostile fonts', () => {
     const chars = glyphCharacters(font, sfntTables(font, 0))!
     expect(Date.now() - t0).toBeLessThan(3_000)
     expect(chars.size).toBeLessThanOrEqual(0x10000)
+  })
+
+  it('widths: a character map claiming all of Unicode and metrics that claim more glyphs than there are, within the caps', () => {
+    const groups = 5000
+    const sub = Buffer.concat([Buffer.from([0, 12, 0, 0]), be32(16 + groups * 12, 0, groups), ...Array.from({ length: groups }, () => be32(0, 0x10ffff, 1))])
+    const cmap = Buffer.concat([Buffer.from([0, 0, 0, 1, 0, 3, 0, 10]), be32(12), sub])
+    const head = Buffer.alloc(54)
+    head.writeUInt16BE(1000, 18)
+    const hhea = Buffer.alloc(36)
+    hhea.writeUInt16BE(0xffff, 34)
+    const hmtx = Buffer.from([1, 0, 0, 0, 2, 0, 0, 0])
+    const tables: [string, Buffer][] = [['cmap', cmap], ['head', head], ['hhea', hhea], ['hmtx', hmtx]]
+    let at = 12 + tables.length * 16
+    const dir: Buffer[] = []
+    for (const [tag, t] of tables) {
+      dir.push(Buffer.concat([Buffer.from(tag), be32(0, at, t.length)]))
+      at += t.length
+    }
+    const font = Buffer.concat([be32(0x00010000), Buffer.from([0, tables.length, 0, 0, 0, 0, 0, 0]), ...dir, ...tables.map(([, t]) => t)])
+    const t0 = Date.now()
+    const widths = characterAdvances(font, sfntTables(font, 0))!
+    expect(Date.now() - t0).toBeLessThan(3_000)
+    expect(widths.size).toBeLessThanOrEqual(0x110000)
+    // numberOfHMetrics says 65,535, the table holds two: glyph 1 has the second's advance.
+    expect(widths.get(0x41)).toBeCloseTo(512 / 1000)
   })
 
   it('counts that lie (faces, tables, names) read what is there', () => {

@@ -266,11 +266,46 @@ function generic(font: Font): string {
   return 'sans-serif'
 }
 
-/** The font-family a font is drawn with: its face, metric-compatible substitutes, then the generic family. */
-export function fontFamily(font: Font, symbolic = false): string {
+/** A font's face and its metric-compatible substitutes, the face first. */
+function fontNames(font: Font): string[] {
   const face = cleanFace(font.face)
-  const names = symbolic || !face ? [] : [face, ...(SUBSTITUTES[face.toLowerCase()] ?? [])]
+  return face ? [face, ...(SUBSTITUTES[face.toLowerCase()] ?? [])] : []
+}
+
+/**
+ * The font-family a font is drawn with: its face, metric-compatible
+ * substitutes, then the generic family. A reader (and the render host,
+ * Chromium) takes the first of them it has, by name, from the fonts
+ * installed: the face where it is installed, else its twin, else the
+ * generic family, which is the right kind (serif, sans-serif, monospace)
+ * by the font's pitch and family or, without them, its name.
+ */
+export function fontFamily(font: Font, symbolic = false): string {
+  const names = symbolic ? [] : fontNames(font)
   return [...names.map((n) => `'${n}'`), generic(font)].join(',')
+}
+
+/**
+ * How far each of `chars` moves the pen, at `em`, measured with the font
+ * or (the same widths) its metric-compatible twin, when one is installed
+ * (fonts.ts): for text that comes without its advances. Null when none is
+ * here, or a character is not in it. Control characters take no room.
+ */
+export function measure(fonts: GlyphFonts | undefined, font: Font, chars: string[], em: number): number[] | null {
+  const widths = fonts?.advances(fontNames(font), font.weight >= 650, font.italic)
+  if (!widths) return null
+  const out: number[] = []
+  for (const c of chars) {
+    const code = c.codePointAt(0)!
+    if (code < 0x20) {
+      out.push(0)
+      continue
+    }
+    const w = widths.get(code)
+    if (w === undefined) return null
+    out.push(w * em)
+  }
+  return out
 }
 
 /** Which symbol font, if any, maps a font's codes to other characters. */
@@ -351,7 +386,7 @@ export interface GdiSetup {
   universe: Rect
   /** WMF: the window maps onto this rectangle of the picture (its viewBox), once a window is known. */
   wmfView?: Rect
-  /** The fonts text given as glyph numbers is read with (fonts.ts). */
+  /** The fonts text given as glyph numbers is read with, and text without advances measured with (fonts.ts). */
   fonts?: GlyphFonts
   /** The picture's frame in device space: what a right-to-left layout mirrors across. */
   frame?: Rect | null
@@ -1368,13 +1403,21 @@ export class Gdi {
     // Advances, a character (code point) at a time; a surrogate pair takes both of its units' advances.
     const units = [...raw].map((c) => c.length)
     const chars = [...text]
-    const hasDx = !!dx && dx.length >= raw.length && chars.length === units.length
-    const advances: number[] = []
+    let hasDx = !!dx && dx.length >= raw.length && chars.length === units.length
+    let advances: number[] = []
     if (hasDx) {
       let k = 0
       for (const n of units) {
         advances.push(dx![k] + (n > 1 ? dx![k + 1] ?? 0 : 0))
         k += n
+      }
+    } else if (!symbolic && font.width === 0) {
+      // No advances given: the font's own, measured, when it (or its twin) is here. A font
+      // squeezed or stretched by its lfWidth is left alone: its widths are not the font's.
+      const measured = measure(this.setup.fonts, font, chars, em)
+      if (measured) {
+        advances = measured
+        hasDx = true
       }
     }
     const total = hasDx ? advances.reduce((s, a) => s + a, 0) : chars.length * em * (generic(font) === 'monospace' ? 0.6 : 0.55)
