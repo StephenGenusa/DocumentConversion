@@ -3,8 +3,8 @@ import type { PdfPageSize, PdfRenderOptions } from './types'
 export const PDF_PAGE_SIZES: PdfPageSize[] = ['Letter', 'A4', 'Legal', 'A3', 'Tabloid']
 
 /** Chromium's printToPDF throws on scale outside 0.1–2.0, so clamp rather than trust the caller. */
-const MIN_SCALE = 0.1
-const MAX_SCALE = 2
+export const MIN_SCALE = 0.1
+export const MAX_SCALE = 2
 
 /**
  * The zoom a PDF gets when nobody chose one. The shell's prose size is right
