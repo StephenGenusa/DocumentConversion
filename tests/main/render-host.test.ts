@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { build } from 'esbuild'
 import { runHarness } from './electron-harness'
 
@@ -108,7 +109,13 @@ interface HarnessResult {
   openAfterIdle: boolean
   reopened: boolean
   requests: Array<{ url: string; allowed: boolean }>
+  mermaidHues: Record<string, number | string>
+  mindmapPairs: Array<{ section: string; fill?: string; text?: string }>
+  mindmapRootText: string | null
 }
+
+/** WCAG contrast of two colors given as #rgb, #rrggbb, white or black. */
+const { contrast } = createRequire(import.meta.url)(join(PAGE_DIR, 'mermaid-colors.js')) as { contrast: (a: string, b: string) => number }
 
 describe.skipIf(!hasDisplay)('render host in Electron', () => {
   let result: HarnessResult
@@ -141,7 +148,7 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     const files = result.requests.map((r) => decodeURIComponent(new URL(r.url).pathname).split('/').pop())
     expect(result.requests.every((r) => r.allowed && r.url.startsWith('file://'))).toBe(true)
     expect(new Set(files)).toEqual(
-      new Set(['host.html', 'picture-kind.js', 'host.js', 'mermaid.min.js', 'viz-global.js', 'tex-svg-full.js', 'pako-inflate.min.js', 'utif.js']),
+      new Set(['host.html', 'picture-kind.js', 'mermaid-colors.js', 'host.js', 'mermaid.min.js', 'viz-global.js', 'tex-svg-full.js', 'pako-inflate.min.js', 'utif.js']),
     )
     // The TIFF decoder, once, with the inflate it needs loaded first.
     expect(files.filter((f) => f === 'utif.js').length).toBe(1)
@@ -173,6 +180,36 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
       expect(h.svgHasRemote).toBe(false)
       expect(h.svgHasImport).toBe(false)
     }
+  })
+
+  it("draws mind maps, pies, timelines, journeys, git graphs, quadrants, kanbans, XY charts and Gantt charts in color; flowcharts and sequence diagrams stay gray", () => {
+    const h = result.mermaidHues
+    expect(h.mindmap).toBeGreaterThanOrEqual(4)
+    expect(h.pie).toBeGreaterThanOrEqual(4)
+    expect(h.timeline).toBeGreaterThanOrEqual(3)
+    expect(h.journey).toBeGreaterThanOrEqual(2)
+    expect(h.gitGraph).toBeGreaterThanOrEqual(3)
+    // Pale quarters (under the colored-pixel line) and blue points.
+    expect(h.quadrant).toBeGreaterThanOrEqual(1)
+    expect(h.kanban).toBeGreaterThanOrEqual(2)
+    expect(h.xychart).toBeGreaterThanOrEqual(2)
+    expect(h.gantt).toBeGreaterThanOrEqual(1)
+    expect(h.flowchart).toBe(0)
+    expect(h.sequence).toBe(0)
+    // A diagram that names its own theme is drawn in it.
+    expect(h.ownTheme).toBe(0)
+  })
+
+  it("sets a mind map's labels to read on their colored fills (contrast at least 4.5:1)", () => {
+    expect(result.mindmapPairs).toHaveLength(5)
+    for (const p of result.mindmapPairs) {
+      expect(p.fill, p.section).toMatch(/^#/)
+      expect(contrast(p.fill!, p.text!), p.section).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it("centers a mind map circle's label on it (Mermaid starts an SVG label at the center)", () => {
+    expect(result.mindmapRootText).toContain('text-anchor="middle"')
   })
 
   it('answers a broken diagram with the engine message', () => {
@@ -426,7 +463,7 @@ describe.skipIf(!hasDisplay)('render host in Electron', () => {
     const host = readFileSync(join(ROOT, 'src/main/render-host.ts'), 'utf8')
     const vendored = /pkg: 'mermaid',\s*version: '([^']+)'/.exec(script)?.[1]
     expect(vendored).toBe('11.12.0')
-    expect(host).toContain(`mermaid: '${vendored}'`)
+    expect(host).toMatch(new RegExp(`mermaid: '${vendored}[ ']`))
     const viz = /pkg: '@viz-js\/viz',\s*version: '([^']+)'/.exec(script)?.[1]
     expect(viz).toBe('3.31.0')
     expect(host).toContain(`dot: '${viz}'`)

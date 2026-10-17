@@ -46,7 +46,7 @@
           })
         }, Promise.resolve())
         .then(function () {
-          if (kind === 'mermaid') setUpMermaid()
+          if (kind === 'mermaid') setUpMermaid(true)
         })
       // A failed load may be retried by the next request.
       loading[kind].catch(function () {
@@ -62,9 +62,16 @@
    * htmlLabels, which would bring back HTML labels (foreignObject) and with
    * them the markup strict mode exists to keep out. Mermaid removes a secure
    * key at any depth of a directive, so flowchart.htmlLabels is covered too.
+   *
+   * The theme is 'neutral' with the colors of mermaid-colors.js laid over
+   * it (mind maps, pies, timelines, git graphs and the like in color), or
+   * plain 'neutral' under a diagram that names its own theme, so that the
+   * theme it names is drawn as Mermaid draws it.
    */
-  function setUpMermaid() {
-    window.mermaid.initialize({
+  function mermaidConfig(colored) {
+    var themeVariables = colored ? window.mermaidColors.themeVariables() : {}
+    themeVariables.fontFamily = FONT
+    return {
       startOnLoad: false,
       securityLevel: 'strict',
       htmlLabels: false,
@@ -76,11 +83,20 @@
       gantt: { useWidth: 820, fontSize: 13, sectionFontSize: 13, barHeight: 24, barGap: 6 },
       theme: 'neutral',
       fontFamily: FONT,
-      themeVariables: { fontFamily: FONT },
+      themeVariables: themeVariables,
       suppressErrorRendering: true,
       deterministicIds: true,
       secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'suppressErrorRendering', 'maxEdges', 'htmlLabels'],
-    })
+    }
+  }
+
+  /** Whether Mermaid was last set up with the colors (undefined before the first). */
+  var mermaidColored
+
+  function setUpMermaid(colored) {
+    if (colored === mermaidColored) return
+    window.mermaid.initialize(mermaidConfig(colored))
+    mermaidColored = colored
   }
 
   var counter = 0
@@ -99,6 +115,15 @@
     height = Math.ceil(height)
     svg.setAttribute('width', String(width))
     svg.setAttribute('height', String(height))
+    // A mind map's circle (its root, and any `((…))` node) leaves its label
+    // at x 0 for HTML labels to center; an SVG label starts there instead,
+    // its words running out of the circle (Mermaid 11.12). Centered on it.
+    Array.prototype.forEach.call(svg.querySelectorAll('g.mindmap-node > g.label'), function (label) {
+      if (!/^translate\(\s*0\s*[, ]/.test(label.getAttribute('transform') || '')) return
+      Array.prototype.forEach.call(label.querySelectorAll('text'), function (text) {
+        text.setAttribute('text-anchor', 'middle')
+      })
+    })
     svg.style.removeProperty('max-width')
     if (!svg.getAttribute('style')) svg.removeAttribute('style')
     if (!svg.getAttribute('xmlns')) svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
@@ -124,6 +149,7 @@
 
   async function mermaidSvg(source) {
     await load('mermaid')
+    setUpMermaid(!window.mermaidColors.ownTheme(source))
     var id = 'mmd' + ++counter
     var scratch = document.getElementById('scratch')
     try {

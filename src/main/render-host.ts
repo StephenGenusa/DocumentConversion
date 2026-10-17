@@ -50,7 +50,10 @@ import { MAX_SOURCE_BYTES, type RenderBlocks, type RenderKind, type RenderReques
  * rasterized by the page (spec D10); bump its version if that changes.
  */
 export const ENGINE_VERSIONS: Partial<Record<RenderKind, string>> = {
-  mermaid: '11.12.0',
+  // The vendored release, then the colors it is drawn in (host.js, mermaid-colors.js):
+  // colors-1: section, branch, journey, quadrant, Gantt and XY colors over 'neutral';
+  // a mind map circle's label centered.
+  mermaid: '11.12.0 colors-1',
   dot: '3.31.0',
   math: '3.2.2',
   svg: 'raster-1',
@@ -102,7 +105,7 @@ const ENGINE_FILES: Partial<Record<RenderKind, string>> = { mermaid: 'mermaid.mi
 const DECODER_FILES = ['pako-inflate.min.js', 'utif.js']
 
 /** The page's own scripts: the Automatic picture format's rule, then its functions. */
-const PAGE_FILES = ['picture-kind.js', 'host.js']
+const PAGE_FILES = ['picture-kind.js', 'mermaid-colors.js', 'host.js']
 
 /** Who is waiting: visible editor blocks first, conversions next, editor prefetch last. */
 export type RenderPriority = 'visible' | 'convert' | 'prefetch'

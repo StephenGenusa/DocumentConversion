@@ -119,6 +119,60 @@ async function main() {
     })
   }
 
+  // Colors (resources/render/mermaid-colors.js): the hues each kind of diagram
+  // is drawn in, as 30-degree buckets each holding at least 0.3% of the
+  // colored pixels (a pixel is colored where its channels differ by > 40).
+  const { nativeImage } = require('electron')
+  const hues = (b64) => {
+    const img = nativeImage.createFromBuffer(Buffer.from(b64, 'base64'))
+    const bgra = img.toBitmap()
+    const buckets = new Array(12).fill(0)
+    let colored = 0
+    for (let i = 0; i < bgra.length; i += 4) {
+      const b = bgra[i], g = bgra[i + 1], r = bgra[i + 2]
+      const max = Math.max(r, g, b), d = max - Math.min(r, g, b)
+      if (d <= 40) continue
+      const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+      buckets[Math.floor(((h * 60 + 360) % 360) / 30)]++
+      colored++
+    }
+    return buckets.filter((n) => n > 0 && n >= colored * 0.003).length
+  }
+  const COLORED = {
+    mindmap: 'mindmap\n  root((Move))\n    Space\n      Desks\n    People\n      Seats\n    Technology\n      Network\n    Logistics\n      Movers',
+    pie: 'pie\n  "A": 30\n  "B": 25\n  "C": 20\n  "D": 15\n  "E": 10',
+    timeline: 'timeline\n  2024 : Plan\n  2025 : Build\n  2026 : Move\n  2027 : Settle',
+    journey: 'journey\n  title Day\n  section Morning\n    Commute: 3: Me\n  section Work\n    Meet: 4: Me\n  section Evening\n    Rest: 5: Me',
+    gitGraph: 'gitGraph\n  commit\n  branch one\n  commit\n  branch two\n  commit\n  checkout main\n  commit',
+    quadrant: 'quadrantChart\n  x-axis Low --> High\n  y-axis Low --> High\n  A: [0.2, 0.3]\n  B: [0.7, 0.8]',
+    kanban: 'kanban\n  todo[To do]\n    a[Pack]\n  doing[Doing]\n    b[Paint]\n  done[Done]\n    c[Plan]',
+    xychart: 'xychart-beta\n  x-axis [a, b, c]\n  bar [3, 5, 2]\n  line [2, 4, 3]',
+    gantt: 'gantt\n  dateFormat YYYY-MM-DD\n  section A\n  One :a1, 2026-01-01, 5d\n  section B\n  Two :active, 2026-01-03, 5d',
+    flowchart: FLOW,
+    sequence: SEQUENCE,
+    ownTheme: "%%{init: {'theme': 'neutral'}}%%\n" + 'mindmap\n  root((Move))\n    Space\n    People\n    Technology',
+  }
+  out.mermaidHues = {}
+  for (const [name, src] of Object.entries(COLORED)) {
+    const r = await png(src)
+    out.mermaidHues[name] = r.png ? hues(r.png) : r.error
+  }
+  // A mind map's labels against their fills, from the stylesheet Mermaid
+  // writes (.section-N rect fill, .section-N text fill; the root likewise).
+  const mind = await host.render({ kind: 'mermaid', source: COLORED.mindmap, display: true, format: 'svg' })
+  out.mindmapPairs = []
+  if (mind.svg) {
+    for (const n of ['root', '-1', '0', '1', '2']) {
+      const sel = n === 'root' ? 'section-root' : 'section-' + n
+      const esc = sel.replace(/-/g, '\\-')
+      const fill = (new RegExp('\\.' + esc + ' rect[^{]*\\{\\s*fill:\\s*(#[0-9a-fA-F]{3,6})').exec(mind.svg) || [])[1]
+      const text = (new RegExp('\\.' + esc + ' text\\s*\\{\\s*fill:\\s*(#[0-9a-fA-F]{3,6}|white|black)').exec(mind.svg) || [])[1]
+      out.mindmapPairs.push({ section: n, fill, text })
+    }
+    const root = /<g class="node mindmap-node section-root[^>]*>[\s\S]*?<text([^>]*)>/.exec(mind.svg)
+    out.mindmapRootText = root ? root[1] : null
+  }
+
   // SVG images (spec D10): rasterized at twice their size; a hostile one sanitized before the page sees it.
   const pngSize = (r) => {
     if (!r.png) return { error: r.error }
