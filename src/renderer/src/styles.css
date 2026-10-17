@@ -113,7 +113,12 @@ select { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #d4d4d8; fo
  */
 .clip-pane {
   flex: 1;
-  min-height: 0;
+  /* Not 0: in a window too short for the pane (resized, or a small screen),
+     the card shrank below its own toolbar and editor, which then ran on
+     under the conversion card below it. At its floor (the label, the toolbar
+     and the editor's 10rem) the page scrolls instead. A length, not auto: auto would be the whole
+     document's height, and the editor would stop scrolling inside itself. */
+  min-height: 18rem;
   display: flex;
   flex-direction: column;
 }
