@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import JSZip from 'jszip'
 import { readPptx } from '../../src/core/readers/pptx'
 import { readDocx, replaceUninlinedImages } from '../../src/core/readers/docx'
-import { archiveInlineBudget, OVER_BUDGET } from '../../src/core/inline-images'
+import { archiveInlineBudget, createImageLedger, OVER_BUDGET } from '../../src/core/inline-images'
 
 /**
  * A PNG the size we ask for. The header is real (imageMime and mammoth's
@@ -103,6 +103,18 @@ describe('archiveInlineBudget', () => {
     expect(budget.maxTotal).toBe(10 * MB)
   })
 
+  it('has no picture count: ten thousand small pictures all fit (owner, 2026-10-16)', () => {
+    const ledger = createImageLedger(archiveInlineBudget(1024))
+    for (let i = 0; i < 10_000; i++) expect(ledger.admit(200), String(i)).toBe(true)
+  })
+
+  it('still stops one tiny picture referred to a million times: each costs its tag', () => {
+    const ledger = createImageLedger(archiveInlineBudget(40 * 1024))
+    let admitted = 0
+    for (let i = 0; i < 1_000_000 && ledger.admit(1); i++) admitted++
+    expect(admitted).toBeLessThan(200_000)
+  })
+
   it('scales with the source file, which honest documents never outgrow', () => {
     // Real corpus files carry 0.93–0.99 bytes of image per byte of file; the
     // headroom is what keeps an ordinary document out of the placeholder path.
@@ -129,6 +141,13 @@ describe('image budget: pptx', () => {
     const refused = (hub.html.match(/\[image:/g) ?? []).length
     expect(inlined + refused).toBe(12)
     expect(inlined).toBeGreaterThan(0)
+  }, 60_000)
+
+  it('keeps every picture of a deck with more than the old 1,000', async () => {
+    const bytes = await pptxWithImages(1200, 1024)
+    const hub = await readPptx({ bytes })
+    expect((hub.html.match(/<img\b/g) ?? []).length).toBe(1200)
+    expect(hub.html).not.toContain('[image:')
   }, 60_000)
 
   it('leaves an ordinary deck alone', async () => {

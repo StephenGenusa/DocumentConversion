@@ -4,7 +4,7 @@ import {
   isRemoteImageSrc,
   hasRemoteImages,
   dropRemoteImages,
-  DEFAULT_INLINE_BUDGET,
+  MAX_FETCHED_IMAGE_BYTES,
   type ImageFetcher,
 } from './inline-images'
 import { sanitizeToHub } from './allowlist'
@@ -30,7 +30,7 @@ const NO_FETCH_SOURCES: ReadonlySet<SourceFormat> = new Set<SourceFormat>(['eml'
 
 function guardedImageFetcher(deps: GuardedFetchDeps, signal: AbortSignal | undefined, timeoutMs: number): ImageFetcher {
   return async (url) => {
-    const res = await guardedFetch(url, deps, { signal, timeoutMs, maxBytes: DEFAULT_INLINE_BUDGET.maxPerImage })
+    const res = await guardedFetch(url, deps, { signal, timeoutMs, maxBytes: MAX_FETCHED_IMAGE_BYTES })
     return { bytes: res.bytes, contentType: res.contentType }
   }
 }
@@ -41,7 +41,7 @@ function guardedImageFetcher(deps: GuardedFetchDeps, signal: AbortSignal | undef
  * A copy from a web page carries no image bytes — only `<img src="https://...">`
  * pointing back at the site. The renderer's CSP (`img-src 'self' data:`) will
  * not load those, so they showed in the edit pane as empty boxes. Fetching them
- * here, through the same guarded fetcher and budget as a fetched web page,
+ * here, through the same guarded fetcher and limits as a fetched web page,
  * gives the pane and the writers a data URI like every other input.
  *
  * Sanitized first, so only http(s) and data: sources are left to fetch, and
@@ -62,7 +62,7 @@ export async function pastedHtmlToHub(
   // Aborting `signal` is "skip the rest", not "cancel the paste": the images
   // not yet fetched fail at once, become placeholders, and the paste opens.
   const fetcher = guardedImageFetcher(deps, ctx?.signal, imageTimeoutMs)
-  return sanitizeToHub(await inlineImages(clean, 'about:blank', fetcher, DEFAULT_INLINE_BUDGET, ctx?.onProgress))
+  return sanitizeToHub(await inlineImages(clean, 'about:blank', fetcher, MAX_FETCHED_IMAGE_BYTES, ctx?.onProgress))
 }
 
 /**
@@ -89,5 +89,5 @@ export async function resolveRemoteImages(
   const fetcher = guardedImageFetcher(deps, ctx?.signal, imageTimeoutMs)
   // Only remote sources are selected, so the base only ever supplies a scheme
   // for a protocol-relative one; relative paths are left for the writers.
-  return inlineImages(html, 'https://unresolved.invalid/', fetcher, DEFAULT_INLINE_BUDGET, ctx?.onProgress, isRemoteImageSrc)
+  return inlineImages(html, 'https://unresolved.invalid/', fetcher, MAX_FETCHED_IMAGE_BYTES, ctx?.onProgress, isRemoteImageSrc)
 }

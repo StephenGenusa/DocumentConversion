@@ -159,8 +159,8 @@ Three inputs are not file formats:
   page puts on the clipboard by address are downloaded and embedded; see
   [Images and the network](#images-and-the-network).
 - **A web page address.** Paste a link or use *From URL*. The readable article
-  is extracted with Mozilla Readability and its images embedded, up to 100
-  images and 25 MB.
+  is extracted with Mozilla Readability and its images embedded, every one of
+  them.
   Every redirect hop is checked against loopback and link-local addresses, so
   a page cannot make the app fetch something on your own machine or a cloud
   metadata service. Intranet addresses are allowed.
@@ -257,13 +257,13 @@ Every download goes through the same checks as *From URL*:
   multicast and reserved addresses are refused, so a document cannot make the
   app reach a service on your own machine. The connection is made to the
   address that was checked, so a name cannot change its answer in between.
-- Up to 100 images, 2 MB each and 25 MB in total per input, four at a time,
-  with 10 seconds allowed per image. When the total is exceeded the largest
-  images are dropped first.
+- Every image is fetched, however many there are, four at a time, with 10
+  seconds allowed per image. A single image may be up to 200 MB, so that one
+  response cannot exhaust memory.
 - The body must actually be an image. A login page, an error page or a JSON
   reply sent in place of an image is not embedded.
 
-An image that cannot be fetched, is over budget, or is skipped becomes its
+An image that cannot be fetched, is over 200 MB, or is skipped becomes its
 description, such as `[image: quarterly chart]`. A paste shows its progress
 ("Fetched 3 of 12 images"); *Skip remaining images* opens the editor straight
 away with the images that have arrived. During a conversion the usual *Cancel*

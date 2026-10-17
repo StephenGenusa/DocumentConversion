@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { pastedHtmlToHub, resolveRemoteImages } from '../../src/core/remote-images'
 import { inlineImages } from '../../src/core/inline-images'
 import { createConverter } from '../../src/core/convert'
+import { loadUrl } from '../../src/core/readers/url'
 import type { GuardedFetchDeps } from '../../src/core/net/guarded-fetch'
 
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex')
@@ -16,6 +17,49 @@ function deps(images: Record<string, Buffer>, address = '93.184.216.34'): Guarde
     lookup: vi.fn(async () => [address]),
   }
 }
+
+/** A server where every picture is a PNG of `size` bytes, and `/page` is a page of `count` of them. */
+function bigDeps(count: number, size: number): GuardedFetchDeps {
+  const png = Buffer.alloc(size, 7)
+  PNG.copy(png)
+  const page = `<html><head><title>Gallery</title></head><body><article><h1>Gallery</h1><p>${'Every picture of the collection, in order. '.repeat(20)}</p>${Array.from({ length: count }, (_, i) => `<p><img src="/p/${i}.png" alt="p${i}"></p>`).join('')}</article></body></html>`
+  return {
+    fetch: vi.fn(async (url: string) =>
+      url.endsWith('/page')
+        ? new Response(page, { headers: { 'content-type': 'text/html' } })
+        : new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+    ),
+    lookup: vi.fn(async () => ['93.184.216.34']),
+  }
+}
+
+describe('no picture count or total (owner, 2026-10-16)', () => {
+  const count = 120
+  const size = 256 * 1024 // 120 x 256 KB = 30 MB, past the old 100 pictures and 25 MB
+  const html = Array.from({ length: count }, (_, i) => `<img src="https://e.example/p/${i}.png" alt="p${i}">`).join('')
+
+  it('a paste gets every picture', async () => {
+    const out = await pastedHtmlToHub(html, bigDeps(count, size))
+    expect(out.match(/data:image\/png/g)).toHaveLength(count)
+    expect(out).not.toContain('[image:')
+  })
+
+  it("a document's remote pictures all arrive", async () => {
+    const out = await resolveRemoteImages(html, 'html', bigDeps(count, size))
+    expect(out.match(/data:image\/png/g)).toHaveLength(count)
+  })
+
+  it('a fetched web page gets every picture', async () => {
+    const res = await loadUrl('https://e.example/page', bigDeps(count, size))
+    expect(res.kind).toBe('html')
+    expect(res.kind === 'html' && res.html.match(/data:image\/png/g)).toHaveLength(count)
+  })
+
+  it('a picture over the old 2 MB arrives', async () => {
+    const out = await pastedHtmlToHub('<img src="https://e.example/p/big.png" alt="big">', bigDeps(1, 5 * 1024 * 1024))
+    expect(out).toContain('data:image/png')
+  })
+})
 
 describe('pastedHtmlToHub', () => {
   it('embeds a pasted remote image as a data URI', async () => {
@@ -217,13 +261,14 @@ describe('pictures an SVG names by address (<image href="https://…">)', () => 
     expect(svgsIn(out)[0]).not.toContain('data:image/png')
   })
 
-  it('counts them in the same budget as the <img>s', async () => {
+  it('fetches them along with the <img>s, every one', async () => {
     const fetcher = vi.fn(async () => ({ bytes: PNG, contentType: 'image/png' }))
     const html = `<img src="https://example.com/a.png" alt="a">${svgImg(planSvg())}`
-    const out = await inlineImages(html, 'https://example.com/', fetcher, { maxImages: 1, maxPerImage: 1024, maxTotal: 1024 })
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    const out = await inlineImages(html, 'https://example.com/', fetcher)
+    expect(fetcher).toHaveBeenCalledTimes(2)
     expect(fetcher).toHaveBeenCalledWith('https://example.com/a.png')
-    expect(svgsIn(out)[0]).toContain(PHOTO)
+    expect(fetcher).toHaveBeenCalledWith(PHOTO)
+    expect(svgsIn(out)[0]).not.toContain(PHOTO)
   })
 
   it('an .svg file: fetched where it is read; one that cannot be fetched becomes its description', async () => {

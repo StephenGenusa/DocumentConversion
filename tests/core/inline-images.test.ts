@@ -5,6 +5,7 @@ import {
   hasRemoteImages,
   dropRemoteImages,
   fetchedImageType,
+  MAX_FETCHED_IMAGE_BYTES,
   type ImageFetcher,
 } from '../../src/core/inline-images'
 
@@ -41,23 +42,31 @@ describe('inlineImages', () => {
     expect(out).toContain('[image: lost diagram]')
   })
 
-  it('evicts the largest images to placeholders when over the total budget', async () => {
-    const html =
-      '<img src="https://e.com/small.png" alt="small"><img src="https://e.com/big.png" alt="big">'
-    const out = await inlineImages(html, 'https://e.com/', fetcher({ 'https://e.com/small.png': 100, 'https://e.com/big.png': 900 }), {
-      maxImages: 20,
-      maxPerImage: 2000,
-      maxTotal: 500,
+  it('fetches every picture, past the old 100 pictures and 25 MB (owner, 2026-10-16)', async () => {
+    const n = 130
+    const size = 256 * 1024 // 130 x 256 KB = 32.5 MB
+    const f: ImageFetcher = vi.fn(async () => ({ bytes: Buffer.alloc(size, 1), contentType: 'image/png' }))
+    const html = Array.from({ length: n }, (_, i) => `<img src="https://e.com/${i}.png" alt="i${i}">`).join('')
+    const progress: number[] = []
+    const out = await inlineImages(html, 'https://e.com/', f, undefined, (_stage, p) => {
+      if (p != null) progress.push(p)
     })
-    expect(out).toContain('data:image/png;base64,') // small survives
-    expect(out).toContain('[image: big]') // big evicted
+    expect(f).toHaveBeenCalledTimes(n)
+    expect(out.match(/data:image\/png/g)).toHaveLength(n)
+    expect(out).not.toContain('[image:')
+    expect(n * size).toBeGreaterThan(25 * 1024 * 1024)
+    expect(progress.at(-1)).toBe(100)
   })
 
-  it('fetches at most maxImages', async () => {
-    const html = '<img src="https://e.com/1.png"><img src="https://e.com/2.png"><img src="https://e.com/3.png">'
-    const f = fetcher({ 'https://e.com/1.png': 5, 'https://e.com/2.png': 5, 'https://e.com/3.png': 5 })
-    await inlineImages(html, 'https://e.com/', f, { maxImages: 2, maxPerImage: 100, maxTotal: 100 })
-    expect(f).toHaveBeenCalledTimes(2)
+  it('allows a single picture up to the 200 MB memory-safety ceiling', () => {
+    expect(MAX_FETCHED_IMAGE_BYTES).toBe(200 * 1024 * 1024)
+  })
+
+  it('turns a picture over the per-picture ceiling into its placeholder, and keeps the rest', async () => {
+    const html = '<img src="https://e.com/small.png" alt="small"><img src="https://e.com/big.png" alt="big">'
+    const out = await inlineImages(html, 'https://e.com/', fetcher({ 'https://e.com/small.png': 100, 'https://e.com/big.png': 900 }), 500)
+    expect(out).toContain('data:image/png;base64,')
+    expect(out).toContain('[image: big]')
   })
 
   /* ---- the data URI must land in src and nowhere else ------------------- */
@@ -212,32 +221,6 @@ describe('inlineImages concurrency and memory', () => {
     expect(out.match(/data:image\/png/g)).toHaveLength(12)
   })
 
-  it('evicts down to the total budget and reports progress to completion', async () => {
-    const f: ImageFetcher = async () => ({ bytes: Buffer.alloc(100, 1), contentType: 'image/png' })
-    const progress: number[] = []
-    const html = Array.from({ length: 20 }, (_, i) => `<img src="https://e.com/${i}.png" alt="i${i}">`).join('')
-    const budget = { maxImages: 100, maxPerImage: 1000, maxTotal: 250 }
-    const out = await inlineImages(html, 'https://e.com/', f, budget, (_stage, p) => {
-      if (p != null) progress.push(p)
-    })
-    expect(out.match(/data:image\/png/g)).toHaveLength(2)
-    expect(out.match(/\[image: i\d+\]/g)).toHaveLength(18)
-    expect(progress.at(-1)).toBe(100)
-  })
-
-  it('keeps the same images the old fetch-everything-then-evict pass kept', async () => {
-    const sizes: Record<string, number> = {
-      'https://e.com/a.png': 3,
-      'https://e.com/b.png': 8,
-      'https://e.com/c.png': 3,
-      'https://e.com/d.png': 6,
-    }
-    const html = Object.keys(sizes).map((u, i) => `<img src="${u}" alt="${'abcd'[i]}">`).join('')
-    const out = await inlineImages(html, 'https://e.com/', fetcher(sizes), { maxImages: 10, maxPerImage: 100, maxTotal: 12 })
-    // Largest-first over the whole set: drop b (8), leaving 3 + 3 + 6 = 12.
-    expect(out).toContain('[image: b]')
-    expect(out.match(/data:image\/png/g)).toHaveLength(3)
-  })
 })
 
 describe('remote images as a URL parser reads them', () => {

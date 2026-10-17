@@ -422,8 +422,9 @@ function withHeaderTitle(html: string, header: string | undefined): HubDocument 
 /**
  * mammoth's default image handler inlines every picture as a data URI with no
  * ceiling of any kind, so a 39 KB document holding twelve heavily deflated 3 MB
- * PNGs became a 48 MB hub string. The same budget the URL and email intakes
- * already enforce is applied here instead (src/core/inline-images.ts).
+ * PNGs became a 48 MB hub string. The archive budget, which bounds what a file
+ * may expand to by its own size, is applied here instead
+ * (src/core/inline-images.ts).
  *
  * An image the budget refuses is left with no `src`, which
  * `replaceUninlinedImages` below turns into its alt text — the shape

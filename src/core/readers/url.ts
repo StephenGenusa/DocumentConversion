@@ -1,7 +1,7 @@
 import { Readability } from '@mozilla/readability'
 import { parseHTML } from 'linkedom'
 import { guardedFetch, type GuardedFetchDeps } from '../net/guarded-fetch'
-import { inlineImages, DEFAULT_INLINE_BUDGET } from '../inline-images'
+import { inlineImages, MAX_FETCHED_IMAGE_BYTES } from '../inline-images'
 import { sanitizeToHub } from '../allowlist'
 import { MAX_SPAN } from '../table-grid'
 import type { ReadContext } from '../types'
@@ -266,11 +266,11 @@ export async function loadUrl(url: string, deps: GuardedFetchDeps, ctx?: ReadCon
     async (imgUrl) => {
       const res = await guardedFetch(imgUrl, deps, {
         signal: ctx?.signal,
-        maxBytes: DEFAULT_INLINE_BUDGET.maxPerImage,
+        maxBytes: MAX_FETCHED_IMAGE_BYTES,
       })
       return { bytes: res.bytes, contentType: res.contentType }
     },
-    DEFAULT_INLINE_BUDGET,
+    MAX_FETCHED_IMAGE_BYTES,
     ctx?.onProgress,
   )
   return { kind: 'html', html: sanitizeToHub(inlined), title, sourceName: url }
