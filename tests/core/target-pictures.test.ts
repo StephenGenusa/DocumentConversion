@@ -88,13 +88,13 @@ describe('targetPictures: what each target holds', () => {
     ['azw3', ['image/png', 'image/jpeg'], ['image/webp', 'image/bmp', 'image/tiff']],
     // Word shows TIFF itself: kept as it is (writer-docx-images.test.ts).
     ['docx', ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff'], []],
-  ])('%s keeps %j and converts %j to PNG', async (target, kept, converted) => {
+  ])('%s keeps %j and converts %j, Automatic unless chosen', async (target, kept, converted) => {
     const { render, calls } = host()
     const out = await targetPictures(every, target, { renderBlocks: render })
     expect(calls.map((c) => /^data:(image\/[\w.+-]+);/.exec(c.source)?.[1])).toEqual(converted)
     if (converted.length === 0) expect(out).toBe(every)
-    expect(calls.every((c) => c.kind === 'picture' && c.fit?.as === 'png')).toBe(true)
-    // Converted pictures stand where they stood, as PNG.
+    expect(calls.every((c) => c.kind === 'picture' && c.fit?.as === 'auto')).toBe(true)
+    // Converted pictures stand where they stood, as the host answered (PNG here).
     const order = ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff']
     expect(types(out)).toEqual(order.map((t) => (kept.includes(t) ? t : 'image/png')))
   })
@@ -117,7 +117,7 @@ describe('targetPictures: what each target holds', () => {
     const conv = createConverter(async () => Buffer.from('%PDF-1.4'), { renderBlocks: render })
     await conv.convert({ bytes: Buffer.from(`<p>${img('image/tiff', TIFF)}</p>`), filename: 'a.html' }, 'html', 'html', { pictureFormat: 'jpeg' })
     await conv.convert({ bytes: Buffer.from(`<p>${img('image/tiff', TIFF)}</p>`), filename: 'a.html' }, 'html', 'epub')
-    expect(calls.map((c) => c.fit?.as)).toEqual(['jpeg', 'png'])
+    expect(calls.map((c) => c.fit?.as)).toEqual(['jpeg', 'auto'])
   })
 
   it('tells TIFF, EMF and WMF by their bytes, whatever they claim', async () => {

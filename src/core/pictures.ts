@@ -22,8 +22,8 @@ import { createHash } from 'node:crypto'
  * WebP in a Kindle book - is converted by the render host (kind `picture`):
  * decoded in its sandboxed page, never in the main process, where a
  * malformed file can take the app down (Skia, in @napi-rs/canvas, crashes on
- * some), and answered in the picture format asked for (PNG unless chosen,
- * PictureFormat). Chromium has no TIFF decoder, so the page decodes TIFF
+ * some), and answered in the picture format asked for (PictureFormat;
+ * Automatic unless chosen: PNG or JPEG by the picture's own pixels). Chromium has no TIFF decoder, so the page decodes TIFF
  * with UTIF.js (vendored in resources/render). What cannot be converted
  * becomes its alt text, with a notice, so no output holds a picture its
  * reader shows as a broken icon: anything unrecognized, and an EMF or WMF
@@ -83,8 +83,12 @@ export const PICTURE_LIMITS = { eachMs: 20_000, batch: 25 } as const
  */
 const MAX_COPY_BYTES = MAX_FETCHED_IMAGE_BYTES
 
-/** The picture format a converted picture is given when nothing else is chosen (ConvertOptions.pictureFormat). */
-export const DEFAULT_PICTURE_FORMAT: PictureFormat = 'png'
+/**
+ * The picture format a converted picture is given when nothing else is
+ * chosen (ConvertOptions.pictureFormat): Automatic, the settings' default
+ * too (owner, 2026-10-17), so a core caller and the app convert alike.
+ */
+export const DEFAULT_PICTURE_FORMAT: PictureFormat = 'auto'
 
 /** What a KF8 image record may hold. */
 const KINDLE_HOLDS = new Set(['image/jpeg', 'image/png', 'image/gif'])
@@ -444,7 +448,7 @@ async function convertAll(
 /**
  * Make every data: picture one `target` can hold. Pictures it holds as they
  * are stay untouched; the others go to the render host, in `ctx.pictureFormat`
- * (PNG unless chosen) - except a picture the target holds but not at its
+ * (Automatic unless chosen) - except a picture the target holds but not at its
  * size (a Kindle's 5 MB), which is made smaller as JPEG (PNG when it has
  * transparency), the smaller of the two for a photograph. Without a
  * renderer nothing is converted and what the target cannot hold becomes its

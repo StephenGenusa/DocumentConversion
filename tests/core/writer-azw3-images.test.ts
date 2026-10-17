@@ -359,12 +359,12 @@ describe('AZW3 through the converter', () => {
     )
     const out = await conv.convert({ bytes: page, filename: 'p.html' }, 'html', 'azw3')
     expect(calls.map((c) => [c.kind, c.source.slice(0, 15), c.fit])).toEqual([
-      // A type a Kindle cannot store becomes PNG (the picture format); one only too large, JPEG.
-      ['picture', 'data:image/webp', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'png' }],
-      ['picture', 'data:image/bmp;', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'png' }],
+      // A type a Kindle cannot store is converted in the picture format (Automatic); one only too large, JPEG.
+      ['picture', 'data:image/webp', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'auto' }],
+      ['picture', 'data:image/bmp;', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'auto' }],
       ['picture', 'data:image/png;', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'jpeg' }],
-      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'png' }],
-      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'png' }],
+      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'auto' }],
+      ['picture', 'data:image/tiff', { maxBytes: KINDLE_IMAGE_MAX_BYTES, as: 'auto' }],
     ])
     expect(calls[4].source).toBe(`data:image/tiff;base64,${scan.toString('base64')}`)
     expect(calls[3].source).toBe(`data:image/tiff;base64,${tiffPicture().toString('base64')}`)

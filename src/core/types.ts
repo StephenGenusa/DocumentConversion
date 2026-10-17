@@ -316,7 +316,7 @@ export interface ConvertOptions {
   svgImagesAsPng?: boolean
   /**
    * What a picture the target cannot hold (a TIFF in a PDF, a WebP in a
-   * Kindle book) is converted to: PNG when not given (pictures.ts).
+   * Kindle book) is converted to: Automatic when not given (DEFAULT_PICTURE_FORMAT, pictures.ts).
    */
   pictureFormat?: PictureFormat
   /**

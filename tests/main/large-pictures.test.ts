@@ -194,13 +194,15 @@ describe.skipIf(!hasDisplay)('large pictures and long formula runs, through the 
     expect(sizes.svg).toBeGreaterThan(12 * MB)
   })
 
-  it('Word: a 40 MB TIFF it cannot size is converted to PNG', async () => {
+  it('Word: a 40 MB TIFF it cannot size is converted (Automatic: JPEG, for a picture of many colors)', async () => {
     ok('tiff.docx')
     const parts = await media('tiff.docx')
     expect(parts).toHaveLength(1)
-    expect(isPng(parts[0])).toBe(true)
-    // Drawn at the canvas's largest side, 8,192 px, for a picture 21,000 px wide.
-    expect(parts[0].readUInt32BE(16)).toBe(8192)
+    expect(parts[0].subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]))
+    // Drawn at the canvas's largest side, 8,192 px, for a picture 21,000 px wide (the frame's width, in SOF0).
+    const sof = parts[0].indexOf(Buffer.from([0xff, 0xc0]))
+    expect(sof).toBeGreaterThan(0)
+    expect(parts[0].readUInt16BE(sof + 7)).toBe(8192)
   })
 
   it('Word: a 40 MB PNG is kept as it is', async () => {

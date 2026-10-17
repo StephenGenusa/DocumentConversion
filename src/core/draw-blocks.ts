@@ -101,7 +101,7 @@ export interface DrawContext {
   format?: RenderFormat
   /** SVG images as PNG even where the target shows SVG (ConvertOptions.svgImagesAsPng). */
   svgImagesAsPng?: boolean
-  /** What a picture the target cannot hold is converted to (ConvertOptions.pictureFormat; PNG when not given). */
+  /** What a picture the target cannot hold is converted to (ConvertOptions.pictureFormat; Automatic when not given). */
   pictureFormat?: PictureFormat
   signal?: AbortSignal
   onAdvice?: (kind: 'render-failed', message: string) => void

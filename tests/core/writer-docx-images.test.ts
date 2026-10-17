@@ -199,7 +199,7 @@ describe('Word keeps TIFF, EMF and WMF pictures as they are (html-to-docx cannot
     const ifd = looped.readUInt32LE(4)
     looped.writeUInt32LE(ifd, ifd + 2 + looped.readUInt16LE(ifd) * 12)
     const out = (await conv.convert({ bytes: Buffer.from(`<p>${tag('image/tiff', looped, 'Scan')}</p>`), filename: 'p.html' }, 'html', 'docx')).parts[0].bytes
-    expect(calls.map((c) => [c.kind, c.fit?.as])).toEqual([['picture', 'png']])
+    expect(calls.map((c) => [c.kind, c.fit?.as])).toEqual([['picture', 'auto']])
     expect((await inspect(out)).parts.every((p) => p.endsWith('.png'))).toBe(true)
   })
 })
