@@ -371,6 +371,24 @@ describe('writeDocx writes merged cells in schema order', () => {
     expect(xml).toMatch(/<w:vAlign w:val="center"\/>/)
   })
 
+  it('puts a cell\'s border sides in CT_TcBorders order', async () => {
+    // ISO/IEC 29500-4 (transitional) CT_TcBorders.
+    const SIDES = ['top', 'start', 'left', 'bottom', 'end', 'right', 'insideH', 'insideV', 'tl2br', 'tr2bl']
+    const xml = await documentXml(
+      '<table><tr><td style="border-left: 1px solid blue; border-top: 2px solid green">alpha</td>' +
+        '<td style="border-bottom: 1px solid red; border-right: 1px solid red; border-left: 1px solid red">beta</td>' +
+        '<td style="border: 1px solid red">gamma</td></tr></table>',
+    )
+    const cells = [...xml.matchAll(/<w:tcBorders>([\s\S]*?)<\/w:tcBorders>/g)].map((m) => [...m[1].matchAll(/<w:(\w+)\b/g)].map((n) => n[1]))
+    expect(cells.length).toBe(3)
+    for (const names of cells) {
+      const order = names.map((n) => SIDES.indexOf(n))
+      expect(order.every((o) => o >= 0), `known border sides: ${names}`).toBe(true)
+      expect(order, `border sides in order: ${names}`).toEqual([...order].sort((x, y) => x - y))
+    }
+    expect(cells[0]).toEqual(expect.arrayContaining(['top', 'left']))
+  })
+
   it('writes no zero span, and a continued cell under a wide one keeps its width', async () => {
     const xml = await documentXml(html)
     expect(xml).not.toMatch(/<w:gridSpan w:val="0"\/>/)

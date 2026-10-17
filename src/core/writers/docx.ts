@@ -349,6 +349,21 @@ const TCPR_ORDER = [
   'tcFitText', 'vAlign', 'hideMark', 'headers', 'cellIns', 'cellDel', 'cellMerge', 'tcPrChange',
 ]
 
+/** CT_TcBorders' child order (ISO/IEC 29500-4 wml.xsd: the transitional schema keeps left and right beside start and end). */
+const TCBORDERS_ORDER = ['top', 'start', 'left', 'bottom', 'end', 'right', 'insideH', 'insideV', 'tl2br', 'tr2bl']
+
+/** The `w:` children of an element's inside, each whole. */
+const childrenOf = (inner: string): string[] => inner.match(/<w:(\w+)\b[^>]*?\/>|<w:(\w+)\b[^>]*>[\s\S]*?<\/w:\2>/g) ?? []
+
+/** Children put in the schema's order. Sort is stable: anything unknown keeps its place after the known ones. */
+function inOrder(children: string[], order: readonly string[]): string[] {
+  const rankOf = (element: string): number => {
+    const at = order.indexOf(/^<w:(\w+)/.exec(element)?.[1] ?? '')
+    return at < 0 ? order.length : at
+  }
+  return [...children].sort((a, b) => rankOf(a) - rankOf(b))
+}
+
 /**
  * html-to-docx writes a cell's w:tcBorders first and then w:gridSpan, w:vMerge
  * and w:vAlign in the order it meets them; the schema wants the span and the
@@ -357,18 +372,18 @@ const TCPR_ORDER = [
  * honor the span either way). Each cell's properties are put back in order. A cell continuing a row span is also
  * given `<w:gridSpan w:val="0"/>` when the span is one column wide: zero is
  * not a span, so it is dropped.
+ *
+ * The border sides inside are written in the order the cell's style named
+ * them (`border-top` then `border-left` came out top, bottom, left, right),
+ * where the schema wants top, left, bottom, right: they are put in order too.
  */
 function orderCellProperties(xml: string): string {
   if (!xml.includes('<w:tcPr>')) return xml
   return xml.replace(/<w:tcPr>([\s\S]*?)<\/w:tcPr>/g, (_whole, inner: string) => {
-    const children = inner.match(/<w:(\w+)\b[^>]*?\/>|<w:(\w+)\b[^>]*>[\s\S]*?<\/w:\2>/g) ?? []
-    const rankOf = (element: string): number => {
-      const at = TCPR_ORDER.indexOf(/^<w:(\w+)/.exec(element)?.[1] ?? '')
-      return at < 0 ? TCPR_ORDER.length : at
-    }
-    const kept = children.filter((c) => !/^<w:gridSpan w:val="0"\s*\/>$/.test(c))
-    // Sort is stable: anything unknown keeps its place after the known ones.
-    return `<w:tcPr>${[...kept].sort((a, b) => rankOf(a) - rankOf(b)).join('')}</w:tcPr>`
+    const kept = childrenOf(inner)
+      .filter((c) => !/^<w:gridSpan w:val="0"\s*\/>$/.test(c))
+      .map((c) => c.replace(/^<w:tcBorders>([\s\S]*)<\/w:tcBorders>$/, (_b, sides: string) => `<w:tcBorders>${inOrder(childrenOf(sides), TCBORDERS_ORDER).join('')}</w:tcBorders>`))
+    return `<w:tcPr>${inOrder(kept, TCPR_ORDER).join('')}</w:tcPr>`
   })
 }
 
