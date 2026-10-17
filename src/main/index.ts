@@ -38,7 +38,8 @@ interface BatchItemPayload {
   sourceDir?: string
   read?: unknown
 }
-import { downloadPack, listPacks, removePack } from './ocr-packs'
+import { downloadPack, installedCodes, listPacks, removePack } from './ocr-packs'
+import { openSettings, regionOf, settingsIpcHandlers, SETTINGS_IPC_CHANNELS, type SettingsStore } from './settings'
 import { normalizeSlideOptions } from '../core/slides'
 import { renderEditableText } from '../core/text-intake'
 import { defaultSavePath, defaultSaveDir, rememberDir, rememberSaveDir } from './save-location'
@@ -221,7 +222,7 @@ async function loadPath(path: string): Promise<LoadedFile[]> {
   return loadBytes(bytes, path.split(/[\\/]/).pop() ?? path, dirname(path), path)
 }
 
-function registerIpc(): void {
+function registerIpc(settings: SettingsStore): void {
   ipcMain.handle('app:open-file', async () => {
     const res = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
     if (res.canceled || res.filePaths.length === 0) return null
@@ -736,6 +737,15 @@ function registerIpc(): void {
   )
 
   ipcMain.handle('app:open-about', () => openAboutWindow())
+
+  // Settings (spec 5.6): every request checked against the schema in settings.ts.
+  // Conversions do not read them yet (settings rollout step 3).
+  for (const [channel, handler] of Object.entries(settingsIpcHandlers(settings))) ipcMain.handle(channel, handler)
+  settings.onChange((now) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(SETTINGS_IPC_CHANNELS.changed, now)
+    }
+  })
   // The editor's drawings (spec B11): checked in render-ipc.ts, drawn by the
   // same host and cache as conversions.
   ipcMain.handle('render:block', (_e, req: unknown) => renderForEditor(req, renderHost.render))
@@ -763,7 +773,14 @@ app.whenReady().then(() => {
   }
   electronApp.setAppUserModelId('com.docconversion.app')
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
-  registerIpc()
+  // Read once, here; the first run saves A4 outside the Letter countries.
+  const settings = openSettings({
+    dir: app.getPath('userData'),
+    region: () =>
+      regionOf(app.getLocaleCountryCode(), [app.getSystemLocale(), ...app.getPreferredSystemLanguages()]),
+    ocrInstalled: (code) => installedCodes().some((c) => c.code === code),
+  })
+  registerIpc(settings)
   installAppMenu(() => void openAboutWindow())
   createWindow()
   app.on('activate', () => {

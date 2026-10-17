@@ -1,3 +1,10 @@
+import type { Settings, SettingKey, SettingValue, SettingsSection } from '../core/settings'
+
+export type { Settings, SettingKey, SettingValue, SettingsSection }
+
+/** What a settings change answers: the settings now in force, or why nothing changed. */
+export type SettingsResult = { ok: true; settings: Settings } | { ok: false; message: string }
+
 /** Diagrams embedded as SVG or as PNG (spec B4). */
 export type RenderedFormat = 'svg' | 'png'
 
@@ -283,6 +290,16 @@ export interface Api {
    * or `unavailable` for a kind this version does not draw.
    */
   renderBlock(req: BlockRenderRequest): Promise<BlockRenderResult>
+  /** The saved defaults (settings spec 5.6): the whole object. */
+  getSettings(): Promise<Settings>
+  /** Change one setting; main checks the key and value and refuses anything else. */
+  setSetting<K extends SettingKey>(key: K, value: SettingValue<K>): Promise<SettingsResult>
+  /** One section back to its defaults, or every section when none is given. */
+  resetSettings(section?: SettingsSection): Promise<SettingsResult>
+  /** "Your settings file could not be read and was reset.", once, if that happened at start. */
+  settingsNotice(): Promise<string | undefined>
+  /** Called with the new settings after each saved change. Returns the way to stop. */
+  onSettingsChanged(cb: (settings: Settings) => void): () => void
 }
 
 export interface BlockRenderRequest {

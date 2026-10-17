@@ -10,6 +10,8 @@ export type {
   Api,
   PdfOptions,
   PdfPageSize,
+  Settings,
+  SettingsResult,
 } from './types'
 
 declare global {

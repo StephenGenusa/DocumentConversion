@@ -115,6 +115,22 @@ const api = {
   /** One diagram or formula for the editor, as an <img>-ready data URI (spec B11). */
   renderBlock: (req: { kind: string; source: string; display: boolean; priority: 'visible' | 'prefetch' }) =>
     ipcRenderer.invoke('render:block', req),
+  /*
+   * Settings (spec 5.6). Main checks every request against the schema; the
+   * page never sends a whole file, only one { key, value } or a section name.
+   */
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSetting: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', { key, value }),
+  resetSettings: (section?: string) =>
+    ipcRenderer.invoke('settings:reset', section === undefined ? {} : { section }),
+  settingsNotice: () => ipcRenderer.invoke('settings:notice'),
+  onSettingsChanged: (cb: (settings: unknown) => void) => {
+    const listener = (_e: unknown, settings: unknown): void => cb(settings)
+    ipcRenderer.on('settings:changed', listener)
+    return () => {
+      ipcRenderer.removeListener('settings:changed', listener)
+    }
+  },
 }
 
 if (process.contextIsolated) {

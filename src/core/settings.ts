@@ -118,7 +118,9 @@ const RULES: { [S in SettingsSection]: Record<keyof Settings[S], Rule> } = {
   ocr: { language: { ok: (v) => typeof v === 'string' && isKnownLanguage(v), wants: 'an OCR language code' } },
 }
 
-const SECTIONS = Object.keys(RULES) as SettingsSection[]
+/** The sections, in the order the file and the dialog list them. */
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = Object.keys(RULES) as SettingsSection[]
+const SECTIONS = SETTINGS_SECTIONS
 
 /** Every setting, in the order the file and the dialog list them. */
 export const SETTING_KEYS: readonly SettingKey[] = SECTIONS.flatMap((s) =>
