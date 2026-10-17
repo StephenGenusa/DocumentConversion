@@ -166,12 +166,24 @@ function extractTablesForMarkdown(html: string): { prose: string; tableMarkdown:
  */
 function restoreTables(markdown: string, rendered: string[]): string {
   if (rendered.length === 0) return markdown
-  return markdown.replace(SENTINEL_RE, (whole, before: string, index: string) => {
-    const table = rendered[Number(index)]
-    if (table === undefined) return whole
-    const indent = before.replace(/[^\t>]/g, ' ')
-    return before + (indent ? table.split('\n').join(`\n${indent}`) : table)
-  })
+  // Line by line, and only lines holding a placeholder: across the whole text,
+  // the pattern's leading [^\n]* is tried from every position of a line that
+  // has none, which on one long line (a picture's data URI is 300,000
+  // characters) is quadratic: a lab report with one photograph and one table
+  // took 15 s to write.
+  return markdown
+    .split('\n')
+    .map((line) =>
+      !line.includes(TABLE_SENTINEL)
+        ? line
+        : line.replace(SENTINEL_RE, (whole, before: string, index: string) => {
+            const table = rendered[Number(index)]
+            if (table === undefined) return whole
+            const indent = before.replace(/[^\t>]/g, ' ')
+            return before + (indent ? table.split('\n').join(`\n${indent}`) : table)
+          }),
+    )
+    .join('\n')
 }
 
 const ALERT_LABELS: Record<string, string> = {

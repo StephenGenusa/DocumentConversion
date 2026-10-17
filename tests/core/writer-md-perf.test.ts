@@ -86,4 +86,21 @@ describe('writeMarkdown performance', () => {
     ])
     expect(mdMs / (htmlMs / 20), `md ${mdMs.toFixed(0)} ms, html ${(htmlMs / 20).toFixed(1)} ms`).toBeLessThan(800)
   }, 300_000)
+
+  /**
+   * A table put back where its placeholder was, in a document holding a
+   * picture: the picture's data URI is one line of hundreds of thousands of
+   * characters, and searching the whole text for placeholders was quadratic
+   * in that line's length (15 s for a 240 KB photograph beside one table).
+   */
+  it('puts tables back in linear time beside a long data URI', async () => {
+    const picture = `<p><img alt="photo" src="data:image/png;base64,${'A'.repeat(300_000)}"></p>`
+    const table = '<table><thead><tr><th>a</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>'
+    const t0 = performance.now()
+    const md = (await writeMarkdown({ html: table + picture })).toString('utf8')
+    const ms = performance.now() - t0
+    expect(md).toContain('| a |')
+    expect(ms, `${ms.toFixed(0)} ms`).toBeLessThan(1_500)
+  })
 })
+
