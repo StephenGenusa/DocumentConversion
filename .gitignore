@@ -14,6 +14,11 @@ dist/
 e2e-out/
 *.tsbuildinfo
 
+# `npm run screenshots` writes every screen as a PNG and makes the README's
+# tour.gif from them. Only the GIF and the one PNG the README shows are kept.
+docs/screenshots/*.png
+!docs/screenshots/app-lab-report.png
+
 # ---------------------------------------------------------------------------
 # Test and tool caches
 # ---------------------------------------------------------------------------

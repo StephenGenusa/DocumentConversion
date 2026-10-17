@@ -41,60 +41,9 @@ locally, and the code that does it is in this repository.
 
 ## Gallery
 
-Every picture here is one of the sample documents (Help → Sample Documents),
-opened in the app or converted by it. They are made by `npm run screenshots`.
+![An animated tour of Document Converter: the start screen and its Sample documents menu; the four samples in the editor; a diagram being edited, an inline formula's popover and the code language picker; Settings and the conversion choices; PDF pages with diagrams, formulas, a plot and a photograph, and a landscape architecture page; Word pages; an EPUB chapter; three slides; and the window at its smallest](docs/screenshots/tour.gif)
 
-| Edit before converting | Sharp diagrams, wherever they go | The same document as slides |
-| --- | --- | --- |
-| [![The software design specification open in the editor](docs/screenshots/app-software-spec.png)](docs/screenshots/app-software-spec.png) | [![A PDF page with a class diagram and a sequence diagram](docs/screenshots/pdf-software-spec-inner.png)](docs/screenshots/pdf-software-spec-inner.png) | [![A slide with a Graphviz load-path diagram](docs/screenshots/slides-design-note.png)](docs/screenshots/slides-design-note.png) |
-| A sample opens in the editor as an untitled copy. | The specification's class and sequence diagrams, drawn in the PDF. | The design note as a reveal.js deck. |
-
-<details>
-<summary>More pictures: the editor, PDF, Word, EPUB and slides</summary>
-
-**In the app**
-
-| | |
-| --- | --- |
-| [![The start screen](docs/screenshots/app-start.png)](docs/screenshots/app-start.png) | [![The start screen with the Sample documents menu open](docs/screenshots/app-sample-menu.png)](docs/screenshots/app-sample-menu.png) |
-| The start screen: drop, paste, open or fetch. | The Sample documents menu, the same samples as Help → Sample Documents. |
-| [![The engineering design note in the editor](docs/screenshots/app-design-note.png)](docs/screenshots/app-design-note.png) | [![The meeting summary in the editor](docs/screenshots/app-meeting-summary.png)](docs/screenshots/app-meeting-summary.png) |
-| The engineering design note: its title, byline and opening. | The meeting summary, its highlighted words kept. |
-| [![A Mermaid flowchart being edited, its source over its drawing](docs/screenshots/app-diagram-editing.png)](docs/screenshots/app-diagram-editing.png) | [![The inline-formula popover over a siunitx formula](docs/screenshots/app-formula.png)](docs/screenshots/app-formula.png) |
-| A diagram being edited: the drawing follows the source as you type. | An inline formula's popover: its TeX and its drawing. |
-| [![The code language picker open on a Python block](docs/screenshots/app-code-language.png)](docs/screenshots/app-code-language.png) | [![The Settings dialog](docs/screenshots/app-settings.png)](docs/screenshots/app-settings.png) |
-| The code language picker, opened with Ctrl+Alt+L. | Settings, here for pictures the output can't hold. |
-| [![The conversion choices for the architecture diagram](docs/screenshots/app-convert.png)](docs/screenshots/app-convert.png) | [![The editor in a 560 by 480 window](docs/screenshots/app-narrow.png)](docs/screenshots/app-narrow.png) |
-| The SVG sample added as a picture, with the PDF choices. | The window at its smallest, 560 × 480. |
-
-**PDF**
-
-| | | |
-| --- | --- | --- |
-| [![Page 1 of the design note as PDF](docs/screenshots/pdf-design-note.png)](docs/screenshots/pdf-design-note.png) | [![A design note PDF page with a Graphviz diagram and formulas](docs/screenshots/pdf-design-note-inner.png)](docs/screenshots/pdf-design-note-inner.png) | [![Page 1 of the lab report as PDF](docs/screenshots/pdf-lab-report.png)](docs/screenshots/pdf-lab-report.png) |
-| Design note, page 1. | Its load path (Graphviz) and siunitx formulas. | Lab report, page 1: display and in-sentence formulas. |
-| [![A lab report PDF page with an SVG plot and a photograph](docs/screenshots/pdf-lab-report-inner.png)](docs/screenshots/pdf-lab-report-inner.png) | [![Page 1 of the software specification as PDF](docs/screenshots/pdf-software-spec.png)](docs/screenshots/pdf-software-spec.png) | [![Page 1 of the meeting summary as PDF](docs/screenshots/pdf-meeting-summary.png)](docs/screenshots/pdf-meeting-summary.png) |
-| Its Arrhenius plot (SVG) and photograph (PNG). | Software specification, page 1, with colored SQL. | Meeting summary, page 1, with a Mermaid mind map. |
-| [![A meeting summary PDF page with a Gantt chart and a floor plan](docs/screenshots/pdf-meeting-summary-inner.png)](docs/screenshots/pdf-meeting-summary-inner.png) | [![The architecture diagram SVG as a landscape PDF page](docs/screenshots/pdf-architecture.png)](docs/screenshots/pdf-architecture.png) | |
-| Its Gantt chart and annotated floor plan. | The architecture diagram (SVG), turned landscape by Automatic orientation. | |
-
-**Word** (page 1, as LibreOffice prints the .docx)
-
-| | | | |
-| --- | --- | --- | --- |
-| [![The design note as Word](docs/screenshots/word-design-note.png)](docs/screenshots/word-design-note.png) | [![The software specification as Word](docs/screenshots/word-software-spec.png)](docs/screenshots/word-software-spec.png) | [![The lab report as Word](docs/screenshots/word-lab-report.png)](docs/screenshots/word-lab-report.png) | [![The meeting summary as Word](docs/screenshots/word-meeting-summary.png)](docs/screenshots/word-meeting-summary.png) |
-| Design note. | Software specification. | Lab report. | Meeting summary. |
-
-**EPUB and slides**
-
-| | | |
-| --- | --- | --- |
-| [![A chapter of the lab report EPUB at an e-reader size](docs/screenshots/epub-lab-report.png)](docs/screenshots/epub-lab-report.png) | [![A slide of the lab report deck](docs/screenshots/slides-lab-report.png)](docs/screenshots/slides-lab-report.png) | [![A slide of the software specification deck](docs/screenshots/slides-software-spec.png)](docs/screenshots/slides-software-spec.png) |
-| The lab report's Introduction in an EPUB, at an e-reader's 600 × 800. | Lab report deck. | Software specification deck: a sequence diagram. |
-| [![A slide of the meeting summary deck](docs/screenshots/slides-meeting-summary.png)](docs/screenshots/slides-meeting-summary.png) | | |
-| Meeting summary deck: the floor plan. | | |
-
-</details>
+The sample documents (Help → Sample Documents) in the editor and converted to PDF, Word, EPUB and slides, four seconds a screen; `npm run screenshots` remakes it.
 
 ## Install
 
@@ -725,7 +674,8 @@ a fixture that passes without exercising the property is worse than none.
 npm run test:e2e -- <outDir> tests/fixtures/sample.docx ...
 npm run build && npm run test:cli
 npm run build && npm run test:ui
-npm run screenshots                 # regenerate docs/screenshots
+npm run screenshots                 # remake the screenshots and docs/screenshots/tour.gif
+npm run screenshots:gif             # remake only tour.gif from the PNGs already there
 ```
 
 The first converts every fixture to every output format inside a real Electron

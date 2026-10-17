@@ -7,7 +7,9 @@
  * A manual command, not a test: nothing is compared, the pictures are for a
  * person. It builds the app first when the build is older than the sources,
  * then writes docs/screenshots/*.png (names below, stable from run to run),
- * replacing the PNGs that were there.
+ * replacing the PNGs that were there, and from them docs/screenshots/tour.gif
+ * (scripts/screenshots/tour-gif.mjs: the README's animated tour, each screen
+ * held four seconds; `npm run screenshots:gif` remakes only the GIF).
  *
  *   app-*        the app, each sample opened from Help → Sample Documents:
  *                the start screen, its Sample documents menu open, the
@@ -39,15 +41,18 @@
  * Requirements: Linux with a display (the app opens its window on the
  * desktop for the run), poppler-utils (pdftoppm, pdftotext), unzip;
  * LibreOffice for the Word pages (skipped, with a warning, without it);
- * optipng optional.
+ * ImageMagick (convert) for the GIF; optipng optional.
  *
- * The pictures are committed: the README shows them on the first push.
+ * Committed: tour.gif and app-lab-report.png, the two pictures the README
+ * shows. The other PNGs are the GIF's frames, kept out of git by .gitignore;
+ * a run writes them all again.
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { makeTour } from './screenshots/tour-gif.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = join(ROOT, 'docs', 'screenshots')
@@ -142,6 +147,7 @@ function requireTools() {
     ['pdftoppm', 'poppler-utils'],
     ['pdftotext', 'poppler-utils'],
     ['unzip', 'unzip'],
+    ['convert', 'imagemagick'],
   ]) {
     if (!have(tool)) throw new Error(`${tool} is missing (install ${pkg})`)
   }
@@ -555,6 +561,8 @@ try {
     console.log(`  ${basename(file).padEnd(36)} ${String(Math.round(size / 1024)).padStart(5)} KB`)
   }
   console.log(`${written.length} pictures, ${(total / 1024 / 1024).toFixed(2)} MB, in ${OUT}`)
+  const tour = makeTour(OUT)
+  console.log(`  ${basename(tour.file).padEnd(36)} ${String(Math.round(tour.bytes / 1024)).padStart(5)} KB (${tour.frames} screens, 4 s each)`)
 } catch (err) {
   failed = true
   console.error(`\nscreenshots failed: ${err.message}`)
