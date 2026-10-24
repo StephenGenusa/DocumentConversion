@@ -43,7 +43,7 @@
  * LibreOffice for the Word pages (skipped, with a warning, without it);
  * ImageMagick (convert) for the GIF; optipng optional.
  *
- * Committed: tour.gif and app-lab-report.png, the two pictures the README
+ * Committed: tour.gif and app-start.png, the two pictures the README
  * shows. The other PNGs are the GIF's frames, kept out of git by .gitignore;
  * a run writes them all again.
  */

@@ -1,7 +1,13 @@
-# Document Converter
+# Document Converter - The Conversion Utility You Thought You Didn't Need
 
-Convert documents between 31 input formats and 12 output formats on your own
-machine. Your documents are never uploaded, there is no account and no
+As the number of markdown documents have increased, as I increasingly get rich 
+formatted messages where I want to preserve the original formatting, I found
+myself going through too many repetitive steps to get a document from one format
+to another -- often to a nice looking PDF -- but I deal with data in many formats
+and I wanted a simple-to-use "swiss army knife" to make my life easier.
+
+This program will convert documents between 31 input formats and 12 output formats 
+on your own machine. Your documents are never uploaded, there is no account and no
 telemetry. The app goes to the network for three things: a web page you ask it
 to fetch, the images a document or a paste refers to by web address (so they
 can be embedded in the output), and an OCR language pack you select. Remote
@@ -12,7 +18,7 @@ images in email and calendar invitations are never fetched. See
 ![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgray.svg)
 ![Electron 43](https://img.shields.io/badge/electron-43-47848F.svg)
 
-![A sample lab report open in the editor, ready to convert](docs/screenshots/app-lab-report.png)
+![The start screen: drop files or text, open files, paste from the clipboard or fetch a URL](docs/screenshots/app-start.png)
 
 Online converters upload the file you give them. This one does the conversion
 locally, and the code that does it is in this repository.
