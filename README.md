@@ -29,9 +29,9 @@ locally, and the code that does it is in this repository.
 
 - [Gallery](#gallery)
 - [Install](#install)
-- [What's new in 1.4](#whats-new-in-14)
-- [Earlier releases](#whats-new-in-13): [1.3](#whats-new-in-13),
-  [1.2](#whats-new-in-12), [1.1](#whats-new-in-11)
+- [What's new in 1.5](#whats-new-in-15)
+- [Earlier releases](#whats-new-in-14): [1.4](#whats-new-in-14),
+  [1.3](#whats-new-in-13), [1.2](#whats-new-in-12), [1.1](#whats-new-in-11)
 - [Editing before converting](#editing-before-converting)
 - [Sample documents](#sample-documents)
 - [What it reads](#what-it-reads)
@@ -86,6 +86,33 @@ choose *Open*, or clear the quarantine attribute with
 
 Nothing else needs installing: English OCR, the diagram and formula engines and
 the SQLite engine ship inside the app, and it works offline.
+
+## What's new in 1.5
+
+- **Open a document from outside the app.** A document dropped on the app's
+  icon, or opened with it, is added as if chosen with *Open file*:
+  - **macOS:** drop it on the Dock icon, or use Finder's *Open With*. The
+    app is offered for documents (Word, PDF, RTF, OpenDocument,
+    spreadsheets, slides, EPUB, web pages, Markdown and text, the markup
+    formats, email, calendars and contacts, notebooks, subtitles,
+    drawings, TIFF scans and data files) but never made their default.
+  - **Windows:** drop it on the desktop shortcut or the program, or use
+    *Open with* and choose the program.
+  - **Linux:** the AppImage's desktop entry lists the same documents, so
+    once the AppImage is integrated into the desktop (AppImageLauncher, Gear
+    Lever or the like), file managers offer it under *Open With*. Docks that
+    pass a dropped file to an app icon do so too; Ubuntu Dock on GNOME 42
+    does not.
+  - Files given on the command line without `convert`
+    (`./docconversion-1.5.0.AppImage report.docx`) open in the window too.
+- **One window.** Opening a document while the app is running adds it to
+  that window instead of starting a second app. The command line is not
+  affected: `convert` still runs with the window open.
+- **Smaller downloads.** Each package carried the PDF picture engine for
+  every platform it was built beside (about 33 MB each), and the macOS zip
+  held the Electron framework three times over. Each now carries only its
+  own: the macOS zip is 207 MB (was 451 MB), the Windows installer 172 MB
+  (was 184 MB) and the AppImage 203 MB (was 207 MB).
 
 ## What's new in 1.4
 
@@ -456,7 +483,9 @@ Three inputs are not file formats:
   cap of 100 entries.
 
 Drop files anywhere in the window, including onto a list you have already
-loaded.
+loaded. A document dropped on the app's Dock icon or shortcut, or opened with
+it from the file manager, is added the same way (see
+[What's new in 1.5](#whats-new-in-15)).
 
 ## What it writes
 
