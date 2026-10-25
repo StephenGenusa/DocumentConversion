@@ -2,7 +2,7 @@ import type { DragEvent } from 'react'
 import { arrayBufferToBase64, textToBase64 } from './encoding'
 import { isEditableTextFormat } from '../../../core/types'
 import { shouldUseHtmlFlavor } from '../../../core/paste-flavors'
-import type { DetectResult, LoadedInput, SourceFormat } from '../../../preload/types'
+import type { DetectResult, LoadedInput, OpenedFiles, SourceFormat } from '../../../preload/types'
 
 export interface LoadedPayload {
   filename?: string
@@ -181,6 +181,12 @@ export function createIntake(handlers: IntakeHandlers) {
     await acceptLoaded(await window.api.openFile())
   }
 
+  /** Files the OS handed the app: dropped on its dock icon, or opened with it. */
+  async function acceptOpened(opened: OpenedFiles): Promise<void> {
+    await acceptLoaded(opened.loaded)
+    if (opened.error) onNotice(opened.error)
+  }
+
   async function pasteFromClipboard(): Promise<void> {
     const content = await runPasteJob((jobId) => window.api.readClipboard(jobId))
     switch (content.kind) {
@@ -197,5 +203,5 @@ export function createIntake(handlers: IntakeHandlers) {
     }
   }
 
-  return { onDrop, onPaste, openDialog, pasteFromClipboard, handleText }
+  return { onDrop, onPaste, openDialog, acceptOpened, pasteFromClipboard, handleText }
 }

@@ -25,6 +25,7 @@ import {
 } from './conversion'
 import { runCli } from './cli-run'
 import { inputBytes, readHandle, registerPath, stampOf } from './file-handles'
+import { createOpenQueue, pathsFromArgs } from './launch-files'
 import { isBinaryTarget } from '../core/target-validity'
 import { expandZipArchive } from '../core/zip-expand'
 
@@ -78,6 +79,29 @@ if (isCli) {
   // beside it and would look in ~/.config/Electron. Chromium's
   // --user-data-dir (a run with its own profile) still wins.
   if (!app.commandLine.hasSwitch('user-data-dir')) app.setPath('userData', join(app.getPath('appData'), PACKAGE_NAME))
+}
+
+// Files the OS hands the app: dropped on its Dock or dock icon or shortcut, or
+// opened with it (launch-files.ts). The window is one instance: a second
+// launch passes its files to this one and exits. The CLI takes no lock, so a
+// conversion still runs while the window is open.
+const openQueue = createOpenQueue((paths) => void sendOpened(paths))
+/** The arguments after the program, and after the app path under `electron <path>`. */
+const launchArgs = (argv: string[]): string[] => argv.slice(process.defaultApp ? 2 : 1)
+
+if (!isCli) {
+  if (!app.requestSingleInstanceLock()) app.exit(0)
+  openQueue.add(pathsFromArgs(launchArgs(process.argv), process.cwd()))
+  app.on('second-instance', (_e, argv, cwd) => {
+    openQueue.add(pathsFromArgs(launchArgs(argv), cwd))
+    if (app.isReady()) bringForward()
+  })
+  // macOS sends these instead of arguments, from before the app is ready on.
+  app.on('open-file', (e, path) => {
+    e.preventDefault()
+    openQueue.add([path])
+    if (app.isReady()) bringForward()
+  })
 }
 
 // Grow-to-fit is suppressed once the user resizes manually (spec §F0: no snap-back).
@@ -160,6 +184,36 @@ function openSettingsDialog(): void {
   else win.webContents.send('app:open-settings')
 }
 
+/** The window, restored and in front; one is opened if there is none. */
+function bringForward(): BrowserWindow {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : createWindow()
+  if (win.isMinimized()) win.restore()
+  win.focus()
+  return win
+}
+
+/**
+ * Files the OS handed the app, read as the Open dialog reads them. One that
+ * cannot be read is named in `error`; the rest still open.
+ */
+async function loadOpened(paths: string[]): Promise<{ loaded: LoadedFile[]; error?: string }> {
+  const loaded: LoadedFile[] = []
+  const failed: string[] = []
+  for (const path of paths) {
+    try {
+      loaded.push(...(await loadPath(path)))
+    } catch {
+      failed.push(path.split(/[\\/]/).pop() ?? path)
+    }
+  }
+  return failed.length ? { loaded, error: `Could not open ${failed.join(', ')}` } : { loaded }
+}
+
+async function sendOpened(paths: string[]): Promise<void> {
+  const payload = await loadOpened(paths)
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:files-opened', payload)
+}
+
 /**
  * Help → Sample Documents → one of them: read here and sent to the window as
  * an untitled copy (no file handle, no folder), detected as a dropped file
@@ -201,6 +255,7 @@ function createWindow(): BrowserWindow {
   mainWindow = win
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
+    openQueue.detach()
   })
 
   // The page's own <title> would replace the version-bearing one on load.
@@ -277,6 +332,10 @@ async function loadPath(path: string): Promise<LoadedFile[]> {
 }
 
 function registerIpc(settings: SettingsStore): void {
+  // The page asks once it can show them; files the OS handed the app after
+  // that are sent to it (`app:files-opened`).
+  ipcMain.handle('app:take-opened-files', () => loadOpened(openQueue.take()))
+
   ipcMain.handle('app:open-file', async (e) => {
     const res = await openDialog(e.sender, { properties: ['openFile', 'multiSelections'] })
     if (res.canceled || res.filePaths.length === 0) return null

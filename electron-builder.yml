@@ -61,6 +61,30 @@ nsis:
 mac:
   icon: build/icon.png
   category: public.app-category.productivity
+  # The Dock icon only accepts a dropped file of a type named here, and Finder
+  # offers the app under Open With for the same. Viewer and Alternate: the app
+  # never asks to be the default for a .docx or a .pdf. Documents only; source
+  # code (80-odd extensions) and most pictures still open by dropping them on
+  # the window. The app receives these as `open-file` (src/main/index.ts).
+  fileAssociations:
+    - { name: Word document, ext: [docx, docm, doc], role: Viewer, rank: Alternate }
+    - { name: PDF document, ext: pdf, role: Viewer, rank: Alternate }
+    - { name: Rich Text document, ext: rtf, role: Viewer, rank: Alternate }
+    - { name: OpenDocument, ext: [odt, ods, odp], role: Viewer, rank: Alternate }
+    - { name: Spreadsheet, ext: [xlsx, xls, csv, tsv], role: Viewer, rank: Alternate }
+    - { name: Presentation, ext: [pptx, pptm], role: Viewer, rank: Alternate }
+    - { name: E-book, ext: epub, role: Viewer, rank: Alternate }
+    - { name: Web page, ext: [html, htm], role: Viewer, rank: Alternate }
+    - { name: Markdown document, ext: [md, markdown, mdown, mkd, mkdn, mdwn, markdn, rmd, qmd], role: Viewer, rank: Alternate }
+    - { name: Text document, ext: [txt, text], role: Viewer, rank: Alternate }
+    - { name: Markup document, ext: [adoc, asciidoc, asc, rst, djot, dj, textile, opml], role: Viewer, rank: Alternate }
+    - { name: Email message, ext: [eml, msg, mbox], role: Viewer, rank: Alternate }
+    - { name: Calendar or contact, ext: [ics, ical, vcf, vcard], role: Viewer, rank: Alternate }
+    - { name: Notebook, ext: ipynb, role: Viewer, rank: Alternate }
+    - { name: Subtitles, ext: [vtt, srt], role: Viewer, rank: Alternate }
+    - { name: Drawing, ext: [svg, emf, wmf], role: Viewer, rank: Alternate }
+    - { name: Scanned page, ext: [tif, tiff], role: Viewer, rank: Alternate }
+    - { name: Data file, ext: [json, jsonl, ndjson, sqlite, sqlite3, db3], role: Viewer, rank: Alternate }
 linux:
   icon: build/icon.png
   # Names the .desktop entry after `desktopName` in package.json and writes a
@@ -70,6 +94,56 @@ linux:
   # its launcher: no icon highlight, no window grouping, a duplicate entry in
   # the dock. Verified with `xprop WM_CLASS` on the packaged build.
   syncDesktopName: true
+  # MimeType= in the .desktop entry, so a dock accepts these dropped on the
+  # icon and file managers offer the app under Open With; Exec already ends in
+  # %U. `mimeTypes`, not `fileAssociations`: the latter also writes a
+  # shared-mime-info definition of each type, redefining application/pdf and
+  # the rest. Listing a type does not make the app its default. Takes effect
+  # once the AppImage is integrated into the desktop (AppImageLauncher and the
+  # like). Same documents as mac.fileAssociations above.
+  mimeTypes:
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - application/vnd.ms-word.document.macroEnabled.12
+    - application/msword
+    - application/pdf
+    - application/rtf
+    - text/rtf
+    - application/vnd.oasis.opendocument.text
+    - application/vnd.oasis.opendocument.spreadsheet
+    - application/vnd.oasis.opendocument.presentation
+    - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    - application/vnd.ms-excel
+    - text/csv
+    - text/tab-separated-values
+    - application/vnd.openxmlformats-officedocument.presentationml.presentation
+    - application/vnd.ms-powerpoint.presentation.macroEnabled.12
+    - application/epub+zip
+    - text/html
+    - text/markdown
+    - text/x-markdown
+    - text/plain
+    - text/asciidoc
+    - text/x-rst
+    - text/x-opml+xml
+    - message/rfc822
+    - application/vnd.ms-outlook
+    - application/mbox
+    - text/calendar
+    - text/vcard
+    - text/x-vcard
+    - application/x-ipynb+json
+    - text/vtt
+    - application/x-subrip
+    - image/svg+xml
+    - image/emf
+    - image/wmf
+    - image/x-emf
+    - image/x-wmf
+    - image/tiff
+    - application/json
+    - application/x-ndjson
+    - application/vnd.sqlite3
+    - application/x-sqlite3
   target:
     - AppImage
   maintainer: electronjs.org

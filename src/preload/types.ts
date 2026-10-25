@@ -321,8 +321,18 @@ export interface Api {
   openSample(id: SampleId): Promise<void>
   /** Called when Help → Sample Documents opens a sample: an untitled copy, or why it could not be read. Returns the way to stop. */
   onOpenSample(cb: (sample: OpenedSample) => void): () => void
+  /** Files the OS handed the app before the page could take them (dock icon, Open With). Ask once. */
+  takeOpenedFiles(): Promise<OpenedFiles>
+  /** Called with files the OS hands the app after that. Returns the way to stop. */
+  onFilesOpened(cb: (opened: OpenedFiles) => void): () => void
   /** Called with the new settings after each saved change. Returns the way to stop. */
   onSettingsChanged(cb: (settings: Settings) => void): () => void
+}
+
+/** Files dropped on the app's dock icon or opened with it, read as the Open dialog reads them; `error` names any that could not be. */
+export interface OpenedFiles {
+  loaded: LoadedInput[]
+  error?: string
 }
 
 /** A sample document sent by the menu (src/main/samples.ts): no handle, no folder. */

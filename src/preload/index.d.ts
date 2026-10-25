@@ -13,6 +13,7 @@ export type {
   Settings,
   SettingsResult,
   OpenedSample,
+  OpenedFiles,
 } from './types'
 
 declare global {

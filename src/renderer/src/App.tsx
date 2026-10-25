@@ -287,6 +287,14 @@ function App(): React.JSX.Element {
     runPasteJob: (work) => withJob(work, 'Skip remaining images'),
   })
   const intake: Intake = { ...intakeCore, submitUrl: (url) => void onUrl(url) }
+  // Files dropped on the dock icon or opened with the app: those from before
+  // the page mounted, then each as it comes. Through a ref, as samples are.
+  const acceptOpenedRef = useRef(intakeCore.acceptOpened)
+  acceptOpenedRef.current = intakeCore.acceptOpened
+  useEffect(() => {
+    void window.api.takeOpenedFiles().then((o) => acceptOpenedRef.current(o), () => {})
+    return window.api.onFilesOpened((o) => void acceptOpenedRef.current(o))
+  }, [])
 
   function reset(): void {
     if (editingId !== null || items.some((i) => i.html !== undefined)) window.api.resizeContent({ reset: true })

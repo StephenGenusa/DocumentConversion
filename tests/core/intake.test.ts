@@ -221,6 +221,30 @@ describe('intake: archives', () => {
   })
 })
 
+describe('intake: files the OS hands the app', () => {
+  it('adds files dropped on the dock icon as the Open dialog adds them', async () => {
+    await intake().acceptOpened({
+      loaded: [
+        { filename: 'a.md', base64: b64('# a'), detected: ok('md'), sourceDir: '/home/me', handle: 'h-a' },
+        { filename: 'b.csv', base64: b64('x,y'), detected: ok('csv'), sourceDir: '/home/me', handle: 'h-b' },
+      ] as LoadedInput[],
+    })
+    expect(loaded.map((l) => [l.filename, l.detected, l.sourceDir, l.handle])).toEqual([
+      ['a.md', 'md', '/home/me', 'h-a'],
+      ['b.csv', 'csv', '/home/me', 'h-b'],
+    ])
+  })
+
+  it('names the files that could not be read, after adding the rest', async () => {
+    await intake().acceptOpened({
+      loaded: [{ filename: 'a.md', base64: b64('# a'), detected: ok('md') }] as LoadedInput[],
+      error: 'Could not open locked.docx',
+    })
+    expect(loaded).toHaveLength(1)
+    expect(notices.at(-1)).toBe('Could not open locked.docx')
+  })
+})
+
 describe('intake: dropped text and uri-lists', () => {
   it('loads file:// uri-lists through the main process', async () => {
     api.loadUriList.mockResolvedValue([

@@ -144,6 +144,19 @@ const api = {
       ipcRenderer.removeListener('app:open-sample', listener)
     }
   },
+  /**
+   * Files the OS handed the app (dropped on its dock icon, Open With): those
+   * waiting from before the page could take them, read as the Open dialog
+   * reads them. Asked once; later ones arrive through `onFilesOpened`.
+   */
+  takeOpenedFiles: () => ipcRenderer.invoke('app:take-opened-files'),
+  onFilesOpened: (cb: (opened: unknown) => void) => {
+    const listener = (_e: unknown, opened: unknown): void => cb(opened)
+    ipcRenderer.on('app:files-opened', listener)
+    return () => {
+      ipcRenderer.removeListener('app:files-opened', listener)
+    }
+  },
   onSettingsChanged: (cb: (settings: unknown) => void) => {
     const listener = (_e: unknown, settings: unknown): void => cb(settings)
     ipcRenderer.on('settings:changed', listener)
