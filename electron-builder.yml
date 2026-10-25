@@ -25,6 +25,18 @@ files:
   - 'resources/**'
   - 'package.json'
   - 'node_modules/**'
+  # @napi-rs/canvas's Skia binary (about 33 MB) comes as one package per OS and
+  # CPU. node_modules holds the build machine's, plus whichever cross-target
+  # scripts/native-for-target.mjs installed, and all of them used to be packed
+  # into every build: the Windows and Mac packages carried Linux's. Each
+  # platform below excludes every binding but its own; see `win.files`.
+  # pdfjs-dist's own @napi-rs/canvas (1.x, host binding only). pdfjs only
+  # require()s it on load to polyfill DOMMatrix/Path2D, which
+  # src/core/readers/pdf.ts and src/ocr/pipeline.ts set from the app's canvas
+  # first, and it never draws: OCR passes its own CanvasFactory. Without it,
+  # that require() resolves up to the app's @napi-rs/canvas, the one with this
+  # target's binary.
+  - '!node_modules/pdfjs-dist/node_modules/@napi-rs/**'
   - '!**/*.map'
   - '!**/.vscode/*'
   - '!**/*.log'
@@ -47,6 +59,12 @@ extraResources:
   - from: scripts/cli
     to: cli
 win:
+  # Every @napi-rs/canvas binding but this target's (see `files` above).
+  # Exclusions only, and one pattern: electron-builder filters node_modules
+  # with the exclusions alone, so a later pattern cannot take one back, and
+  # ${arch} is the arch being packed (${platform} is the build machine's).
+  files:
+    - '!node_modules/@napi-rs/canvas-!(win32-${arch}-msvc)/**'
   executableName: DocumentConverter
   icon: build/icon.ico
   target:
@@ -59,6 +77,10 @@ nsis:
 # No `target` here: scripts/build/build-macos.sh (on a Mac) asks for dmg and
 # zip, x64 and arm64; npm run build:mac (cross-built on Linux) for an x64 zip.
 mac:
+  # Every @napi-rs/canvas binding but this target's, per arch, so an arm64
+  # build does not carry the x64 one or the reverse; see `win.files`.
+  files:
+    - '!node_modules/@napi-rs/canvas-!(darwin-${arch})/**'
   icon: build/icon.png
   category: public.app-category.productivity
   # The Dock icon only accepts a dropped file of a type named here, and Finder
@@ -86,6 +108,9 @@ mac:
     - { name: Scanned page, ext: [tif, tiff], role: Viewer, rank: Alternate }
     - { name: Data file, ext: [json, jsonl, ndjson, sqlite, sqlite3, db3], role: Viewer, rank: Alternate }
 linux:
+  # Every @napi-rs/canvas binding but this target's (glibc); see `win.files`.
+  files:
+    - '!node_modules/@napi-rs/canvas-!(linux-${arch}-gnu)/**'
   icon: build/icon.png
   # Names the .desktop entry after `desktopName` in package.json and writes a
   # matching StartupWMClass. Without it the entry claimed

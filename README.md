@@ -994,12 +994,17 @@ Each `build:<os>` first installs that platform's `@napi-rs/canvas` binding
 without its own converts every PDF with no pictures, silently. `build:win`
 runs on Linux too, but electron-builder needs Wine there to finish the
 installer (it runs it once to write the uninstaller); `dist/win-unpacked` is
-made without Wine. `build:mac` on Linux makes an unsigned x64 zip.
+made without Wine. `build:mac` on Linux makes an unsigned x64 zip, zipped by
+`scripts/build/zip-mac.mjs` with Info-ZIP `zip` (`apt install zip`):
+electron-builder's own zip on Linux turns the Electron framework's symlinks
+into copies, tripling its size.
 
 What goes into a package is an allowlist in `electron-builder.yml`: `out/`
 (less the e2e bundle and the build's own package record), `resources/`,
 `package.json` and `node_modules/`. Nothing else in the checkout can be
-packaged by accident.
+packaged by accident. Of the `@napi-rs/canvas` bindings in `node_modules`,
+a package takes only its own OS's and architecture's, whichever others the
+build machine has installed.
 
 ## Building a release
 
