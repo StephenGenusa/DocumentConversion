@@ -2,7 +2,7 @@ import { sanitizeToHub } from '../allowlist'
 import { ConversionError } from '../errors'
 import { escapeHtml } from '../shell'
 import { readMarkdown, stripUnresolvableImageSrc } from './md'
-import type { HubDocument, SourceInput } from '../types'
+import type { HubDocument, ReadContext, SourceInput } from '../types'
 
 interface NotebookOutput {
   output_type?: string
@@ -190,7 +190,7 @@ function renderOutputs(outputs: NotebookOutput[], cellCount: number | null): str
   return parts.join('\n')
 }
 
-export async function readIpynb(src: SourceInput): Promise<HubDocument> {
+export async function readIpynb(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
   let nb: Notebook
   try {
     nb = JSON.parse(src.bytes.toString('utf8')) as Notebook
@@ -210,7 +210,7 @@ export async function readIpynb(src: SourceInput): Promise<HubDocument> {
   for (const cell of cells) {
     const source = joinSource(cell.source ?? cell.input)
     if (cell.cell_type === 'markdown') {
-      if (source.trim()) sections.push((await readMarkdown({ bytes: Buffer.from(source, 'utf8') }, undefined, { frontMatter: false })).html)
+      if (source.trim()) sections.push((await readMarkdown({ bytes: Buffer.from(source, 'utf8') }, ctx, { frontMatter: false })).html)
       continue
     }
     if (cell.cell_type === 'code') {

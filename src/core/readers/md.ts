@@ -11,7 +11,8 @@ import { parseHTML } from 'linkedom'
 import { sanitizeToHub } from '../allowlist'
 import { inlineSvgElements } from '../svg-images'
 import { notesToHub } from '../speaker-notes'
-import type { HubDocument, SourceInput } from '../types'
+import { inlineLocalImages } from '../local-images'
+import type { HubDocument, ReadContext, SourceInput } from '../types'
 
 // typographer is off deliberately: this is a converter, and silently rewriting
 // an author's straight quotes to curly ones loses fidelity (notebooks and
@@ -35,8 +36,14 @@ const md = new MarkdownIt({ html: true, linkify: true, typographer: false })
  * document is read (convert.ts), and shown only as an <img>.
  */
 const SVG_DATA_URI = /^data:image\/svg\+xml[;,]/i
+/**
+ * `![fig](file:///home/me/fig.png)` is a picture on disk too, read from there
+ * like a relative path (local-images.ts). markdown-it refuses file: outright.
+ * A link to one keeps its text: the hub allowlist takes file: off an href.
+ */
+const FILE_URL = /^file:/i
 const validateLink = md.validateLink.bind(md)
-md.validateLink = (url: string): boolean => SVG_DATA_URI.test(url.trim()) || validateLink(url)
+md.validateLink = (url: string): boolean => SVG_DATA_URI.test(url.trim()) || FILE_URL.test(url.trim()) || validateLink(url)
 
 /*
  * GitHub-flavored Markdown that markdown-it core does not read. Each one
@@ -382,9 +389,9 @@ function escapeQuotesInText(html: string): string {
 
 /**
  * Only data: and http(s) images can ever resolve from a standalone document.
- * A SourceInput is bytes plus a bare filename, so there is no base URL to
- * resolve `../../img/ods_stickers.jpg` against, and a root-relative
- * `/_layouts/15/images/spcommon.png` is meaningless away from its origin.
+ * A SourceInput is bytes plus a bare filename, so without the folder it came
+ * from (ReadContext.sourceDir, local-images.ts, which runs first) there is no
+ * base to resolve `../../img/ods_stickers.jpg` against.
  *
  * This is the same predicate `src/core/readers/html.ts` applies for the same
  * reason (and the docx writer before it). It is repeated rather than shared
@@ -513,12 +520,14 @@ export interface MarkdownOptions {
   frontMatter?: boolean
 }
 
-export async function readMarkdown(src: SourceInput, _ctx?: unknown, opts: MarkdownOptions = {}): Promise<HubDocument> {
+export async function readMarkdown(src: SourceInput, ctx?: ReadContext, opts: MarkdownOptions = {}): Promise<HubDocument> {
   const text = src.bytes.toString('utf8').replace(/^\uFEFF/, '')
   const { body: unfenced, title } = opts.frontMatter === false ? { body: text } : stripFrontMatter(text)
   const body = /\.(rmd|qmd)$/i.test(src.filename ?? '') ? quartoDivs(unfenced) : unfenced
   // Inline HTML may draw an SVG; it becomes an SVG image, as in a page.
-  const html = stripUnresolvableImageSrc(inlineSvgElements(md.render(body, {})))
+  // Pictures by path are read from the document's folder first; only what
+  // that leaves unresolved is stripped.
+  const html = stripUnresolvableImageSrc(await inlineLocalImages(inlineSvgElements(md.render(body, {})), ctx))
   // Notes are lifted BEFORE sanitizing: the sanitizer drops comments, so a
   // `<!-- notes: ... -->` left until after it would simply be gone.
   return { html: escapeQuotesInText(sanitizeToHub(notesToHub(html))), ...(title ? { title } : {}) }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { open, stat } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { basename, dirname } from 'node:path'
 import { ConversionError } from '../core/errors'
 
 /**
@@ -66,6 +66,16 @@ export async function readHandle(handle: string): Promise<{ bytes: Buffer; stamp
   } finally {
     await file?.close()
   }
+}
+
+/**
+ * The folder of the file a token leads to: where the document's pictures by
+ * path are read from (core/local-images.ts). Undefined for an input with no
+ * file of its own.
+ */
+export function folderOf(handle: string | undefined): string | undefined {
+  const path = handle === undefined ? undefined : paths.get(handle)
+  return path === undefined ? undefined : dirname(path)
 }
 
 /** The file's stamp now, or null when it is gone or the token is unknown. */

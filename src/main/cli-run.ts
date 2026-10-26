@@ -138,6 +138,8 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 
   const bytesFor = (f: LoadedInputFile): Promise<Buffer> => (f.bytes ? Promise.resolve(f.bytes) : readFile(f.path))
+  // Where a document's pictures by path are read from; an archive entry has no folder of its own.
+  const folderFor = (f: LoadedInputFile): string | undefined => (f.bytes ? undefined : dirname(resolve(f.path)))
 
   // Two inputs from different folders can share a basename; overwriting by
   // default then destroyed one of them at exit 0. Disambiguate instead.
@@ -183,6 +185,7 @@ export async function runCli(argv: string[]): Promise<number> {
           filename: basename(f.path),
           source: f.source,
           read: opts.read,
+          sourceDir: folderFor(f),
           ocr: req.ocr,
           ocrLanguage: opts.ocrLanguage,
         })),
@@ -219,6 +222,7 @@ export async function runCli(argv: string[]): Promise<number> {
       }
       const out = await runConversion(await bytesFor(f), basename(f.path), f.source, req.to, opts, {
         onAdvice: noteFor(basename(f.path)),
+        sourceDir: folderFor(f),
       })
       const parts = selectTable(out.parts)
       for (const part of parts) {

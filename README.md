@@ -634,8 +634,13 @@ Two exceptions are built in:
 - **Email and calendar invitations** (`.eml`, `.msg`, `.mbox`, `.ics`) never
   have their remote images fetched. Senders use them to learn that a message
   was opened, so they are replaced by their description, as a mail client does.
-- **Relative paths** (`images/fig.png`) name a file beside the document, not a
-  web address, and are left as they are.
+- **Paths** (`assets/fig.svg`, `../images/fig.png`, `/home/me/fig.png`,
+  `C:\pics\fig.png`, `file:///…`) name a file on disk, not a web address, and
+  are never fetched. In Markdown, as well as Djot and Textile and a notebook's
+  Markdown cells, a document opened from a file has these pictures read from disk,
+  relative to its folder, and embedded. A file is embedded only if it really
+  is a picture. A network share (`\\host\share`) is not read. A picture that
+  is missing becomes its description.
 
 Every download goes through the same checks as *From URL*:
 

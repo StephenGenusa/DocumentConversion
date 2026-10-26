@@ -28,5 +28,6 @@ Teams, Word
 Thanks, Iris
 Thanks, Petra
 Vellum, Iris
+Windows, Linux
 Word, Markdown
 Word, Teams

@@ -339,6 +339,8 @@ export interface MergeItem {
   /** The OCR language, when `ocr` is on. The bundled English when not given. */
   ocrLanguage?: string
   read?: ReadOptions
+  /** The folder the input was read from, for its pictures by path (core/local-images.ts). */
+  sourceDir?: string
 }
 
 /**
@@ -370,7 +372,7 @@ export async function mergeToTarget(
         continue
       }
       ctx.onProgress?.(`Rendering ${name} (${i + 1} of ${items.length})`)
-      const hub = await readForConversion(item.bytes, item.filename, item.source, item.ocr, readContextOf(ctx, { read: item.read, web: opts.web }) ?? ctx, item.ocrLanguage)
+      const hub = await readForConversion(item.bytes, item.filename, item.source, item.ocr, { ...(readContextOf(ctx, { read: item.read, web: opts.web }) ?? ctx), sourceDir: item.sourceDir }, item.ocrLanguage)
       const withHeading = headings
         ? { ...hub, html: `<h1 class="doc-title">${escapeHtml(hub.sourceName ?? name)}</h1>\n${hub.html}` }
         : hub
@@ -385,7 +387,7 @@ export async function mergeToTarget(
     throwIfCanceled(ctx.signal)
     const item = items[i]
     ctx.onProgress?.(`Reading ${item.filename ?? `document ${i + 1}`} (${i + 1} of ${items.length})`)
-    hubs.push(await readForConversion(item.bytes, item.filename, item.source, item.ocr, readContextOf(ctx, { read: item.read, web: opts.web }) ?? ctx, item.ocrLanguage))
+    hubs.push(await readForConversion(item.bytes, item.filename, item.source, item.ocr, { ...(readContextOf(ctx, { read: item.read, web: opts.web }) ?? ctx), sourceDir: item.sourceDir }, item.ocrLanguage))
   }
   throwIfCanceled(ctx.signal)
   return untilCanceled(converter.write(mergeHubDocuments(hubs, { headings }), target, opts, ctx), ctx.signal)

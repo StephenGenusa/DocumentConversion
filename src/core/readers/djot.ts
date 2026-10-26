@@ -3,8 +3,9 @@ import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import { safeLabel } from '../footnotes'
 import { stripUnresolvableImageSrc } from './md'
+import { inlineLocalImages } from '../local-images'
 import { decodeTextBytes } from './txt'
-import type { HubDocument, SourceInput } from '../types'
+import type { HubDocument, ReadContext, SourceInput } from '../types'
 
 /**
  * Djot (spec D11): rendered by @djot/djot, with the renderer's own markup for
@@ -68,7 +69,7 @@ function plainText(node: AstNode): string {
   return 'children' in node ? (node.children as AstNode[]).map(plainText).join('') : ''
 }
 
-export async function readDjot(src: SourceInput): Promise<HubDocument> {
+export async function readDjot(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
   const text = decodeTextBytes(src.bytes)
   // Per note label: its number (order of first reference) and its hub label.
   const notes = new Map<string, { n: number; label: string }>()
@@ -160,7 +161,7 @@ export async function readDjot(src: SourceInput): Promise<HubDocument> {
   }
   const h1 = firstH1(doc.children)
   const title = h1 ? plainText(h1).replace(/\s+/g, ' ').trim() : ''
-  return { html: sanitizeToHub(stripUnresolvableImageSrc(html)), title: title || src.filename?.split(/[\\/]/).pop() }
+  return { html: sanitizeToHub(stripUnresolvableImageSrc(await inlineLocalImages(html, ctx))), title: title || src.filename?.split(/[\\/]/).pop() }
 }
 
 /** The first level-1 heading, looking inside the sections Djot wraps headings in. */

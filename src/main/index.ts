@@ -24,7 +24,7 @@ import {
   sqliteHost,
 } from './conversion'
 import { runCli } from './cli-run'
-import { inputBytes, readHandle, registerPath, stampOf } from './file-handles'
+import { folderOf, inputBytes, readHandle, registerPath, stampOf } from './file-handles'
 import { createOpenQueue, pathsFromArgs } from './launch-files'
 import { isBinaryTarget } from '../core/target-validity'
 import { expandZipArchive } from '../core/zip-expand'
@@ -501,6 +501,7 @@ function registerIpc(settings: SettingsStore): void {
       let notice: string | undefined
       Object.assign(ctx, opts.read, {
         web: opts.web,
+        sourceDir: folderOf(handle),
         onAdvice: (_kind: string, message: string) => {
           notice ??= message
         },
@@ -656,6 +657,7 @@ function registerIpc(settings: SettingsStore): void {
         // The settings as they are now; a change during the job is for the next one.
         const opts = conversionOptions(settings.get(), { pdf, slides, renderedFormat, ocr, ocrLanguage, read })
         const bytes = await inputBytes({ base64, handle })
+        ctx.sourceDir = folderOf(handle)
         if (target === 'html') {
           // Rich flavor for Word/Teams/Outlook paste targets + plain-text flavor for editors.
           // Diagrams and SVG images go as PNG whatever is chosen (clipboardFlavors).
@@ -734,6 +736,7 @@ function registerIpc(settings: SettingsStore): void {
       try {
         const opts = conversionOptions(settings.get(), { pdf, slides, renderedFormat, ocr, ocrLanguage, read })
         const bytes = await inputBytes({ base64, handle })
+        ctx.sourceDir = folderOf(handle)
         const out = await runConversion(bytes, filename, source, target, opts, ctx)
         const defaultPath = defaultSavePath(sourceDir, baseName(filename) + EXTENSIONS[target])
         const save = await saveDialog(e.sender, { defaultPath, filters: [FILTERS[target]] })
@@ -802,7 +805,7 @@ function registerIpc(settings: SettingsStore): void {
             item.source,
             target,
             conversionOptions(snapshot, { pdf, slides, renderedFormat, ocr: item.ocr, ocrLanguage: item.ocrLanguage, read: item.read }),
-            ctx,
+            { ...ctx, sourceDir: folderOf(item.handle) },
           ),
         )
       } finally {
@@ -861,6 +864,7 @@ function registerIpc(settings: SettingsStore): void {
                 ocr: own.ocr === true,
                 ocrLanguage: own.ocrLanguage,
                 read: own.read,
+                sourceDir: folderOf(item.handle),
               }
             }),
           ),

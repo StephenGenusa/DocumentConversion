@@ -2,8 +2,9 @@ import textile from 'textile-js'
 import { ConversionError } from '../errors'
 import { sanitizeToHub } from '../allowlist'
 import { stripUnresolvableImageSrc } from './md'
+import { inlineLocalImages } from '../local-images'
 import { decodeTextBytes } from './txt'
-import type { HubDocument, SourceInput } from '../types'
+import type { HubDocument, ReadContext, SourceInput } from '../types'
 
 /**
  * Textile (spec D12), read with textile-js. Its tree (JsonML) is rewritten
@@ -53,7 +54,7 @@ function plainText(el: JsonML): string {
  */
 const BACKLINKED_NOTE = /(^|\n[ \t]*\n)(fn\d+(?:\([^)\n]*\)|\{[^}\n]*\}|\[[^\]\n]*\]|[<>=])*)\^\.(?=\s)/g
 
-export async function readTextile(src: SourceInput): Promise<HubDocument> {
+export async function readTextile(src: SourceInput, ctx?: ReadContext): Promise<HubDocument> {
   const text = decodeTextBytes(src.bytes).replace(BACKLINKED_NOTE, '$1$2.')
   let blocks: JsonML[]
   try {
@@ -78,5 +79,5 @@ export async function readTextile(src: SourceInput): Promise<HubDocument> {
   const html = body.map((el) => textile.serialize(el)).join('')
   const h1 = blocks.find((b) => typeof b !== 'string' && b[0] === 'h1')
   const title = h1 ? plainText(h1).replace(/\s+/g, ' ').trim() : ''
-  return { html: sanitizeToHub(stripUnresolvableImageSrc(html)), title: title || src.filename?.split(/[\\/]/).pop() }
+  return { html: sanitizeToHub(stripUnresolvableImageSrc(await inlineLocalImages(html, ctx))), title: title || src.filename?.split(/[\\/]/).pop() }
 }

@@ -216,6 +216,8 @@ export interface ReadContext extends ReadOptions {
   ocr?: boolean
   /** Fetching web pictures at read time (Settings → Web). Fetch on, local network allowed, when not given. */
   web?: WebPolicy
+  /** The folder the document was read from: its pictures by path are read from there (local-images.ts). */
+  sourceDir?: string
   signal?: AbortSignal
   onProgress?: (stage: string, percent?: number) => void
   /** Non-fatal suggestions surfaced to the user (e.g. "this would fit landscape"). */
