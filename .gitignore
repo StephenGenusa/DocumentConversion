@@ -89,3 +89,6 @@ resume.sh
 
 # Generated license notices (scripts/build-notices.mjs), rebuilt by every build
 resources/notices/
+
+# Personal working files, never committed
+/local/
