@@ -132,6 +132,12 @@ export async function renderHtmlToPdf(html: string, opts?: PdfPrintOptions): Pro
       scale,
       pageSize,
       landscape,
+      // The bookmarks sidebar, one entry per heading, nested by level.
+      // Chromium builds the outline from the structure tags, so it writes
+      // none for an untagged PDF; the tags (and a screen reader's reading
+      // order with them) roughly double the file, measured on a 40-page guide.
+      generateDocumentOutline: true,
+      generateTaggedPDF: true,
       ...headerFooterOpts,
     })
     return data
