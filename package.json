@@ -1,6 +1,6 @@
 {
   "name": "docconversion",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "Offline document converter: 31 input formats to PDF, Word, Markdown, HTML, EPUB and more, including the clipboard and web pages.",
   "keywords": [
     "document-conversion",

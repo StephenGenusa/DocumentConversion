@@ -165,7 +165,10 @@ picture; read as a picture."). Text that only starts like one stays text.
   (`.rmd`, `.qmd`) with their code chunks. Markdown is CommonMark with GitHub
   tables, task lists, alerts, strikethrough and emoji shortcodes, footnotes,
   definition lists, YAML front matter, `$…$` / `$$…$$` math and `mermaid` /
-  `dot` diagram blocks. Minified JSON and XML are printed re-indented.
+  `dot` diagram blocks. Links to the document's own headings
+  (`[Sources](#11-sources)`, a contents list) link in every output that can
+  link; see [What's new in 1.5.2](WhatsNew.md#whats-new-in-152). Minified
+  JSON and XML are printed re-indented.
 - **Other documents.** `.pdf`, `.rtf` and `.epub`.
 - **Email.** `.eml`, `.msg` (Outlook) and `.mbox` archives.
 - **Calendars and contacts.** `.ics` and `.ical` invitations; vCard contacts
@@ -237,18 +240,21 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
   Orientation is chosen as for pdf: Automatic unless you choose Portrait or
   Landscape. A document of pictures a page (a TIFF) gets a page, and a
   section, a picture, each turned as its picture is and on the same paper. A
-  picture larger than its page is made to fit.
+  picture larger than its page is made to fit. A heading that a link in the
+  document points to gets a Word bookmark, and the link jumps to it.
 - **pdf** — rendered by Chromium. Zoom 50–200% (90% by default), page size
   (Letter, A4, Legal, A3, Tabloid), orientation, and an optional header and
   footer with the title, date and page numbers. A horizontal rule (`---` in
   Markdown) starts a new page. Orientation is Automatic unless you choose
   Portrait or Landscape: landscape pages for a wide picture on its own (each
   page of a TIFF by its own shape) and for a document that is mostly wide
-  tables, portrait for the rest.
+  tables, portrait for the rest. Every PDF has a bookmarks sidebar, one entry
+  per heading, and is tagged for screen readers; links to the document's own
+  headings jump to them.
 - **html** — one standalone file.
 - **epub** — an e-book. Chapters split on the document's own headings, images
   stored once each, markup written as XHTML because e-book readers require
-  well-formed XML.
+  well-formed XML. A link to a heading goes to it, in whichever chapter it is.
 
 **Slides**
 
@@ -256,12 +262,13 @@ txt, md, docx, pdf, html, epub, revealjs, azw3, azw4, csv, json, xlsx
   self-contained HTML file. Slides are separated by a horizontal rule (`---` in
   Markdown) or by a heading level you choose; Automatic uses heading 1, or
   heading 2 when heading 1 is only the title. Speaker notes written as
-  `<!-- notes: ... -->` reach reveal's speaker view.
+  `<!-- notes: ... -->` reach reveal's speaker view. A link to a heading goes
+  to the slide that holds it.
 
 **Kindle**
 
 - **azw3** — a reflowable Kindle e-book (KF8), built from the same content as
-  the EPUB output.
+  the EPUB output, links to headings included.
 - **azw4** — a Kindle print replica: your PDF in a Kindle container. It does not
   reflow, so it is rendered at Kindle page size regardless of the page setup you
   chose: a Letter page shown on a 6-inch screen puts the text at roughly a third

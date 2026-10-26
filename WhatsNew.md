@@ -3,12 +3,36 @@
 Release notes for Document Converter, newest first. See the
 [README](README.md) for what the app does and how to use it.
 
+- [1.5.2](#whats-new-in-152)
 - [1.5.1](#whats-new-in-151)
 - [1.5](#whats-new-in-15)
 - [1.4](#whats-new-in-14)
 - [1.3](#whats-new-in-13)
 - [1.2](#whats-new-in-12)
 - [1.1](#whats-new-in-11)
+
+## What's new in 1.5.2
+
+- **Links to a document's own headings work.** A contents list or a "see
+  [Sources](#11-sources)" link, written as GitHub writes them, printed as
+  blue text that went nowhere: no output gave a heading anything to link to.
+  Each heading now gets the anchor GitHub gives it, and the link follows it
+  in every output that can link:
+  - **PDF and HTML:** a link to the heading.
+  - **Word:** a bookmark at the heading and a link to the bookmark, so the
+    link jumps there in Word and LibreOffice.
+  - **EPUB and AZW3:** a link to the heading, in whichever chapter it is.
+  - **Slides (reveal.js):** a link to the slide that holds the heading.
+  - Markdown output keeps the links as written.
+  - A link to a heading that is not there keeps its text and loses the link.
+- **A bookmarks sidebar in every PDF.** A PDF now has an outline, one entry
+  per heading, nested by level, in any PDF reader's bookmarks pane. The PDF
+  is also tagged for screen readers. The tags make a PDF larger: a 40-page
+  guide went from 466 KB to 1.05 MB.
+- **Code in a quote no longer stops a Word conversion.** A block quote
+  holding any code, inline or a block, made the whole conversion fail with
+  "Cannot read properties of undefined (reading 'createFont')". It now
+  converts, the code in the code font as everywhere else.
 
 ## What's new in 1.5.1
 
