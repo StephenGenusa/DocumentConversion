@@ -1,6 +1,7 @@
 import hljs, { EREADER_HLJS_CSS, HLJS_CSS } from './hljs'
 import { highlightMarkup } from './code-markup'
 import { footnotesForOutput } from './footnotes'
+import { headingAnchorsForOutput } from './heading-anchors'
 import type { HubDocument, TargetFormat } from './types'
 
 export interface ShellOptions {
@@ -336,6 +337,8 @@ export function renderDocumentShell(doc: HubDocument, opts?: ShellOptions): stri
   if (opts?.target === 'pdf' || opts?.target === 'html') {
     // Linked notes: the anchors are made here, from labels the hub owns.
     body = footnotesForOutput(body, 'links')
+    // Links to the document's own headings, after the notes so they can resolve to one too.
+    body = headingAnchorsForOutput(body)
     const highlighted = opts.codeColor === false ? { html: body, any: false } : highlightCodeBlocks(body)
     if (highlighted.any) {
       body = highlighted.html

@@ -65,6 +65,47 @@ async function resourcesOf(zip: JSZip): Promise<Resources> {
 }
 
 /**
+ * Links inside the book, as a Kindle follows them:
+ * `kindle:pos:fid:XXXX:off:YYYYYYYYYY`, the fragment (one per chapter here)
+ * and the byte offset in it of the element linked to, both in base 32, as
+ * kindlegen writes them and calibre reads them. The EPUB writer has already
+ * pointed each link at its chapter file (`ch002.xhtml#id`, or `#id` in the
+ * same one); a link to an id in no chapter keeps its text and loses the link.
+ *
+ * Every href is first written at its final length, so the offsets measured
+ * after are the ones the finished bodies have.
+ */
+const POS_PENDING = 'kindle:pos:fid:0000:off:0000000000'
+
+function base32(n: number, width: number): string {
+  return n.toString(32).toUpperCase().padStart(width, '0')
+}
+
+export function kindleLinks(bodies: string[], files: string[]): string[] {
+  const names = files.map((f) => f.slice(f.lastIndexOf('/') + 1))
+  const ids = bodies.map((body) => new Set([...body.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1])))
+  const targets: Array<{ fid: number; id: string }> = []
+  const pending = bodies.map((body, i) =>
+    body.replace(/<a\b([^>]*?)\shref="([^"]*)"([^>]*)>([\s\S]*?)<\/a>/g, (whole, before: string, href: string, after: string, inner: string) => {
+      const local = /^([^#:/]*)#(.+)$/.exec(href)
+      if (!local) return whole
+      const fid = local[1] === '' ? i : names.indexOf(local[1])
+      if (fid < 0 || !ids[fid].has(local[2])) return inner
+      targets.push({ fid, id: local[2] })
+      return `<a${before} href="${POS_PENDING}"${after}>${inner}</a>`
+    }),
+  )
+  if (targets.length === 0) return pending
+  const posOf = targets.map(({ fid, id }) => {
+    const body = pending[fid]
+    const tag = body.lastIndexOf('<', body.indexOf(` id="${id}"`))
+    return `kindle:pos:fid:${base32(fid, 4)}:off:${base32(Buffer.byteLength(body.slice(0, tag), 'utf8'), 10)}`
+  })
+  let n = 0
+  return pending.map((body) => body.replaceAll(POS_PENDING, () => posOf[n++]))
+}
+
+/**
  * The record that ends the book: the four bytes kindlegen and Calibre write
  * (E9 8E CR LF). A lone NUL was read fine so far, but a reader that looks
  * for this marker to know where the resources stop would not find it.
@@ -91,6 +132,7 @@ export async function writeAzw3(doc: HubDocument, opts?: ConvertOptions): Promis
           return ref ? `${head}${ref}"` : whole
         }),
   )
+  const linked = kindleLinks(bodies, chapters.length > 0 ? chapterFiles : [])
 
   /*
    * Build the flow, recording where each chapter's skeleton and body land.
@@ -115,7 +157,7 @@ export async function writeAzw3(doc: HubDocument, opts?: ConvertOptions): Promis
   const fragments: IndexEntry[] = []
   const selectors: string[] = []
 
-  bodies.forEach((body, i) => {
+  linked.forEach((body, i) => {
     const skeleton = SKEL_OPEN + SKEL_CLOSE
     const skelStart = Buffer.byteLength(flow, 'utf8')
     flow += skeleton

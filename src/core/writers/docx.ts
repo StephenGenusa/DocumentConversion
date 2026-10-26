@@ -9,6 +9,7 @@ import { autoTables, renderDocumentShell } from '../shell'
 import { replaceImages } from '../inline-images'
 import { ownRows } from '../table-grid'
 import { footnotesForOutput } from '../footnotes'
+import { headingAnchorsForOutput } from '../heading-anchors'
 import hljs, { highlightedRuns } from '../hljs'
 import { highlightMarkup } from '../code-markup'
 import type { ConvertOptions, HubDocument, PdfLandscape, PdfPageInches, PdfPageSize } from '../types'
@@ -954,6 +955,7 @@ async function recompress(
   bordered: CellBorders[] = [],
   tables: { layouts: TableLayout[]; byContent: boolean } = { layouts: [], byContent: false },
   pages: WordPages = { size: 'Letter', landscape: false },
+  bookmarks: string[] = [],
 ): Promise<Buffer> {
   try {
     const zip = await JSZip.loadAsync(docx)
@@ -965,7 +967,8 @@ async function recompress(
       /* the stand-ins stay: one-pixel GIFs at each picture's size */
     }
     const body = zip.file('word/document.xml')
-    if (body) zip.file('word/document.xml', codeBookmarks(schemaOrder(fitPictures(pictureSections(sizeTables(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), tables.layouts, tables.byContent), pages))), languages))
+    if (body) zip.file('word/document.xml', headingBookmarks(codeBookmarks(schemaOrder(fitPictures(pictureSections(sizeTables(trailingRowSpans(oneGrid(orderCellProperties(cellBorderSides(styleRuns(sectionLast(await body.async('string')), colored), bordered)))), tables.layouts, tables.byContent), pages))), languages), bookmarks))
+    if (bookmarks.length > 0) await linkHeadings(zip, bookmarks)
     for (const name of ['word/styles.xml', 'word/numbering.xml']) {
       const part = zip.file(name)
       if (part) zip.file(name, schemaOrder(await part.async('string')))
@@ -1444,6 +1447,108 @@ function codeBookmarks(xml: string, languages: string[]): string {
     return before + (empty ? '' : rest) + after
   })
   return out.replace(/[-]/g, '')
+}
+
+/**
+ * Stand-in for a heading a link points to: HEADING_MARK, the heading's
+ * number in `bookmarks`, HEADING_STOP. Private-use, so never real content.
+ */
+const HEADING_MARK = ''
+const HEADING_STOP = ''
+const HEADING_STAND = /(\d+)/g
+
+/**
+ * A Word bookmark name for a heading's anchor: at most 40 letters, digits and
+ * underscores, starting with a letter (one starting `_` is hidden from Word's
+ * Bookmarks dialog, and these are the author's own), unique among `taken`.
+ */
+export function headingBookmarkName(slug: string, taken: Set<string>): string {
+  let base = slug.replace(/[^A-Za-z0-9_]/g, '_')
+  if (!/^[A-Za-z]/.test(base)) base = `h${base}`
+  base = base.slice(0, 36)
+  let name = base
+  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base}_${n}`
+  taken.add(name.toLowerCase())
+  return name
+}
+
+/**
+ * Links to the document's own headings (heading-anchors.ts) as Word links
+ * them: a bookmark at the heading and a hyperlink with `w:anchor`. The library
+ * keeps no id, so each linked heading gets a stand-in at its start, which
+ * headingBookmarks turns into the bookmark; each link's href is renamed to its
+ * bookmark, and linkHeadings makes the library's external `#…` hyperlink an
+ * anchored one. First, before any pass that rebuilds the markup: the stand-in
+ * is text, which every later pass keeps.
+ */
+function markHeadingAnchors(source: string, bookmarks: string[]): string {
+  const html = headingAnchorsForOutput(source)
+  if (!/<h[1-6] id="/.test(html)) return html
+  const named = new Map<string, string>()
+  const taken = new Set<string>()
+  const marked = html.replace(/<(h[1-6]) id="([^"]*)">/g, (_whole, tag: string, slug: string) => {
+    const name = headingBookmarkName(slug, taken)
+    named.set(slug, name)
+    return `<${tag}>${HEADING_MARK}${bookmarks.push(name) - 1}${HEADING_STOP}`
+  })
+  return marked.replace(/(<a\b[^>]*\bhref=")#([^"]*)"/g, (whole, open: string, slug: string) => (named.has(slug) ? `${open}#${named.get(slug)}"` : whole))
+}
+
+/**
+ * markHeadingAnchors's stand-ins as the bookmarks they stand for: a collapsed
+ * bookmark (start and end together) before the run that held the stand-in,
+ * which is where a link to it lands. The run goes if the stand-in was all it
+ * held. Run after codeBookmarks, so the ids are clear of the code blocks'.
+ */
+function headingBookmarks(xml: string, bookmarks: string[]): string {
+  if (!bookmarks.length || !xml.includes(HEADING_MARK)) return xml
+  let id = Math.max(-1, ...[...xml.matchAll(/<w:bookmark(?:Start|End)\b[^>]*\bw:id="(\d+)"/g)].map((m) => Number(m[1]))) + 1
+  const placed = new Set<number>()
+  const out = xml.replace(/<w:r(?:\s[^>]*)?>(?:(?!<\/w:r>)[\s\S])*?\d+(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, (r) => {
+    let before = ''
+    for (const m of r.matchAll(HEADING_STAND)) {
+      const n = Number(m[1])
+      const name = bookmarks[n]
+      if (!name || placed.has(n)) continue
+      placed.add(n)
+      before += `<w:bookmarkStart w:id="${id}" w:name="${name}"/><w:bookmarkEnd w:id="${id}"/>`
+      id++
+    }
+    const rest = r.replace(HEADING_STAND, '')
+    const empty = [...rest.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].every((t) => t[1] === '') && !/<w:(?:br|tab|cr)\b/.test(rest)
+    return before + (empty ? '' : rest)
+  })
+  return out.replace(/[]/g, '')
+}
+
+/**
+ * html-to-docx writes every link as an external relationship, so `#heading`
+ * was a link to a file of that name. Each one whose target is a bookmark
+ * headingBookmarks placed becomes `w:anchor`, and its relationship goes; one
+ * to anything else keeps its text and loses the link.
+ */
+async function linkHeadings(zip: JSZip, bookmarks: string[]): Promise<void> {
+  const relsPart = zip.file('word/_rels/document.xml.rels')
+  const body = zip.file('word/document.xml')
+  if (!relsPart || !body) return
+  let rels = await relsPart.async('string')
+  const internal = new Map<string, string>()
+  for (const m of rels.matchAll(/<Relationship\b[^>]*\/>/g)) {
+    const target = /\bTarget="#([^"]*)"/.exec(m[0])?.[1]
+    const rid = /\bId="([^"]+)"/.exec(m[0])?.[1]
+    if (target !== undefined && rid) internal.set(rid, target)
+  }
+  if (internal.size === 0) return
+  const known = new Set(bookmarks)
+  const xml = (await body.async('string')).replace(/<w:hyperlink\b([^>]*)>([\s\S]*?)<\/w:hyperlink>/g, (whole, attrs: string, runs: string) => {
+    const rid = /\br:id="([^"]+)"/.exec(attrs)?.[1]
+    const target = rid ? internal.get(rid) : undefined
+    if (target === undefined) return whole
+    return known.has(target) ? `<w:hyperlink w:anchor="${target}" w:history="1">${runs}</w:hyperlink>` : runs
+  })
+  rels = rels.replace(/<Relationship\b[^>]*\/>/g, (r) => (internal.has(/\bId="([^"]+)"/.exec(r)?.[1] ?? '') ? '' : r))
+  zip.file('word/document.xml', xml)
+  zip.file('word/_rels/document.xml.rels', rels)
 }
 
 /** The font html-to-docx itself gives a top-level code block. */
@@ -2096,7 +2201,8 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
   const originals = new Map<string, Original>()
   const languages: string[] = []
   const bordered: CellBorders[] = []
-  const pictures = dropUnresolvableImages(standInOriginals(footnotesForOutput(doc.html, 'plain'), originals))
+  const bookmarks: string[] = []
+  const pictures = dropUnresolvableImages(standInOriginals(markHeadingAnchors(footnotesForOutput(doc.html, 'plain'), bookmarks), originals))
   const html = renderDocumentShell(
     {
       ...doc,
@@ -2122,5 +2228,5 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
   })
   // Columns sized by content where the PDF sizes them so: decided on the hub's HTML, as there.
   const tables = { layouts: tableLayouts(html), byContent: doc.html.includes('<table') && autoTables(doc.html) }
-  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages, bordered, tables, pages)
+  return recompress(Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer), formulaLowerings(html), colored, originals, languages, bordered, tables, pages, bookmarks)
 }

@@ -1,5 +1,6 @@
 import { splitSlides, type SplitOn } from '../slides'
 import { footnotesForOutput } from '../footnotes'
+import { headingAnchorsForOutput } from '../heading-anchors'
 import { escapeHtml, highlightCodeBlocks, markTaskLists } from '../shell'
 import { DARK_CODE_GROUND, DARK_CODE_TEXT, HLJS_CSS, HLJS_DARK_CSS } from '../hljs'
 import { relativeLuminance } from '../css-color'
@@ -157,9 +158,18 @@ function notesMarkup(notes: string[]): string {
   return `<aside class="notes">${notes.join('')}</aside>`
 }
 
+/**
+ * Links to the deck's own headings (heading-anchors.ts). reveal.js moves to a
+ * slide on `#/name`, finding the element with that id and going to the slide
+ * that holds it; a bare `#name` would only scroll the page under the deck.
+ */
+function linkSlides(html: string): string {
+  return headingAnchorsForOutput(html).replace(/(<a\b[^>]*\bhref=")#(?!\/)/g, '$1#/')
+}
+
 export async function writeRevealJs(doc: HubDocument, opts?: ConvertOptions): Promise<Buffer> {
   // A deck has no notes pane of its own; the notes are the last slide's text.
-  const slides = splitSlides(markTaskLists(footnotesForOutput(doc.html, 'plain')), { splitOn: (opts?.slides?.splitOn as SplitOn) ?? 'auto' })
+  const slides = splitSlides(linkSlides(markTaskLists(footnotesForOutput(doc.html, 'plain'))), { splitOn: (opts?.slides?.splitOn as SplitOn) ?? 'auto' })
   const title = doc.title?.trim() || doc.sourceName?.trim() || 'Presentation'
 
   let colored = false

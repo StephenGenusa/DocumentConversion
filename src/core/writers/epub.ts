@@ -1,5 +1,6 @@
 import JSZip from 'jszip'
 import { footnotesForOutput } from '../footnotes'
+import { headingAnchorsForOutput } from '../heading-anchors'
 import { createHash, randomUUID } from 'node:crypto'
 import { parseDocument } from 'htmlparser2'
 import { Element, type AnyNode } from 'domhandler'
@@ -290,9 +291,10 @@ ${spine}
 /**
  * Point every in-book link at the chapter file that holds its target.
  *
- * The only in-book links are the writer's own footnote anchors (the hub has
- * none), and a reference and its note are routinely in different chapters
- * once the book is split, so a bare `#fn-x` would look in the wrong file.
+ * The only in-book links are the writer's own: footnote anchors and links to
+ * headings (heading-anchors.ts). A link and its target are routinely in
+ * different chapters once the book is split, so a bare `#fn-x` would look in
+ * the wrong file.
  */
 function linkAcrossChapters(parts: { file: string; nodes: AnyNode[] }[]): void {
   const fileOf = new Map<string, string>()
@@ -328,7 +330,7 @@ export interface EpubOptions {
 export async function writeEpub(doc: HubDocument, opts: EpubOptions = {}): Promise<Buffer> {
   // Code colored as in the pdf and html, spans styled by class from
   // style.css; plaintext has nothing to color and is left as it came.
-  const notes = footnotesForOutput(doc.html, opts.notes ?? 'epub')
+  const notes = headingAnchorsForOutput(footnotesForOutput(doc.html, opts.notes ?? 'epub'))
   const highlighted = opts.codeColor === false ? { html: notes, any: false } : highlightCodeBlocks(notes, { skip: ['plaintext'] })
   const dom = parseDocument(highlighted.html)
   const nodes = unwrapContainers(dom.children as AnyNode[])
