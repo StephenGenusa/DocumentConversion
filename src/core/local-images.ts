@@ -1,3 +1,4 @@
+import { constants } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { inlineImages, isRemoteImageSrc, isUncFileUrl, MAX_FETCHED_IMAGE_BYTES, type ImageFetcher } from './inline-images'
@@ -61,7 +62,9 @@ function localPath(url: string): string | null {
 const fileFetcher: ImageFetcher = async (url) => {
   const path = localPath(url)
   if (path === null) throw new Error('not a local file')
-  const file = await open(path, 'r')
+  // Non-blocking: opening a FIFO otherwise waits for a writer, before the
+  // check below could refuse it. Windows has no O_NONBLOCK, and no FIFOs to open.
+  const file = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
   try {
     // Stat and read through one descriptor: a FIFO or /dev/zero never ends.
     const info = await file.stat()

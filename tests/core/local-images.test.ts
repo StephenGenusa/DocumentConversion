@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { inlineLocalImages, isLocalImageSrc } from '../../src/core/local-images'
 import { readMarkdown } from '../../src/core/readers/md'
@@ -103,6 +104,13 @@ describe('Markdown pictures by path', () => {
       expect(html, ref).not.toContain('secret text')
     }
   })
+
+  it.skipIf(process.platform === 'win32')('does not wait on a FIFO', async () => {
+    execFileSync('mkfifo', [join(doc, 'pipe.png')])
+    const html = await md('![pipe](pipe.png)\n')
+    expect(html).not.toContain('<img')
+    expect(html).toContain('pipe')
+  }, 5000)
 
   it('reads nothing from disk without a folder', async () => {
     const html = await md('![chart](assets/fig.png)\n', {})
