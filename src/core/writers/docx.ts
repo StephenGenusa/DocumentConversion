@@ -1500,6 +1500,8 @@ const STRIKE = 8
 const SUPER = 16
 const SUB = 32
 const MARK = 64
+/** The code font, in a block quote only (see quotedFontsForDocx). */
+const CODE = 128
 
 const FORMAT_BITS: Record<string, number> = {
   strong: BOLD, b: BOLD,
@@ -1994,6 +1996,7 @@ const rank = (element: string): number => {
 /** The run properties a stand-in color stands for. A <mark>'s own background takes the place of its yellow. */
 function propertiesFor(bits: number, color?: string, background?: string): string[] {
   const out: string[] = []
+  if (bits & CODE) out.push(`<w:rFonts w:ascii="${CODE_FONT}" w:hAnsi="${CODE_FONT}"/>`)
   if (color) out.push(`<w:color w:val="${color}"/>`)
   if (bits & BOLD) out.push('<w:b/>')
   if (bits & ITALIC) out.push('<w:i/>')
@@ -2032,6 +2035,49 @@ function styleRuns(xml: string, colored: ColoredLook[] = []): string {
 }
 
 /**
+ * html-to-docx 1.8.0 builds a block quote's runs without the document
+ * (xml-builder.js: `buildRun(vNode, attributes)`, the one call that leaves it
+ * out), and a run with a `font-family` asks the document for the font: any
+ * code in a quote, inline or a block, threw "Cannot read properties of
+ * undefined (reading 'createFont')" and the whole conversion failed. In a
+ * quote the font goes in the stand-in color instead, as the CODE bit, which
+ * styleRuns writes as the same w:rFonts the library writes elsewhere. Run
+ * after flattenFormatting, which made every font span there is; a font other
+ * than the code font (none is made today) is dropped rather than thrown on.
+ */
+function quotedFontsForDocx(html: string, colored: ColoredLook[]): string {
+  if (!html.includes('<blockquote') || !/font-family/.test(html)) return html
+  const dom = parseDocument(html)
+  for (const quote of elementsOf(dom.children, 'blockquote')) {
+    for (const span of elementsOf(quote.children, 'span')) {
+      const style = span.attribs.style ?? ''
+      const font = /font-family:\s*([^;]+)/i.exec(style)?.[1]?.trim()
+      if (!font) continue
+      const rest = style.split(';').map((d) => d.trim()).filter((d) => d && !/^font-family\s*:/i.test(d))
+      if (font === CODE_FONT) {
+        const at = rest.findIndex((d) => /^color\s*:/i.test(d))
+        const value = at < 0 ? '' : rest[at].replace(/^color\s*:\s*/i, '')
+        const stand = STAND_IN_BITS.exec(value)
+        let look: ColoredLook | undefined
+        if (stand) look = stand[1].toUpperCase() === 'B' ? colored[parseInt(stand[2], 16)] : { bits: parseInt(stand[2], 16) }
+        else look = { bits: 0, ...(wordHex(value) ? { color: wordHex(value) } : {}) }
+        const coded: ColoredLook = { ...(look ?? { bits: 0 }), bits: (look?.bits ?? 0) | CODE }
+        let color: string | undefined
+        if (!coded.color && !coded.background) color = `#0D0C${coded.bits.toString(16).toUpperCase().padStart(2, '0')}`
+        else if (colored.length < MAX_COLORED) color = `#0D0B${(colored.push(coded) - 1).toString(16).toUpperCase().padStart(2, '0')}`
+        if (color) {
+          if (at < 0) rest.unshift(`color: ${color}`)
+          else rest[at] = `color: ${color}`
+        }
+      }
+      if (rest.length) span.attribs.style = rest.join('; ')
+      else delete span.attribs.style
+    }
+  }
+  return serialize(dom.children)
+}
+
+/**
  * html-to-docx writes a block quote as ONE paragraph, its paragraphs run
  * together: a GitHub alert came out "NoteThe move is set…", and a quote of
  * two paragraphs lost the break between them. A quote of paragraphs only is
@@ -2054,10 +2100,13 @@ export async function writeDocx(doc: HubDocument, opts?: ConvertOptions): Promis
   const html = renderDocumentShell(
     {
       ...doc,
-      html: flattenFormatting(
-        cellBordersForDocx(
-          normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(definitionListsForDocx(quoteParagraphsForDocx(pictures))))))), languages))),
-          bordered,
+      html: quotedFontsForDocx(
+        flattenFormatting(
+          cellBordersForDocx(
+            normalizeColors(monospaceCode(markCodeLanguages(breakCodeLines(colorCodeIf(opts?.codeColor !== false, centerOwnLineFormulas(unwrapSpans(flattenForDocx(definitionListsForDocx(quoteParagraphsForDocx(pictures))))))), languages))),
+            bordered,
+          ),
+          colored,
         ),
         colored,
       ),

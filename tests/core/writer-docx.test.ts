@@ -843,3 +843,26 @@ describe('writeDocx keeps the paragraphs of a block quote apart', () => {
   })
 })
 
+
+/**
+ * html-to-docx builds a quote's runs without the document, and a run with a
+ * font asks the document for it: any code in a quote threw "Cannot read
+ * properties of undefined (reading 'createFont')" and the conversion failed.
+ */
+describe('writeDocx writes code in a block quote', () => {
+  const runOf = (xml: string, text: string): string | undefined =>
+    [...xml.matchAll(/<w:r>[\s\S]*?<\/w:r>/g)].map((m) => m[0]).find((r) => new RegExp(`>\\s*${text}\\s*</w:t>`).test(r))
+
+  it('sets inline code in a quote in the code font, keeping its other formatting', async () => {
+    const xml = await documentXml('<blockquote><p>a <code>plain</code> <strong><code>bold</code></strong></p></blockquote>')
+    expect(runOf(xml, 'plain')).toContain('<w:rFonts w:ascii="Courier" w:hAnsi="Courier"/>')
+    expect(runOf(xml, 'bold')).toMatch(/<w:rFonts w:ascii="Courier" w:hAnsi="Courier"\/><w:b\/>/)
+    expect(xml).not.toContain('0D0C')
+  })
+
+  it('writes a highlighted code block and a key in a quote', async () => {
+    const xml = await documentXml('<blockquote><pre><code class="language-python">x = "s"</code></pre></blockquote><blockquote><p><kbd>Ctrl</kbd></p></blockquote>')
+    expect(runOf(xml, '"s"')).toMatch(/<w:rFonts w:ascii="Courier" w:hAnsi="Courier"\/><w:color w:val="[0-9A-F]{6}"\/>/)
+    expect(runOf(xml, 'Ctrl')).toContain('<w:rFonts w:ascii="Courier" w:hAnsi="Courier"/>')
+  })
+})
