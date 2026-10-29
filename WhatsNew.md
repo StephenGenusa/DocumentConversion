@@ -25,6 +25,16 @@ Release notes for Document Converter, newest first. See the
   the same way is still one code block.
 - **Markdown pasted into a document already open is formatted** as it is on
   the start screen. Into a code block it stays text.
+- **Ctrl+S saves a copy of a file open in the editor** in the file's own
+  format, through the save dialog, which opens on a new name (`notes-1.md`).
+- **A file you added is never written over.** Converting `notes.md` to
+  Markdown offered `notes.md` itself in the save dialog, and only the
+  system's "Replace?" stood between it and the loss of everything the
+  converter does not keep, such as its front matter. The dialog now offers a
+  new name, and refuses the original with a warning however it is chosen:
+  typed back in, through a link, or by another spelling of its path. The
+  command line refused nothing: `docconv convert notes.md --to md` replaced
+  `notes.md` with its conversion. It now exits 1 and leaves the file alone.
 
 ## What's new in 1.5.2
 

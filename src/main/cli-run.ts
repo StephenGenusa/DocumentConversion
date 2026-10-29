@@ -13,6 +13,7 @@ import { allowedTargets } from '../core/target-validity'
 import { expandZipArchive } from '../core/zip-expand'
 import { resolveOutPath } from '../cli/out-path'
 import { EXTENSIONS, type SourceFormat, type WritePart } from '../core/types'
+import { protectFile, isProtected } from './protected-files'
 
 /**
  * The settings a run starts from (settings spec 5.7): the built-in defaults,
@@ -107,6 +108,8 @@ export async function runCli(argv: string[]): Promise<number> {
   for (const input of req.inputs) {
     try {
       const bytes = await readFile(input)
+      // An input, or the archive it came out of, is never written over.
+      protectFile(input)
       if (req.from) {
         loaded.push({ path: input, source: req.from })
         continue
@@ -161,6 +164,11 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 
   async function writeOut(outPath: string, bytes: Buffer): Promise<void> {
+    // A conversion keeps only what the reader understood: written over its own
+    // input (notes.md --to md, beside itself), the rest of the file was lost.
+    if (await isProtected(outPath)) {
+      throw new Error(`refusing to overwrite an input file: ${outPath} (name another with --out)`)
+    }
     if (req.noClobber && existsSync(outPath)) {
       throw new Error(`refusing to overwrite (--no-clobber): ${outPath}`)
     }

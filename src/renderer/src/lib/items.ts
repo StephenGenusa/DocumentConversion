@@ -1,5 +1,6 @@
 import { textToBase64 } from './encoding'
-import type { BatchItemReq, ReadOptions, SourceFormat } from '../../../preload/types'
+import type { BatchItemReq, ReadOptions, SourceFormat, TargetFormat } from '../../../preload/types'
+import { TARGET_FORMATS } from '../../../core/types'
 import { appliedReadOptions } from './controls'
 import { hubFeatures, type HubFeatures } from '../../../core/rendered-blocks'
 
@@ -98,4 +99,20 @@ export function markDiskState(item: ListItem, stamp: string | null): ListItem {
 export function keepEdits(item: ListItem): ListItem {
   if (item.staleStamp === undefined) return item
   return { ...item, diskStamp: item.staleStamp, staleStamp: undefined }
+}
+
+/**
+ * Ctrl+S on a file open in the pane: the format its copy is saved in, which is
+ * the file's own. Null when Ctrl+S does not apply: pasted material, a sample
+ * or a fetched page has no file of its own, and a file not open in the pane
+ * has no edits to save. The copy never replaces the file it came from: the
+ * save refuses that path (main/protected-files.ts).
+ */
+export function saveCopyFormat(item: ListItem): { target: TargetFormat } | { refused: string } | null {
+  if (item.handle === undefined || item.html === undefined) return null
+  const own = TARGET_FORMATS.find((t) => t === item.source)
+  if (own) return { target: own }
+  return {
+    refused: `${item.filename} is ${item.source.toUpperCase()}, which this app can read but not write, so Ctrl+S can't save a copy of it. Choose a format and use Convert.`,
+  }
 }

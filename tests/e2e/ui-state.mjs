@@ -1088,6 +1088,68 @@ try {
   await sleep(400)
   check('and the notice stays gone until the file changes again', !/changed on disk/.test(await noticeText()), await noticeText())
 
+  // Ctrl+S on a file open in the pane saves a COPY in its own format, and the
+  // original can never be the destination: the dialog opens on notes-1.md,
+  // and the original typed back in is refused, with a warning, until another
+  // name is given. The original keeps its front matter, which the converter drops.
+  {
+    await startOver()
+    const original = join(work, 'notes.md')
+    const copy = join(work, 'notes-copy.md')
+    const before = '---\ntitle: Notes\n---\n\n# Notes\n\nOriginal body.\n'
+    writeAt(original, before)
+    await dropFile(original, 'notes.md')
+    await click('Edit')
+    await waitFor(`!!${EDITOR}`, 'notes.md to open in the pane')
+    await typeIntoEditor('<p>SAVED EDIT</p>')
+    // The system dialogs, answered from here: the original twice, then a new name.
+    await mainEval(`(() => {
+      const { dialog } = process.mainModule.require('electron')
+      const answers = ${JSON.stringify([original, original, copy])}
+      globalThis.__dialogs = { saveDialog: dialog.showSaveDialog, messageBox: dialog.showMessageBox, offered: [], warned: [] }
+      dialog.showSaveDialog = async (...args) => {
+        globalThis.__dialogs.offered.push(args.at(-1).defaultPath)
+        const filePath = answers.shift()
+        return filePath ? { canceled: false, filePath } : { canceled: true, filePath: '' }
+      }
+      dialog.showMessageBox = async (...args) => {
+        globalThis.__dialogs.warned.push(args.at(-1).message)
+        return { response: 0, checkboxChecked: false }
+      }
+    })()`)
+    try {
+      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))`)
+      await waitFor(resultIsUp, 'the copy to be saved')
+      const seen = await mainEval('globalThis.__dialogs')
+      check('Ctrl+S opens the save dialog on a new name, never the original', seen.offered[0] === join(work, 'notes-1.md'), JSON.stringify(seen.offered))
+      check(
+        'the original typed back in is refused with a warning, twice, and the dialog asked again each time',
+        seen.warned.length === 2 && seen.offered.length === 3 && /notes\.md is a file you added/.test(seen.warned[0]),
+        JSON.stringify(seen),
+      )
+      check('the original is byte for byte as it was, front matter and all', readFileSync(original, 'utf8') === before, readFileSync(original, 'utf8'))
+      const saved = existsSync(copy) ? readFileSync(copy, 'utf8') : ''
+      check('the copy is Markdown with the edits', saved.includes('SAVED EDIT') && saved.includes('# Notes'), saved.slice(0, 200))
+      await dismiss()
+      await waitFor(`!!${EDITOR}`, 'the edit pane to come back')
+
+      // Pasted material has no file of its own: Ctrl+S does nothing.
+      await startOver()
+      await paste('.dropzone', '# Pasted\n\nNot a file.')
+      await waitFor(`!!${EDITOR}`, 'the edit pane')
+      await mainEval('globalThis.__dialogs.offered.length = 0')
+      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))`)
+      await sleep(400)
+      check('Ctrl+S on pasted material opens no dialog', (await mainEval('globalThis.__dialogs.offered.length')) === 0 && !(await js(resultIsUp)), '')
+    } finally {
+      await mainEval(`(() => {
+        const { dialog } = process.mainModule.require('electron')
+        dialog.showSaveDialog = globalThis.__dialogs.saveDialog
+        dialog.showMessageBox = globalThis.__dialogs.messageBox
+      })()`)
+    }
+  }
+
   // An .svg file (spec D10): a picture, so no Embed/OCR choice and no text
   // targets; the editor shows it as an image; Word gets a PNG copy of it.
   {

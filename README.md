@@ -96,6 +96,14 @@ Markdown copied from an editor or from a raw `.md` page in a browser. The
 editor keeps everything the converter keeps, and what you see is what is
 converted.
 
+**Ctrl+S** on a file open in the editor saves a copy of it, with your edits,
+in the file's own format. The save dialog opens on a new name beside it
+(`notes-1.md`). It never saves over the original: a conversion keeps only
+what the converter understood (a Markdown file's front matter and comments,
+a Word file's styles and tracked changes are not kept), so the original is
+refused, with a warning, however it is chosen. No conversion, from the
+window or the command line, writes over a file you added.
+
 - **Formatting:** paragraph styles (headings, code block and the rest), bold,
   italic, underline, strikethrough, superscript, subscript, highlight
   (Ctrl+Shift+H), inline code, lists, quotes, links, tables (with buttons to
@@ -623,7 +631,9 @@ docconv convert app.sqlite --to xlsx --sqlite-views --out app.xlsx
 - `--out` names a file, and its extension is honored. Given a directory, names
   are derived from the inputs. Given no extension, the target's is appended.
 - Output files are overwritten by default so a script gets a predictable path.
-  `--no-clobber` refuses instead.
+  `--no-clobber` refuses instead. An input file is never overwritten, even by
+  default: `docconv convert notes.md --to md` exits 1 rather than replace
+  `notes.md` with its conversion; name another file with `--out`.
 - `--scale` must be between 0.1 and 2.0; a value outside that is rejected rather
   than clamped. The default is 0.9.
 - `--page` sets the paper of a pdf or a docx (Letter by default).

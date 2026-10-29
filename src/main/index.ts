@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, clipboard, session } from 'electron'
 import type { OpenDialogOptions, OpenDialogReturnValue, SaveDialogOptions, SaveDialogReturnValue, WebContents } from 'electron'
 import { createDialogGate } from './dialogs'
-import { join, dirname, isAbsolute } from 'path'
+import { join, dirname, isAbsolute, basename } from 'path'
 import { writeFile, readFile, stat } from 'fs/promises'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -45,6 +45,7 @@ import { openSettings, regionOf, settingsIpcHandlers, SETTINGS_IPC_CHANNELS, typ
 import { conversionOptions, webPolicy } from './conversion-options'
 import { renderEditableText } from '../core/text-intake'
 import { defaultSavePath, defaultSaveDir, rememberDir, rememberSaveDir } from './save-location'
+import { protectFile, isProtected, chooseSavePath } from './protected-files'
 import { shouldUseHtmlFlavor } from '../core/paste-flavors'
 import { pastedHtmlToHub } from '../core/remote-images'
 import { loadUrl } from '../core/readers/url'
@@ -168,6 +169,41 @@ function openDialog(sender: WebContents, options: OpenDialogOptions): Promise<Op
 /** A save dialog on the asking window, through the gate. */
 function saveDialog(sender: WebContents, options: SaveDialogOptions): Promise<SaveDialogReturnValue> {
   return dialogs.show(dialogOwner(sender), (win) => (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options)), CANCELED_SAVE)
+}
+
+/**
+ * A save dialog that will not take a file the user added (protected-files.ts):
+ * picking one says why and opens the dialog again, on a free name. Null when
+ * the user cancels.
+ */
+function pickSavePath(sender: WebContents, defaultPath: string, filters: SaveDialogOptions['filters']): Promise<string | null> {
+  return chooseSavePath(
+    defaultPath,
+    async (offer) => {
+      const save = await saveDialog(sender, { defaultPath: offer, filters })
+      return save.canceled || !save.filePath ? null : save.filePath
+    },
+    async (picked) => {
+      const options = {
+        type: 'warning' as const,
+        title: 'Choose another name',
+        message: `${basename(picked)} is a file you added, so it can't be saved over.`,
+        detail: 'A conversion keeps only what the converter understood. Saving over the original would lose the rest of it, so choose another name.',
+        buttons: ['Choose another name'],
+      }
+      await dialogs.show(dialogOwner(sender), (win) => (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)), {
+        response: 0,
+        checkboxChecked: false,
+      })
+    },
+  )
+}
+
+/** The last word before a write: a file the user added is never replaced, whatever route led here. */
+async function refuseOriginal(path: string): Promise<void> {
+  if (await isProtected(path)) {
+    throw new ConversionError('write-failed', `${basename(path)} is a file you added, so it was not saved over. Nothing was written.`)
+  }
 }
 
 /**
@@ -306,6 +342,8 @@ interface LoadedFile {
  * back to, so it stays the snapshot it was expanded as.
  */
 async function loadBytes(bytes: Buffer, filename: string, sourceDir?: string, path?: string): Promise<LoadedFile[]> {
+  // Whatever it turns out to be, a file read from disk is never written over.
+  if (path) protectFile(path)
   const detected = await detectWithHints(bytes, filename)
   if (detected.kind !== 'archive') {
     const handle = path ? registerPath(path) : undefined
@@ -366,6 +404,7 @@ function registerIpc(settings: SettingsStore): void {
   ipcMain.handle('app:register-file', async (_e, { path }: { path: unknown }) => {
     try {
       if (typeof path !== 'string' || !isAbsolute(path) || !(await stat(path)).isFile()) return null
+      protectFile(path)
       return registerPath(path)
     } catch {
       return null
@@ -739,17 +778,20 @@ function registerIpc(settings: SettingsStore): void {
         ctx.sourceDir = folderOf(handle)
         const out = await runConversion(bytes, filename, source, target, opts, ctx)
         const defaultPath = defaultSavePath(sourceDir, baseName(filename) + EXTENSIONS[target])
-        const save = await saveDialog(e.sender, { defaultPath, filters: [FILTERS[target]] })
-        if (save.canceled || !save.filePath) return { status: 'canceled' as const }
-        rememberSaveDir(save.filePath)
-        const ext = save.filePath.match(/\.[^.\\/]+$/)?.[0] ?? ''
-        const stem = ext ? save.filePath.slice(0, -ext.length) : save.filePath
+        const filePath = await pickSavePath(e.sender, defaultPath, [FILTERS[target]])
+        if (!filePath) return { status: 'canceled' as const }
+        rememberSaveDir(filePath)
+        const ext = filePath.match(/\.[^.\\/]+$/)?.[0] ?? ''
+        const stem = ext ? filePath.slice(0, -ext.length) : filePath
+        const targets = out.parts.map((part) => (part.suffix ? `${stem}${part.suffix}${ext}` : filePath))
+        // Every file this save would write, checked before the first is.
+        for (const p of targets) await refuseOriginal(p)
         const paths: string[] = []
-        for (const part of out.parts) {
+        for (const [i, part] of out.parts.entries()) {
           // A multi-table csv/json writes N files; a cancel that lands mid-loop
           // used to write the rest anyway.
           throwIfCanceled(ctx.signal)
-          const p = part.suffix ? `${stem}${part.suffix}${ext}` : save.filePath
+          const p = targets[i]
           await writeFile(p, part.bytes)
           paths.push(p)
         }
@@ -877,11 +919,12 @@ function registerIpc(settings: SettingsStore): void {
           items[0]?.sourceDir,
           `${baseName(items[0]?.filename)}-merged${EXTENSIONS[target]}`,
         )
-        const save = await saveDialog(e.sender, { defaultPath, filters: [FILTERS[target]] })
-        if (save.canceled || !save.filePath) return { status: 'canceled' as const }
-        rememberSaveDir(save.filePath)
-        await writeFile(save.filePath, out.parts[0].bytes)
-        return { status: 'saved' as const, path: save.filePath, ...(notes.length ? { notes } : {}) }
+        const filePath = await pickSavePath(e.sender, defaultPath, [FILTERS[target]])
+        if (!filePath) return { status: 'canceled' as const }
+        rememberSaveDir(filePath)
+        await refuseOriginal(filePath)
+        await writeFile(filePath, out.parts[0].bytes)
+        return { status: 'saved' as const, path: filePath, ...(notes.length ? { notes } : {}) }
       } catch (err) {
         const code = err instanceof ConversionError ? err.code : 'unexpected'
         return { status: 'error' as const, code, message: (err as Error).message }

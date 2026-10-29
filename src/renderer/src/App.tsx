@@ -18,7 +18,7 @@ import { ResultView } from './components/ResultView'
 import { BatchResults } from './components/BatchResults'
 import { SettingsDialog } from './components/SettingsDialog'
 import { IconSettings } from './components/editor-icons'
-import { applyLiveEdit, keepEdits, markDiskState, toRequest, type LiveEdit } from './lib/items'
+import { applyLiveEdit, keepEdits, markDiskState, saveCopyFormat, toRequest, type LiveEdit } from './lib/items'
 import { allowedMergeTargets, allowedTargets } from '../../core/target-validity'
 import { DEFAULT_SETTINGS } from '../../core/settings'
 import { hubFeatures } from '../../core/rendered-blocks'
@@ -428,6 +428,47 @@ function App(): React.JSX.Element {
       if (res.status === 'batch') showBatch({ outDir: res.outDir, rows: res.rows })
     })
   }
+
+  /**
+   * Ctrl+S on a file open in the pane: a copy, in the file's own format, saved
+   * through the save dialog. The dialog opens on a free name (notes-1.md) and
+   * will not take the original: a conversion keeps only what the reader
+   * understood, so saving over the file would lose the rest of it.
+   */
+  async function saveCopy(): Promise<void> {
+    if (busy || editingId === null) return
+    const item = currentItems().find((i) => i.id === editingId)
+    const format = item ? saveCopyFormat(item) : null
+    if (!item || !format) return
+    if ('refused' in format) {
+      setNotice(format.refused)
+      return
+    }
+    lastKindRef.current = 'save'
+    await withJob(async (jobId) => {
+      const res = await window.api.convertAndSave({
+        ...toRequest(item, ocrLanguage),
+        target: format.target,
+        ...appliedOptions(format.target, controlInputs, { pdf: pdfOptions, slides: slideOptions, renderedFormat }),
+        jobId,
+      })
+      showResult(res)
+    })
+  }
+  const saveCopyRef = useRef(saveCopy)
+  saveCopyRef.current = saveCopy
+
+  // Ctrl+S (Cmd+S on macOS) wherever the focus is, so the latest saveCopy runs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        void saveCopyRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   async function retryRow(index: number): Promise<void> {
     if (!batch) return

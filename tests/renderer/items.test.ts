@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyLiveEdit, toRequest, markDiskState, keepEdits, type ListItem } from '../../src/renderer/src/lib/items'
+import { applyLiveEdit, toRequest, markDiskState, keepEdits, saveCopyFormat, type ListItem } from '../../src/renderer/src/lib/items'
 
 /**
  * The input list is the only state that survives the edit pane.
@@ -132,3 +132,35 @@ describe('toRequest and JSON records', () => {
   })
 })
 
+
+/**
+ * Ctrl+S on a file open in the pane saves a COPY in the file's own format.
+ * The original is never the destination (main/protected-files.ts refuses it);
+ * this only decides the format, and whether Ctrl+S applies at all.
+ */
+describe('saveCopyFormat', () => {
+  const opened = (over: Partial<ListItem>): ListItem => item({ handle: 'h', html: '<p>x</p>', ...over })
+
+  it.each([
+    ['md', 'md'],
+    ['txt', 'txt'],
+    ['docx', 'docx'],
+    ['pdf', 'pdf'],
+    ['html', 'html'],
+  ] as const)('a .%s file open in the pane saves as %s', (source, target) => {
+    expect(saveCopyFormat(opened({ source }))).toEqual({ target })
+  })
+
+  it('pasted material, a sample or a fetched page (no file behind it) is not saved by Ctrl+S', () => {
+    expect(saveCopyFormat(item({ html: '<p>x</p>' }))).toBeNull()
+  })
+
+  it('a file not open in the pane is not saved by Ctrl+S', () => {
+    expect(saveCopyFormat(item({ handle: 'h' }))).toBeNull()
+  })
+
+  it('a file in a format the app cannot write says so, naming the format', () => {
+    const res = saveCopyFormat(opened({ source: 'rtf', filename: 'letter.rtf' }))
+    expect(res).toEqual({ refused: expect.stringMatching(/letter\.rtf.*RTF/) })
+  })
+})

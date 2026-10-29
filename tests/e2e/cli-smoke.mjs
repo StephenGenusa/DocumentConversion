@@ -81,6 +81,22 @@ run('no-clobber', [md, '--to', 'html', '--out', join(work, 'spec.html'), '--no-c
   expectStderr: 'refusing to overwrite',
 })
 
+// 6b. An input is never written over: converting to its own format, by the
+// default out path beside it or by naming it, leaves it as it was.
+const mdBefore = readFileSync(md, 'utf8')
+run('never overwrites its input (default out path)', [md, '--to', 'md'], {
+  expectCode: 1,
+  expectStderr: 'refusing to overwrite an input file',
+})
+run('never overwrites its input (named in --out)', [md, '--to', 'md', '--out', md], {
+  expectCode: 1,
+  expectStderr: 'refusing to overwrite an input file',
+})
+if (readFileSync(md, 'utf8') !== mdBefore) {
+  failures++
+  console.log('FAIL  the input is unchanged after both refusals')
+} else console.log('PASS  the input is unchanged after both refusals')
+
 // 7. bad usage
 run('bad usage exit 2', [md], { expectCode: 2, expectStderr: '--to is required' })
 
