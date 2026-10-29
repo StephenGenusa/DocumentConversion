@@ -94,7 +94,7 @@ or into a document already open: an answer an AI wrote opens as headings,
 lists and code blocks, each block colored in its own language, and so does
 Markdown copied from an editor or from a raw `.md` page in a browser. The
 editor keeps everything the converter keeps, and what you see is what is
-converted.
+converted. See [What's new in 1.5.3](WhatsNew.md#whats-new-in-153).
 
 **Ctrl+S** on a file open in the editor saves a copy of it, with your edits,
 in the file's own format. The save dialog opens on a new name beside it

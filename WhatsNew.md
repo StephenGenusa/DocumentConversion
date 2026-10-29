@@ -3,7 +3,7 @@
 Release notes for Document Converter, newest first. See the
 [README](README.md) for what the app does and how to use it.
 
-- [Not yet released](#not-yet-released)
+- [1.5.3](#whats-new-in-153)
 - [1.5.2](#whats-new-in-152)
 - [1.5.1](#whats-new-in-151)
 - [1.5](#whats-new-in-15)
@@ -12,7 +12,7 @@ Release notes for Document Converter, newest first. See the
 - [1.2](#whats-new-in-12)
 - [1.1](#whats-new-in-11)
 
-## Not yet released
+## What's new in 1.5.3
 
 - **A pasted AI answer opens as Markdown.** A few lines of prose and then
   Markdown with fenced code blocks opened as one code block, colored as the
