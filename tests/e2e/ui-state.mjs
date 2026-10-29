@@ -992,6 +992,25 @@ try {
   await waitFor(`!!${EDITOR}`, 'the edit pane to come back')
   await startOver()
 
+  // An answer an AI wrote (the owner's report): prose, then markdown with
+  // fenced code. It opened as one Python block, fences and `##` as text.
+  const aiAnswer = "Here's a script that does what you asked.\nIt reads the file and prints each line.\n\n## The script\n\n```python\nimport sys\n\ndef main(path):\n    with open(path) as f:\n        for line in f:\n            print(line.rstrip())\n```\n\nThat should work.\n"
+  await paste('.dropzone', aiAnswer)
+  await waitFor(`!!${EDITOR}`, 'the edit pane')
+  const fromAi = await js(`${EDITOR}.editor.getHTML()`)
+  check(
+    'a pasted AI answer opens as markdown, its code block in Python',
+    fromAi.includes('<h2>The script</h2>') && fromAi.includes('<code class="language-python">import sys') && !fromAi.includes('```'),
+    fromAi.slice(0, 300),
+  )
+  // The same answer pasted into the open pane, at its end, is formatted too.
+  await js(`${EDITOR}.editor.commands.focus('end')`)
+  await paste('.clip-pane__editor .ProseMirror', aiAnswer)
+  await waitFor(`(${EDITOR}.editor.getHTML().match(/<h2>/g) ?? []).length === 2`, 'the second answer to be pasted formatted')
+  const intoPane = await js(`${EDITOR}.editor.getHTML()`)
+  check('markdown pasted into the open pane arrives formatted', !intoPane.includes('```') && (intoPane.match(/language-python/g) ?? []).length === 2, intoPane.slice(-300))
+  await startOver()
+
   // Edits in the pane survive a result being shown and dismissed.
   await paste('.dropzone', '# Title\n\nOriginal body.')
   await waitFor(`!!${EDITOR}`, 'the edit pane')

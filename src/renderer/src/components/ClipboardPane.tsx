@@ -1,6 +1,7 @@
 import { useEffect, type MutableRefObject } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import { EDITOR_EXTENSIONS } from '../lib/editor-extensions'
+import { clearlyMarkdown, shouldUseHtmlFlavor } from '../../../core/paste-flavors'
 import { focusAtStart } from '../lib/block-views'
 import { EditorToolbar } from './EditorToolbar'
 import type { LiveEdit } from '../lib/items'
@@ -43,6 +44,25 @@ export function ClipboardPane({
     extensions: EDITOR_EXTENSIONS,
     content: html,
     autofocus: false,
+    editorProps: {
+      // Markdown pasted into the open pane arrives formatted, as it does on the
+      // start screen, read by the reader the conversion uses. Into a code block
+      // it stays text. pasteHTML comes back here with no clipboard and passes.
+      handlePaste: (view, event) => {
+        const plain = event.clipboardData?.getData('text/plain') ?? ''
+        const rich = event.clipboardData?.getData('text/html') ?? ''
+        if (view.state.selection.$from.parent.type.spec.code || !clearlyMarkdown(plain) || shouldUseHtmlFlavor(rich, plain)) return false
+        window.api.textToHtml(plain, 'md').then(
+          (hub) => {
+            if (!view.isDestroyed) view.pasteHTML(hub)
+          },
+          () => {
+            if (!view.isDestroyed) view.pasteText(plain)
+          },
+        )
+        return true
+      },
+    },
     onCreate: ({ editor: e }) => {
       if (!e.isDestroyed) focusAtStart(e)
     },

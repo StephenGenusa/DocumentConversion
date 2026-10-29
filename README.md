@@ -89,8 +89,12 @@ the SQLite engine ship inside the app, and it works offline.
 
 Anything pasted or fetched opens in an editor first, so you can trim it before
 converting; a file opens there with *Edit*. Pasted Markdown arrives as
-formatted text, not as raw syntax. The editor keeps everything the converter
-keeps, and what you see is what is converted.
+formatted text, not as raw syntax, whether it is pasted on the start screen
+or into a document already open: an answer an AI wrote opens as headings,
+lists and code blocks, each block colored in its own language, and so does
+Markdown copied from an editor or from a raw `.md` page in a browser. The
+editor keeps everything the converter keeps, and what you see is what is
+converted.
 
 - **Formatting:** paragraph styles (headings, code block and the rest), bold,
   italic, underline, strikethrough, superscript, subscript, highlight

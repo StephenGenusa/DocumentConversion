@@ -27,6 +27,7 @@
  */
 import hljs from './hljs'
 import { DRAWN_KINDS } from './rendered-blocks'
+import { hasFencedCodeBlock } from './paste-flavors'
 
 /** Names pages use that highlight.js either lacks or reads as something else. */
 const EXTRA_ALIASES = new Map<string, string>([
@@ -801,6 +802,9 @@ export function guessLanguage(text: string): string | undefined {
   const sample = text.slice(0, SAMPLE_CHARS)
   const lines = sample.split('\n').filter((l) => l.trim() !== '')
   if (lines.length === 0) return undefined
+  // A fenced block is markdown's: an AI answer is mostly the code in its
+  // fences, which outvoted the prose round it and made the whole answer one block.
+  if (hasFencedCodeBlock(sample)) return undefined
 
   const shebang = SHEBANG.exec(lines[0].trim())
   if (shebang) return normalizeLanguage(shebang[1])

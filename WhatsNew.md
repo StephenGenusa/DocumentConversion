@@ -3,6 +3,7 @@
 Release notes for Document Converter, newest first. See the
 [README](README.md) for what the app does and how to use it.
 
+- [Not yet released](#not-yet-released)
 - [1.5.2](#whats-new-in-152)
 - [1.5.1](#whats-new-in-151)
 - [1.5](#whats-new-in-15)
@@ -10,6 +11,20 @@ Release notes for Document Converter, newest first. See the
 - [1.3](#whats-new-in-13)
 - [1.2](#whats-new-in-12)
 - [1.1](#whats-new-in-11)
+
+## Not yet released
+
+- **A pasted AI answer opens as Markdown.** A few lines of prose and then
+  Markdown with fenced code blocks opened as one code block, colored as the
+  first language in it, with `##` and the fences shown as text: the code in
+  the fences outvoted the prose round it. It now opens as headings, lists and
+  paragraphs, each code block colored in its own language.
+- **Markdown copied from where it is shown as source opens as Markdown.** A
+  raw `.md` page in a browser, or a JetBrains IDE or Kate, put the document
+  on the clipboard as one `<pre>`, which became one code block. Code copied
+  the same way is still one code block.
+- **Markdown pasted into a document already open is formatted** as it is on
+  the start screen. Into a code block it stays text.
 
 ## What's new in 1.5.2
 

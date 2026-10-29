@@ -48,13 +48,62 @@ export function looksLikeFormattedHtml(html: string): boolean {
 }
 
 /**
+ * A fenced code block: an opening fence and its closing one, or an opening
+ * fence that names its language (an answer cut off before it closes). Markdown's
+ * own syntax, which code itself almost never contains.
+ */
+const FENCED_BLOCK = /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1|^ {0,3}(?:`{3,}|~{3,})[\w+#.-]+[ \t]*$/m
+
+export function hasFencedCodeBlock(text: string): boolean {
+  return FENCED_BLOCK.test(text)
+}
+
+/**
+ * Markdown's constructs, each counted once. A `#` line alone is a shell or
+ * Python comment as often as a heading, and one bullet is any note, so it
+ * takes two different ones to call text markdown.
+ */
+const MARKDOWN_CONSTRUCTS: RegExp[] = [
+  /^#{1,6}[ \t]+\S/m, // heading
+  /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S/m, // list item
+  /\[[^\]\n]+\]\((?:https?:|mailto:|[./#])[^)\s]*\)/, // link or picture
+  /\*\*[^*\s][^*\n]*\*\*/, // bold
+  /^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*\|/m, // table separator row
+  /^>[ \t]/m, // quote
+]
+
+/**
+ * Text that is markdown beyond reasonable doubt: it has a fenced code block, or
+ * two different markdown constructs. Stricter than detect's looksLikeMarkdown,
+ * which one `# comment` satisfies, because what it decides is costlier to get
+ * wrong: a copied script read as markdown loses its indentation.
+ */
+export function clearlyMarkdown(text: string): boolean {
+  if (hasFencedCodeBlock(text)) return true
+  return MARKDOWN_CONSTRUCTS.filter((re) => re.test(text)).length >= 2
+}
+
+/**
+ * HTML that is one `<pre>` and nothing formatted besides: how an IDE's rich
+ * copy and a browser showing a raw .md file put text on the clipboard. A code
+ * block copied from a page has its `<code>`, and a page has more than a `<pre>`.
+ */
+function onlyOnePre(html: string): boolean {
+  if ((html.match(/<pre\b/gi) ?? []).length !== 1 || /<code\b/i.test(html)) return false
+  return !looksLikeFormattedHtml(html.replace(/<\/?pre\b[^>]*>/gi, ''))
+}
+
+/**
  * Whether a paste should be taken from its HTML flavor.
  *
  * The plain flavor is preferred only when there is one AND the HTML adds
- * nothing to it, so rich content keeps every bit of its formatting.
+ * nothing to it, so rich content keeps every bit of its formatting. A lone
+ * `<pre>` round markdown adds only colors, and taken as HTML the whole
+ * document became one code block, so there the markdown is read.
  */
 export function shouldUseHtmlFlavor(html: string, plain: string): boolean {
   if (!html.trim()) return false
   if (!plain.trim()) return true
-  return looksLikeFormattedHtml(html)
+  if (!looksLikeFormattedHtml(html)) return false
+  return !(onlyOnePre(html) && clearlyMarkdown(plain))
 }
