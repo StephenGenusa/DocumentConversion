@@ -436,7 +436,9 @@ function App(): React.JSX.Element {
    * understood, so saving over the file would lose the rest of it.
    */
   async function saveCopy(): Promise<void> {
-    if (busy || editingId === null) return
+    // Only while the pane is on screen: a result or Settings in front of it means
+    // there is nothing open to save.
+    if (busy || editingId === null || result !== null || batch !== null || settingsOpen) return
     const item = currentItems().find((i) => i.id === editingId)
     const format = item ? saveCopyFormat(item) : null
     if (!item || !format) return

@@ -1130,6 +1130,10 @@ try {
       check('the original is byte for byte as it was, front matter and all', readFileSync(original, 'utf8') === before, readFileSync(original, 'utf8'))
       const saved = existsSync(copy) ? readFileSync(copy, 'utf8') : ''
       check('the copy is Markdown with the edits', saved.includes('SAVED EDIT') && saved.includes('# Notes'), saved.slice(0, 200))
+      // With the result on screen there is nothing open to save: Ctrl+S again does nothing.
+      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true }))`)
+      await sleep(400)
+      check('Ctrl+S on the result screen opens no second dialog', (await mainEval('globalThis.__dialogs.offered.length')) === 3, JSON.stringify(await mainEval('globalThis.__dialogs.offered')))
       await dismiss()
       await waitFor(`!!${EDITOR}`, 'the edit pane to come back')
 

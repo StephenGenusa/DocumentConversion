@@ -112,7 +112,10 @@ export function saveCopyFormat(item: ListItem): { target: TargetFormat } | { ref
   if (item.handle === undefined || item.html === undefined) return null
   const own = TARGET_FORMATS.find((t) => t === item.source)
   if (own) return { target: own }
+  // Named as the user knows it, by its extension: the app's own word for the
+  // format ("image", "code") is not one they would recognize.
+  const ext = /\.([^.\\/]+)$/.exec(item.filename)?.[1]?.toUpperCase() ?? item.source.toUpperCase()
   return {
-    refused: `${item.filename} is ${item.source.toUpperCase()}, which this app can read but not write, so Ctrl+S can't save a copy of it. Choose a format and use Convert.`,
+    refused: `Ctrl+S can't save a copy of ${item.filename}: this app reads ${ext} files but can't write them. Choose a format and use Convert.`,
   }
 }

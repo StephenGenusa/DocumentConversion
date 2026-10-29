@@ -163,4 +163,10 @@ describe('saveCopyFormat', () => {
     const res = saveCopyFormat(opened({ source: 'rtf', filename: 'letter.rtf' }))
     expect(res).toEqual({ refused: expect.stringMatching(/letter\.rtf.*RTF/) })
   })
+
+  it("names a format by the file's extension, not the app's word for it", () => {
+    const res = saveCopyFormat(opened({ source: 'image', filename: 'photo.png' }))
+    expect(res).toEqual({ refused: expect.stringMatching(/photo\.png: this app reads PNG files/) })
+    expect(JSON.stringify(res)).not.toContain('IMAGE')
+  })
 })
