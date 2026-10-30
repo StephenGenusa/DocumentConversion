@@ -3,6 +3,7 @@
 Release notes for Document Converter, newest first. See the
 [README](README.md) for what the app does and how to use it.
 
+- [1.5.4](#whats-new-in-154)
 - [1.5.3](#whats-new-in-153)
 - [1.5.2](#whats-new-in-152)
 - [1.5.1](#whats-new-in-151)
@@ -11,6 +12,21 @@ Release notes for Document Converter, newest first. See the
 - [1.3](#whats-new-in-13)
 - [1.2](#whats-new-in-12)
 - [1.1](#whats-new-in-11)
+
+## What's new in 1.5.4
+
+- **Open with on Windows.** The installer adds *Document Converter* to the
+  right-click *Open with* menu of every document type it reads (Word, PDF,
+  Markdown, HTML, spreadsheets, e-books, email and the rest; the same list as
+  on the Mac), to *Choose another app*, and to *Settings > Apps > Default
+  apps*. It never makes itself the default for a type, and uninstalling
+  removes only its own entries. Until now, it was listed for no type.
+- **Open With on Linux from the AppImage.** The AppImage carried its list of
+  file types, but only a desktop entry installed on the system puts an app
+  under *Open With*, and nothing installed one. Each launch now writes
+  `~/.local/share/applications/docconversion.desktop` (and the icon), pointing
+  at wherever the AppImage is, so moving it is followed on the next launch.
+  An entry of that name you wrote yourself is left alone.
 
 ## What's new in 1.5.3
 

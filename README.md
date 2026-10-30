@@ -66,14 +66,21 @@ Download the release for your platform:
 | macOS, Intel | `Document Converter-<version>.dmg` (or the `-mac.zip`) |
 
 - **Windows.** Run the installer. It installs for your user only (no
-  administrator rights), adds a Start menu entry and a desktop shortcut, and
-  puts the command-line launcher in `<install>\resources\cli\docconv.cmd`.
+  administrator rights), adds a Start menu entry and a desktop shortcut, adds
+  *Document Converter* to the right-click *Open with* menu of the documents it
+  reads, and puts the command-line launcher in
+  `<install>\resources\cli\docconv.cmd`.
 - **Linux.** Make the AppImage executable and run it:
   `chmod +x docconversion-<version>.AppImage && ./docconversion-<version>.AppImage`.
   AppImages need FUSE 2 (`libfuse2`, `libfuse2t64` on Ubuntu 24.04); see
-  [Troubleshooting](#troubleshooting).
+  [Troubleshooting](#troubleshooting). Once run, it is listed under *Open
+  With* in the file manager and in the applications menu: each launch writes
+  `~/.local/share/applications/docconversion.desktop` pointing at wherever
+  the AppImage now is. Delete that file (and
+  `~/.local/share/icons/hicolor/512x512/apps/docconversion.png`) to remove it.
 - **macOS.** Open the `.dmg` and drag *Document Converter* to Applications, or
-  unzip the `.zip`.
+  unzip the `.zip`. Finder lists it under *Open With* for the documents it
+  reads.
 
 Unless a release says otherwise, the builds are **not code signed**. Windows
 SmartScreen warns on first run: choose *More info*, then *Run anyway*. On
@@ -233,7 +240,9 @@ Three inputs are not file formats:
 Drop files anywhere in the window, including onto a list you have already
 loaded. A document dropped on the app's Dock icon or shortcut, or opened with
 it from the file manager, is added the same way (see
-[What's new in 1.5](WhatsNew.md#whats-new-in-15)).
+[What's new in 1.5](WhatsNew.md#whats-new-in-15)). The app is offered under
+*Open with* but never makes itself the default for any type (see
+[What's new in 1.5.4](WhatsNew.md#whats-new-in-154)).
 
 ## What it writes
 
@@ -851,6 +860,7 @@ upload anything.
     checked.
   - `file-handles.ts` — keeps the path of each file the app was given and hands
     the interface a token for it, so a conversion re-reads the file from disk.
+  - `desktop-entry.ts` — puts the AppImage under *Open With* on Linux.
 - `src/preload/` — the typed `window.api` bridge. Context isolation on, Node
   integration off.
 - `src/renderer/` — the React interface.
@@ -861,6 +871,8 @@ upload anything.
   `samples/`, and `notices/` (written by the build).
 - `scripts/` — build helpers: `build/` (the release scripts), `screenshots.mjs`
   (the README's pictures and tour), `samples/`, `fixtures/`, `notices/`.
+- `build/` — packaging resources: the icons, and `installer.nsh`, which adds
+  the Windows installer's *Open with* entries.
 - `docs/screenshots/` — the README's tour and picture.
 
 ## License

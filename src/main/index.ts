@@ -51,7 +51,8 @@ import { pastedHtmlToHub } from '../core/remote-images'
 import { loadUrl } from '../core/readers/url'
 import type { ReadContext } from '../core/types'
 import { urlFetchDeps } from './net'
-import { appTitle, PACKAGE_NAME } from './app-identity'
+import { appTitle, PACKAGE_NAME, PRODUCT_NAME } from './app-identity'
+import { integrateAppImage } from './desktop-entry'
 import { installAppMenu } from './menu'
 import { readSample, type SampleId } from './samples'
 import { isSampleId } from '../core/samples'
@@ -985,6 +986,13 @@ app.whenReady().then(() => {
   registerIpc(settings)
   installAppMenu({ openAbout: () => void openAboutWindow(), openSettings: openSettingsDialog, openSample: (id) => void openSample(id) })
   createWindow()
+  integrateAppImage({
+    appImage: process.env.APPIMAGE,
+    iconPath: icon,
+    productName: PRODUCT_NAME,
+    comment: 'Convert documents to PDF, Word, Markdown, HTML, EPUB and more',
+    version: app.getVersion(),
+  })
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
