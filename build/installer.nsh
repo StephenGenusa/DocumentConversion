@@ -41,6 +41,8 @@
   !insertmacro ${MACRO} epub
   !insertmacro ${MACRO} html
   !insertmacro ${MACRO} htm
+  !insertmacro ${MACRO} mhtml
+  !insertmacro ${MACRO} mht
   !insertmacro ${MACRO} md
   !insertmacro ${MACRO} markdown
   !insertmacro ${MACRO} mdown

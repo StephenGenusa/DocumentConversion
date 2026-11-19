@@ -3,6 +3,7 @@ import type { HubDocument, SourceInput } from '../types'
 import { sanitizeToHub } from '../allowlist'
 import { inlineSvgElements } from '../svg-images'
 import { decodeTextBytes } from './txt'
+import { inlineMhtmlPictures, unpackMhtml } from '../mhtml'
 import { tagForeignCodeBlocks } from '../code-language'
 import { diagramLanguage, type DiagramLanguage } from '../rendered-blocks'
 
@@ -437,7 +438,12 @@ function declaredCharset(bytes: Buffer): string | undefined {
 }
 
 export async function readHtml(src: SourceInput): Promise<HubDocument> {
-  const raw = decodeTextBytes(src.bytes, declaredCharset(src.bytes))
+  // A page saved as one file (.mhtml) is its first HTML part, with the
+  // pictures saved beside it put where the page names them (mhtml.ts).
+  const saved = unpackMhtml(src.bytes)
+  const bytes = saved ? saved.html.bytes : src.bytes
+  const decoded = decodeTextBytes(bytes, (saved?.html.charset) ?? declaredCharset(bytes))
+  const raw = saved ? inlineMhtmlPictures(decoded, saved) : decoded
   const titleMatch = /<title[^>]*>([^<]*)<\/title>/i.exec(raw)
   // An SVG drawn in the page becomes an SVG image (svg-images.ts) before
   // anything else reads the markup: an HTML parser would lower-case its names.

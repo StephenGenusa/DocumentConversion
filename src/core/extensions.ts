@@ -31,6 +31,9 @@ export const EXTENSION_FORMATS: ReadonlyMap<string, SourceFormat> = new Map<stri
     pdf: 'pdf',
     html: 'html',
     htm: 'html',
+    // A page saved as one file, its pictures inside (mhtml.ts).
+    mhtml: 'html',
+    mht: 'html',
     csv: 'csv',
     tsv: 'csv',
     xlsx: 'xlsx',

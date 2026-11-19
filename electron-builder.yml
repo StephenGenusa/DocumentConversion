@@ -96,7 +96,7 @@ mac:
     - { name: Spreadsheet, ext: [xlsx, xls, csv, tsv], role: Viewer, rank: Alternate }
     - { name: Presentation, ext: [pptx, pptm], role: Viewer, rank: Alternate }
     - { name: E-book, ext: epub, role: Viewer, rank: Alternate }
-    - { name: Web page, ext: [html, htm], role: Viewer, rank: Alternate }
+    - { name: Web page, ext: [html, htm, mhtml, mht], role: Viewer, rank: Alternate }
     - { name: Markdown document, ext: [md, markdown, mdown, mkd, mkdn, mdwn, markdn, rmd, qmd], role: Viewer, rank: Alternate }
     - { name: Text document, ext: [txt, text], role: Viewer, rank: Alternate }
     - { name: Markup document, ext: [adoc, asciidoc, asc, rst, djot, dj, textile, opml], role: Viewer, rank: Alternate }

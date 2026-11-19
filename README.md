@@ -178,7 +178,8 @@ picture; read as a picture."). Text that only starts like one stays text.
   are tables too.
 - **Presentations.** `pptx` covers `.pptx` and `.pptm`, `odp` covers
   OpenDocument slides (`.odp`). `.odt` is OpenDocument text.
-- **Web pages.** `.html` and `.htm`.
+- **Web pages.** `.html` and `.htm`, and a page saved as one file (`.mhtml`,
+  `.mht`) with the pictures saved inside it.
 - **Text and Markdown.** `.txt` and `.text`; Markdown as `.md`, `.markdown`,
   `.mdown`, `.mkd`, `.mkdn`, `.mdwn` and `.markdn`, and R Markdown and Quarto
   (`.rmd`, `.qmd`) with their code chunks. Markdown is CommonMark with GitHub
