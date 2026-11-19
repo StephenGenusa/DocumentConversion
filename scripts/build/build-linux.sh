@@ -60,6 +60,10 @@ echo "Building Document Converter $version"
 
 step "Installing dependencies (npm ci)"
 npm ci
+# Electron 43 has no install script: it downloads its binary the first time
+# it is required. Fetch it once here, or the test workers all start the
+# download at once and leave a corrupt dist/ (resources.pak "past end").
+node node_modules/electron/install.js
 
 if [ "$checks" = 1 ]; then
   step "Type check"

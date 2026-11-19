@@ -84,6 +84,10 @@ if ($HasCert) {
 
 Step 'Installing dependencies (npm ci)'
 Invoke-Checked $Npm @('ci')
+# Electron 43 has no install script: it downloads its binary the first time
+# it is required. Fetch it once here, or the test workers all start the
+# download at once and leave a corrupt dist/ (resources.pak "past end").
+Invoke-Checked 'node' @('node_modules/electron/install.js')
 
 if (-not $SkipChecks) {
   Step 'Type check'
