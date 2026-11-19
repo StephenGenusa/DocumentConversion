@@ -119,6 +119,15 @@ export function unpackMhtml(bytes: Buffer): MhtmlPage | null {
   return { html: parts[index], parts: parts.filter((_, i) => i !== index) }
 }
 
+/**
+ * Repeats of a picture already put in the page draw on a budget of this many
+ * times the saved page's own size, plus REPEAT_FLOOR, so a file that names one
+ * large picture thousands of times cannot grow into gigabytes of data URIs.
+ * A picture's first use is never counted, so a real page keeps every picture.
+ */
+const REPEAT_FACTOR = 2
+const REPEAT_FLOOR = 8 * 1024 * 1024
+
 const PICTURE_TAG = /<(?:img|(?:svg:)?image)\b[^>]*>/gi
 const SOURCE_ATTRIBUTE = /(\s(?:src|href|xlink:href)\s*=\s*)(["'])([^"']*)\2/gi
 
@@ -143,7 +152,8 @@ function absolute(url: string, base?: string): string | undefined {
  * Each picture the page names - an `<img src>`, an SVG's `<image href>` or
  * `xlink:href` - as a data URI of the part saved under that address, or under
  * that Content-ID for a `cid:` one. An address is matched as written, then
- * resolved against the page's own. A picture with no part is left as it is.
+ * resolved against the page's own. A picture with no part is left as it is,
+ * and so is a repeat past the budget (REPEAT_FACTOR).
  */
 export function inlineMhtmlPictures(html: string, page: MhtmlPage): string {
   const base = page.html.location
@@ -159,7 +169,9 @@ export function inlineMhtmlPictures(html: string, page: MhtmlPage): string {
   }
   if (byLocation.size === 0 && byId.size === 0) return html
   const uris = new Map<MhtmlPart, string>()
-  const find = (url: string): MhtmlPart | undefined => {
+  const savedSize = page.parts.reduce((sum, p) => sum + p.bytes.length, page.html.bytes.length)
+  let repeatBudget = REPEAT_FACTOR * savedSize + REPEAT_FLOOR
+  const find =(url: string): MhtmlPart | undefined => {
     if (/^cid:/i.test(url)) {
       const id = url.replace(/^cid:/i, '')
       try {
@@ -179,6 +191,11 @@ export function inlineMhtmlPictures(html: string, page: MhtmlPage): string {
       if (!uri) {
         uri = `data:${part.mime};base64,${part.bytes.toString('base64')}`
         uris.set(part, uri)
+      } else {
+        // Past the budget a repeat keeps its address, like a picture the
+        // file did not save.
+        if (uri.length > repeatBudget) return m
+        repeatBudget -= uri.length
       }
       return `${lead}${quote}${uri}${quote}`
     }),

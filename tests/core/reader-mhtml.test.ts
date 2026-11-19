@@ -99,6 +99,24 @@ describe('inlineMhtmlPictures', () => {
     expect(inlineMhtmlPictures("<img src='img/a.png'>", relative)).toBe(`<img src='${DATA_URI}'>`)
   })
 
+  it('inlines a small picture every time the page names it', () => {
+    const logo = { ...page, parts: [{ mime: 'image/png', contentId: 'logo', bytes: PNG }] }
+    const out = inlineMhtmlPictures('<img src="cid:logo">'.repeat(200), logo)
+    expect(out.split(DATA_URI).length - 1).toBe(200)
+  })
+
+  it('keeps the address of repeats past the budget, so one large picture cannot multiply', () => {
+    // 4 MB saved once, named 1,000 times: unbounded, about 5.3 GB of data URIs.
+    const big = Buffer.alloc(4 * 1024 * 1024, 7)
+    const huge = { ...page, parts: [{ mime: 'image/png', contentId: 'big', bytes: big }] }
+    const out = inlineMhtmlPictures('<img src="cid:big">'.repeat(1000), huge)
+    const savedSize = big.length + page.html.bytes.length
+    // The first use, plus repeats within 2x the saved size and 8 MB.
+    expect(out.length).toBeLessThan(big.length * (4 / 3) + 2 * savedSize + 8 * 1024 * 1024 + 20_000)
+    expect(out.startsWith('<img src="data:image/png;base64,')).toBe(true)
+    expect(out).toContain('<img src="cid:big">')
+  })
+
   it('leaves links, and a part that is not a picture, alone', () => {
     const html = '<a href="https://img.example.com/media/pic?format=png&amp;name=medium">x</a><img src="cid:css-1">'
     expect(inlineMhtmlPictures(html, page)).toBe(html)
