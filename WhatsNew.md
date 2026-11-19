@@ -3,6 +3,7 @@
 Release notes for Document Converter, newest first. See the
 [README](README.md) for what the app does and how to use it.
 
+- [1.5.5](#whats-new-in-155)
 - [1.5.4](#whats-new-in-154)
 - [1.5.3](#whats-new-in-153)
 - [1.5.2](#whats-new-in-152)
@@ -12,6 +13,15 @@ Release notes for Document Converter, newest first. See the
 - [1.3](#whats-new-in-13)
 - [1.2](#whats-new-in-12)
 - [1.1](#whats-new-in-11)
+
+## What's new in 1.5.5
+
+- **Web pages saved as one file.** A page saved from a browser as a single
+  file (`.mhtml` or `.mht`, written by Chrome and Edge as well as Internet
+  Explorer and Word) now opens like any web page, with the pictures saved
+  inside it in place. Until now, these files were not read. A picture the file did not
+  save is fetched from the web, as for an `.html` page. The app is offered
+  under *Open with* for both extensions on Windows and the Mac.
 
 ## What's new in 1.5.4
 
