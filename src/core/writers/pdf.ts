@@ -10,7 +10,8 @@ import {
   MAX_ROWS_PER_CHUNK,
   MAX_CELLS_PER_CHUNK,
 } from '../html-chunk'
-import { mergePdfs } from '../pdf-merge'
+import { joinLinksInOnePart, mergePdfs } from '../pdf-merge'
+import { linkAcrossParts, type PartHeading } from '../pdf-part-links'
 import { ConversionError } from '../errors'
 import type { ConvertOptions, HubDocument, PdfPrintOptions, PdfRenderOptions, RenderHtmlToPdf } from '../types'
 
@@ -57,6 +58,19 @@ export function createPdfWriter(render: RenderHtmlToPdf, shellOpts?: Pick<ShellO
         { ...shellOpts, target: 'pdf', codeColor: opts?.codeColor, fillPage, turnedPages },
       )
 
+    // A document printed in parts is linked whole, once, before it is cut:
+    // linked a part at a time, a link to a heading in another part is lost,
+    // and so is every destination when the parts are joined (pdf-part-links.ts).
+    // The headings are kept for the bookmarks, which are written again at the join.
+    let linkedForParts = false
+    let headings: PartHeading[] = []
+    const linkForParts = (whole: string): string => {
+      linkedForParts = true
+      const linked = linkAcrossParts(whole)
+      headings = linked.headings
+      return linked.html
+    }
+
     /** Render one piece, splitting it further if the renderer refuses it. */
     const renderPiece = async (body: string, maxRows: number, maxCells: number, depth: number): Promise<Buffer[]> => {
       try {
@@ -85,7 +99,8 @@ export function createPdfWriter(render: RenderHtmlToPdf, shellOpts?: Pick<ShellO
         // never reached splits nothing.
         const halfRows = Math.max(1, Math.floor(Math.min(maxRows, rows) / 2))
         const halfCells = Math.max(1, Math.floor(Math.min(maxCells, cells) / 2))
-        const pieces = chunkHtmlForPrinting(body, halfRows, halfCells)
+        // Not yet linked for parts means not yet cut: this piece is the whole document.
+        const pieces = chunkHtmlForPrinting(linkedForParts ? body : linkForParts(body), halfRows, halfCells)
         if (pieces.length < 2) giveUp('and it cannot be split any smaller')
         const out: Buffer[] = []
         for (const piece of pieces) out.push(...(await renderPiece(piece, halfRows, halfCells, depth + 1)))
@@ -96,13 +111,14 @@ export function createPdfWriter(render: RenderHtmlToPdf, shellOpts?: Pick<ShellO
     // Chromium refuses a very large page outright, so render big documents in
     // pieces and stitch them back together.
     const oversized = countRows(html) > MAX_ROWS_PER_CHUNK || countCells(html) > MAX_CELLS_PER_CHUNK
-    const chunks = oversized ? chunkHtmlForPrinting(html) : [html]
+    const chunks = oversized ? chunkHtmlForPrinting(linkForParts(html)) : [html]
     const parts: { bytes: Buffer; name?: string }[] = []
     for (const chunk of chunks) {
       for (const bytes of await renderPiece(chunk, MAX_ROWS_PER_CHUNK, MAX_CELLS_PER_CHUNK, 0)) {
         parts.push({ bytes, name: `part ${parts.length + 1}` })
       }
     }
-    return parts.length === 1 ? parts[0].bytes : mergePdfs(parts)
+    if (parts.length > 1) return mergePdfs(parts, { partLinks: linkedForParts, headings })
+    return linkedForParts ? joinLinksInOnePart(parts[0].bytes) : parts[0].bytes
   }
 }

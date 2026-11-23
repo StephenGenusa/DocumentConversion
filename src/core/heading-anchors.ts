@@ -29,7 +29,7 @@ function walk(nodes: AnyNode[], visit: (el: Element) => void): void {
 }
 
 /** A heading's text as a reader sees it; a footnote's number is not part of it. */
-function textOf(nodes: AnyNode[]): string {
+export function textOf(nodes: AnyNode[]): string {
   let s = ''
   for (const n of nodes) {
     if (n instanceof Text) s += n.data
