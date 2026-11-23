@@ -3,6 +3,7 @@
 Release notes for Document Converter, newest first. See the
 [README](README.md) for what the app does and how to use it.
 
+- [1.5.6](#whats-new-in-156)
 - [1.5.5](#whats-new-in-155)
 - [1.5.4](#whats-new-in-154)
 - [1.5.3](#whats-new-in-153)
@@ -13,6 +14,16 @@ Release notes for Document Converter, newest first. See the
 - [1.3](#whats-new-in-13)
 - [1.2](#whats-new-in-12)
 - [1.1](#whats-new-in-11)
+
+## What's new in 1.5.6
+
+- **Links and bookmarks in very large PDFs.** A document with more than 1,500
+  table rows is printed in parts and joined. Its links to its own headings
+  (a contents list, cross-references, footnotes) now all work in the PDF, and
+  the bookmarks sidebar lists every heading. Until now, most of those links
+  were missing, the rest went nowhere, and there was no sidebar.
+- **Links in merged PDFs.** Merging several documents into one PDF keeps each
+  document's links to its own headings. Until now, they stopped working.
 
 ## What's new in 1.5.5
 
